@@ -37,14 +37,23 @@ jobs:
             gh release create $tag --title "RefBoard $tag" --generate-notes
           }
 
-      - name: Build and publish to GitHub Releases
-        run: npm run dist:publish
+      - name: Build Windows installer
+        run: npm run dist
+
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF.Substring(10) } else { git describe --tags --abbrev=0 }
+          gh release upload $tag dist/latest.yml dist/*.blockmap dist/RefBoard-Setup-*.exe --clobber
 
       - name: Verify release artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF.Substring(10) } else { git describe --tags --abbrev=0 }
-          gh release view $tag --json assets --jq '.assets[].name'
+          $assets = gh release view $tag --json assets --jq '.assets[].name'
+          Write-Host $assets
+          if ($assets -notmatch 'latest.yml') { throw 'latest.yml missing from release' }
+          if ($assets -notmatch 'RefBoard-Setup-.*\.exe') { throw 'installer missing from release' }
+          if ($assets -notmatch '\.blockmap') { throw 'blockmap missing from release' }
