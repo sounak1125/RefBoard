@@ -50,9 +50,20 @@ The workflow uploads `RefBoard-Setup-x.x.x.exe` to GitHub Releases. Installed ap
 
 ### Publish manually (without Actions)
 
-```bash
-set GH_TOKEN=your_github_token
-npm run dist:publish
+Each GitHub Release needs `latest.yml`, the `.exe`, and `.blockmap` for auto-update to work.
+
+```powershell
+$env:GH_TOKEN = "your_github_token_with_repo_scope"
+npm run dist
+npm run release:publish
+```
+
+To add missing auto-update files to the existing v1.0.0 release:
+
+```powershell
+$env:GH_TOKEN = "your_github_token_with_repo_scope"
+npm run gen:latest-yml -- dist/RefBoard-Setup-1.0.0.exe
+npm run release:fix-v100-assets
 ```
 
 ## For you (Sounak)

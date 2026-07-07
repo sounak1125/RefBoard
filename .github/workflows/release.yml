@@ -33,7 +33,16 @@ jobs:
       - name: Build Windows installer
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run dist
+        run: |
+          $ok = $false
+          foreach ($attempt in 1..3) {
+            Write-Host "Build attempt $attempt"
+            npm run dist
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            if (Test-Path dist) { Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue }
+            Start-Sleep -Seconds 15
+          }
+          if (-not $ok) { exit 1 }
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2

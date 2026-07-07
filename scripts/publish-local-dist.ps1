@@ -1,6 +1,7 @@
 param(
-  [Parameter(Mandatory = $true)][string]$Tag,
-  [string]$DistDir = "dist"
+  [string]$Tag,
+  [string]$DistDir = "dist",
+  [string]$Repo = "sounak1125/RefBoard"
 )
 
 if (-not $env:GH_TOKEN) {
@@ -9,6 +10,8 @@ if (-not $env:GH_TOKEN) {
 }
 
 $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+if (-not $Tag) { $Tag = "v$version" }
+
 $setup = Join-Path $DistDir "RefBoard-Setup-$version.exe"
 $blockmap = Join-Path $DistDir "RefBoard-Setup-$version.exe.blockmap"
 $latest = Join-Path $DistDir 'latest.yml'
@@ -20,14 +23,34 @@ foreach ($path in @($setup, $blockmap, $latest)) {
   }
 }
 
-gh release view $Tag 2>$null
-if ($LASTEXITCODE -ne 0) {
-  gh release create $Tag --title "RefBoard $Tag" --generate-notes --repo sounak1125/RefBoard
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$headers = @{
+  Authorization = "Bearer $env:GH_TOKEN"
+  Accept = 'application/vnd.github+json'
+  'X-GitHub-Api-Version' = '2022-11-28'
 }
 
-gh release upload $Tag $latest $blockmap $setup --clobber --repo sounak1125/RefBoard
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -Headers $headers -ErrorAction SilentlyContinue
+if (-not $release) {
+  $body = @{ tag_name = $Tag; name = "RefBoard $Tag"; generate_release_notes = $true } | ConvertTo-Json
+  $release = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$Repo/releases" -Headers $headers -Body $body -ContentType 'application/json'
+}
 
-Write-Host "Published $Tag to GitHub Releases:"
-gh release view $Tag --json assets --jq '.assets[].name' --repo sounak1125/RefBoard
+function Upload-ReleaseAsset {
+  param([int]$ReleaseId, [string]$FilePath, [string]$AssetName)
+  $uploadHeaders = @{
+    Authorization = "Bearer $env:GH_TOKEN"
+    Accept = 'application/vnd.github+json'
+    'Content-Type' = 'application/octet-stream'
+  }
+  $uri = "https://uploads.github.com/repos/$Repo/releases/$ReleaseId/assets?name=$AssetName"
+  Invoke-RestMethod -Method Post -Uri $uri -Headers $uploadHeaders -InFile $FilePath | Out-Null
+  Write-Host "Uploaded $AssetName"
+}
+
+Upload-ReleaseAsset -ReleaseId $release.id -FilePath $latest -AssetName 'latest.yml'
+Upload-ReleaseAsset -ReleaseId $release.id -FilePath $blockmap -AssetName (Split-Path $blockmap -Leaf)
+Upload-ReleaseAsset -ReleaseId $release.id -FilePath $setup -AssetName (Split-Path $setup -Leaf)
+
+$assets = (Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -Headers $headers).assets.name
+Write-Host "Release $Tag assets:"
+$assets | ForEach-Object { Write-Host " - $_" }
