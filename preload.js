@@ -1,0 +1,26 @@
+'use strict';
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('RefBoardAPI', {
+  chooseFolder: () => ipcRenderer.invoke('choose-folder'),
+  getDefaultExportDir: () => ipcRenderer.invoke('get-default-export-dir'),
+  writeExportFiles: (dir, files) => ipcRenderer.invoke('write-export-files', { dir, files }),
+  saveBoardFile: (defaultName, data, filePath) => ipcRenderer.invoke('save-board-file', { defaultName, data, filePath }),
+  openBoardDialog: () => ipcRenderer.invoke('open-board-dialog'),
+  readBoardFile: (filePath) => ipcRenderer.invoke('read-board-file', filePath),
+  getRecentWorks: () => ipcRenderer.invoke('get-recent-works'),
+  addRecentWork: (entry) => ipcRenderer.invoke('add-recent-work', entry),
+  touchRecentWorkEdited: (filePath) => ipcRenderer.invoke('touch-recent-work-edited', filePath),
+  getThumbnailData: (filename) => ipcRenderer.invoke('get-thumbnail-data', filename),
+  getPendingOpenPath: () => ipcRenderer.invoke('get-pending-open-path'),
+  readClipboardImage: () => ipcRenderer.invoke('clipboard-read-image'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  onCloseRequest: (cb) => ipcRenderer.on('close-request', () => cb()),
+  onOpenBoardPath: (cb) => ipcRenderer.on('open-board-path', (_e, filePath) => cb(filePath)),
+  confirmClose: () => ipcRenderer.send('close-confirmed'),
+  windowMinimize: () => ipcRenderer.send('window-minimize'),
+  windowMaximize: () => ipcRenderer.send('window-maximize'),
+  windowClose: () => ipcRenderer.send('window-close'),
+  isWindowMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  onWindowMaximizeChange: (cb) => ipcRenderer.on('window-maximize-changed', (_e, maximized) => cb(maximized)),
+});

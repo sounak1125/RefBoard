@@ -1,0 +1,71 @@
+{
+  "name": "refboard",
+  "productName": "RefBoard",
+  "version": "1.0.0",
+  "description": "A fast, clean moodboard and reference app. Made by Sounak.",
+  "author": "Sounak",
+  "license": "MIT",
+  "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sounak1125/RefBoard.git"
+  },
+  "homepage": "https://github.com/sounak1125/RefBoard",
+  "bugs": {
+    "url": "https://github.com/sounak1125/RefBoard/issues"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:publish": "electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.sounak.refboard",
+    "productName": "RefBoard",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "package.json"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "sounak1125",
+      "repo": "RefBoard"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "license": "build/license.txt",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/installerSidebar.bmp",
+      "createDesktopShortcut": true,
+      "shortcutName": "RefBoard",
+      "artifactName": "RefBoard-Setup-${version}.exe",
+      "include": "build/installer.nsh"
+    }
+  }
+}
