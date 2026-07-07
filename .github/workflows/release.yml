@@ -27,25 +27,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Ensure GitHub Release exists
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tag = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF.Substring(10) } else { git describe --tags --abbrev=0 }
-          gh release view $tag 2>$null
-          if ($LASTEXITCODE -ne 0) {
-            gh release create $tag --title "RefBoard $tag" --generate-notes
-          }
+      - name: Clean dist folder
+        run: if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 
       - name: Build Windows installer
         run: npm run dist
 
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tag = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF.Substring(10) } else { git describe --tags --abbrev=0 }
-          gh release upload $tag dist/latest.yml dist/*.blockmap dist/RefBoard-Setup-*.exe --clobber
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: RefBoard ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/latest.yml
+            dist/*.blockmap
+            dist/RefBoard-Setup-*.exe
 
       - name: Verify release artifacts
         env:
