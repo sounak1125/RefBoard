@@ -1,6 +1,6 @@
 # RefBoard
 
-A PureRef-style moodboard & reference app for Windows. **Made by Sounak.**
+A clean minimal moodboard & reference app for Windows. **Made by Sounak.**
 Images are kept in original quality, stored only on your own PC.
 
 ## GitHub & auto-updates
