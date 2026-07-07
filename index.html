@@ -588,6 +588,30 @@ body.board-instant-open #recentWorks{
 }
 #toast .toast-action:hover{ background:rgba(255,255,255,.12); }
 
+#updateCard{
+  position:fixed; top:calc(var(--titlebar-h) + 14px); right:16px; z-index:120;
+  width:300px; max-width:calc(100vw - 32px);
+  background:var(--card); border:1px solid var(--line); border-radius:12px;
+  box-shadow:0 14px 36px rgba(0,0,0,.5); padding:14px;
+  transform:translateX(18px); opacity:0; pointer-events:none;
+  transition:opacity .2s ease, transform .22s cubic-bezier(.22,1,.36,1);
+}
+#updateCard.show{ transform:translateX(0); opacity:1; pointer-events:auto; }
+.uc-head{ display:flex; align-items:center; gap:9px; margin-bottom:8px; }
+.uc-icon{ width:26px; height:26px; border-radius:7px; background:color-mix(in srgb, var(--acc) 18%, transparent); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.uc-icon svg{ width:15px; height:15px; stroke:var(--acc); fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.uc-title{ font-size:13px; font-weight:600; color:var(--txt); flex:1; }
+.uc-x{ width:22px; height:22px; border:0; border-radius:6px; background:transparent; color:var(--dim); cursor:pointer; font-size:15px; line-height:1; }
+.uc-x:hover{ background:rgba(255,255,255,.08); color:var(--txt); }
+.uc-sub{ font-size:12px; color:var(--mut); margin-bottom:10px; line-height:1.45; }
+.uc-bar{ height:5px; border-radius:3px; background:rgba(255,255,255,.08); overflow:hidden; margin-bottom:10px; }
+.uc-bar-fill{ height:100%; width:0%; background:var(--acc); border-radius:3px; transition:width .2s ease; }
+.uc-actions{ display:flex; gap:8px; justify-content:flex-end; }
+.uc-btn{ padding:7px 14px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--txt); font-size:12.5px; cursor:pointer; }
+.uc-btn:hover{ background:rgba(255,255,255,.06); }
+.uc-btn.primary{ background:var(--acc); border-color:var(--acc); color:#0b1524; font-weight:600; }
+.uc-btn.primary:hover{ filter:brightness(1.08); }
+
 /* ---------- context menu ---------- */
 #ctxmenu{
   position:fixed; z-index:50; display:none; min-width:208px;
@@ -1558,6 +1582,20 @@ body.board-instant-open #recentWorks{
   <div class="save-card">
     <div class="save-spinner"></div>
     <div class="save-status-label">Opening board…</div>
+  </div>
+</div>
+
+<div id="updateCard" role="status" aria-live="polite">
+  <div class="uc-head">
+    <span class="uc-icon"><svg viewBox="0 0 24 24"><path d="M12 3v11M8 10l4 4 4-4M5 20h14"/></svg></span>
+    <span class="uc-title" id="ucTitle">Update available</span>
+    <button class="uc-x" id="ucClose" title="Dismiss" aria-label="Dismiss">×</button>
+  </div>
+  <div class="uc-sub" id="ucSub">A new version of RefBoard is downloading…</div>
+  <div class="uc-bar" id="ucBar"><div class="uc-bar-fill" id="ucBarFill"></div></div>
+  <div class="uc-actions" id="ucActions" hidden>
+    <button class="uc-btn" id="ucLater">Later</button>
+    <button class="uc-btn primary" id="ucRestart">Restart now</button>
   </div>
 </div>
 
@@ -7468,16 +7506,35 @@ function toast(msg, opts) {
   toastTimer = setTimeout(() => { toastEl.classList.remove('show'); clearToastAction(); }, duration);
 }
 
+function showUpdateCard(phase, percent) {
+  const card = document.getElementById('updateCard');
+  const title = document.getElementById('ucTitle');
+  const sub = document.getElementById('ucSub');
+  const bar = document.getElementById('ucBar');
+  const fill = document.getElementById('ucBarFill');
+  const actions = document.getElementById('ucActions');
+  if (phase === 'ready') {
+    title.textContent = 'Update ready';
+    sub.textContent = 'Restart RefBoard to install the new version.';
+    bar.style.display = 'none';
+    actions.hidden = false;
+  } else {
+    title.textContent = 'Downloading update';
+    sub.textContent = 'A new version of RefBoard is downloading…';
+    bar.style.display = '';
+    if (typeof percent === 'number') fill.style.width = Math.max(0, Math.min(100, percent)) + '%';
+    actions.hidden = true;
+  }
+  card.classList.add('show');
+}
+function hideUpdateCard() { document.getElementById('updateCard').classList.remove('show'); }
+document.getElementById('ucClose').addEventListener('click', hideUpdateCard);
+document.getElementById('ucLater').addEventListener('click', hideUpdateCard);
+document.getElementById('ucRestart').addEventListener('click', () => window.RefBoardAPI?.installUpdate?.());
+
 window.__pinToast = msg => {
   if (msg && typeof msg === 'object' && msg.type === 'update') {
-    if (msg.phase === 'downloading') toast('Update found — downloading…', { duration: 3200 });
-    else if (msg.phase === 'ready') {
-      toast('Update ready — restart RefBoard to install', {
-        duration: 12000,
-        actionLabel: 'Restart now',
-        onAction: () => window.RefBoardAPI?.installUpdate?.(),
-      });
-    }
+    showUpdateCard(msg.phase, msg.percent);
     return;
   }
   if (typeof msg === 'string') toast(msg);

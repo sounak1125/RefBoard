@@ -59,6 +59,11 @@ function setupAutoUpdate() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('update-available', () => notifyRenderer({ type: 'update', phase: 'downloading' }));
+  let __updLastPct = -1;
+  autoUpdater.on('download-progress', p => {
+    const pct = Math.round(p.percent || 0);
+    if (pct !== __updLastPct) { __updLastPct = pct; notifyRenderer({ type: 'update', phase: 'progress', percent: pct }); }
+  });
   autoUpdater.on('update-downloaded', () => notifyRenderer({ type: 'update', phase: 'ready' }));
   autoUpdater.on('error', () => { /* silent when offline or no releases yet */ });
   autoUpdater.checkForUpdatesAndNotify();
