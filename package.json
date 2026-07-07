@@ -17,7 +17,9 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
-    "dist:publish": "electron-builder --win --publish always"
+    "dist:publish": "electron-builder --win --publish always",
+    "gen:latest-yml": "node scripts/gen-latest-yml.js",
+    "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0"
   },
   "dependencies": {
     "electron-updater": "^6.6.2"
