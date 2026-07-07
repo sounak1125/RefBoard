@@ -31,6 +31,8 @@ jobs:
         run: if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 
       - name: Build Windows installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run dist
 
       - name: Publish release assets
