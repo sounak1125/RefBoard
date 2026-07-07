@@ -578,8 +578,15 @@ body.board-instant-open #recentWorks{
   padding:8px 16px; border-radius:10px; font-size:12.5px;
   opacity:0; transition:opacity .18s, transform .18s; z-index:60; pointer-events:none;
   box-shadow:0 8px 30px rgba(0,0,0,.5);
+  display:flex; align-items:center; gap:10px; max-width:min(92vw, 480px);
 }
 #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+#toast.actionable{ pointer-events:auto; }
+#toast .toast-action{
+  flex-shrink:0; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06);
+  color:#fff; border-radius:7px; padding:4px 10px; font-size:12px; cursor:pointer;
+}
+#toast .toast-action:hover{ background:rgba(255,255,255,.12); }
 
 /* ---------- context menu ---------- */
 #ctxmenu{
@@ -7437,13 +7444,42 @@ const filePick = $('#filePick');
 const boardPick = $('#boardPick');
 let toastTimer = 0;
 
-function toast(msg) {
+function clearToastAction() {
+  toastEl.classList.remove('actionable');
+  const btn = toastEl.querySelector('.toast-action');
+  if (btn) btn.remove();
+}
+
+function toast(msg, opts) {
+  clearToastAction();
   toastEl.textContent = msg;
+  if (opts?.actionLabel && opts?.onAction) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = opts.actionLabel;
+    btn.addEventListener('click', () => { clearTimeout(toastTimer); opts.onAction(); });
+    toastEl.appendChild(btn);
+    toastEl.classList.add('actionable');
+  }
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+  const duration = opts?.duration ?? 2400;
+  toastTimer = setTimeout(() => { toastEl.classList.remove('show'); clearToastAction(); }, duration);
 }
+
 window.__pinToast = msg => {
+  if (msg && typeof msg === 'object' && msg.type === 'update') {
+    if (msg.phase === 'downloading') toast('Update found — downloading…', { duration: 3200 });
+    else if (msg.phase === 'ready') {
+      toast('Update ready — restart RefBoard to install', {
+        duration: 12000,
+        actionLabel: 'Restart now',
+        onAction: () => window.RefBoardAPI?.installUpdate?.(),
+      });
+    }
+    return;
+  }
   if (typeof msg === 'string') toast(msg);
   else toast(msg ? 'Pinned on top of other windows' : 'Unpinned');
 };

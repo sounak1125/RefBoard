@@ -58,8 +58,8 @@ function setupAutoUpdate() {
   if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-available', () => notifyRenderer('Update found — downloading…'));
-  autoUpdater.on('update-downloaded', () => notifyRenderer('Update ready — restart RefBoard to install'));
+  autoUpdater.on('update-available', () => notifyRenderer({ type: 'update', phase: 'downloading' }));
+  autoUpdater.on('update-downloaded', () => notifyRenderer({ type: 'update', phase: 'ready' }));
   autoUpdater.on('error', () => { /* silent when offline or no releases yet */ });
   autoUpdater.checkForUpdatesAndNotify();
 }
@@ -272,6 +272,13 @@ function setupIpc() {
 
   ipcMain.handle('window-is-maximized', () => {
     return !!(win && !win.isDestroyed() && win.isMaximized());
+  });
+
+  ipcMain.handle('install-update', () => {
+    if (!app.isPackaged) return { ok: false };
+    closing = true;
+    autoUpdater.quitAndInstall();
+    return { ok: true };
   });
 }
 
