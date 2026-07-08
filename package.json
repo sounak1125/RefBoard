@@ -1,7 +1,7 @@
 {
   "name": "refboard",
   "productName": "RefBoard",
-  "version": "1.0.2",
+  "version": "1.0.0",
   "description": "A fast, clean moodboard and reference app. Made by Sounak.",
   "author": "Sounak",
   "license": "MIT",
@@ -18,7 +18,8 @@
     "start": "electron .",
     "dist": "electron-builder --win",
     "dist:publish": "electron-builder --win --publish always",
-    "gen:latest-yml": "node scripts/gen-latest-yml.js",
+    "gen:icon": "node scripts/gen-icon.js",
+    "build:thumb-handler": "node scripts/build-thumb-handler.js",
     "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-local-dist.ps1",
     "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0"
   },
@@ -26,8 +27,11 @@
     "electron-updater": "^6.6.2"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "electron": "^37.0.0",
-    "electron-builder": "^26.0.0"
+    "electron-builder": "^26.0.0",
+    "sharp": "^0.35.3",
+    "to-ico": "^1.1.5"
   },
   "build": {
     "appId": "com.sounak.refboard",
@@ -41,6 +45,37 @@
       "preload.js",
       "index.html",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      },
+      {
+        "from": "build/thumbnail-handler/bin/RefBoardThumbnailHandler.dll",
+        "to": "RefBoardThumbnailHandler.dll"
+      },
+      {
+        "from": "build/thumbnail-handler/bin/SharpShell.dll",
+        "to": "SharpShell.dll"
+      },
+      {
+        "from": "scripts/register-thumb-handler.ps1",
+        "to": "scripts/register-thumb-handler.ps1"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "refboard",
+        "name": "RefBoard moodboard",
+        "description": "RefBoard moodboard file",
+        "icon": "build/icon.ico",
+        "role": "Editor"
+      }
     ],
     "publish": {
       "provider": "github",
@@ -56,14 +91,17 @@
           ]
         }
       ],
-      "icon": "build/icon.png",
-      "signAndEditExecutable": false
+      "icon": "build/icon.ico",
+      "signExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "license": "build/license.txt",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeader": "build/installerHeader.bmp",
       "installerSidebar": "build/installerSidebar.bmp",
       "uninstallerSidebar": "build/installerSidebar.bmp",
       "createDesktopShortcut": true,

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 build-out.txt
+build/thumbnail-handler/packages/
 *.log
 .cursor/
 .DS_Store

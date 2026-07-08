@@ -33,6 +33,11 @@ jobs:
       # Build ONLY (no publish). "--publish never" stops electron-builder from
       # trying to upload to GitHub itself (that attempt needed GH_TOKEN and was
       # failing the build). It still generates latest.yml + blockmap into dist/.
+      - name: Build icon assets
+        run: |
+          npm run gen:icon
+          npm run build:thumb-handler
+
       - name: Build Windows installer
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false

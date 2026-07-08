@@ -1,9 +1,11 @@
 'use strict';
-const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -54,6 +56,8 @@ function notifyRenderer(msg) {
   win.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
 }
 
+let manualUpdateCheck = false;
+
 function setupAutoUpdate() {
   if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
@@ -65,8 +69,10 @@ function setupAutoUpdate() {
     if (pct !== __updLastPct) { __updLastPct = pct; notifyRenderer({ type: 'update', phase: 'progress', percent: pct }); }
   });
   autoUpdater.on('update-downloaded', () => notifyRenderer({ type: 'update', phase: 'ready' }));
-  autoUpdater.on('error', () => { /* silent when offline or no releases yet */ });
-  autoUpdater.checkForUpdatesAndNotify();
+  autoUpdater.on('update-not-available', () => notifyRenderer({ type: 'update', phase: 'uptodate' }));
+  autoUpdater.on('error', (err) => {
+    if (manualUpdateCheck) notifyRenderer({ type: 'update', phase: 'error', message: String(err?.message || err) });
+  });
 }
 
 function setupIpc() {
@@ -121,6 +127,7 @@ function setupIpc() {
       target = r.filePath;
     }
     await fs.writeFile(target, data, 'utf8');
+    refreshShellIcons();
     return { saved: true, filePath: target };
   });
 
@@ -285,6 +292,98 @@ function setupIpc() {
     autoUpdater.quitAndInstall();
     return { ok: true };
   });
+
+  ipcMain.handle('get-app-icon-data-url', () => appIconDataUrl(32));
+
+  ipcMain.handle('get-app-info', () => ({
+    version: app.getVersion(),
+    productName: app.getName(),
+    isPackaged: app.isPackaged,
+  }));
+
+  ipcMain.handle('updater-init', async (_, { checkOnStartup } = {}) => {
+    if (!app.isPackaged || !checkOnStartup) return { ok: true, skipped: true };
+    try {
+      await autoUpdater.checkForUpdates();
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  ipcMain.handle('check-for-updates', async () => {
+    if (!app.isPackaged) return { ok: false, reason: 'dev' };
+    manualUpdateCheck = true;
+    try {
+      await autoUpdater.checkForUpdates();
+      return { ok: true };
+    } catch {
+      return { ok: false, reason: 'error' };
+    } finally {
+      manualUpdateCheck = false;
+    }
+  });
+}
+
+function appIconPath() {
+  if (app.isPackaged) return path.join(process.resourcesPath, 'icon.png');
+  return path.join(__dirname, 'build', 'icon.png');
+}
+
+function appIconIcoPath() {
+  if (app.isPackaged) return path.join(process.resourcesPath, 'icon.ico');
+  return path.join(__dirname, 'build', 'icon.ico');
+}
+
+function appIconDataUrl(size = 32) {
+  const img = nativeImage.createFromPath(appIconPath());
+  if (img.isEmpty()) return null;
+  return img.resize({ width: size, height: size }).toDataURL();
+}
+
+function thumbnailHandlerPaths() {
+  const dll = app.isPackaged
+    ? path.join(process.resourcesPath, 'RefBoardThumbnailHandler.dll')
+    : path.join(__dirname, 'build', 'thumbnail-handler', 'bin', 'RefBoardThumbnailHandler.dll');
+  const script = app.isPackaged
+    ? path.join(process.resourcesPath, 'scripts', 'register-thumb-handler.ps1')
+    : path.join(__dirname, 'scripts', 'register-thumb-handler.ps1');
+  return { dll, script };
+}
+
+function refreshShellIcons() {
+  if (process.platform !== 'win32') return;
+  try {
+    execFile('powershell.exe', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
+      `Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class RefBoardShellNotify {
+  [DllImport(""shell32.dll"")] public static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+}
+"@
+[RefBoardShellNotify]::SHChangeNotify(0x08000000, 0x00001000, [IntPtr]::Zero, [IntPtr]::Zero)`,
+    ], { windowsHide: true }, () => {});
+  } catch { /* ignore */ }
+}
+
+function registerFileTypeIntegration() {
+  if (process.platform !== 'win32') return;
+  const { dll, script } = thumbnailHandlerPaths();
+  if (!fsSync.existsSync(dll) || !fsSync.existsSync(script)) return;
+  const exePath = process.execPath;
+  const iconArg = fsSync.existsSync(appIconIcoPath()) ? appIconIcoPath() : appIconPath();
+  execFile('powershell.exe', [
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
+    '-DllPath', dll,
+    '-Action', 'install',
+    '-AppExePath', exePath,
+    '-DefaultIconPath', iconArg,
+  ], { windowsHide: true }, (err) => {
+    if (err) console.warn('RefBoard file icon registration skipped:', err.message);
+    else refreshShellIcons();
+  });
 }
 
 async function createWindow() {
@@ -295,7 +394,7 @@ async function createWindow() {
     minHeight: 480,
     backgroundColor: '#141519',
     title: 'RefBoard',
-    icon: path.join(__dirname, 'build', 'icon.png'),
+    icon: appIconPath(),
     frame: false,
     autoHideMenuBar: true,
     webPreferences: {
@@ -377,6 +476,7 @@ app.whenReady().then(async () => {
   if (argvPath) pendingOpenPath = argvPath;
   setupIpc();
   await createWindow();
+  registerFileTypeIntegration();
   setupAutoUpdate();
 });
 app.on('window-all-closed', () => app.quit());

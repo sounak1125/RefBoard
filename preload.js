@@ -24,4 +24,8 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   isWindowMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   onWindowMaximizeChange: (cb) => ipcRenderer.on('window-maximize-changed', (_e, maximized) => cb(maximized)),
   installUpdate: () => ipcRenderer.invoke('install-update'),
+  getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+  getAppIconDataUrl: () => ipcRenderer.invoke('get-app-icon-data-url'),
+  updaterInit: (opts) => ipcRenderer.invoke('updater-init', opts),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
 });
