@@ -2185,6 +2185,11 @@ function effectiveZoomMin() {
 const images = new Map();       // imgId -> {bitmap, pristineBitmap|null, w, h, blob, type, name}
 
 let dirty = true;
+let workspaceBBoxCache = null;
+const drawVisibleItems = [];
+const drawVisibleItemIds = new Set();
+const drawSelectedItems = [];
+const drawVisibleSelectedItems = [];
 let mode = null;                // active pointer interaction
 let tool = null;                // one-shot tools, currently eyedropper
 let drawActive = false;
@@ -2224,6 +2229,7 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random
 const byId = id => state.items.find(i => i.id === id);
 const selectedItems = () => state.items.filter(i => state.sel.has(i.id));
 const invalidate = () => { dirty = true; };
+function invalidateWorkspaceBBox() { workspaceBBoxCache = null; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const isImageItem = it => (it.kind || 'image') === 'image';
 const isNoteItem = it => it.kind === 'note';
@@ -2299,6 +2305,7 @@ function syncGroupFrame(group) {
   if (!kids.length) {
     group.w = Math.max(40, group.w || 40);
     group.h = Math.max(40, group.h || 40);
+    invalidateWorkspaceBBox();
     return;
   }
   const bb = bboxOf(kids);
@@ -2306,6 +2313,7 @@ function syncGroupFrame(group) {
   group.y = bb.y - pad;
   group.w = bb.w + pad * 2;
   group.h = bb.h + pad * 2;
+  invalidateWorkspaceBBox();
 }
 
 function reconcileGroupOrder() {
@@ -2325,6 +2333,7 @@ function reconcileGroupOrder() {
     if (!placed.has(it.id)) ordered.push(it);
   }
   state.items = ordered;
+  invalidateWorkspaceBBox();
 }
 
 function insertGroupBeforeChildren(group, childIds) {
@@ -2332,6 +2341,7 @@ function insertGroupBeforeChildren(group, childIds) {
   const rest = state.items.filter(i => !idSet.has(i.id) && i.id !== group.id);
   const children = state.items.filter(i => idSet.has(i.id));
   state.items = [...rest, group, ...children];
+  invalidateWorkspaceBBox();
   reconcileGroupOrder();
 }
 
@@ -2403,7 +2413,10 @@ function removeItemFromGroup(item) {
   const group = byId(gid);
   if (!group) return;
   const remaining = childrenOfGroup(gid);
-  if (!remaining.length) state.items = state.items.filter(i => i.id !== gid);
+  if (!remaining.length) {
+    state.items = state.items.filter(i => i.id !== gid);
+    invalidateWorkspaceBBox();
+  }
   else syncGroupFrame(group);
 }
 
@@ -2423,6 +2436,7 @@ function ungroupGroup(group) {
   const kids = childrenOfGroup(group.id);
   for (const c of kids) c.groupId = null;
   state.items = state.items.filter(i => i.id !== group.id);
+  invalidateWorkspaceBBox();
   state.sel = new Set(kids.map(k => k.id));
   state.anchorId = kids[0]?.id || null;
   updateSelBar(); scheduleSave(); invalidate();
@@ -2645,7 +2659,7 @@ function workspaceRect() {
     const h = Math.max(WORKSPACE_EMPTY_MIN_H, (vh / state.view.s) * 0.9);
     return { x: cx - w / 2, y: cy - h / 2, w, h };
   }
-  const bb = bboxOf(state.items);
+  const bb = workspaceContentBBox();
   const pad = WORKSPACE_PAD;
   return { x: bb.x - pad, y: bb.y - pad, w: bb.w + pad * 2, h: bb.h + pad * 2 };
 }
@@ -2766,6 +2780,7 @@ function setRectFromTopLeftBoard(it, topLeft, w, h) {
   const c = rotateVec(w / 2, h / 2, a);
   const cx = topLeft[0] + c.x, cy = topLeft[1] + c.y;
   it.x = cx - w / 2; it.y = cy - h / 2; it.w = w; it.h = h;
+  invalidateWorkspaceBBox();
 }
 // build a rect from a sub-rectangle in the start rect's local frame;
 // preserves rotation and keeps the untouched edges fixed in board space
@@ -2776,6 +2791,7 @@ function positionFromLocalRect(it, r, x0, y0, x1, y1) {
   it.w = nw; it.h = nh;
   it.x = center[0] - nw / 2;
   it.y = center[1] - nh / 2;
+  invalidateWorkspaceBBox();
 }
 function cropOf(it) {
   const c = it.crop || {};
@@ -2855,6 +2871,66 @@ function bboxOf(items) {
     x2 = Math.max(x2, b.x + b.w); y2 = Math.max(y2, b.y + b.h);
   }
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+function workspaceContentBBox() {
+  if (!workspaceBBoxCache) workspaceBBoxCache = bboxOf(state.items);
+  return workspaceBBoxCache;
+}
+
+const VIEWPORT_CULL_BUFFER = 200;
+
+function expandedViewportRect(w, h) {
+  return {
+    l: -VIEWPORT_CULL_BUFFER,
+    t: -VIEWPORT_CULL_BUFFER,
+    r: w + VIEWPORT_CULL_BUFFER,
+    b: h + VIEWPORT_CULL_BUFFER,
+  };
+}
+
+function isItemVisible(it, viewport) {
+  const r = itemUiRect(it);
+  const { tx, ty, s } = state.view;
+  const a = rotRad(it);
+  let l, t, rr, bb;
+  if (a) {
+    const cx = (r.x + r.w / 2) * s + tx;
+    const cy = (r.y + r.h / 2) * s + ty;
+    const hw = Math.abs(r.w * s) / 2;
+    const hh = Math.abs(r.h * s) / 2;
+    const ca = Math.abs(Math.cos(a));
+    const sa = Math.abs(Math.sin(a));
+    const ax = ca * hw + sa * hh;
+    const ay = sa * hw + ca * hh;
+    l = cx - ax; rr = cx + ax; t = cy - ay; bb = cy + ay;
+  } else {
+    l = r.x * s + tx;
+    t = r.y * s + ty;
+    rr = l + r.w * s;
+    bb = t + r.h * s;
+  }
+  return l <= viewport.r && rr >= viewport.l && t <= viewport.b && bb >= viewport.t;
+}
+
+function collectVisibleItems(viewport) {
+  drawVisibleItems.length = 0;
+  drawVisibleItemIds.clear();
+  for (const it of state.items) {
+    if (!isItemVisible(it, viewport)) continue;
+    drawVisibleItems.push(it);
+    drawVisibleItemIds.add(it.id);
+  }
+}
+
+function collectDrawSelection() {
+  drawSelectedItems.length = 0;
+  drawVisibleSelectedItems.length = 0;
+  for (const it of state.items) {
+    if (!state.sel.has(it.id)) continue;
+    drawSelectedItems.push(it);
+    if (drawVisibleItemIds.has(it.id)) drawVisibleSelectedItems.push(it);
+  }
 }
 
 /* ================= persistence (IndexedDB) ================= */
@@ -3086,6 +3162,7 @@ function resetLiveSessionToBlank() {
   closeImageRecordBitmaps(images);
   images.clear();
   state.items = [];
+  invalidateWorkspaceBBox();
   state.sel.clear();
   state.boardGray = false;
   state.snapEnabled = false;
@@ -3160,6 +3237,7 @@ async function restoreSession() {
     nextImages = new Map();
 
     state.items = nextItems;
+    invalidateWorkspaceBBox();
     state.boardGray = !!meta.boardGray;
     state.snapEnabled = !!meta.snapEnabled;
     state.gridAppearance = normalizeGridAppearance(meta.gridAppearance) || 'dots';
@@ -3291,9 +3369,11 @@ function restoreSnap(raw) {
     }
     for (const g of state.items.filter(isGroupItem)) syncGroupFrame(g);
     reconcileGroupOrder();
+    invalidateWorkspaceBBox();
     return;
   }
   state.items = (s.items || []).map(normalizeItem);
+  invalidateWorkspaceBBox();
   state.boardGray = !!s.boardGray;
   state.snapEnabled = !!s.snapEnabled;
   const ga = normalizeGridAppearance(s.gridAppearance);
@@ -3303,6 +3383,7 @@ function restoreSnap(raw) {
   }
   for (const g of state.items.filter(isGroupItem)) syncGroupFrame(g);
   reconcileGroupOrder();
+  invalidateWorkspaceBBox();
 }
 async function restoreBitmapSnap(bitmapSnap) {
   if (!bitmapSnap) return;
@@ -3411,7 +3492,12 @@ function gridBBox(items, cols, gap) {
 
 function packItems(items, gap = 24) {
   if (!items.length) return;
-  if (items.length === 1) { items[0].x = 0; items[0].y = 0; return; }
+  if (items.length === 1) {
+    items[0].x = 0;
+    items[0].y = 0;
+    invalidateWorkspaceBBox();
+    return;
+  }
 
   const sorted = [...items].sort((a, b) => (b.w * b.h) - (a.w * a.h));
   const n = sorted.length;
@@ -3442,6 +3528,7 @@ function packItems(items, gap = 24) {
     }
     y += rowH + gap;
   }
+  invalidateWorkspaceBBox();
 }
 
 function centerItemsAt(items, cx, cy) {
@@ -3450,6 +3537,7 @@ function centerItemsAt(items, cx, cy) {
   const dx = cx - (bb.x + bb.w / 2);
   const dy = cy - (bb.y + bb.h / 2);
   for (const it of items) { it.x += dx; it.y += dy; }
+  invalidateWorkspaceBBox();
 }
 
 async function addImages(blobs, atBoardPos) {
@@ -3483,6 +3571,7 @@ async function addImages(blobs, atBoardPos) {
     it.y = cy - it.h / 2;
   }
   if (added.length) {
+    invalidateWorkspaceBBox();
     state.sel = new Set(added.map(a => a.id));
     updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
   }
@@ -4162,6 +4251,7 @@ function pasteNotesFromClipboard(noteDefs, pos) {
     y: cy + (def.y - anchorY),
   }));
   state.items.push(...clones);
+  invalidateWorkspaceBBox();
   state.sel = new Set(clones.map(c => c.id));
   cropItemId = null;
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
@@ -4272,6 +4362,7 @@ function pasteTextAsNote(text, pos) {
   note.x = cx - note.w / 2;
   note.y = cy - note.h / 2;
   state.items.push(note);
+  invalidateWorkspaceBBox();
   state.sel = new Set([note.id]);
   cropItemId = null;
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
@@ -4454,6 +4545,7 @@ function deleteSelection() {
     if (!childrenOfGroup(gid).length) state.items = state.items.filter(i => i.id !== gid);
     else syncGroupFrame(g);
   }
+  invalidateWorkspaceBBox();
   state.sel.clear();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
 }
@@ -4493,6 +4585,7 @@ function duplicateSelection() {
     return normalizeItem({ ...it, id: uid(), x: it.x + off, y: it.y + off });
   });
   state.items.push(...clones);
+  invalidateWorkspaceBBox();
   state.sel = new Set(clones.map(c => c.id));
   finishNoteEdit();
   exitCropMode();
@@ -4520,6 +4613,7 @@ function createNote(pos) {
   note.x = cx - note.w / 2;
   note.y = cy - note.h / 2;
   state.items.push(note);
+  invalidateWorkspaceBBox();
   state.sel = new Set([note.id]);
   cropItemId = null;
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
@@ -5413,6 +5507,7 @@ function fitNoteToText(it, anchorCenter = false) {
   const hug = noteHugSize(it);
   it.w = hug.w; it.h = hug.h;
   if (anchorCenter) { it.x = cx - it.w / 2; it.y = cy - it.h / 2; }
+  invalidateWorkspaceBBox();
 }
 
 function syncNoteFmtUi(it) {
@@ -5636,6 +5731,7 @@ function bringItemsToFront(ids) {
   if (picked.every((it, i) => state.items.indexOf(it) === topStart + i)) return false;
   state.items = [...rest, ...picked];
   reconcileGroupOrder();
+  invalidateWorkspaceBBox();
   return true;
 }
 
@@ -5656,6 +5752,7 @@ function alignSelectionHorizontal() {
     x += it.w + gap;
   }
   syncGroupFramesForItems(items);
+  invalidateWorkspaceBBox();
   scheduleSave();
   invalidate();
 }
@@ -5675,6 +5772,7 @@ function alignSelectionVertical() {
     y += it.h + gap;
   }
   syncGroupFramesForItems(items);
+  invalidateWorkspaceBBox();
   scheduleSave();
   invalidate();
 }
@@ -5692,6 +5790,7 @@ function resizeImagePreserveCenter(it, nw, nh) {
   it.h = nh;
   it.x = cx - nw / 2;
   it.y = cy - nh / 2;
+  invalidateWorkspaceBBox();
 }
 
 // Match display size to the smallest image in the selection (bigger images shrink).
@@ -5723,6 +5822,7 @@ function nudge(dx, dy) {
       it.x += dx; it.y += dy;
     }
   }
+  invalidateWorkspaceBBox();
   scheduleSave(); invalidate();
 }
 
@@ -5731,6 +5831,7 @@ function rotateSelection(deg) {
   if (!items.length) return;
   pushUndo();
   for (const it of items) it.rot = ((it.rot || 0) + deg + 360) % 360;
+  invalidateWorkspaceBBox();
   scheduleSave(); invalidate();
 }
 
@@ -5815,6 +5916,7 @@ function resetCrop(it) {
     const scale = Math.max(scaleX, scaleY);
     it.w = im.w * scale; it.h = im.h * scale;
     it.x = cx - it.w / 2; it.y = cy - it.h / 2;
+    invalidateWorkspaceBBox();
   }
   it.crop = { l: 0, t: 0, r: 1, b: 1 };
   scheduleSave(); invalidate();
@@ -6021,6 +6123,7 @@ async function clearBoard() {
   if (!ok) return;
   pushUndo();
   state.items = [];
+  invalidateWorkspaceBBox();
   state.sel.clear();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
 }
@@ -6704,6 +6807,7 @@ async function openNewBoard() {
   }
   suppressBoardDirty = true;
   state.items = [];
+  invalidateWorkspaceBBox();
   cachedCurrentBoardThumb = null;
   state.sel.clear();
   state.boardGray = false;
@@ -6807,6 +6911,7 @@ async function applyBoardPayload(j, meta = {}) {
     nextImages = new Map();
 
     state.items = nextItems;
+    invalidateWorkspaceBBox();
     state.boardGray = !!j.boardGray;
     state.snapEnabled = !!j.snapEnabled;
     const ga = normalizeGridAppearance(j.gridAppearance);
@@ -7313,6 +7418,7 @@ function roundItemBoardGeom(it) {
   it.h = Math.round(it.h * 100) / 100;
   it.x = Math.round(it.x * 100) / 100;
   it.y = Math.round(it.y * 100) / 100;
+  invalidateWorkspaceBBox();
 }
 
 function drawBoardItem(g, it) {
@@ -7516,6 +7622,7 @@ function draw() {
   const dpr = devicePixelRatio || 1;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const { w: W, h: H } = boardSize();
+  const viewport = expandedViewportRect(W, H);
   ctx.fillStyle = BG_VOID;
   ctx.fillRect(0, 0, W, H);
 
@@ -7533,19 +7640,20 @@ function draw() {
   ctx.scale(s, s);
   ctx.imageSmoothingEnabled = renderQuality !== 'fast';
   ctx.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
-  for (const it of state.items) {
+  collectVisibleItems(viewport);
+  for (const it of drawVisibleItems) {
     if (isGroupItem(it)) {
       drawGroupFrame(it, { pulse: it.id === dropTargetGroupId });
       drawGroupLabel(it);
     }
   }
-  for (const it of state.items) {
+  for (const it of drawVisibleItems) {
     if (!isNoteItem(it) && !isArrowItem(it) && !isGroupItem(it)) drawBoardItem(ctx, it);
   }
-  for (const it of state.items) {
+  for (const it of drawVisibleItems) {
     if (isNoteItem(it)) drawBoardItem(ctx, it);
   }
-  for (const it of state.items) {
+  for (const it of drawVisibleItems) {
     if (isArrowItem(it)) drawBoardItem(ctx, it);
   }
   if (mode?.type === 'arrowCreate') {
@@ -7557,18 +7665,21 @@ function draw() {
   }
   ctx.restore();
 
-  const selItems = selectedItems();
-  const lightDrag = lightDragPreview && mode?.type === 'move' && mode.pushed && state.sel.size > 1;
-  if (state.sel.size > 1 && !lightDrag) {
-    for (const it of selItems) drawSelectionOutline(it);
-    const pts = selectionBBoxScreenPts();
+  collectDrawSelection();
+  const selectedCount = drawSelectedItems.length;
+  const lightDrag = lightDragPreview && mode?.type === 'move' && mode.pushed && selectedCount > 1;
+  if (selectedCount > 1 && !lightDrag) {
+    for (const it of drawVisibleSelectedItems) drawSelectionOutline(it);
+    const pts = selectionBBoxScreenPts(drawSelectedItems);
     if (pts) drawSelectionUi(pts);
-  } else if (state.sel.size === 1) {
-    const it = selItems[0];
-    if (isGroupItem(it)) drawResizeUi(it);
-    else if (cropItemId === it.id) drawCropUi(it);
-    else if (isArrowItem(it)) drawArrowSelectionUi(it);
-    else drawResizeUi(it);
+  } else if (selectedCount === 1) {
+    const it = drawSelectedItems[0];
+    if (drawVisibleItemIds.has(it.id)) {
+      if (isGroupItem(it)) drawResizeUi(it);
+      else if (cropItemId === it.id) drawCropUi(it);
+      else if (isArrowItem(it)) drawArrowSelectionUi(it);
+      else drawResizeUi(it);
+    }
   }
   if (marquee) {
     const x = Math.min(marquee.sx, marquee.ex), y = Math.min(marquee.sy, marquee.ey);
@@ -7665,15 +7776,14 @@ function cropEdgeAt(sx, sy) {
   return null;
 }
 
-function selectionBBoxRect() {
-  const items = selectedItems();
+function selectionBBoxRect(items = selectedItems()) {
   if (items.length < 2) return null;
   const bb = bboxOf(items);
   return { x: bb.x, y: bb.y, w: bb.w, h: bb.h, rot: 0 };
 }
 
-function selectionBBoxScreenPts() {
-  const r = selectionBBoxRect();
+function selectionBBoxScreenPts(items = selectedItems()) {
+  const r = selectionBBoxRect(items);
   if (!r) return null;
   return [
     toScreen(r.x, r.y),
@@ -7741,6 +7851,7 @@ function correctImageBoxAspect(it) {
   it.h = nh;
   it.x = cx - nw / 2;
   it.y = cy - nh / 2;
+  invalidateWorkspaceBBox();
 }
 
 function imageCornerScaleK(r, corner, lx, ly, ar) {
@@ -7810,6 +7921,7 @@ function applyGroupProportionalResize(orig, r, kIn, anchorLx, anchorLy) {
     roundItemBoardGeom(it);
     if (note && noteEditId === it.id) positionNoteEditor();
   }
+  invalidateWorkspaceBBox();
 }
 
 function handleAt(sx, sy) {
@@ -8332,6 +8444,7 @@ window.addEventListener('pointermove', e => {
         }
       }
     }
+    invalidateWorkspaceBBox();
     syncMovedGroupFrames(mode.orig);
     const movingIds = new Set(mode.orig.map(o => o.id));
     const target = findDropTargetGroup(movingIds);
@@ -8438,6 +8551,7 @@ window.addEventListener('pointermove', e => {
     const it = mode.it;
     if (mode.endpoint === 'start') { it.x1 = bx; it.y1 = by; }
     else { it.x2 = bx; it.y2 = by; }
+    invalidateWorkspaceBBox();
     scheduleSave(); invalidate();
   } else if (mode.type === 'draw') {
     const it = byId(mode.it);
@@ -8486,6 +8600,7 @@ window.addEventListener('pointerup', e => {
     }
     dropTargetGroupId = null;
     state.items = state.items.filter(i => !isGroupItem(i) || childrenOfGroup(i.id).length > 0);
+    invalidateWorkspaceBBox();
     syncMovedGroupFrames(mode.orig);
     scheduleSave();
     invalidate();
@@ -8508,6 +8623,7 @@ window.addEventListener('pointerup', e => {
         strokeWidth: clamp(drawWidth, 1, 12),
       });
       state.items.push(arrow);
+      invalidateWorkspaceBBox();
       state.sel = new Set([arrow.id]);
       updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
     }
