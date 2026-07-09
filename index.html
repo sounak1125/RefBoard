@@ -911,34 +911,22 @@ body.board-active #whatsNewNotice{ display:none; }
 }
 #ctxSub.show{ display:block; }
 
-/* ---------- note link hover popover ---------- */
+/* ---------- note link hover tooltip ---------- */
 #noteLinkPop{
-  position:fixed; z-index:55; display:none;
-  max-width:min(380px, calc(100vw - 24px));
-  background:#191b21; border:1px solid rgba(255,255,255,.09); border-radius:10px;
-  padding:0; box-shadow:0 14px 44px rgba(0,0,0,.55);
-  backdrop-filter:blur(16px); overflow:hidden;
+  position:fixed; z-index:55; display:none; pointer-events:none;
+  max-width:min(240px, calc(100vw - 24px));
+  background:#191b21; border:1px solid rgba(255,255,255,.09); border-radius:8px;
+  padding:6px 9px; box-shadow:0 8px 24px rgba(0,0,0,.45);
 }
-#noteLinkPop.show{ display:block; pointer-events:auto; }
-.note-link-pop-body{
-  padding:10px 12px 8px;
+#noteLinkPop.show{ display:block; }
+.note-link-pop-host{
+  display:block; font-size:11px; font-weight:400; color:var(--dim);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.35;
 }
-.note-link-pop-label{
-  display:block; font-size:12px; font-weight:600; color:var(--txt);
-  margin-bottom:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+.note-link-pop-hint{
+  display:block; font-size:10px; font-weight:700; color:var(--txt);
+  margin-top:2px; line-height:1.3; white-space:nowrap;
 }
-.note-link-pop-url{
-  display:block; font-size:11px; color:var(--dim); line-height:1.4;
-  word-break:break-all; margin-bottom:8px;
-}
-.note-link-pop-open{
-  display:flex; align-items:center; justify-content:center; gap:6px;
-  width:100%; padding:8px 12px; border:0; border-top:1px solid rgba(255,255,255,.08);
-  background:rgba(90,162,255,.12); color:var(--acc);
-  font-size:12px; font-weight:600; cursor:pointer;
-  font-family:inherit;
-}
-.note-link-pop-open:hover{ background:rgba(90,162,255,.22); color:#bfe3ff; }
 
 /* ---------- modals ---------- */
 .modal{
@@ -947,7 +935,7 @@ body.board-active #whatsNewNotice{ display:none; }
   background:rgba(8,9,12,.55); backdrop-filter:blur(3px);
 }
 .modal.show{ display:flex; }
-#autosaveIntervalModal, #unsavedModal, #confirmModal{ z-index:85; }
+#autosaveIntervalModal, #unsavedModal, #confirmModal, #noteLinkModal{ z-index:85; }
 .card{
   background:var(--card); border:1px solid rgba(255,255,255,.09); border-radius:16px;
   padding:22px 24px; width:430px; max-width:calc(100vw - 40px);
@@ -1170,6 +1158,20 @@ body.board-active #whatsNewNotice{ display:none; }
   border:none; background:transparent; color:var(--mut); font-size:20px; line-height:1; cursor:pointer;
 }
 .card.confirm-card .modal-x:hover{ background:#2a2e3a; color:#fff; }
+.card.note-link-card{ width:420px; padding:22px 26px 20px; position:relative; }
+.card.note-link-card h3{ text-align:center; margin-bottom:14px; }
+.card.note-link-card .modal-x{
+  position:absolute; top:14px; right:14px; width:28px; height:28px; border-radius:8px;
+  border:none; background:transparent; color:var(--mut); font-size:20px; line-height:1; cursor:pointer;
+}
+.card.note-link-card .modal-x:hover{ background:#2a2e3a; color:#fff; }
+.card.note-link-card .note-link-url{
+  width:100%; padding:8px 10px; border-radius:9px;
+  border:1px solid var(--line); background:#1f222b; color:var(--txt);
+  font-size:12.5px; outline:none; box-sizing:border-box;
+}
+.card.note-link-card .note-link-url:focus{ border-color:rgba(90,162,255,.55); }
+.card.note-link-card .row-btns{ justify-content:center; }
 .confirm-danger{ background:#c45c6a; border-color:#c45c6a; color:#fff; font-weight:600; }
 .confirm-danger:hover{ filter:brightness(1.08); }
 .settings2-footer{ margin-top:auto; padding-top:10px; border-top:1px solid var(--line); }
@@ -1446,10 +1448,12 @@ body.board-active #whatsNewNotice{ display:none; }
   border-radius:0; padding:0;
   font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
   outline:none; background:transparent; line-height:1.45;
-  overflow:auto; box-sizing:border-box;
+  overflow:hidden; box-sizing:border-box;
   white-space:pre; word-wrap:normal; overflow-wrap:normal;
   text-size-adjust:none; -webkit-text-size-adjust:none;
+  scrollbar-width:none;
 }
+#noteEditor::-webkit-scrollbar{ display:none; }
 </style>
 </head>
 <body>
@@ -1720,11 +1724,8 @@ body.board-active #whatsNewNotice{ display:none; }
 <div id="ctxAppear"></div>
 <div id="ctxSub"></div>
 <div id="noteLinkPop" class="note-link-pop" aria-hidden="true">
-  <div class="note-link-pop-body">
-    <span class="note-link-pop-label"></span>
-    <span class="note-link-pop-url"></span>
-  </div>
-  <button type="button" class="note-link-pop-open">Open in browser</button>
+  <span class="note-link-pop-host"></span>
+  <span class="note-link-pop-hint">Ctrl + Click to open</span>
 </div>
 
 <div id="noteOverlay" class="note-overlay">
@@ -1879,6 +1880,18 @@ body.board-active #whatsNewNotice{ display:none; }
     <div class="row-btns">
       <button type="button" class="btn" id="confirmCancel">Cancel</button>
       <button type="button" class="btn confirm-danger" id="confirmOk">Clear</button>
+    </div>
+  </div>
+</div>
+
+<div id="noteLinkModal" class="modal">
+  <div class="card note-link-card">
+    <button type="button" class="modal-x" id="noteLinkClose" title="Close">×</button>
+    <h3>Insert link</h3>
+    <input type="text" id="noteLinkUrl" class="note-link-url" value="https://" spellcheck="false" autocomplete="off">
+    <div class="row-btns">
+      <button type="button" class="btn" id="noteLinkCancel">Cancel</button>
+      <button type="button" class="btn primary" id="noteLinkInsert">Insert</button>
     </div>
   </div>
 </div>
@@ -5437,18 +5450,45 @@ function isNoteUrl(s) {
   return NOTE_URL_RE.test(String(s ?? '').trim());
 }
 
-function insertNoteLink() {
+let noteLinkResolve = null;
+
+function promptNoteLinkUrl(initial = 'https://') {
+  return new Promise(resolve => {
+    noteLinkResolve = resolve;
+    const input = $('#noteLinkUrl');
+    if (input) {
+      input.value = initial;
+      requestAnimationFrame(() => {
+        input.focus();
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
+      });
+    }
+    noteLinkModal.classList.add('show');
+  });
+}
+
+function closeNoteLinkModal(url) {
+  noteLinkModal.classList.remove('show');
+  const resolve = noteLinkResolve;
+  noteLinkResolve = null;
+  if (resolve) resolve(url);
+}
+
+async function insertNoteLink() {
   const ed = $('#noteEditor');
   if (!ed) return;
   const selStart = ed.selectionStart, selEnd = ed.selectionEnd;
   const sel = ed.value.slice(selStart, selEnd).trim();
-  let url = prompt('Link URL', 'https://');
-  if (url == null) return;
-  url = url.trim();
+  const urlRaw = await promptNoteLinkUrl('https://');
+  ed.focus();
+  ed.selectionStart = selStart;
+  ed.selectionEnd = selEnd;
+  if (urlRaw == null) return;
+  let url = urlRaw.trim();
   if (!url) return;
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  const label = sel || url;
-  insertTextAtCursor(ed, `[${label}](${url})`);
+  insertTextAtCursor(ed, sel ? `[${sel}](${url})` : url);
   refreshNoteEdit();
 }
 
@@ -5459,7 +5499,7 @@ function tryPasteNoteLink(text) {
   if (!ed) return false;
   const selStart = ed.selectionStart, selEnd = ed.selectionEnd;
   const sel = ed.value.slice(selStart, selEnd).trim();
-  const md = sel ? `[${sel}](${t})` : `[${t}](${t})`;
+  const md = sel ? `[${sel}](${t})` : t;
   insertTextAtCursor(ed, md);
   refreshNoteEdit();
   return true;
@@ -5525,6 +5565,7 @@ const NOTE_PAD = { x: 10, y: 7 };
 const NOTE_INNER_MIN = 1e-6;
 const NOTE_MIN = { w: 64, h: 36 };
 
+/* NOTE_PARSERS_BEGIN */
 function parseNoteLine(line) {
   const raw = String(line ?? '');
   let m = raw.match(/^(\[[ xX]\])\s/);
@@ -5535,6 +5576,23 @@ function parseNoteLine(line) {
   if (m) return { type: 'bullet', body: raw.slice(m[0].length) };
   return { type: 'plain', body: raw };
 }
+
+function parseNoteLinkSegments(text) {
+  const src = String(text ?? '');
+  const segs = [];
+  const re = /\[([^\]]*)\]\(([^)]+)\)|(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
+  let last = 0, m;
+  while ((m = re.exec(src)) !== null) {
+    if (m.index > last) segs.push({ type: 'text', text: src.slice(last, m.index) });
+    if (m[1] !== undefined) segs.push({ type: 'link', text: m[1], url: m[2] });
+    else segs.push({ type: 'link', text: m[3], url: m[3] });
+    last = re.lastIndex;
+  }
+  if (last < src.length) segs.push({ type: 'text', text: src.slice(last) });
+  if (!segs.length) segs.push({ type: 'text', text: src });
+  return segs;
+}
+/* NOTE_PARSERS_END */
 
 function noteListGutter(size) {
   return size * 1.35;
@@ -5553,22 +5611,6 @@ function stripListPrefix(line) {
 
 function stripNoteMarkdown(text) {
   return String(text ?? '').replace(/\[([^\]]*)\]\([^)]+\)/g, '$1');
-}
-
-function parseNoteLinkSegments(text) {
-  const src = String(text ?? '');
-  const segs = [];
-  const re = /\[([^\]]*)\]\(([^)]+)\)|(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
-  let last = 0, m;
-  while ((m = re.exec(src)) !== null) {
-    if (m.index > last) segs.push({ type: 'text', text: src.slice(last, m.index) });
-    if (m[1] !== undefined) segs.push({ type: 'link', text: m[1], url: m[2] });
-    else segs.push({ type: 'link', text: m[3], url: m[3] });
-    last = re.lastIndex;
-  }
-  if (last < src.length) segs.push({ type: 'text', text: src.slice(last) });
-  if (!segs.length) segs.push({ type: 'text', text: src });
-  return segs;
 }
 
 function noteTextMeasure(g, text) {
@@ -5900,7 +5942,6 @@ function startNoteEdit(it, clientX, clientY) {
   if (!it || !isNoteItem(it)) return;
   if (noteEditId && noteEditId !== it.id) finishNoteEdit();
   hideNoteLinkPop();
-  noteLinkPopHovered = false;
   noteEditId = it.id;
   noteEditorStyleKey = '';
   state.sel = new Set([it.id]);
@@ -7502,9 +7543,7 @@ function noteLinkHitAt(it, lx, ly) {
 }
 
 let noteLinkHoverKey = '';
-let noteLinkHoverUrl = '';
 let noteLinkHideTimer = 0;
-let noteLinkPopHovered = false;
 
 function cancelNoteLinkHide() {
   clearTimeout(noteLinkHideTimer);
@@ -7512,14 +7551,11 @@ function cancelNoteLinkHide() {
 
 function scheduleNoteLinkHide() {
   cancelNoteLinkHide();
-  noteLinkHideTimer = setTimeout(() => {
-    if (!noteLinkPopHovered) hideNoteLinkPop();
-  }, 220);
+  noteLinkHideTimer = setTimeout(() => hideNoteLinkPop(), 120);
 }
 
 function hideNoteLinkPop() {
   noteLinkHoverKey = '';
-  noteLinkHoverUrl = '';
   cancelNoteLinkHide();
   const pop = $('#noteLinkPop');
   if (!pop) return;
@@ -7527,43 +7563,55 @@ function hideNoteLinkPop() {
   pop.setAttribute('aria-hidden', 'true');
 }
 
-function showNoteLinkPop(clientX, clientY, link) {
+function noteLinkHostname(url) {
+  const s = String(url ?? '').trim();
+  try {
+    const host = new URL(s).hostname;
+    return host.replace(/^www\./i, '') || s;
+  } catch {
+    return s.replace(/^https?:\/\//i, '').split(/[/?#]/)[0] || s;
+  }
+}
+
+function noteLinkAnchorScreen(it, link) {
+  const r = itemUiRect(it);
+  const fr = { x: r.x, y: r.y, w: r.w, h: r.h, rot: it.rot || 0 };
+  const [bx, by] = localToBoardRect(fr, link.x1, link.y2);
+  const [sx, sy] = toScreen(bx, by);
+  const br = boardRect();
+  return [br.left + sx, br.top + sy];
+}
+
+function showNoteLinkPop(it, link) {
   cancelNoteLinkHide();
   const pop = $('#noteLinkPop');
-  if (!pop || !link) return;
-  noteLinkHoverUrl = link.url;
-  const labelEl = pop.querySelector('.note-link-pop-label');
-  const urlEl = pop.querySelector('.note-link-pop-url');
-  const label = (link.label || '').trim();
-  const showLabel = label && label !== link.url && !/^\[/.test(label);
-  if (labelEl) {
-    labelEl.textContent = showLabel ? label : 'Link';
-    labelEl.style.display = '';
-  }
-  if (urlEl) urlEl.textContent = link.url;
+  if (!pop || !it || !link) return;
+  const hostEl = pop.querySelector('.note-link-pop-host');
+  if (hostEl) hostEl.textContent = noteLinkHostname(link.url);
   pop.classList.add('show');
   pop.setAttribute('aria-hidden', 'false');
-  const pad = 12;
-  const offset = 10;
-  let left = clientX + offset;
-  let top = clientY - offset;
+  const [ax, ay] = noteLinkAnchorScreen(it, link);
+  const pad = 8;
+  const offsetX = 6;
+  const offsetY = 4;
+  let left = ax + offsetX;
+  let top = ay + offsetY;
   pop.style.left = left + 'px';
   pop.style.top = top + 'px';
   pop.style.visibility = 'hidden';
   const rect = pop.getBoundingClientRect();
-  top = clientY - rect.height - offset;
-  if (top < pad) top = clientY + offset;
   if (left + rect.width > innerWidth - pad) left = innerWidth - rect.width - pad;
   if (left < pad) left = pad;
-  if (top + rect.height > innerHeight - pad) top = innerHeight - rect.height - pad;
+  if (top + rect.height > innerHeight - pad) top = ay - rect.height - offsetY;
+  if (top < pad) top = pad;
   pop.style.left = left + 'px';
   pop.style.top = top + 'px';
   pop.style.visibility = '';
 }
 
 function updateNoteLinkHover(sx, sy) {
-  if (noteEditId || mode || tool === 'eyedropper' || noteLinkPopHovered) {
-    if (!noteLinkPopHovered) hideNoteLinkPop();
+  if (noteEditId || mode || tool === 'eyedropper') {
+    hideNoteLinkPop();
     return;
   }
   const it = itemAt(sx, sy);
@@ -7582,7 +7630,7 @@ function updateNoteLinkHover(sx, sy) {
   const key = `${it.id}:${hit.url}:${hit.x1}:${hit.y1}`;
   if (key !== noteLinkHoverKey) {
     noteLinkHoverKey = key;
-    showNoteLinkPop(...canvasToClient(sx, sy), hit);
+    showNoteLinkPop(it, hit);
   }
 }
 
@@ -8616,13 +8664,9 @@ canvas.addEventListener('pointerdown', async e => {
       const [bx, by] = toBoard(sx, sy);
       const [lx, ly] = boardToItemLocal(it, bx, by);
       const linkHit = noteLinkHitAt(it, lx, ly);
-      if (linkHit) {
-        showNoteLinkPop(e.clientX, e.clientY, linkHit);
-        if (!state.sel.has(it.id)) {
-          state.sel = new Set([it.id]);
-          updateSelBar();
-          invalidate();
-        }
+      if (linkHit && e.ctrlKey) {
+        e.preventDefault();
+        void openNoteLink(linkHit.url);
         return;
       }
       const chkLine = noteChecklistHitAt(it, lx, ly);
@@ -9478,9 +9522,12 @@ window.addEventListener('keydown', e => {
   if (helpModal.classList.contains('show') || exportModal.classList.contains('show')
       || exportImagesModal.classList.contains('show') || settingsModal.classList.contains('show')
       || unsavedModal.classList.contains('show') || autosaveIntervalModal.classList.contains('show')
-      || confirmModal.classList.contains('show') || whatsNewModal.classList.contains('show')) {
+      || confirmModal.classList.contains('show') || whatsNewModal.classList.contains('show')
+      || noteLinkModal.classList.contains('show')) {
     if (k === 'escape') {
-      if (autosaveIntervalModal.classList.contains('show')) {
+      if (noteLinkModal.classList.contains('show')) {
+        closeNoteLinkModal(null);
+      } else if (autosaveIntervalModal.classList.contains('show')) {
         closeAutosaveIntervalModal(null);
       } else if (unsavedModal.classList.contains('show')) {
         hideUnsavedModal('cancel');
@@ -9496,6 +9543,11 @@ window.addEventListener('keydown', e => {
       }
     }
     if (k === 'enter' && exportModal.classList.contains('show')) $('#expGo').click();
+    if (k === 'enter' && noteLinkModal.classList.contains('show')) {
+      e.preventDefault();
+      const v = ($('#noteLinkUrl')?.value || '').trim();
+      closeNoteLinkModal(v || null);
+    }
     return;
   }
 
@@ -9575,6 +9627,7 @@ const exportImagesModal = $('#exportImagesModal');
 const settingsModal = $('#settingsModal');
 const autosaveIntervalModal = $('#autosaveIntervalModal');
 const confirmModal = $('#confirmModal');
+const noteLinkModal = $('#noteLinkModal');
 const unsavedModal = $('#unsavedModal');
 const whatsNewModal = $('#whatsNewModal');
 const savingOverlay = $('#savingOverlay');
@@ -10080,17 +10133,36 @@ $('#expImgFormat').addEventListener('change', updateExportNamePreview);
 $('#confirmOk').addEventListener('click', () => hideConfirm(true));
 $('#confirmCancel').addEventListener('click', () => hideConfirm(false));
 $('#confirmClose').addEventListener('click', () => hideConfirm(false));
+$('#noteLinkInsert')?.addEventListener('click', () => {
+  const v = ($('#noteLinkUrl')?.value || '').trim();
+  closeNoteLinkModal(v || null);
+});
+$('#noteLinkCancel')?.addEventListener('click', () => closeNoteLinkModal(null));
+$('#noteLinkClose')?.addEventListener('click', () => closeNoteLinkModal(null));
+$('#noteLinkUrl')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    e.stopPropagation();
+    const v = (e.target.value || '').trim();
+    closeNoteLinkModal(v || null);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeNoteLinkModal(null);
+  }
+});
 $('#whatsNewOpen').addEventListener('click', openWhatsNewModal);
 $('#whatsNewDismiss').addEventListener('click', () => { void dismissWhatsNewNotice(); });
 $('#whatsNewGotIt').addEventListener('click', hideWhatsNewModal);
 $('#whatsNewModalClose').addEventListener('click', hideWhatsNewModal);
-for (const m of [helpModal, exportModal, exportImagesModal, settingsModal, unsavedModal, autosaveIntervalModal, confirmModal, whatsNewModal])
+for (const m of [helpModal, exportModal, exportImagesModal, settingsModal, unsavedModal, autosaveIntervalModal, confirmModal, noteLinkModal, whatsNewModal])
   m.addEventListener('click', e => {
     if (e.target !== m) return;
     m.classList.remove('show');
     if (m === unsavedModal && unsavedResolve) hideUnsavedModal('cancel');
     if (m === autosaveIntervalModal && autosaveIntervalResolve) closeAutosaveIntervalModal(null);
     if (m === confirmModal && confirmResolve) hideConfirm(false);
+    if (m === noteLinkModal && noteLinkResolve) closeNoteLinkModal(null);
     if (m === whatsNewModal) hideWhatsNewModal();
   });
 
@@ -10163,32 +10235,15 @@ for (const [id] of [['#noteBold'], ['#noteItalic'], ['#noteUnderline']]) {
     refreshNoteEdit();
   });
 }
+$('#noteLink')?.addEventListener('mousedown', e => e.preventDefault());
 $('#noteLink')?.addEventListener('click', () => {
   const it = noteEditId ? byId(noteEditId) : null;
   if (!it) return;
-  insertNoteLink();
+  void insertNoteLink();
 });
 noteEd.addEventListener('keyup', () => noteListDd?.syncUi());
 noteEd.addEventListener('mouseup', () => noteListDd?.syncUi());
 noteEd.addEventListener('select', () => noteListDd?.syncUi());
-
-const noteLinkPopEl = $('#noteLinkPop');
-if (noteLinkPopEl) {
-  noteLinkPopEl.addEventListener('pointerenter', () => {
-    noteLinkPopHovered = true;
-    cancelNoteLinkHide();
-  });
-  noteLinkPopEl.addEventListener('pointerleave', () => {
-    noteLinkPopHovered = false;
-    scheduleNoteLinkHide();
-  });
-  noteLinkPopEl.querySelector('.note-link-pop-open')?.addEventListener('click', e => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (noteLinkHoverUrl) openNoteLink(noteLinkHoverUrl);
-    hideNoteLinkPop();
-  });
-}
 
 const THEMES = ['midnight', 'slate', 'graphite', 'pine', 'plum', 'dim'];
 function applyTheme(name) {

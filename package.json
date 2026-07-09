@@ -16,7 +16,8 @@
   },
   "scripts": {
     "start": "electron .",
-    "predist": "node scripts/sync-changelog.mjs",
+    "test": "node scripts/test-group-model.mjs && node scripts/test-note-roundtrip.mjs && node scripts/test-note-parsers.mjs",
+    "predist": "npm test && node scripts/sync-changelog.mjs",
     "dist": "electron-builder --win",
     "dist:publish": "electron-builder --win --publish always",
     "gen:icon": "node scripts/gen-icon.js",
