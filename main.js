@@ -50,6 +50,81 @@ async function saveRecentWorks(list) {
   await fs.writeFile(recentWorksPath(), JSON.stringify(list, null, 2), 'utf8');
 }
 
+function whatsNewStorePath() {
+  return path.join(app.getPath('userData'), 'whats-new.json');
+}
+
+function changelogPath() {
+  return path.join(__dirname, 'changelog.json');
+}
+
+function parseSemver(v) {
+  const m = String(v || '').trim().match(/^(\d+)\.(\d+)\.(\d+)/);
+  if (!m) return [0, 0, 0];
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+function semverGt(a, b) {
+  const pa = parseSemver(a);
+  const pb = parseSemver(b);
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] > pb[i]) return true;
+    if (pa[i] < pb[i]) return false;
+  }
+  return false;
+}
+
+async function loadWhatsNewStore() {
+  try {
+    const raw = await fs.readFile(whatsNewStorePath(), 'utf8');
+    const data = JSON.parse(raw);
+    return data && typeof data === 'object' ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveWhatsNewStore(data) {
+  await fs.mkdir(path.dirname(whatsNewStorePath()), { recursive: true });
+  await fs.writeFile(whatsNewStorePath(), JSON.stringify(data, null, 2), 'utf8');
+}
+
+let changelogCache = null;
+
+async function loadChangelog() {
+  if (changelogCache) return changelogCache;
+  try {
+    const raw = await fs.readFile(changelogPath(), 'utf8');
+    const data = JSON.parse(raw);
+    changelogCache = data && typeof data === 'object' ? data : {};
+  } catch {
+    changelogCache = {};
+  }
+  return changelogCache;
+}
+
+async function markWhatsNewSeen(version) {
+  await saveWhatsNewStore({ lastSeenVersion: version });
+}
+
+async function evaluateWhatsNew() {
+  const current = app.getVersion();
+  const store = await loadWhatsNewStore();
+  const lastSeen = store.lastSeenVersion ?? null;
+
+  if (lastSeen !== null && !semverGt(current, lastSeen)) {
+    return { show: false };
+  }
+
+  const changelog = await loadChangelog();
+  const highlights = changelog[current];
+  if (!Array.isArray(highlights) || !highlights.length) {
+    return { show: false };
+  }
+
+  return { show: true, version: current, highlights };
+}
+
 function notifyRenderer(msg) {
   if (!win) return;
   const safe = JSON.stringify(msg);
@@ -127,7 +202,7 @@ function setupIpc() {
       target = r.filePath;
     }
     await fs.writeFile(target, data, 'utf8');
-    refreshShellIcons();
+    refreshShellIcons(target);
     return { saved: true, filePath: target };
   });
 
@@ -200,6 +275,20 @@ function setupIpc() {
     return list;
   });
 
+  ipcMain.handle('remove-recent-work', async (_, filePath) => {
+    if (!filePath) return loadRecentWorks();
+    const resolved = path.resolve(filePath);
+    const id = recentIdForPath(resolved);
+    let list = await loadRecentWorks();
+    const removed = list.find(w => w.id === id || path.resolve(w.path) === resolved);
+    list = list.filter(w => w.id !== id && path.resolve(w.path) !== resolved);
+    if (removed?.thumbnail) {
+      await fs.unlink(path.join(thumbnailsDir(), removed.thumbnail)).catch(() => {});
+    }
+    await saveRecentWorks(list);
+    return list;
+  });
+
   ipcMain.handle('touch-recent-work-edited', async (_, filePath) => {
     if (!filePath) return loadRecentWorks();
     const resolved = path.resolve(filePath);
@@ -244,6 +333,28 @@ function setupIpc() {
     const img = clipboard.readImage();
     if (img.isEmpty()) return null;
     return img.toPNG().toString('base64');
+  });
+
+  const NOTE_CLIP_FORMAT = 'application/x-refboard-note+json';
+
+  ipcMain.handle('clipboard-write-notes', async (_, { payload, plainText } = {}) => {
+    try {
+      clipboard.write({ text: String(plainText ?? '') });
+      clipboard.writeBuffer(NOTE_CLIP_FORMAT, Buffer.from(String(payload ?? ''), 'utf8'));
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  ipcMain.handle('clipboard-read-notes', async () => {
+    try {
+      const buf = clipboard.readBuffer(NOTE_CLIP_FORMAT);
+      if (!buf?.length) return null;
+      return buf.toString('utf8');
+    } catch {
+      return null;
+    }
   });
 
   ipcMain.handle('open-external', async (_, url) => {
@@ -301,6 +412,13 @@ function setupIpc() {
     isPackaged: app.isPackaged,
   }));
 
+  ipcMain.handle('whats-new-check', () => evaluateWhatsNew());
+
+  ipcMain.handle('whats-new-dismiss', async () => {
+    await markWhatsNewSeen(app.getVersion());
+    return { ok: true };
+  });
+
   ipcMain.handle('updater-init', async (_, { checkOnStartup } = {}) => {
     if (!app.isPackaged || !checkOnStartup) return { ok: true, skipped: true };
     try {
@@ -351,9 +469,16 @@ function thumbnailHandlerPaths() {
   return { dll, script };
 }
 
-function refreshShellIcons() {
+function refreshShellIcons(filePath) {
   if (process.platform !== 'win32') return;
   try {
+    const escaped = filePath ? filePath.replace(/'/g, "''") : '';
+    const itemArg = filePath
+      ? `$item = [System.Runtime.InteropServices.Marshal]::StringToHGlobalUni('${escaped}'); `
+      : '';
+    const itemNotify = filePath
+      ? '[RefBoardShellNotify]::SHChangeNotify(0x00002000, 0x00001000, $item, [IntPtr]::Zero); '
+      : '';
     execFile('powershell.exe', [
       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command',
       `Add-Type @"
@@ -363,7 +488,7 @@ public static class RefBoardShellNotify {
   [DllImport(""shell32.dll"")] public static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
 }
 "@
-[RefBoardShellNotify]::SHChangeNotify(0x08000000, 0x00001000, [IntPtr]::Zero, [IntPtr]::Zero)`,
+${itemArg}${itemNotify}[RefBoardShellNotify]::SHChangeNotify(0x08000000, 0x00001000, [IntPtr]::Zero, [IntPtr]::Zero)`,
     ], { windowsHide: true }, () => {});
   } catch { /* ignore */ }
 }

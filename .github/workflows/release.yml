@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Sync in-app What's New changelog
+        run: node scripts/sync-changelog.mjs
+
       - name: Clean dist folder
         run: if (Test-Path dist) { Remove-Item -Recurse -Force dist }
 
@@ -70,8 +73,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = if ($env:GITHUB_REF -like 'refs/tags/*') { $env:GITHUB_REF.Substring(10) } else { git describe --tags --abbrev=0 }
-          $assets = gh release view $tag --json assets --jq '.assets[].name'
-          Write-Host $assets
-          if ($assets -notmatch 'latest.yml') { throw 'latest.yml missing from release' }
-          if ($assets -notmatch 'RefBoard-Setup-.*\.exe') { throw 'installer missing from release' }
-          if ($assets -notmatch '\.blockmap') { throw 'blockmap missing from release' }
+          $names = (gh release view $tag --json assets | ConvertFrom-Json).assets.name
+          Write-Host ($names -join ', ')
+          if ($names -notcontains 'latest.yml') { throw 'latest.yml missing from release' }
+          if (-not ($names | Where-Object { $_ -match '^RefBoard-Setup-.*\.exe$' })) { throw 'installer missing from release' }
+          if (-not ($names | Where-Object { $_ -match '\.blockmap$' })) { throw 'blockmap missing from release' }

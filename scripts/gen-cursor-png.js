@@ -1,107 +1,102 @@
 'use strict';
-const zlib = require('zlib');
+const fs = require('fs');
+const path = require('path');
+const { Resvg } = require('@resvg/resvg-js');
 
-const W = 32;
-const H = 32;
+const assetsDir = path.join(__dirname, '..', 'assets');
+const POINTER_HOTSPOT = { x: 4, y: 4 };
+const ERASER_HOTSPOT = { x: 12, y: 25 };
 
-function crc32(buf) {
-  let c = 0xffffffff;
-  const table = [];
-  for (let n = 0; n < 256; n++) {
-    let c2 = n;
-    for (let k = 0; k < 8; k++) c2 = (c2 & 1) ? (0xedb88320 ^ (c2 >>> 1)) : (c2 >>> 1);
-    table[n] = c2;
-  }
-  for (let i = 0; i < buf.length; i++) c = table[(c ^ buf[i]) & 0xff] ^ (c >>> 1);
-  return (c ^ 0xffffffff) >>> 0;
+const POINTER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <path d="M3 3 L3 22 L8.5 17 L11.5 27 L14 25.5 L11 16.5 L19 16.5 Z" fill="#f2f4f8" stroke="#15161c" stroke-width="1.35" stroke-linejoin="round"/>
+  <path d="M3 3 L8.5 17 L11 16.5 Z" fill="#5aa2ff" stroke="none"/>
+</svg>`;
+
+const ERASER_ICON = '<g transform="rotate(45 12 12)"><path d="M6.1 9Q4.5 9 4.5 10.6v2.8Q4.5 15 6.1 15h11.8Q19.5 15 19.5 13.4v-2.8Q19.5 9 17.9 9H6.1z" fill="#f5f6fa" stroke="#2a2e38" stroke-width="1.35" stroke-linejoin="round"/><path d="M9.75 9h8.15Q19.5 9 19.5 10.6v2.8Q19.5 15 17.9 15H9.75V9z" fill="#5aa2ff" stroke="none"/><line x1="9.75" y1="9" x2="9.75" y2="15" stroke="#2a2e38" stroke-width="1.15" stroke-linecap="round"/><path d="M18.2 9h1.3v6H18.2z" fill="#3a7fd4" opacity=".35" stroke="none"/><path d="M4.5 13.6h5.25v1.4H4.5z" fill="#bcc1cb" opacity=".4" stroke="none"/></g>';
+
+function renderSvg(svg, size) {
+  const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: size } });
+  return resvg.render().asPng();
 }
 
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length);
-  const typeB = Buffer.from(type);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(Buffer.concat([typeB, data])));
-  return Buffer.concat([len, typeB, data, crc]);
+function pngToCur(pngBuf, hotX, hotY, size = 32) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(2, 2);
+  header.writeUInt16LE(1, 4);
+  const entry = Buffer.alloc(16);
+  entry[0] = size >= 256 ? 0 : size;
+  entry[1] = size >= 256 ? 0 : size;
+  entry.writeUInt16LE(hotX, 4);
+  entry.writeUInt16LE(hotY, 6);
+  entry.writeUInt32LE(pngBuf.length, 8);
+  entry.writeUInt32LE(22, 12);
+  return Buffer.concat([header, entry, pngBuf]);
 }
 
-const verts = [
-  [2, 2], [2, 18], [6, 14], [8.5, 20], [11, 19], [8.5, 13], [13, 13],
-].map(([x, y]) => [x * (W / 22), y * (H / 22)]);
-
-function inPoly(x, y) {
-  let inside = false;
-  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
-    const [xi, yi] = verts[i];
-    const [xj, yj] = verts[j];
-    const intersect = ((yi > y) !== (yj > y))
-      && (x < ((xj - xi) * (y - yi)) / (yj - yi + 1e-9) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
+function cssCursorUrl(dataUrl, hotX, hotY, fallback) {
+  return `url("${dataUrl}") ${hotX} ${hotY}, ${fallback}`;
 }
 
-function distSeg(px, py, x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy + 1e-9)));
-  const nx = x1 + t * dx;
-  const ny = y1 + t * dy;
-  return Math.hypot(px - nx, py - ny);
+function writeCursorBundle(name, png32, hotX, hotY, fallback) {
+  const dataUrl = `data:image/png;base64,${png32.toString('base64')}`;
+  const cssValue = cssCursorUrl(dataUrl, hotX, hotY, fallback);
+  fs.writeFileSync(path.join(assetsDir, `${name}.png`), png32);
+  fs.writeFileSync(path.join(assetsDir, `${name}.cur`), pngToCur(png32, hotX, hotY));
+  return { dataUrl, cssValue };
 }
 
-function edgeDist(x, y) {
-  let min = Infinity;
-  for (let i = 0; i < verts.length; i++) {
-    const [x1, y1] = verts[i];
-    const [x2, y2] = verts[(i + 1) % verts.length];
-    min = Math.min(min, distSeg(x, y, x1, y1, x2, y2));
-  }
-  return min;
+async function main() {
+  fs.mkdirSync(assetsDir, { recursive: true });
+
+  const pointer32 = renderSvg(POINTER_SVG, 32);
+  const pointer64 = renderSvg(POINTER_SVG, 64);
+  const eraser32 = renderSvg(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">${ERASER_ICON}</svg>`,
+    32,
+  );
+
+  const pointer = writeCursorBundle('cursor-pointer', pointer32, POINTER_HOTSPOT.x, POINTER_HOTSPOT.y, 'auto');
+  const eraser = writeCursorBundle('cursor-eraser', eraser32, ERASER_HOTSPOT.x, ERASER_HOTSPOT.y, 'crosshair');
+  fs.writeFileSync(path.join(assetsDir, 'cursor-pointer@2x.png'), pointer64);
+
+  const pointerCurCss = `url("cursor-pointer.cur") ${POINTER_HOTSPOT.x} ${POINTER_HOTSPOT.y}, ${pointer.cssValue}`;
+  const eraserCurCss = `url("cursor-eraser.cur") ${ERASER_HOTSPOT.x} ${ERASER_HOTSPOT.y}, ${eraser.cssValue}`;
+  const pointerJsCss = `url("assets/cursor-pointer.cur") ${POINTER_HOTSPOT.x} ${POINTER_HOTSPOT.y}, ${pointer.cssValue}`;
+  const eraserJsCss = `url("assets/cursor-eraser.cur") ${ERASER_HOTSPOT.x} ${ERASER_HOTSPOT.y}, ${eraser.cssValue}`;
+
+  const css = `/* Generated by scripts/gen-cursor-png.js — do not edit */
+:root{
+  --cursor-pointer:${pointerCurCss};
+  --cursor-eraser:${eraserCurCss};
+}
+@media (pointer:fine){
+  *,*::before,*::after{ cursor:var(--cursor-pointer); }
+  #titlebar,#titlebarPeek,#titlebarDrag,#titlebarTitle,#titlebarIcon{ cursor:auto; }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([readonly]),
+  textarea{ cursor:text; }
+  .draw-cp-sv,.fmt-cp-sv{ cursor:crosshair; }
+}
+`;
+  fs.writeFileSync(path.join(assetsDir, 'cursors.css'), css);
+
+  const js = `/* Generated by scripts/gen-cursor-png.js — do not edit */
+window.CURSOR_POINTER = ${JSON.stringify(pointerJsCss)};
+window.CURSOR_ERASER = ${JSON.stringify(eraserJsCss)};
+window.DRAW_ERASER_CURSOR = window.CURSOR_ERASER;
+`;
+  fs.writeFileSync(path.join(assetsDir, 'cursor-data.js'), js);
+
+  fs.writeFileSync(path.join(__dirname, 'cursor-url.txt'), `${pointerCurCss}\n${eraserCurCss}\n`);
+  fs.writeFileSync(path.join(__dirname, 'cursor-test.png'), pointer32);
+
+  console.log('Wrote assets/cursor-pointer.png', pointer32.length, 'bytes');
+  console.log('Wrote assets/cursor-pointer.cur');
+  console.log('Wrote assets/cursor-eraser.png', eraser32.length, 'bytes');
+  console.log('Wrote assets/cursors.css + assets/cursor-data.js');
 }
 
-const rgba = new Uint8Array(W * H * 4);
-for (let y = 0; y < H; y++) {
-  for (let x = 0; x < W; x++) {
-    const cx = x + 0.5;
-    const cy = y + 0.5;
-    const fill = inPoly(cx, cy);
-    const edge = edgeDist(cx, cy);
-    const stroke = fill && edge < 1.35;
-    const i = (y * W + x) * 4;
-    if (stroke) {
-      rgba[i] = 0x15; rgba[i + 1] = 0x16; rgba[i + 2] = 0x1c; rgba[i + 3] = 255;
-    } else if (fill) {
-      rgba[i] = 0xf2; rgba[i + 1] = 0xf4; rgba[i + 2] = 0xf8; rgba[i + 3] = 255;
-    }
-  }
-}
-
-const raw = Buffer.alloc((W * 4 + 1) * H);
-for (let y = 0; y < H; y++) {
-  const row = y * (W * 4 + 1);
-  raw[row] = 0;
-  Buffer.from(rgba.subarray(y * W * 4, (y + 1) * W * 4)).copy(raw, row + 1);
-}
-
-const ihdr = Buffer.alloc(13);
-ihdr.writeUInt32BE(W, 0);
-ihdr.writeUInt32BE(H, 4);
-ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-
-const png = Buffer.concat([
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  chunk('IHDR', ihdr),
-  chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
-  chunk('IEND', Buffer.alloc(0)),
-]);
-
-const b64 = png.toString('base64');
-const tailBytes = png.slice(-12);
-const ok = tailBytes[4] === 0x49 && tailBytes[5] === 0x45 && tailBytes[6] === 0x4e && tailBytes[7] === 0x44;
-if (!ok) {
-  console.error('Invalid PNG IEND bytes', tailBytes.toString('hex'));
+main().catch((err) => {
+  console.error(err);
   process.exit(1);
-}
-require('fs').writeFileSync(require('path').join(__dirname, 'cursor-test.png'), png);
-console.log(`url("data:image/png;base64,${b64}") 2 2, default`);
+});

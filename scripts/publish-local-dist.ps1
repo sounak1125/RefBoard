@@ -1,11 +1,18 @@
 param(
   [string]$Tag,
   [string]$DistDir = "dist",
-  [string]$Repo = "sounak1125/RefBoard"
+  [string]$Repo = "sounak1125/RefBoard",
+  [switch]$ReplaceAssets
 )
 
-if (-not $env:GH_TOKEN) {
-  Write-Error 'Set GH_TOKEN to a GitHub personal access token with repo scope.'
+$ErrorActionPreference = 'Stop'
+$token = $env:GH_TOKEN
+if (-not $token) { $token = $env:GITHUB_TOKEN }
+if (-not $token) {
+  try { $token = (gh auth token 2>$null).Trim() } catch {}
+}
+if (-not $token) {
+  Write-Error 'Set GH_TOKEN, or run: gh auth login'
   exit 1
 }
 
@@ -23,34 +30,27 @@ foreach ($path in @($setup, $blockmap, $latest)) {
   }
 }
 
-$headers = @{
-  Authorization = "Bearer $env:GH_TOKEN"
-  Accept = 'application/vnd.github+json'
-  'X-GitHub-Api-Version' = '2022-11-28'
+$wantNames = @('latest.yml', (Split-Path $blockmap -Leaf), (Split-Path $setup -Leaf))
+
+gh release view $Tag --repo $Repo 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "Release $Tag not found on GitHub. Run npm run release:ship first."
+  exit 1
 }
 
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -Headers $headers -ErrorAction SilentlyContinue
-if (-not $release) {
-  $body = @{ tag_name = $Tag; name = "RefBoard $Tag"; generate_release_notes = $true } | ConvertTo-Json
-  $release = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$Repo/releases" -Headers $headers -Body $body -ContentType 'application/json'
-}
-
-function Upload-ReleaseAsset {
-  param([int]$ReleaseId, [string]$FilePath, [string]$AssetName)
-  $uploadHeaders = @{
-    Authorization = "Bearer $env:GH_TOKEN"
-    Accept = 'application/vnd.github+json'
-    'Content-Type' = 'application/octet-stream'
+if ($ReplaceAssets) {
+  $assetNames = gh release view $Tag --repo $Repo --json assets -q '.assets[].name'
+  foreach ($name in $assetNames) {
+    if ($wantNames -contains $name) { continue }
+    Write-Host "Deleting stray asset: $name"
+    gh release delete-asset $Tag $name --repo $Repo --yes 2>$null | Out-Null
   }
-  $uri = "https://uploads.github.com/repos/$Repo/releases/$ReleaseId/assets?name=$AssetName"
-  Invoke-RestMethod -Method Post -Uri $uri -Headers $uploadHeaders -InFile $FilePath | Out-Null
-  Write-Host "Uploaded $AssetName"
 }
 
-Upload-ReleaseAsset -ReleaseId $release.id -FilePath $latest -AssetName 'latest.yml'
-Upload-ReleaseAsset -ReleaseId $release.id -FilePath $blockmap -AssetName (Split-Path $blockmap -Leaf)
-Upload-ReleaseAsset -ReleaseId $release.id -FilePath $setup -AssetName (Split-Path $setup -Leaf)
+Write-Host "Uploading $($wantNames -join ', ')..."
+gh release upload $Tag $latest $blockmap $setup --repo $Repo --clobber
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$assets = (Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -Headers $headers).assets.name
+$assetNames = gh release view $Tag --repo $Repo --json assets -q '.assets[].name'
 Write-Host "Release $Tag assets:"
-$assets | ForEach-Object { Write-Host " - $_" }
+foreach ($name in $assetNames) { Write-Host " - $name" }

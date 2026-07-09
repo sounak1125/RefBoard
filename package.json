@@ -1,7 +1,7 @@
 {
   "name": "refboard",
   "productName": "RefBoard",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "A fast, clean moodboard and reference app. Made by Sounak.",
   "author": "Sounak",
   "license": "MIT",
@@ -16,11 +16,13 @@
   },
   "scripts": {
     "start": "electron .",
+    "predist": "node scripts/sync-changelog.mjs",
     "dist": "electron-builder --win",
     "dist:publish": "electron-builder --win --publish always",
     "gen:icon": "node scripts/gen-icon.js",
     "build:thumb-handler": "node scripts/build-thumb-handler.js",
-    "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-local-dist.ps1",
+    "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-local-dist.ps1 -ReplaceAssets",
+    "release:ship": "powershell -ExecutionPolicy Bypass -File scripts/ship-release.ps1 -DistDir dist-release -Draft",
     "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0"
   },
   "dependencies": {
@@ -44,7 +46,11 @@
       "main.js",
       "preload.js",
       "index.html",
-      "package.json"
+      "changelog.json",
+      "package.json",
+      "assets/icons/sel/**",
+      "assets/cursor-pointer.png",
+      "assets/cursor-pointer@2x.png"
     ],
     "extraResources": [
       {

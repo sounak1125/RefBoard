@@ -6,3 +6,6 @@ build/thumbnail-handler/packages/
 .cursor/
 .DS_Store
 Thumbs.db
+dist-build/
+dist-release/
+.git-askpass-in.txt
