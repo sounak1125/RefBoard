@@ -24,47 +24,35 @@ git push -u origin main
 
 3. Create the first release (builds the installer and uploads it):
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-GitHub Actions (`.github/workflows/release.yml`) builds Windows installer and publishes to **Releases**.
-Users who installed from a release build will auto-update when you push a new tag.
+Follow **Shipping a new version** below (build into `dist-release`, then `npm run release:ship`, then publish the draft).
+Do not create releases by pushing a `v*` tag — that Actions path is unreliable.
 
 ### Shipping a new version
 
 1. Edit the app (`index.html`, etc.).
 2. Bump `"version"` in `package.json` (e.g. `1.0.0` → `1.1.0`).
-3. Commit and push, then tag:
-
-```bash
-git add .
-git commit -m "Describe your changes"
-git push
-git tag v1.1.0
-git push origin v1.1.0
-```
-
-The workflow uploads `RefBoard-Setup-x.x.x.exe` to GitHub Releases. Installed apps pick it up on next launch.
-
-### Publish manually (without Actions)
-
-Each GitHub Release needs `latest.yml`, the `.exe`, and `.blockmap` for auto-update to work.
+3. Put user-facing bullets in `release-highlights.json` (the `highlights` array).
+   `npm run dist` / `sync-changelog.mjs` copies them into `changelog.json` for in-app What's New.
+4. Build the installer into `dist-release` (not the default `dist/`):
 
 ```powershell
-$env:GH_TOKEN = "your_github_token_with_repo_scope"
-npm run dist
-npm run release:publish
+npx electron-builder --win --config.directories.output=dist-release
 ```
 
-To add missing auto-update files to the existing v1.0.0 release:
+   Or run `node scripts/sync-changelog.mjs` first if you skip `npm run dist` (that command does not run `predist`).
+5. Create a **draft** GitHub release and upload auto-update assets (`latest.yml`, setup `.exe`, `.blockmap`):
 
 ```powershell
-$env:GH_TOKEN = "your_github_token_with_repo_scope"
-npm run gen:latest-yml -- dist/RefBoard-Setup-1.0.0.exe
-npm run release:fix-v100-assets
+npm run release:ship
 ```
+
+   Requires `gh auth login` (repo scope). Review the draft on GitHub, then publish it so installed apps can auto-update:
+
+```powershell
+gh release edit v1.0.3 --draft=false
+```
+
+   (Use your new version tag, e.g. `v1.1.0`.) Do **not** ship by pushing a `v*` tag — the Actions release workflow is unreliable and can break auto-update.
 
 ## For you (Sounak)
 
