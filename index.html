@@ -2182,7 +2182,7 @@ function effectiveZoomMin() {
   if (!Number.isFinite(fitS) || fitS <= 0) return ZOOM_MIN;
   return Math.max(ZOOM_ABS_FLOOR, Math.min(ZOOM_MIN, fitS * 0.18));
 }
-const images = new Map();       // imgId -> {bitmap, pristineBitmap, w, h, blob, type, name}
+const images = new Map();       // imgId -> {bitmap, pristineBitmap|null, w, h, blob, type, name}
 
 let dirty = true;
 let mode = null;                // active pointer interaction
@@ -3009,17 +3009,15 @@ async function restoreSessionImages(imgIds, imageNames) {
     const batch = imgIds.slice(i, i + SESSION_RESTORE_IMAGE_CONCURRENCY);
     const records = await Promise.all(batch.map(async imgId => {
       let bitmap = null;
-      let pristineBitmap = null;
       try {
         const blob = await dbGet('blobs', imgId);
         if (!(blob instanceof Blob) || !blob.size) return null;
         bitmap = await decodeToBitmap(blob);
-        pristineBitmap = await cloneBitmap(bitmap);
         return {
           imgId,
           image: {
             bitmap,
-            pristineBitmap,
+            pristineBitmap: null,
             w: bitmap.width,
             h: bitmap.height,
             blob,
@@ -3029,7 +3027,6 @@ async function restoreSessionImages(imgIds, imageNames) {
         };
       } catch {
         try { bitmap?.close?.(); } catch (e) {}
-        try { pristineBitmap?.close?.(); } catch (e) {}
         return null;
       }
     }));
@@ -3373,12 +3370,17 @@ async function cloneBitmap(bitmap) {
   return createImageBitmap(c);
 }
 
+async function ensurePristineBitmap(im) {
+  if (im.pristineBitmap) return im.pristineBitmap;
+  im.pristineBitmap = await cloneBitmap(im.bitmap);
+  return im.pristineBitmap;
+}
+
 async function registerBlob(blob, name) {
   const imgId = uid();
   const bitmap = await decodeToBitmap(blob);
-  const pristineBitmap = await cloneBitmap(bitmap);
   images.set(imgId, {
-    bitmap, pristineBitmap, w: bitmap.width, h: bitmap.height,
+    bitmap, pristineBitmap: null, w: bitmap.width, h: bitmap.height,
     blob, type: blob.type || 'image/png', name: name || '',
   });
   dbPut('blobs', imgId, blob);
@@ -3525,7 +3527,7 @@ function imageBitmapForDraw(it) {
 
 function startDrawSession(it) {
   const im = images.get(it.imgId);
-  if (!im) return;
+  if (!im || !im.pristineBitmap) return;
   const c = document.createElement('canvas');
   c.width = im.w;
   c.height = im.h;
@@ -3533,8 +3535,7 @@ function startDrawSession(it) {
   const base = document.createElement('canvas');
   base.width = im.w;
   base.height = im.h;
-  const baseSrc = im.pristineBitmap || im.bitmap;
-  base.getContext('2d').drawImage(baseSrc, 0, 0);
+  base.getContext('2d').drawImage(im.pristineBitmap, 0, 0);
   drawSession = {
     imgId: it.imgId, itemId: it.id, canvas: c, baseCanvas: base,
     ctx: c.getContext('2d'), lastPx: null, lastPy: null,
@@ -6763,10 +6764,9 @@ async function applyBoardPayload(j, meta = {}) {
         const raw = await (await fetch(rec.data)).blob();
         const blob = raw.type ? raw : new Blob([raw], { type: rec.type || 'image/png' });
         const bitmap = await decodeToBitmap(blob);
-        const pristineBitmap = await cloneBitmap(bitmap);
         nextImages.set(imgId, {
           bitmap,
-          pristineBitmap,
+          pristineBitmap: null,
           w: bitmap.width,
           h: bitmap.height,
           blob,
@@ -8096,7 +8096,7 @@ function updateCropDrag(e) {
 /* ================= pointer interaction ================= */
 canvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
 
-canvas.addEventListener('pointerdown', e => {
+canvas.addEventListener('pointerdown', async e => {
   if (noteEditId && !e.target.closest('#noteOverlay')) finishNoteEdit();
   closeMenu();
   hideNoteLinkPop();
@@ -8134,6 +8134,15 @@ canvas.addEventListener('pointerdown', e => {
       const [bx, by] = toBoard(sx, sy);
       const pt = boardPointToBitmap(hit, bx, by);
       if (pt) {
+        const im = images.get(hit.imgId);
+        if (!im) return;
+        try {
+          await ensurePristineBitmap(im);
+        } catch (err) {
+          console.error('[draw] failed to prepare image:', err);
+          return;
+        }
+        if (!canvas.hasPointerCapture(e.pointerId)) return;
         pushUndo({ imgId: hit.imgId });
         startDrawSession(hit);
         drawStrokeSegment(hit, pt.x, pt.y);
