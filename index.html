@@ -2996,6 +2996,11 @@ function closeImageRecordBitmaps(records) {
   }
 }
 
+function releaseAllImages() {
+  closeImageRecordBitmaps(images);
+  images.clear();
+}
+
 async function restoreSessionImages(imgIds, imageNames) {
   const nextImages = new Map();
   let missingImages = false;
@@ -6734,35 +6739,74 @@ async function openNewBoard() {
 }
 
 async function applyBoardPayload(j, meta = {}) {
-  if (!j || j.app !== 'refboard' || !Array.isArray(j.items)) { toast('Not a RefBoard file'); return false; }
+  if (!j || j.app !== 'refboard' || !Array.isArray(j.items)) return 'failed';
   if (!onLanding && boardFileDirty) {
     const result = await resolveUnsavedChanges('leave');
-    if (result !== 'proceed') return false;
+    if (result !== 'proceed') return 'cancelled';
   } else if (!onLanding && state.items.length) {
-    if (!confirm('Opening this board replaces the current one. Continue?')) return false;
+    if (!confirm('Opening this board replaces the current one. Continue?')) return 'cancelled';
   }
   showOpeningOverlay();
+  let nextImages = new Map();
+  let droppedImageItems = false;
   try {
+    const payloadImageIds = new Set();
+    const payloadHasImageItems = j.items.some(it =>
+      it && typeof it === 'object' && (it.kind || 'image') === 'image');
     cachedCurrentBoardThumb = null;
+
     for (const rec of j.images || []) {
-      if (images.has(rec.id)) continue;
+      const imgId = typeof rec?.id === 'string' ? rec.id : '';
+      if (!imgId || payloadImageIds.has(imgId)) continue;
+      payloadImageIds.add(imgId);
       try {
         const raw = await (await fetch(rec.data)).blob();
         const blob = raw.type ? raw : new Blob([raw], { type: rec.type || 'image/png' });
         const bitmap = await decodeToBitmap(blob);
         const pristineBitmap = await cloneBitmap(bitmap);
-        images.set(rec.id, { bitmap, pristineBitmap, w: bitmap.width, h: bitmap.height, blob, type: blob.type, name: rec.name || '' });
-        dbPut('blobs', rec.id, blob);
+        nextImages.set(imgId, {
+          bitmap,
+          pristineBitmap,
+          w: bitmap.width,
+          h: bitmap.height,
+          blob,
+          type: blob.type || 'image/png',
+          name: rec.name || '',
+        });
       } catch (e) { /* skip broken record */ }
     }
-    state.items = j.items.map(normalizeItem).filter(it =>
-      isGroupItem(it) || isNoteItem(it) || isArrowItem(it) || (isImageItem(it) && images.has(it.imgId)));
-    for (const it of state.items) {
-      if (it.groupId && !byId(it.groupId)) it.groupId = null;
+
+    let nextItems = [];
+    for (const raw of j.items) {
+      const it = normalizeItem(raw);
+      if (isImageItem(it)) {
+        if (nextImages.has(it.imgId)) nextItems.push(it);
+        else droppedImageItems = true;
+      } else if (isNoteItem(it) || isGroupItem(it) || isArrowItem(it)) {
+        nextItems.push(it);
+      }
     }
-    for (const g of state.items.filter(isGroupItem)) syncGroupFrame(g);
-    reconcileGroupOrder();
-    reconcileAllNoteBoxes();
+
+    if (j.items.length && !nextItems.length && payloadHasImageItems) {
+      throw new Error('No loadable items in board payload');
+    }
+
+    const nextIds = new Set(nextItems.map(it => it.id));
+    for (const it of nextItems) {
+      if (it.groupId && !nextIds.has(it.groupId)) it.groupId = null;
+    }
+    for (const g of nextItems.filter(isGroupItem)) syncGroupFrameInItems(g, nextItems);
+    nextItems = reconcileGroupOrderInItems(nextItems);
+    reconcileNoteBoxesInItems(nextItems);
+
+    releaseAllImages();
+    for (const [imgId, im] of nextImages) {
+      images.set(imgId, im);
+      dbPut('blobs', imgId, im.blob);
+    }
+    nextImages = new Map();
+
+    state.items = nextItems;
     state.boardGray = !!j.boardGray;
     state.snapEnabled = !!j.snapEnabled;
     const ga = normalizeGridAppearance(j.gridAppearance);
@@ -6780,12 +6824,19 @@ async function applyBoardPayload(j, meta = {}) {
     clearUndoHistory();
     await transitionToBoard({ fit: state.items.length > 0 });
     await nextUiFrame();
+  } catch (err) {
+    console.error('[openBoard] failed:', err);
+    closeImageRecordBitmaps(nextImages);
+    return 'failed';
   } finally {
     hideOpeningOverlay();
   }
   await trackRecentWork();
   toast(`Opened board — ${state.items.length} item${state.items.length === 1 ? '' : 's'}`);
-  return true;
+  if (droppedImageItems) {
+    setTimeout(() => toast('Opened board with some missing images'), 2500);
+  }
+  return 'ok';
 }
 
 async function openBoardFromPath(filePath) {
@@ -6794,7 +6845,8 @@ async function openBoardFromPath(filePath) {
     try {
       const { data } = await window.RefBoardAPI.readBoardFile(filePath);
       const j = JSON.parse(data);
-      await applyBoardPayload(j, { path: filePath, title: boardTitleFromPath(filePath) });
+      const result = await applyBoardPayload(j, { path: filePath, title: boardTitleFromPath(filePath) });
+      if (result === 'failed') toast('Could not open that board');
     } catch {
       toast('Could not open that board');
     }
@@ -6809,7 +6861,8 @@ async function openBoardFromDialog() {
     if (!r) return;
     try {
       const j = JSON.parse(r.data);
-      await applyBoardPayload(j, { path: r.filePath, title: boardTitleFromPath(r.filePath) });
+      const result = await applyBoardPayload(j, { path: r.filePath, title: boardTitleFromPath(r.filePath) });
+      if (result === 'failed') toast('Could not read that file');
     } catch {
       toast('Could not read that file');
     }
@@ -6822,7 +6875,8 @@ async function loadBoardFile(file) {
   let j;
   try { j = JSON.parse(await file.text()); } catch (e) { toast('Could not read that file'); return; }
   const title = (file.name || '').replace(/\.refboard$/i, '') || 'Untitled';
-  await applyBoardPayload(j, { title });
+  const result = await applyBoardPayload(j, { title });
+  if (result === 'failed') toast('Could not read that file');
 }
 
 /* ================= rendering ================= */
