@@ -48,9 +48,7 @@
       "index.html",
       "changelog.json",
       "package.json",
-      "assets/icons/sel/**",
-      "assets/cursor-pointer.png",
-      "assets/cursor-pointer@2x.png"
+      "assets/icons/sel/**"
     ],
     "extraResources": [
       {
