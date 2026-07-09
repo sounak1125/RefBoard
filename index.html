@@ -4636,15 +4636,15 @@ async function compositeBlob(items) {
   g.translate(-bb.x, -bb.y);
   for (const it of state.items) {
     if (!items.includes(it) || isNoteItem(it) || isArrowItem(it)) continue;
-    drawBoardItem(g, it);
+    drawBoardItem(g, it, { noLod: true });
   }
   for (const it of state.items) {
     if (!items.includes(it) || !isNoteItem(it)) continue;
-    drawBoardItem(g, it);
+    drawBoardItem(g, it, { noLod: true });
   }
   for (const it of state.items) {
     if (!items.includes(it) || !isArrowItem(it)) continue;
-    drawBoardItem(g, it);
+    drawBoardItem(g, it, { noLod: true });
   }
   return await new Promise(r => c.toBlob(r, 'image/png'));
 }
@@ -6591,13 +6591,13 @@ async function doExportPNG(mult, bg) {
   g.scale(k, k);
   g.translate(-bb.x, -bb.y);
   for (const it of state.items) {
-    if (!isNoteItem(it) && !isArrowItem(it)) drawBoardItem(g, it);
+    if (!isNoteItem(it) && !isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
   }
   for (const it of state.items) {
-    if (isNoteItem(it)) drawBoardItem(g, it);
+    if (isNoteItem(it)) drawBoardItem(g, it, { noLod: true });
   }
   for (const it of state.items) {
-    if (isArrowItem(it)) drawBoardItem(g, it);
+    if (isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
   }
   c.toBlob(b => {
     if (!b) { toast('Export failed — try a lower resolution'); return; }
@@ -7668,7 +7668,7 @@ function roundItemBoardGeom(it) {
   invalidateWorkspaceBBox();
 }
 
-function drawBoardItem(g, it) {
+function drawBoardItem(g, it, opts = {}) {
   if (isGroupItem(it)) return;
   if (isNoteItem(it) && noteEditId === it.id) return;
   if (isArrowItem(it)) {
@@ -7732,7 +7732,7 @@ function drawBoardItem(g, it) {
   let sourceScaleY = 1;
   if (drawSession?.itemId === it.id) {
     bitmap = drawSession.canvas;
-  } else {
+  } else if (!opts.noLod) {
     const lod = getImageLodForDraw(im, it, cr);
     if (lod) {
       bitmap = lod.bitmap;
