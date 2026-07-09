@@ -2907,6 +2907,7 @@ let suppressBoardDirty = false;
 let onLanding = true;
 let currentBoardPath = null;
 let currentBoardTitle = null;
+let restoredSessionPendingOpen = false;
 const RECENT_LOCAL_KEY = 'refboard.recentWorks';
 
 const AUTOSAVE_INTERVALS = [5, 10, 15, 20, 30];
@@ -2955,6 +2956,251 @@ function applyAppSettings() {
 function applyRenderSmoothing(g) {
   g.imageSmoothingEnabled = renderQuality !== 'fast';
   g.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
+}
+
+const SESSION_RESTORE_IMAGE_CONCURRENCY = 3;
+
+function isValidSessionMeta(meta) {
+  return !!meta && typeof meta === 'object' && Array.isArray(meta.items);
+}
+
+function normalizeSessionView(view) {
+  if (!view || typeof view !== 'object') return null;
+  const tx = Number(view.tx);
+  const ty = Number(view.ty);
+  const s = Number(view.s);
+  if (!Number.isFinite(tx) || !Number.isFinite(ty) || !Number.isFinite(s) || s <= 0) return null;
+  return { tx, ty, s: clamp(s, ZOOM_ABS_FLOOR, ZOOM_MAX) };
+}
+
+function collectSessionImageRefs(items) {
+  const ids = [];
+  const seen = new Set();
+  const names = new Map();
+  for (const it of items) {
+    if (!it || typeof it !== 'object' || (it.kind || 'image') !== 'image' || typeof it.imgId !== 'string') continue;
+    if (!seen.has(it.imgId)) {
+      seen.add(it.imgId);
+      ids.push(it.imgId);
+    }
+    if (it.name && !names.has(it.imgId)) names.set(it.imgId, String(it.name));
+  }
+  return { ids, names };
+}
+
+function closeImageRecordBitmaps(records) {
+  const values = records instanceof Map ? records.values() : records;
+  for (const im of values) {
+    try { im?.bitmap?.close?.(); } catch (e) {}
+    try { im?.pristineBitmap?.close?.(); } catch (e) {}
+  }
+}
+
+async function restoreSessionImages(imgIds, imageNames) {
+  const nextImages = new Map();
+  let missingImages = false;
+
+  for (let i = 0; i < imgIds.length; i += SESSION_RESTORE_IMAGE_CONCURRENCY) {
+    const batch = imgIds.slice(i, i + SESSION_RESTORE_IMAGE_CONCURRENCY);
+    const records = await Promise.all(batch.map(async imgId => {
+      let bitmap = null;
+      let pristineBitmap = null;
+      try {
+        const blob = await dbGet('blobs', imgId);
+        if (!(blob instanceof Blob) || !blob.size) return null;
+        bitmap = await decodeToBitmap(blob);
+        pristineBitmap = await cloneBitmap(bitmap);
+        return {
+          imgId,
+          image: {
+            bitmap,
+            pristineBitmap,
+            w: bitmap.width,
+            h: bitmap.height,
+            blob,
+            type: blob.type || 'image/png',
+            name: imageNames.get(imgId) || '',
+          },
+        };
+      } catch {
+        try { bitmap?.close?.(); } catch (e) {}
+        try { pristineBitmap?.close?.(); } catch (e) {}
+        return null;
+      }
+    }));
+
+    for (const rec of records) {
+      if (rec) nextImages.set(rec.imgId, rec.image);
+      else missingImages = true;
+    }
+    await nextUiFrame();
+  }
+
+  return { nextImages, missingImages };
+}
+
+function syncGroupFrameInItems(group, items) {
+  if (!group || !isGroupItem(group)) return;
+  const kids = items.filter(i => i.groupId === group.id);
+  const pad = group.padding ?? GROUP_DEFAULT_PADDING;
+  if (!kids.length) {
+    group.w = Math.max(40, group.w || 40);
+    group.h = Math.max(40, group.h || 40);
+    return;
+  }
+  const bb = bboxOf(kids);
+  group.x = bb.x - pad;
+  group.y = bb.y - pad;
+  group.w = bb.w + pad * 2;
+  group.h = bb.h + pad * 2;
+}
+
+function reconcileGroupOrderInItems(items) {
+  const groups = items.filter(isGroupItem);
+  const rest = items.filter(i => !isGroupItem(i));
+  const ordered = [];
+  const placed = new Set();
+  for (const g of groups) {
+    ordered.push(g);
+    placed.add(g.id);
+    for (const c of rest.filter(i => i.groupId === g.id)) {
+      ordered.push(c);
+      placed.add(c.id);
+    }
+  }
+  for (const it of rest) {
+    if (!placed.has(it.id)) ordered.push(it);
+  }
+  return ordered;
+}
+
+function reconcileNoteBoxesInItems(items) {
+  for (const it of items) {
+    if (isNoteItem(it)) ensureNoteBoxFitsText(it);
+  }
+}
+
+function resetLiveSessionToBlank() {
+  closeImageRecordBitmaps(images);
+  images.clear();
+  state.items = [];
+  state.sel.clear();
+  state.boardGray = false;
+  state.snapEnabled = false;
+  state.gridAppearance = 'dots';
+  cropItemId = null;
+  noteEditId = null;
+  arrowTool = null;
+  tool = null;
+  drawActive = false;
+  drawSession = null;
+  cachedCurrentBoardThumb = null;
+  currentBoardPath = null;
+  currentBoardTitle = null;
+  restoredSessionPendingOpen = false;
+  closeDrawFeatures();
+}
+
+async function restoreSession() {
+  let overlayShown = false;
+  let nextImages = new Map();
+  let missingImages = false;
+  const previousSuppress = suppressBoardDirty;
+  suppressBoardDirty = true;
+
+  try {
+    const meta = await dbGet('meta', 'board');
+    if (!isValidSessionMeta(meta) || !meta.items.length) {
+      return { restored: false, missingImages: false };
+    }
+
+    showOpeningOverlay();
+    overlayShown = true;
+    await nextUiFrame();
+
+    const { ids: imgIds, names: imageNames } = collectSessionImageRefs(meta.items);
+    const restoredImages = await restoreSessionImages(imgIds, imageNames);
+    nextImages = restoredImages.nextImages;
+    missingImages = restoredImages.missingImages;
+
+    let nextItems = [];
+    for (const raw of meta.items) {
+      if (!raw || typeof raw !== 'object') continue;
+      let it = null;
+      try { it = normalizeItem(raw); } catch { continue; }
+      if (isImageItem(it) && !nextImages.has(it.imgId)) {
+        missingImages = true;
+        continue;
+      }
+      if (isImageItem(it) || isNoteItem(it) || isGroupItem(it) || isArrowItem(it)) {
+        nextItems.push(it);
+      }
+    }
+
+    if (!nextItems.length) {
+      closeImageRecordBitmaps(nextImages);
+      nextImages = new Map();
+      return { restored: false, missingImages };
+    }
+
+    const ids = new Set(nextItems.map(it => it.id));
+    for (const it of nextItems) {
+      if (it.groupId && !ids.has(it.groupId)) it.groupId = null;
+    }
+    for (const g of nextItems.filter(isGroupItem)) syncGroupFrameInItems(g, nextItems);
+    nextItems = reconcileGroupOrderInItems(nextItems);
+    reconcileNoteBoxesInItems(nextItems);
+
+    const savedView = normalizeSessionView(meta.view);
+    closeImageRecordBitmaps(images);
+    images.clear();
+    for (const [imgId, im] of nextImages) images.set(imgId, im);
+    nextImages = new Map();
+
+    state.items = nextItems;
+    state.boardGray = !!meta.boardGray;
+    state.snapEnabled = !!meta.snapEnabled;
+    state.gridAppearance = normalizeGridAppearance(meta.gridAppearance) || 'dots';
+    if (savedView) {
+      state.view.tx = savedView.tx;
+      state.view.ty = savedView.ty;
+      state.view.s = savedView.s;
+    }
+    state.sel.clear();
+    cropItemId = null;
+    noteEditId = null;
+    arrowTool = null;
+    tool = null;
+    drawActive = false;
+    drawSession = null;
+    cachedCurrentBoardThumb = null;
+    currentBoardPath = null;
+    currentBoardTitle = null;
+    restoredSessionPendingOpen = true;
+    closeDrawFeatures();
+    boardFileDirty = false;
+    clearUndoHistory();
+    updateSelBar();
+    updateEmpty();
+    syncDrawUi();
+    invalidate();
+
+    return { restored: true, missingImages };
+  } catch (err) {
+    console.error('[restore] failed:', err);
+    closeImageRecordBitmaps(nextImages);
+    resetLiveSessionToBlank();
+    boardFileDirty = false;
+    clearUndoHistory();
+    updateSelBar();
+    updateEmpty();
+    syncDrawUi();
+    invalidate();
+    return { restored: false, missingImages: false };
+  } finally {
+    if (overlayShown) hideOpeningOverlay();
+    suppressBoardDirty = previousSuppress;
+  }
 }
 
 function markBoardDirty() {
@@ -5715,6 +5961,7 @@ async function transitionToBoard(opts = {}) {
   document.body.classList.remove('titlebar-revealed');
   updateEmpty();
   startAutosaveTimer();
+  restoredSessionPendingOpen = false;
   invalidate();
   if (fromLanding && !recent.classList.contains('landing-hidden')) {
     recent.classList.add('landing-hidden');
@@ -6328,7 +6575,10 @@ async function renderRecentWorks() {
     date.textContent = (boardFileDirty ? 'Unsaved' : 'In progress') + ' · ' + state.items.length + ' item' + (state.items.length === 1 ? '' : 's');
     meta.append(title, date);
     card.append(thumb, meta);
-    card.addEventListener('click', () => { void enterBoard({ animateFit: true }); });
+    card.addEventListener('click', () => {
+      const opts = restoredSessionPendingOpen ? {} : { animateFit: true };
+      void enterBoard(opts);
+    });
     grid.appendChild(card);
   }
 
@@ -9530,26 +9780,23 @@ async function init() {
   populateFontSelect();
   db = await openDB();
   if (!db) toast('Autosave unavailable in this browser — use Save board (Ctrl+S) to keep your work');
-  suppressBoardDirty = true;
-  centerViewOnWorkspace();
-  await dbPut('meta', 'board', {
-    items: [],
-    view: { ...state.view },
-    boardGray: state.boardGray,
-    snapEnabled: state.snapEnabled,
-    gridAppearance: state.gridAppearance,
-    savedAt: Date.now(),
-  });
-  const keys = await dbKeys('blobs');
-  for (const k of keys) await dbDel('blobs', k);
-  suppressBoardDirty = false;
-  boardFileDirty = false;
-  updateEmpty();
-  syncDrawUi();
-  invalidate();
+  const restoreResult = db
+    ? await restoreSession()
+    : { restored: false, missingImages: false };
+
+  if (!restoreResult.restored) {
+    suppressBoardDirty = true;
+    centerViewOnWorkspace();
+    boardFileDirty = false;
+    updateEmpty();
+    syncDrawUi();
+    invalidate();
+    suppressBoardDirty = false;
+  }
   tick();
 
   await showLanding();
+  if (restoreResult.missingImages) toast('Restored session with some missing images');
 
   const info = await window.RefBoardAPI?.getAppInfo?.();
   if (info) await window.RefBoardAPI?.updaterInit?.({ checkOnStartup: !!appSettings.checkUpdatesOnStartup });
