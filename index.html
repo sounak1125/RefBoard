@@ -4359,16 +4359,22 @@ function clipboardHtmlToNoteText(html) {
       let label = '';
       for (const ch of node.childNodes) label += inlineText(ch);
       label = label.replace(/\s+/g, ' ').trim() || href;
-      return href ? `[${label}](${href})` : label;
+      if (!href) return label;
+      // Match insertNoteLink: label === url → bare URL (not [url](url))
+      if (label === href) return href;
+      return `[${label}](${href})`;
     }
-    if (tag === 'UL' || tag === 'OL') return '\n' + listLines(node, 0).join('\n');
+    if (tag === 'UL' || tag === 'OL') return '\n' + listLines(node).join('\n');
+    // Strip styling wrappers; keep text
+    if (tag === 'IMG' || tag === 'VIDEO' || tag === 'SVG' || tag === 'TABLE'
+        || tag === 'STYLE' || tag === 'SCRIPT' || tag === 'META') return '';
     let s = '';
     for (const ch of node.childNodes) s += inlineText(ch);
     return s;
   }
 
-  function listLines(list, depth) {
-    const indent = '  '.repeat(depth);
+  // Flatten nested lists to one level — indented "  • x" is NOT a bullet to parseNoteLine.
+  function listLines(list) {
     const isOl = list.tagName === 'OL';
     const result = [];
     let n = 0;
@@ -4379,14 +4385,14 @@ function clipboardHtmlToNoteText(html) {
       const nested = [];
       for (const ch of li.childNodes) {
         if (ch.nodeType === Node.ELEMENT_NODE && (ch.tagName === 'UL' || ch.tagName === 'OL')) {
-          nested.push(...listLines(ch, depth + 1));
+          nested.push(...listLines(ch));
         } else {
           parts.push(inlineText(ch));
         }
       }
       const bodyText = parts.join('').replace(/\s+/g, ' ').trim();
       const prefix = isOl ? `${n}. ` : '• ';
-      result.push(indent + prefix + bodyText);
+      result.push(prefix + bodyText);
       result.push(...nested);
     }
     return result;
@@ -4401,16 +4407,21 @@ function clipboardHtmlToNoteText(html) {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const tag = node.tagName;
     if (tag === 'UL' || tag === 'OL') {
-      for (const ln of listLines(node, 0)) pushLine(ln);
+      for (const ln of listLines(node)) pushLine(ln);
       return;
     }
     if (tag === 'BR') { pushLine(''); return; }
-    if (tag === 'P' || tag === 'DIV' || /^H[1-6]$/.test(tag)) {
+    if (tag === 'P' || tag === 'DIV' || /^H[1-6]$/.test(tag) || tag === 'LI') {
+      // Standalone LI (some apps paste without UL) — still try list prefix if present in text
+      if (tag === 'LI' && node.parentElement && (node.parentElement.tagName === 'UL' || node.parentElement.tagName === 'OL')) {
+        return; // handled by listLines on parent
+      }
       const t = inlineText(node).replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
       pushLine(t);
       return;
     }
-    if (tag === 'META' || tag === 'STYLE' || tag === 'SCRIPT' || tag === 'HEAD') return;
+    if (tag === 'META' || tag === 'STYLE' || tag === 'SCRIPT' || tag === 'HEAD'
+        || tag === 'IMG' || tag === 'TABLE' || tag === 'SVG') return;
     for (const ch of node.childNodes) blockWalk(ch);
   }
 
@@ -4527,8 +4538,11 @@ function copyMenuLabel(selItems) {
   return selItems.length > 1 ? `Copy ${selItems.length} as one image` : 'Copy image';
 }
 
-function insertTextAtCursor(_editor, _text) {
-  throw new Error('insertTextAtCursor: textarea API removed — Stage 4 (paste) not implemented for contenteditable yet');
+function insertTextAtCursor(editor, text) {
+  const ed = editor || $('#noteEditor');
+  if (!ed) return;
+  noteEditorInsertMarkdown(ed, String(text ?? ''));
+  refreshNoteEdit();
 }
 
 async function collectClipboardImages(dt, { allowAsyncRead = true } = {}) {
@@ -5481,8 +5495,22 @@ async function insertNoteLink() {
   throw new Error('insertNoteLink: textarea selection API removed — Stage 5 (link toolbar) not implemented for contenteditable yet');
 }
 
-function tryPasteNoteLink(_text) {
-  throw new Error('tryPasteNoteLink: textarea selection API removed — Stage 4 (paste) not implemented for contenteditable yet');
+function tryPasteNoteLink(text) {
+  const t = String(text ?? '').trim();
+  if (!isNoteUrl(t)) return false;
+  const ed = $('#noteEditor');
+  if (!ed) return false;
+  const sel = window.getSelection();
+  let selected = '';
+  if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
+    const r = sel.getRangeAt(0);
+    if (!r.collapsed) selected = sel.toString().replace(/\u00a0/g, ' ').trim();
+  }
+  // Match insertNoteLink: selection → [label](url); none → bare URL
+  const md = selected ? `[${selected}](${t})` : t;
+  noteEditorInsertMarkdown(ed, md);
+  refreshNoteEdit();
+  return true;
 }
 
 async function openNoteLink(url) {
@@ -6166,6 +6194,134 @@ function noteEditorMergeLineIntoPrev(ed, lineEl) {
   }
   ensureNoteEditorHasLine(ed);
   return true;
+}
+
+// --- Stage 4: paste (DOM insert only — never hydrate the live editor) ---
+
+/** Build one data-note-line from a markdown line string (same shape as hydrate). */
+function noteEditorBuildLineFromMarkdown(line) {
+  const el = document.createElement('div');
+  el.setAttribute('data-note-line', '1');
+  const parsed = parseNoteLine(line);
+  el.setAttribute('data-type', parsed.type);
+  const prefix = noteLinePrefixOf(line);
+  if (prefix) {
+    el.setAttribute('data-prefix', prefix);
+    const mark = document.createElement('span');
+    mark.setAttribute('data-note-prefix', '1');
+    mark.setAttribute('contenteditable', 'false');
+    mark.appendChild(document.createTextNode(prefix));
+    el.appendChild(mark);
+  }
+  if (parsed.type === 'check') el.setAttribute('data-checked', parsed.checked ? '1' : '0');
+  if (parsed.type === 'number') el.setAttribute('data-n', String(parsed.n));
+  for (const seg of parseNoteLinkSegments(parsed.body)) {
+    if (seg.type === 'link') {
+      const a = document.createElement('a');
+      a.setAttribute('href', seg.url);
+      // Bare when label === url (parseNoteLinkSegments from index has no .bare)
+      if (seg.text === seg.url) a.setAttribute('data-bare', '1');
+      a.appendChild(document.createTextNode(seg.text));
+      el.appendChild(a);
+    } else if (seg.text) {
+      el.appendChild(document.createTextNode(seg.text));
+    }
+  }
+  return el;
+}
+
+function noteEditorAppendBodyNodes(targetLine, sourceLine) {
+  for (const child of [...sourceLine.childNodes]) {
+    if (child.nodeType === 1 && child.getAttribute?.('data-note-prefix') === '1') continue;
+    targetLine.appendChild(child);
+  }
+}
+
+/**
+ * Insert markdown at the caret, replacing any selection.
+ * Multi-line → one data-note-line per \\n. Never calls hydrateNoteDom on `ed`.
+ */
+function noteEditorInsertMarkdown(ed, markdown) {
+  ensureNoteEditorHasLine(ed);
+  const text = String(markdown ?? '');
+  const pasteLines = text.split('\n');
+  const built = pasteLines.map(ln => noteEditorBuildLineFromMarkdown(ln));
+
+  let range = noteEditorCaretRange(ed);
+  if (!range) {
+    const last = noteEditorLineEls(ed).at(-1) || createNoteLineEl();
+    if (!last.parentNode) ed.appendChild(last);
+    noteEditorPlaceCaretInLineEnd(last);
+    range = noteEditorCaretRange(ed);
+  }
+  if (!range) return;
+
+  if (!range.collapsed) range.deleteContents();
+
+  let lineEl = noteEditorClosestLine(range.startContainer, ed);
+  if (!lineEl) {
+    lineEl = noteEditorLineEls(ed)[0] || createNoteLineEl();
+    if (!lineEl.parentNode) ed.appendChild(lineEl);
+    noteEditorPlaceCaretInLineEnd(lineEl);
+    range = noteEditorCaretRange(ed);
+  }
+  if (!lineEl || !range) return;
+
+  // Split current line at caret: keep before, move after into a fragment
+  const afterRange = document.createRange();
+  afterRange.setStart(range.startContainer, range.startOffset);
+  afterRange.setEnd(lineEl, lineEl.childNodes.length);
+  const afterFrag = afterRange.extractContents();
+
+  const appendAfterSkippingPrefix = (target, frag) => {
+    while (frag.firstChild) {
+      const c = frag.firstChild;
+      if (c.nodeType === 1 && c.getAttribute?.('data-note-prefix') === '1') {
+        frag.removeChild(c);
+        continue;
+      }
+      target.appendChild(c);
+    }
+  };
+
+  if (built.length === 1) {
+    const marker = document.createTextNode('');
+    noteEditorAppendBodyNodes(lineEl, built[0]);
+    lineEl.appendChild(marker);
+    appendAfterSkippingPrefix(lineEl, afterFrag);
+    if (marker.previousSibling?.nodeType === 3) {
+      const t = marker.previousSibling;
+      const off = t.nodeValue.length;
+      marker.remove();
+      noteEditorPlaceCaret(t, off);
+    } else {
+      noteEditorPlaceCaret(marker, 0);
+    }
+    noteEditorDevAssertRoundTrip(ed);
+    return;
+  }
+
+  // Multi-line: first chunk joins current line; middle lines inserted; last gets trailing text
+  noteEditorAppendBodyNodes(lineEl, built[0]);
+  let insertAfter = lineEl;
+  for (let i = 1; i < built.length - 1; i++) {
+    insertAfter.after(built[i]);
+    insertAfter = built[i];
+  }
+  const last = built[built.length - 1];
+  const marker = document.createTextNode('');
+  last.appendChild(marker);
+  appendAfterSkippingPrefix(last, afterFrag);
+  insertAfter.after(last);
+  if (marker.previousSibling?.nodeType === 3) {
+    const t = marker.previousSibling;
+    const off = t.nodeValue.length;
+    marker.remove();
+    noteEditorPlaceCaret(t, off);
+  } else {
+    noteEditorPlaceCaret(marker, 0);
+  }
+  noteEditorDevAssertRoundTrip(ed);
 }
 
 function noteCaretFromClient(it, clientX, clientY) {
@@ -10459,6 +10615,7 @@ noteEd.addEventListener('paste', async e => {
   const dt = e.clipboardData;
   if (!dt) return;
 
+  // Images still go to the board (not into the note)
   const blobs = await collectClipboardImages(dt, { allowAsyncRead: false });
   if (blobs.length) {
     e.preventDefault();
@@ -10474,17 +10631,18 @@ noteEd.addEventListener('paste', async e => {
     return;
   }
 
-  const plain = normalizeClipboardText(dt.getData('text/plain'));
-  if (plain && !plain.includes('\n') && tryPasteNoteLink(plain)) {
-    e.preventDefault();
-    return;
-  }
+  // Always intercept text paste — never let the browser inject raw HTML.
+  e.preventDefault();
 
-  if (html && html.trim()) {
-    e.preventDefault();
-    insertTextAtCursor(noteEd, clipboardHtmlToNoteText(html));
-    return;
-  }
+  const plain = normalizeClipboardText(dt.getData('text/plain'));
+  if (plain && !plain.includes('\n') && tryPasteNoteLink(plain)) return;
+
+  let md = '';
+  if (html && html.trim()) md = clipboardHtmlToNoteText(html);
+  else md = plain;
+  if (!md && md !== '') return;
+  noteEditorInsertMarkdown(noteEd, md);
+  refreshNoteEdit();
 });
 noteEd.addEventListener('keydown', e => {
   if (e.key === 'Escape') { e.stopPropagation(); finishNoteEdit(); return; }
