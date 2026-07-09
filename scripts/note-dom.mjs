@@ -162,7 +162,15 @@ function hydrateLine(doc, line) {
   const parsed = parseNoteLine(line);
   el.setAttribute('data-type', parsed.type);
   const prefix = noteLinePrefix(line);
-  if (prefix) el.setAttribute('data-prefix', prefix);
+  if (prefix) {
+    el.setAttribute('data-prefix', prefix);
+    // Visible prefix for the editor; serialize skips this span and uses data-prefix.
+    const mark = doc.createElement('span');
+    mark.setAttribute('data-note-prefix', '1');
+    mark.setAttribute('contenteditable', 'false');
+    mark.appendChild(doc.createTextNode(prefix));
+    el.appendChild(mark);
+  }
   if (parsed.type === 'check') el.setAttribute('data-checked', parsed.checked ? '1' : '0');
   if (parsed.type === 'number') el.setAttribute('data-n', String(parsed.n));
   appendSegments(doc, el, parsed.body);
@@ -202,6 +210,9 @@ function serializeInline(node) {
   if (!isElement(node)) return '';
 
   const tag = String(node.tagName || '').toUpperCase();
+
+  // Visible list/checkbox prefix — storage comes from data-prefix on the line
+  if (tag === 'SPAN' && node.getAttribute?.('data-note-prefix') === '1') return '';
 
   // Whitelisted link
   if (tag === 'A') {

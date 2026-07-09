@@ -1452,8 +1452,15 @@ body.board-active #whatsNewNotice{ display:none; }
   white-space:pre; word-wrap:normal; overflow-wrap:normal;
   text-size-adjust:none; -webkit-text-size-adjust:none;
   scrollbar-width:none;
+  caret-color:currentColor;
 }
 #noteEditor::-webkit-scrollbar{ display:none; }
+#noteEditor a{
+  color:#5aa2ff; text-decoration:underline;
+  cursor:text; pointer-events:none;
+}
+#noteEditor [data-note-line]{ min-height:1em; }
+#noteEditor [data-note-prefix]{ white-space:pre; }
 </style>
 </head>
 <body>
@@ -1824,7 +1831,7 @@ body.board-active #whatsNewNotice{ display:none; }
     <label class="fmt-op" title="Note opacity"><input type="range" id="noteOpacity" min="20" max="100" value="72"></label>
   </div>
   <div class="note-card">
-    <textarea id="noteEditor" spellcheck="true"></textarea>
+    <div id="noteEditor" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true"></div>
   </div>
 </div>
 
@@ -2147,7 +2154,9 @@ body.board-active #whatsNewNotice{ display:none; }
 <input type="file" id="filePick" multiple accept="image/*" hidden>
 <input type="file" id="boardPick" accept=".refboard,application/json" hidden>
 
-<script>
+<script type="module">
+import { hydrateNoteDom, serializeNoteDom } from './scripts/note-dom.mjs';
+
 'use strict';
 
 /* ================= state ================= */
@@ -4518,13 +4527,8 @@ function copyMenuLabel(selItems) {
   return selItems.length > 1 ? `Copy ${selItems.length} as one image` : 'Copy image';
 }
 
-function insertTextAtCursor(textarea, text) {
-  const start = textarea.selectionStart;
-  const end = textarea.selectionEnd;
-  textarea.value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
-  const pos = start + text.length;
-  textarea.selectionStart = textarea.selectionEnd = pos;
-  refreshNoteEdit();
+function insertTextAtCursor(_editor, _text) {
+  throw new Error('insertTextAtCursor: textarea API removed — Stage 4 (paste) not implemented for contenteditable yet');
 }
 
 async function collectClipboardImages(dt, { allowAsyncRead = true } = {}) {
@@ -4713,8 +4717,8 @@ async function menuPaste(pos) {
 
 window.addEventListener('paste', async e => {
   if (onLanding) return;
+  if (e.target.closest('#noteEditor')) return;
   if (e.target.matches('input,textarea') && e.target.id !== 'noteEditor') return;
-  if (e.target.id === 'noteEditor') return;
 
   const dt = e.clipboardData;
   const pos = mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null;
@@ -5400,15 +5404,13 @@ function initIconPopoverDd(root, { onSelect, getValue }) {
   return { syncUi, el: wrap };
 }
 
-function detectNoteListMode(ed) {
-  if (!ed) return 'plain';
-  const val = ed.value;
-  const selStart = ed.selectionStart, selEnd = ed.selectionEnd;
-  const startLine = val.slice(0, selStart).split('\n').length - 1;
-  const endLine = selEnd > selStart
-    ? val.slice(0, selEnd).split('\n').length - 1
-    : startLine;
-  const lines = val.split('\n').slice(startLine, endLine + 1);
+function detectNoteListMode(_ed) {
+  // Contenteditable has no .value / selectionStart — use the live note string.
+  // Selection-scoped list detection returns in Stage 5 (list toolbar).
+  const it = noteEditId ? byId(noteEditId) : null;
+  const val = it && isNoteItem(it) ? String(it.text || '') : '';
+  if (!val) return 'plain';
+  const lines = val.split('\n');
   if (!lines.length) return 'plain';
   const types = lines.map(ln => parseNoteLine(ln).type);
   if (types.every(t => t === 'bullet')) return 'bullet';
@@ -5476,33 +5478,11 @@ function closeNoteLinkModal(url) {
 }
 
 async function insertNoteLink() {
-  const ed = $('#noteEditor');
-  if (!ed) return;
-  const selStart = ed.selectionStart, selEnd = ed.selectionEnd;
-  const sel = ed.value.slice(selStart, selEnd).trim();
-  const urlRaw = await promptNoteLinkUrl('https://');
-  ed.focus();
-  ed.selectionStart = selStart;
-  ed.selectionEnd = selEnd;
-  if (urlRaw == null) return;
-  let url = urlRaw.trim();
-  if (!url) return;
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-  insertTextAtCursor(ed, sel ? `[${sel}](${url})` : url);
-  refreshNoteEdit();
+  throw new Error('insertNoteLink: textarea selection API removed — Stage 5 (link toolbar) not implemented for contenteditable yet');
 }
 
-function tryPasteNoteLink(text) {
-  const t = String(text ?? '').trim();
-  if (!isNoteUrl(t)) return false;
-  const ed = $('#noteEditor');
-  if (!ed) return false;
-  const selStart = ed.selectionStart, selEnd = ed.selectionEnd;
-  const sel = ed.value.slice(selStart, selEnd).trim();
-  const md = sel ? `[${sel}](${t})` : t;
-  insertTextAtCursor(ed, md);
-  refreshNoteEdit();
-  return true;
+function tryPasteNoteLink(_text) {
+  throw new Error('tryPasteNoteLink: textarea selection API removed — Stage 4 (paste) not implemented for contenteditable yet');
 }
 
 async function openNoteLink(url) {
@@ -5869,9 +5849,25 @@ function positionNoteEditor() {
 function pullNoteFromEditor(fit = true) {
   const it = noteEditId ? byId(noteEditId) : null;
   if (!it || !isNoteItem(it)) return;
-  it.text = $('#noteEditor').value;
+  it.text = serializeNoteDom($('#noteEditor'));
   applyNoteFmtFromUi(it);
   if (fit) fitNoteToText(it, true);
+}
+
+function placeNoteEditorCaretAtEnd(ed) {
+  const sel = window.getSelection();
+  if (!sel || !ed) return;
+  const range = document.createRange();
+  range.selectNodeContents(ed);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/** Hydrate once into the editor. Call only from startNoteEdit — never on input. */
+function hydrateNoteEditor(ed, markdown) {
+  ed.replaceChildren();
+  ed.appendChild(hydrateNoteDom(markdown || '', document));
 }
 
 function noteCaretFromClient(it, clientX, clientY) {
@@ -5948,7 +5944,8 @@ function startNoteEdit(it, clientX, clientY) {
   updateSelBar();
   enrichFontsFromSystem();
   const ed = $('#noteEditor');
-  ed.value = it.text || '';
+  // THE RULE: hydrate exactly once on open. Never rehydrate while typing.
+  hydrateNoteEditor(ed, it.text || '');
   syncNoteFmtUi(it);
   ensureNoteEditFits(it);
   syncNoteEditorStyle(it);
@@ -5957,17 +5954,9 @@ function startNoteEdit(it, clientX, clientY) {
   invalidate();
   requestAnimationFrame(() => {
     ed.focus();
-    if (clientX != null && clientY != null) {
-      const caret = noteCaretFromClient(it, clientX, clientY);
-      if (caret != null) ed.setSelectionRange(caret, caret);
-      else {
-        const len = ed.value.length;
-        ed.setSelectionRange(len, len);
-      }
-    } else {
-      const len = ed.value.length;
-      ed.setSelectionRange(len, len);
-    }
+    // Stage 2: end-of-text only. noteCaretFromClient still returns a markdown
+    // string index (textarea era) — click-to-caret needs a DOM port later.
+    placeNoteEditorCaretAtEnd(ed);
   });
 }
 
@@ -7644,30 +7633,8 @@ function toggleNoteChecklistLine(it, lineIdx) {
   return true;
 }
 
-function toggleNoteListMode(mode) {
-  const ed = $('#noteEditor');
-  if (!ed) return;
-  const val = ed.value;
-  const selStart = ed.selectionStart, selEnd = ed.selectionEnd;
-  const startLine = val.slice(0, selStart).split('\n').length - 1;
-  const endLine = selEnd > selStart
-    ? val.slice(0, selEnd).split('\n').length - 1
-    : startLine;
-  const lines = val.split('\n');
-  const slice = lines.slice(startLine, endLine + 1);
-  const allMatch = slice.length > 0 && slice.every(ln => parseNoteLine(ln).type === mode);
-  const next = [...lines];
-  for (let i = startLine; i <= endLine; i++) {
-    const parsed = parseNoteLine(lines[i]);
-    const body = parsed.body;
-    if (allMatch) next[i] = body;
-    else next[i] = noteListPrefixFor(mode, i - startLine, parsed.checked) + body;
-  }
-  ed.value = next.join('\n');
-  ed.selectionStart = selStart;
-  ed.selectionEnd = selEnd;
-  refreshNoteEdit();
-  noteListDd?.syncUi();
+function toggleNoteListMode(_mode) {
+  throw new Error('toggleNoteListMode: textarea API removed — Stage 5 (list toolbar) not implemented for contenteditable yet');
 }
 
 function isItemResizeDrag() {
@@ -9510,7 +9477,7 @@ window.addEventListener('pointerdown', e => {
 
 /* ================= keyboard ================= */
 window.addEventListener('keydown', e => {
-  if (e.target.matches('input,textarea,select')) return;
+  if (e.target.matches('input,textarea,select') || e.target.closest('#noteEditor')) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
 
@@ -10173,7 +10140,8 @@ const noteEd = $('#noteEditor');
 function refreshNoteEdit() {
   const it = noteEditId ? byId(noteEditId) : null;
   if (!it) return;
-  it.text = noteEd.value;
+  // Serialize only — never hydrate here (caret would jump).
+  it.text = serializeNoteDom(noteEd);
   applyNoteFmtFromUi(it);
   fitNoteToText(it, true);
   syncNoteEditorStyle(it);
@@ -10184,6 +10152,10 @@ function refreshNoteEdit() {
   invalidate();
 }
 noteEd.addEventListener('input', refreshNoteEdit);
+noteEd.addEventListener('click', e => {
+  // Links are not navigable while editing
+  if (e.target.closest('a')) e.preventDefault();
+});
 noteEd.addEventListener('paste', async e => {
   if (onLanding) return;
   const dt = e.clipboardData;

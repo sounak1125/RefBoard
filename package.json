@@ -47,6 +47,7 @@
       "main.js",
       "preload.js",
       "index.html",
+      "scripts/note-dom.mjs",
       "changelog.json",
       "package.json",
       "assets/icons/sel/**"
