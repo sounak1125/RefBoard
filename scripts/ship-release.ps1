@@ -49,8 +49,12 @@ $notesFile = Join-Path $env:TEMP "refboard-release-$version.md"
 $notes -join [Environment]::NewLine | Out-File -FilePath $notesFile -Encoding utf8
 
 $releaseExists = $false
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 gh release view $Tag --repo $Repo 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) { $releaseExists = $true }
+$probeExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
+if ($probeExit -eq 0) { $releaseExists = $true }
 
 if (-not $releaseExists) {
   Write-Host "Creating release $Tag..."
