@@ -4,5 +4,12 @@
     "Group name labels above grouped items",
     "What's New highlights on the landing page after updates",
     "Align and normalize tools with updated selection bar icons"
+  ],
+  "1.0.3": [
+    "Your board now restores automatically when you reopen the app — no more lost sessions.",
+    "Much faster zoom and panning on boards with lots of images.",
+    "Significantly lower memory usage on large boards.",
+    "Fixed images from one board occasionally appearing in another.",
+    "Fixed opening a corrupted board wiping the board you already had open."
   ]
 }
