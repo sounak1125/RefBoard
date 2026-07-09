@@ -5870,6 +5870,304 @@ function hydrateNoteEditor(ed, markdown) {
   ed.appendChild(hydrateNoteDom(markdown || '', document));
 }
 
+// --- Stage 3: contenteditable keyboard (DOM only — never hydrate while typing) ---
+
+function noteLinePrefixOf(line) {
+  const raw = String(line ?? '');
+  let m = raw.match(/^(\[[ xX]\])\s/);
+  if (m) return m[0];
+  m = raw.match(/^(\d+)\.\s/);
+  if (m) return m[0];
+  m = raw.match(/^(?:•|-|\*)\s/);
+  if (m) return m[0];
+  return '';
+}
+
+function createNoteLineEl(prefix = '') {
+  const el = document.createElement('div');
+  el.setAttribute('data-note-line', '1');
+  const full = prefix; // prefix only; body empty
+  const parsed = parseNoteLine(full);
+  // If prefix alone isn't a complete list marker, treat as plain
+  const p = noteLinePrefixOf(prefix);
+  if (p && p === prefix) {
+    el.setAttribute('data-type', parsed.type);
+    el.setAttribute('data-prefix', p);
+    const mark = document.createElement('span');
+    mark.setAttribute('data-note-prefix', '1');
+    mark.setAttribute('contenteditable', 'false');
+    mark.appendChild(document.createTextNode(p));
+    el.appendChild(mark);
+    if (parsed.type === 'check') el.setAttribute('data-checked', parsed.checked ? '1' : '0');
+    if (parsed.type === 'number') el.setAttribute('data-n', String(parsed.n));
+  } else {
+    el.setAttribute('data-type', 'plain');
+  }
+  return el;
+}
+
+function noteEditorLineEls(ed) {
+  return [...ed.childNodes].filter(
+    n => n.nodeType === 1 && n.getAttribute?.('data-note-line') === '1'
+  );
+}
+
+function ensureNoteEditorHasLine(ed) {
+  if (!noteEditorLineEls(ed).length) ed.appendChild(createNoteLineEl());
+}
+
+function noteEditorClosestLine(node, ed) {
+  let n = node;
+  if (n?.nodeType === 3) n = n.parentNode;
+  while (n && n !== ed) {
+    if (n.nodeType === 1 && n.getAttribute?.('data-note-line') === '1') return n;
+    n = n.parentNode;
+  }
+  return null;
+}
+
+function noteEditorCaretRange(ed) {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  const range = sel.getRangeAt(0);
+  if (!ed.contains(range.commonAncestorContainer)) return null;
+  return range;
+}
+
+function noteEditorPlaceCaret(node, offset = 0) {
+  const sel = window.getSelection();
+  if (!sel || !node) return;
+  const range = document.createRange();
+  if (node.nodeType === 3) {
+    range.setStart(node, Math.min(offset, node.nodeValue?.length ?? 0));
+  } else {
+    range.setStart(node, Math.min(offset, node.childNodes.length));
+  }
+  range.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function noteEditorPlaceCaretInLineStart(lineEl) {
+  const mark = lineEl.querySelector?.('[data-note-prefix]');
+  if (mark && mark.nextSibling) {
+    if (mark.nextSibling.nodeType === 3) noteEditorPlaceCaret(mark.nextSibling, 0);
+    else noteEditorPlaceCaret(lineEl, [...lineEl.childNodes].indexOf(mark) + 1);
+    return;
+  }
+  if (mark) {
+    // Prefix only — caret after mark
+    noteEditorPlaceCaret(lineEl, [...lineEl.childNodes].indexOf(mark) + 1);
+    return;
+  }
+  if (lineEl.firstChild?.nodeType === 3) noteEditorPlaceCaret(lineEl.firstChild, 0);
+  else noteEditorPlaceCaret(lineEl, 0);
+}
+
+function noteEditorPlaceCaretInLineEnd(lineEl) {
+  const sel = window.getSelection();
+  if (!sel) return;
+  const range = document.createRange();
+  range.selectNodeContents(lineEl);
+  range.collapse(false);
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/** True if caret is at the start of the line body (after optional prefix span). */
+function noteEditorCaretAtLineBodyStart(range, lineEl) {
+  if (!range.collapsed) return false;
+  const prefix = lineEl.getAttribute('data-prefix') || '';
+  const mark = lineEl.querySelector?.('[data-note-prefix]');
+  // Build a range from body start → caret and check it's empty
+  const probe = document.createRange();
+  if (mark) {
+    probe.setStartAfter(mark);
+  } else {
+    probe.setStart(lineEl, 0);
+  }
+  probe.setEnd(range.startContainer, range.startOffset);
+  return probe.toString() === '';
+}
+
+function noteEditorLineBodyIsEmpty(lineEl) {
+  let s = '';
+  for (const child of lineEl.childNodes) {
+    if (child.nodeType === 1 && child.getAttribute?.('data-note-prefix') === '1') continue;
+    s += child.textContent || '';
+  }
+  return s.replace(/\u00a0/g, ' ') === '';
+}
+
+function noteEditorApplyLineTypeFromPrefix(lineEl, prefix) {
+  const p = noteLinePrefixOf(prefix);
+  if (!p || p !== prefix) {
+    lineEl.setAttribute('data-type', 'plain');
+    lineEl.removeAttribute('data-prefix');
+    lineEl.removeAttribute('data-checked');
+    lineEl.removeAttribute('data-n');
+    lineEl.querySelector?.('[data-note-prefix]')?.remove();
+    if (prefix) {
+      const t = document.createTextNode(prefix);
+      lineEl.insertBefore(t, lineEl.firstChild);
+    }
+    return;
+  }
+  const parsed = parseNoteLine(prefix);
+  lineEl.setAttribute('data-type', parsed.type);
+  lineEl.setAttribute('data-prefix', p);
+  if (parsed.type === 'check') lineEl.setAttribute('data-checked', parsed.checked ? '1' : '0');
+  else lineEl.removeAttribute('data-checked');
+  if (parsed.type === 'number') lineEl.setAttribute('data-n', String(parsed.n));
+  else lineEl.removeAttribute('data-n');
+  let mark = lineEl.querySelector?.('[data-note-prefix]');
+  if (!mark) {
+    mark = document.createElement('span');
+    mark.setAttribute('data-note-prefix', '1');
+    mark.setAttribute('contenteditable', 'false');
+    lineEl.insertBefore(mark, lineEl.firstChild);
+  }
+  mark.textContent = p;
+}
+
+/** Dev check: serialize must round-trip through hydrate (does not touch the live editor). */
+function noteEditorDevAssertRoundTrip(ed) {
+  try {
+    const s = serializeNoteDom(ed);
+    const wrap = document.createElement('div');
+    wrap.appendChild(hydrateNoteDom(s, document));
+    const s2 = serializeNoteDom(wrap);
+    if (s !== s2) console.error('[note-dom] Enter/Backspace round-trip mismatch', { s, s2 });
+  } catch (err) {
+    console.error('[note-dom] round-trip assert failed', err);
+  }
+}
+
+/**
+ * Old textarea: Enter / Shift+Enter both insert a plain \\n (no list continue,
+ * no exit-on-empty-list). Match that: always a new plain data-note-line.
+ */
+function noteEditorHandleEnter(ed) {
+  ensureNoteEditorHasLine(ed);
+  const range = noteEditorCaretRange(ed);
+  if (!range) return;
+
+  // Drop any selection first
+  if (!range.collapsed) range.deleteContents();
+
+  let lineEl = noteEditorClosestLine(range.startContainer, ed);
+  if (!lineEl) {
+    lineEl = noteEditorLineEls(ed)[0] || createNoteLineEl();
+    if (!lineEl.parentNode) ed.appendChild(lineEl);
+    noteEditorPlaceCaretInLineEnd(lineEl);
+  }
+
+  // Move caret-to-end-of-line content into a new plain line
+  const after = document.createRange();
+  after.setStart(range.startContainer, range.startOffset);
+  after.setEnd(lineEl, lineEl.childNodes.length);
+  const moved = after.extractContents();
+
+  const newLine = createNoteLineEl(); // plain — matches old textarea \\n
+  // Don't pull prefix spans into the new line
+  while (moved.firstChild) {
+    const c = moved.firstChild;
+    if (c.nodeType === 1 && c.getAttribute?.('data-note-prefix') === '1') {
+      moved.removeChild(c);
+      continue;
+    }
+    newLine.appendChild(c);
+  }
+  lineEl.after(newLine);
+  noteEditorPlaceCaretInLineStart(newLine);
+  noteEditorDevAssertRoundTrip(ed);
+}
+
+/**
+ * Backspace at body start: shorten/remove list prefix (char-by-char like textarea),
+ * or merge with previous line. Never leave zero lines.
+ * @returns {boolean} true if handled (caller should preventDefault)
+ */
+function noteEditorHandleBackspace(ed) {
+  ensureNoteEditorHasLine(ed);
+  const range = noteEditorCaretRange(ed);
+  if (!range || !range.collapsed) return false;
+
+  const lineEl = noteEditorClosestLine(range.startContainer, ed);
+  if (!lineEl) return false;
+  if (!noteEditorCaretAtLineBodyStart(range, lineEl)) return false;
+
+  const prefix = lineEl.getAttribute('data-prefix') || '';
+  if (prefix) {
+    // Match textarea: delete one character from the prefix string
+    const next = prefix.slice(0, -1);
+    const mark = lineEl.querySelector?.('[data-note-prefix]');
+    if (!next) {
+      lineEl.removeAttribute('data-prefix');
+      lineEl.setAttribute('data-type', 'plain');
+      lineEl.removeAttribute('data-checked');
+      lineEl.removeAttribute('data-n');
+      mark?.remove();
+    } else if (noteLinePrefixOf(next) === next) {
+      noteEditorApplyLineTypeFromPrefix(lineEl, next);
+    } else {
+      // Incomplete marker → fold into body (e.g. "• " → "•" + body), like textarea
+      lineEl.removeAttribute('data-prefix');
+      lineEl.setAttribute('data-type', 'plain');
+      lineEl.removeAttribute('data-checked');
+      lineEl.removeAttribute('data-n');
+      mark?.remove();
+      lineEl.insertBefore(document.createTextNode(next), lineEl.firstChild);
+    }
+    noteEditorPlaceCaretInLineStart(lineEl);
+    noteEditorDevAssertRoundTrip(ed);
+    return true;
+  }
+
+  const lines = noteEditorLineEls(ed);
+  const idx = lines.indexOf(lineEl);
+  if (idx <= 0) {
+    // First line, no prefix: keep a single empty line; don't delete the shell
+    if (lines.length === 1 && noteEditorLineBodyIsEmpty(lineEl)) {
+      noteEditorDevAssertRoundTrip(ed);
+      return true; // swallow backspace
+    }
+    return false;
+  }
+
+  noteEditorMergeLineIntoPrev(ed, lineEl);
+  noteEditorDevAssertRoundTrip(ed);
+  return true;
+}
+
+function noteEditorMergeLineIntoPrev(ed, lineEl) {
+  const lines = noteEditorLineEls(ed);
+  const idx = lines.indexOf(lineEl);
+  if (idx <= 0) return false;
+  const prev = lines[idx - 1];
+  const marker = document.createTextNode('');
+  prev.appendChild(marker);
+  while (lineEl.firstChild) {
+    const c = lineEl.firstChild;
+    if (c.nodeType === 1 && c.getAttribute?.('data-note-prefix') === '1') {
+      lineEl.removeChild(c);
+      continue;
+    }
+    prev.appendChild(c);
+  }
+  lineEl.remove();
+  if (marker.previousSibling?.nodeType === 3) {
+    const prevText = marker.previousSibling;
+    const off = prevText.nodeValue.length;
+    marker.remove();
+    noteEditorPlaceCaret(prevText, off);
+  } else {
+    noteEditorPlaceCaret(marker, 0);
+  }
+  ensureNoteEditorHasLine(ed);
+  return true;
+}
+
 function noteCaretFromClient(it, clientX, clientY) {
   const [bx, by] = clientToBoard(clientX, clientY);
   const [lx, ly] = boardToItemLocal(it, bx, by);
@@ -10189,7 +10487,23 @@ noteEd.addEventListener('paste', async e => {
   }
 });
 noteEd.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { e.stopPropagation(); finishNoteEdit(); }
+  if (e.key === 'Escape') { e.stopPropagation(); finishNoteEdit(); return; }
+  if (e.key === 'Enter') {
+    // Old textarea: Enter and Shift+Enter both insert \\n (no list continue).
+    e.preventDefault();
+    e.stopPropagation();
+    noteEditorHandleEnter(noteEd);
+    refreshNoteEdit();
+    return;
+  }
+  if (e.key === 'Backspace') {
+    if (noteEditorHandleBackspace(noteEd)) {
+      e.preventDefault();
+      e.stopPropagation();
+      refreshNoteEdit();
+      return;
+    }
+  }
   e.stopPropagation();
 });
 for (const id of ['#noteOpacity']) {
