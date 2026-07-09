@@ -4349,10 +4349,20 @@ function clipboardHtmlToNoteText(html) {
     lines.push(String(s ?? '').replace(/\u00a0/g, ' ').replace(/\s+$/g, ''));
   }
 
+  function isHiddenChrome(el) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+    if (el.getAttribute('aria-hidden') === 'true') return true;
+    // ChatGPT / Notion selection anchors
+    const data = `${el.getAttribute('data-testid') || ''} ${el.className || ''}`.toLowerCase();
+    if (data.includes('selection') && data.includes('anchor')) return true;
+    return false;
+  }
+
   function inlineText(node) {
     if (node.nodeType === Node.TEXT_NODE) return node.textContent.replace(/\u00a0/g, ' ');
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     const tag = node.tagName;
+    if (isHiddenChrome(node)) return '';
     if (tag === 'BR') return '\n';
     if (tag === 'A') {
       const href = (node.getAttribute('href') || '').trim();
@@ -4365,12 +4375,28 @@ function clipboardHtmlToNoteText(html) {
       return `[${label}](${href})`;
     }
     if (tag === 'UL' || tag === 'OL') return '\n' + listLines(node).join('\n');
-    // Strip styling wrappers; keep text
+    // Strip styling wrappers; keep text (recurse into <p> etc.)
     if (tag === 'IMG' || tag === 'VIDEO' || tag === 'SVG' || tag === 'TABLE'
         || tag === 'STYLE' || tag === 'SCRIPT' || tag === 'META') return '';
     let s = '';
     for (const ch of node.childNodes) s += inlineText(ch);
     return s;
+  }
+
+  function liBodyText(li) {
+    const parts = [];
+    const nested = [];
+    for (const ch of li.childNodes) {
+      if (ch.nodeType === Node.ELEMENT_NODE && (ch.tagName === 'UL' || ch.tagName === 'OL')) {
+        nested.push(...listLines(ch));
+      } else {
+        parts.push(inlineText(ch));
+      }
+    }
+    return {
+      body: parts.join('').replace(/\s+/g, ' ').trim(),
+      nested,
+    };
   }
 
   // Flatten nested lists to one level — indented "  • x" is NOT a bullet to parseNoteLine.
@@ -4381,18 +4407,9 @@ function clipboardHtmlToNoteText(html) {
     for (const li of list.children) {
       if (li.tagName !== 'LI') continue;
       n++;
-      const parts = [];
-      const nested = [];
-      for (const ch of li.childNodes) {
-        if (ch.nodeType === Node.ELEMENT_NODE && (ch.tagName === 'UL' || ch.tagName === 'OL')) {
-          nested.push(...listLines(ch));
-        } else {
-          parts.push(inlineText(ch));
-        }
-      }
-      const bodyText = parts.join('').replace(/\s+/g, ' ').trim();
+      const { body, nested } = liBodyText(li);
       const prefix = isOl ? `${n}. ` : '• ';
-      result.push(prefix + bodyText);
+      result.push(prefix + body);
       result.push(...nested);
     }
     return result;
@@ -4405,17 +4422,24 @@ function clipboardHtmlToNoteText(html) {
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (isHiddenChrome(node)) return;
     const tag = node.tagName;
     if (tag === 'UL' || tag === 'OL') {
       for (const ln of listLines(node)) pushLine(ln);
       return;
     }
     if (tag === 'BR') { pushLine(''); return; }
-    if (tag === 'P' || tag === 'DIV' || /^H[1-6]$/.test(tag) || tag === 'LI') {
-      // Standalone LI (some apps paste without UL) — still try list prefix if present in text
-      if (tag === 'LI' && node.parentElement && (node.parentElement.tagName === 'UL' || node.parentElement.tagName === 'OL')) {
-        return; // handled by listLines on parent
-      }
+    if (tag === 'LI') {
+      const parent = node.parentElement?.tagName;
+      // Inside a real list — parent UL/OL walk handles it
+      if (parent === 'UL' || parent === 'OL') return;
+      // Orphan <li> (ChatGPT strips the wrapper) — no signal for ol vs ul → bullets
+      const { body, nested } = liBodyText(node);
+      pushLine('• ' + body);
+      for (const ln of nested) pushLine(ln);
+      return;
+    }
+    if (tag === 'P' || tag === 'DIV' || /^H[1-6]$/.test(tag)) {
       const t = inlineText(node).replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
       pushLine(t);
       return;
