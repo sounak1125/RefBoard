@@ -3034,6 +3034,247 @@ function applyRenderSmoothing(g) {
   g.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
 }
 
+const IMAGE_LOD_BUCKETS = [0.5, 0.25, 0.125, 0.0625];
+const IMAGE_LOD_FULL_RES_CUTOVER = 0.75;
+const IMAGE_LOD_MIN_DIM = 64;
+const IMAGE_LOD_MAX_PIXELS = 40_000_000;
+const IMAGE_LOD_MAX_CONCURRENT = 1;
+const IMAGE_LOD_MAX_QUEUE = 8;
+let imageLodTotalPixels = 0;
+let imageLodClock = 0;
+let imageLodActiveJobs = 0;
+let imageLodPumpScheduled = false;
+const imageLodQueue = [];
+
+function ensureImageVersion(im) {
+  if (!Number.isFinite(im.version)) im.version = 0;
+  return im.version;
+}
+
+function ensureImageLodState(im) {
+  if (!im.lod) im.lod = { entries: new Map(), pending: new Map() };
+  return im.lod;
+}
+
+function closeImageLodEntry(entry) {
+  try { entry?.bitmap?.close?.(); } catch (e) {}
+}
+
+function deleteImageLodEntry(im, bucket) {
+  const lod = im?.lod;
+  if (!lod) return;
+  const entry = lod.entries.get(bucket);
+  if (!entry) return;
+  imageLodTotalPixels = Math.max(0, imageLodTotalPixels - entry.pixels);
+  lod.entries.delete(bucket);
+  closeImageLodEntry(entry);
+}
+
+function invalidateImageLods(im, opts = {}) {
+  if (!im) return;
+  if (opts.bumpVersion) im.version = ensureImageVersion(im) + 1;
+  const lod = im.lod;
+  if (!lod) return;
+  for (const bucket of [...lod.entries.keys()]) deleteImageLodEntry(im, bucket);
+  lod.pending.clear();
+}
+
+function imageLodDims(im, bucket) {
+  return {
+    w: Math.max(1, Math.round(im.w * bucket)),
+    h: Math.max(1, Math.round(im.h * bucket)),
+  };
+}
+
+function imageLodBucketValid(im, bucket) {
+  const d = imageLodDims(im, bucket);
+  return d.w >= IMAGE_LOD_MIN_DIM && d.h >= IMAGE_LOD_MIN_DIM;
+}
+
+function chooseImageLodBucket(im, displayScale) {
+  if (!Number.isFinite(displayScale) || displayScale >= IMAGE_LOD_FULL_RES_CUTOVER) return null;
+
+  let best = null;
+  let smallestValid = null;
+
+  for (const bucket of IMAGE_LOD_BUCKETS) {
+    if (!imageLodBucketValid(im, bucket)) break;
+    smallestValid = bucket;
+    if (bucket >= displayScale) best = bucket;
+    else break;
+  }
+
+  return best || smallestValid || null;
+}
+
+function imageDisplayScale(it, im, cr) {
+  const sourceW = Math.max(1, (cr.r - cr.l) * im.w);
+  const sourceH = Math.max(1, (cr.b - cr.t) * im.h);
+  const scaleX = Math.abs(it.w * state.view.s) / sourceW;
+  const scaleY = Math.abs(it.h * state.view.s) / sourceH;
+  return Math.max(scaleX, scaleY);
+}
+
+function currentLodViewport() {
+  const { w, h } = boardSize();
+  return expandedViewportRect(w, h);
+}
+
+function isImageLodJobStillNeeded(job) {
+  if (!job?.im?.lod || job.im.lod.pending.get(job.bucket) !== job) return false;
+  if (ensureImageVersion(job.im) !== job.version) return false;
+  const it = state.items.find(x => x.id === job.itemId && isImageItem(x) && images.get(x.imgId) === job.im);
+  if (!it || !isItemVisible(it, currentLodViewport())) return false;
+  const bucket = chooseImageLodBucket(job.im, imageDisplayScale(it, job.im, cropOf(it)));
+  return bucket === job.bucket;
+}
+
+function scheduleImageLodPump() {
+  if (imageLodPumpScheduled) return;
+  imageLodPumpScheduled = true;
+  setTimeout(() => {
+    imageLodPumpScheduled = false;
+    pumpImageLodQueue();
+  }, 0);
+}
+
+function dropOldestQueuedImageLodJob() {
+  const job = imageLodQueue.shift();
+  if (job?.im?.lod?.pending?.get(job.bucket) === job) job.im.lod.pending.delete(job.bucket);
+}
+
+function queueImageLod(im, it, bucket) {
+  const lod = ensureImageLodState(im);
+  if (lod.entries.has(bucket) || lod.pending.has(bucket)) return;
+  while (imageLodQueue.length >= IMAGE_LOD_MAX_QUEUE) dropOldestQueuedImageLodJob();
+  const job = { im, itemId: it.id, bucket, version: ensureImageVersion(im) };
+  lod.pending.set(bucket, job);
+  imageLodQueue.push(job);
+  scheduleImageLodPump();
+}
+
+function pumpImageLodQueue() {
+  while (imageLodActiveJobs < IMAGE_LOD_MAX_CONCURRENT && imageLodQueue.length) {
+    const job = imageLodQueue.shift();
+    if (!isImageLodJobStillNeeded(job)) {
+      if (job?.im?.lod?.pending?.get(job.bucket) === job) job.im.lod.pending.delete(job.bucket);
+      continue;
+    }
+    imageLodActiveJobs++;
+    runImageLodJob(job).finally(() => {
+      imageLodActiveJobs = Math.max(0, imageLodActiveJobs - 1);
+      if (imageLodQueue.length) scheduleImageLodPump();
+    });
+  }
+}
+
+async function createProgressiveImageLodBitmap(source, srcW, srcH, targetW, targetH) {
+  let currentSource = source;
+  let currentW = srcW;
+  let currentH = srcH;
+  let currentCanvas = null;
+
+  while (currentW > targetW * 2 || currentH > targetH * 2) {
+    const nextW = Math.max(targetW, Math.round(currentW / 2));
+    const nextH = Math.max(targetH, Math.round(currentH / 2));
+    const next = document.createElement('canvas');
+    next.width = nextW;
+    next.height = nextH;
+
+    const ng = next.getContext('2d');
+    ng.imageSmoothingEnabled = true;
+    ng.imageSmoothingQuality = 'high';
+    ng.drawImage(currentSource, 0, 0, nextW, nextH);
+
+    if (currentCanvas) {
+      currentCanvas.width = 0;
+      currentCanvas.height = 0;
+    }
+
+    currentCanvas = next;
+    currentSource = next;
+    currentW = nextW;
+    currentH = nextH;
+  }
+
+  if (currentW !== targetW || currentH !== targetH || !currentCanvas) {
+    const finalCanvas = document.createElement('canvas');
+    finalCanvas.width = targetW;
+    finalCanvas.height = targetH;
+
+    const fg = finalCanvas.getContext('2d');
+    fg.imageSmoothingEnabled = true;
+    fg.imageSmoothingQuality = 'high';
+    fg.drawImage(currentSource, 0, 0, targetW, targetH);
+
+    if (currentCanvas) {
+      currentCanvas.width = 0;
+      currentCanvas.height = 0;
+    }
+
+    currentCanvas = finalCanvas;
+  }
+
+  return createImageBitmap(currentCanvas);
+}
+
+async function runImageLodJob(job) {
+  const { im, bucket, version } = job;
+  let bitmap = null;
+  try {
+    const d = imageLodDims(im, bucket);
+    bitmap = await createProgressiveImageLodBitmap(im.bitmap, im.w, im.h, d.w, d.h);
+    if (!isImageLodJobStillNeeded(job) || ensureImageVersion(im) !== version) {
+      try { bitmap?.close?.(); } catch (e) {}
+      return;
+    }
+    const lod = ensureImageLodState(im);
+    if (lod.entries.has(bucket)) {
+      try { bitmap?.close?.(); } catch (e) {}
+      return;
+    }
+    lod.pending.delete(bucket);
+    const entry = { bitmap, w: d.w, h: d.h, pixels: d.w * d.h, lastUsed: ++imageLodClock };
+    lod.entries.set(bucket, entry);
+    imageLodTotalPixels += entry.pixels;
+    evictImageLods();
+    invalidate();
+  } catch (err) {
+    console.error('[lod] failed:', err);
+    try { bitmap?.close?.(); } catch (e) {}
+  } finally {
+    if (im?.lod?.pending?.get(bucket) === job) im.lod.pending.delete(bucket);
+  }
+}
+
+function evictImageLods() {
+  while (imageLodTotalPixels > IMAGE_LOD_MAX_PIXELS) {
+    let oldest = null;
+    for (const im of images.values()) {
+      const lod = im.lod;
+      if (!lod) continue;
+      for (const [bucket, entry] of lod.entries) {
+        if (!oldest || entry.lastUsed < oldest.entry.lastUsed) oldest = { im, bucket, entry };
+      }
+    }
+    if (!oldest) break;
+    deleteImageLodEntry(oldest.im, oldest.bucket);
+  }
+}
+
+function getImageLodForDraw(im, it, cr) {
+  const bucket = chooseImageLodBucket(im, imageDisplayScale(it, im, cr));
+  if (!bucket) return null;
+  const lod = ensureImageLodState(im);
+  const entry = lod.entries.get(bucket);
+  if (entry) {
+    entry.lastUsed = ++imageLodClock;
+    return entry;
+  }
+  queueImageLod(im, it, bucket);
+  return null;
+}
+
 const SESSION_RESTORE_IMAGE_CONCURRENCY = 3;
 
 function isValidSessionMeta(meta) {
@@ -3067,6 +3308,7 @@ function collectSessionImageRefs(items) {
 function closeImageRecordBitmaps(records) {
   const values = records instanceof Map ? records.values() : records;
   for (const im of values) {
+    invalidateImageLods(im, { bumpVersion: true });
     try { im?.bitmap?.close?.(); } catch (e) {}
     try { im?.pristineBitmap?.close?.(); } catch (e) {}
   }
@@ -3094,6 +3336,7 @@ async function restoreSessionImages(imgIds, imageNames) {
           image: {
             bitmap,
             pristineBitmap: null,
+            version: 0,
             w: bitmap.width,
             h: bitmap.height,
             blob,
@@ -3393,6 +3636,7 @@ async function restoreBitmapSnap(bitmapSnap) {
   if (im.bitmap && im.bitmap.close) im.bitmap.close();
   im.bitmap = bitmap;
   im.blob = bitmapSnap.blob;
+  invalidateImageLods(im, { bumpVersion: true });
   dbPut('blobs', bitmapSnap.imgId, bitmapSnap.blob);
 }
 async function applyUndoEntry(entry) {
@@ -3462,7 +3706,7 @@ async function registerBlob(blob, name) {
   const bitmap = await decodeToBitmap(blob);
   images.set(imgId, {
     bitmap, pristineBitmap: null, w: bitmap.width, h: bitmap.height,
-    blob, type: blob.type || 'image/png', name: name || '',
+    blob, type: blob.type || 'image/png', name: name || '', version: 0,
   });
   dbPut('blobs', imgId, blob);
   return imgId;
@@ -3689,9 +3933,11 @@ async function commitDrawSession() {
   if (!im) { drawSession = null; return; }
   const blob = await new Promise(res => drawSession.canvas.toBlob(res, im.type || 'image/png'));
   if (!blob) { drawSession = null; return; }
+  const nextBitmap = await createImageBitmap(drawSession.canvas);
   if (im.bitmap.close) im.bitmap.close();
-  im.bitmap = await createImageBitmap(drawSession.canvas);
+  im.bitmap = nextBitmap;
   im.blob = blob;
+  invalidateImageLods(im, { bumpVersion: true });
   dbPut('blobs', drawSession.imgId, blob);
   drawSession = null;
 }
@@ -6871,6 +7117,7 @@ async function applyBoardPayload(j, meta = {}) {
         nextImages.set(imgId, {
           bitmap,
           pristineBitmap: null,
+          version: 0,
           w: bitmap.width,
           h: bitmap.height,
           blob,
@@ -7477,13 +7724,35 @@ function drawBoardItem(g, it) {
   }
   const im = images.get(it.imgId);
   if (!im) { g.restore(); return; }
-  const bitmap = imageBitmapForDraw(it) || im.bitmap;
   const cr = cropOf(it);
   const sx = cr.l * im.w, sy = cr.t * im.h;
   const sw = Math.max(1, (cr.r - cr.l) * im.w), sh = Math.max(1, (cr.b - cr.t) * im.h);
+  let bitmap = im.bitmap;
+  let sourceScaleX = 1;
+  let sourceScaleY = 1;
+  if (drawSession?.itemId === it.id) {
+    bitmap = drawSession.canvas;
+  } else {
+    const lod = getImageLodForDraw(im, it, cr);
+    if (lod) {
+      bitmap = lod.bitmap;
+      sourceScaleX = lod.w / im.w;
+      sourceScaleY = lod.h / im.h;
+    }
+  }
   if (state.boardGray || it.gray) g.filter = 'grayscale(1)';
   g.scale(it.flipX ? -1 : 1, it.flipY ? -1 : 1);
-  g.drawImage(bitmap, sx, sy, sw, sh, -it.w / 2, -it.h / 2, it.w, it.h);
+  g.drawImage(
+    bitmap,
+    sx * sourceScaleX,
+    sy * sourceScaleY,
+    Math.max(1, sw * sourceScaleX),
+    Math.max(1, sh * sourceScaleY),
+    -it.w / 2,
+    -it.h / 2,
+    it.w,
+    it.h
+  );
   g.restore();
 }
 
