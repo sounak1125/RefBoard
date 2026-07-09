@@ -11,5 +11,8 @@
     "Significantly lower memory usage on large boards.",
     "Fixed images from one board occasionally appearing in another.",
     "Fixed opening a corrupted board wiping the board you already had open."
+  ],
+  "1.0.4": [
+    "Fixed copied and exported images coming out blurry."
   ]
 }
