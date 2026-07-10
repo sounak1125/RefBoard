@@ -5515,8 +5515,138 @@ function closeNoteLinkModal(url) {
   if (resolve) resolve(url);
 }
 
+function noteEditorRestoreRange(ed, saved) {
+  ed.focus();
+  const sel = window.getSelection();
+  if (!sel) return;
+  sel.removeAllRanges();
+  if (saved) sel.addRange(saved);
+}
+
+function noteEditorPlaceCaretAfter(node) {
+  const sel = window.getSelection();
+  if (!sel || !node) return;
+  const r = document.createRange();
+  r.setStartAfter(node);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
+/** True if range intersects node but is neither wholly inside nor wholly containing it. */
+function noteEditorRangeStraddles(range, node) {
+  if (!range || !node || !range.intersectsNode(node)) return false;
+  const nr = document.createRange();
+  nr.selectNode(node);
+  const startVsNodeStart = range.compareBoundaryPoints(Range.START_TO_START, nr);
+  const endVsNodeEnd = range.compareBoundaryPoints(Range.END_TO_END, nr);
+  const whollyContains = startVsNodeStart <= 0 && endVsNodeEnd >= 0;
+  const whollyInside = startVsNodeStart >= 0 && endVsNodeEnd <= 0;
+  return !whollyContains && !whollyInside;
+}
+
+function noteEditorMakeLinkAnchor(url, { bare = false, label = '' } = {}) {
+  const a = document.createElement('a');
+  a.setAttribute('href', url);
+  if (bare) a.setAttribute('data-bare', '1');
+  a.appendChild(document.createTextNode(bare ? url : label));
+  return a;
+}
+
 async function insertNoteLink() {
-  throw new Error('insertNoteLink: textarea selection API removed — Stage 5 (link toolbar) not implemented for contenteditable yet');
+  const ed = $('#noteEditor');
+  if (!ed || !noteEditId) return;
+
+  // Snapshot BEFORE modal steals focus. Modal does not mutate editor DOM, so
+  // the cloned Range stays valid. Never read getSelection() after the await.
+  const sel0 = window.getSelection();
+  let saved = null;
+  if (sel0?.rangeCount && ed.contains(sel0.anchorNode)) {
+    saved = sel0.getRangeAt(0).cloneRange();
+  }
+
+  const raw = await promptNoteLinkUrl('https://');
+  if (raw == null) {
+    noteEditorRestoreRange(ed, saved);
+    return;
+  }
+  let url = String(raw).trim();
+  if (!url) {
+    noteEditorRestoreRange(ed, saved);
+    return;
+  }
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+  noteEditorRestoreRange(ed, saved);
+  let range = saved;
+  if (!range) {
+    placeNoteEditorCaretAtEnd(ed);
+    range = noteEditorCaretRange(ed);
+    if (!range) return;
+  }
+
+  if (range.collapsed) {
+    const a = noteEditorMakeLinkAnchor(url, { bare: true });
+    range.insertNode(a);
+    noteEditorPlaceCaretAfter(a);
+    noteEditorDevAssertStructure(ed);
+    refreshNoteEdit();
+    return;
+  }
+
+  const startLine = noteEditorClosestLine(range.startContainer, ed);
+  const endLine = noteEditorClosestLine(range.endContainer, ed);
+  if (!startLine || startLine !== endLine) {
+    toast('Select text within a single line to link');
+    noteEditorRestoreRange(ed, saved);
+    return;
+  }
+
+  const mark = startLine.querySelector?.('[data-note-prefix]');
+  if (mark && range.intersectsNode(mark)) {
+    toast('Cannot link the list marker');
+    noteEditorRestoreRange(ed, saved);
+    return;
+  }
+
+  // Entirely inside one existing <a> → retarget href (no nest)
+  let parentA = range.commonAncestorContainer;
+  if (parentA.nodeType === 3) parentA = parentA.parentNode;
+  while (parentA && parentA !== startLine && parentA !== ed) {
+    if (parentA.nodeType === 1 && parentA.tagName === 'A') break;
+    parentA = parentA.parentNode;
+  }
+  if (
+    parentA &&
+    parentA.tagName === 'A' &&
+    startLine.contains(parentA) &&
+    parentA.contains(range.startContainer) &&
+    parentA.contains(range.endContainer)
+  ) {
+    parentA.setAttribute('href', url);
+    parentA.removeAttribute('data-bare');
+    noteEditorRestoreRange(ed, saved);
+    noteEditorDevAssertStructure(ed);
+    refreshNoteEdit();
+    return;
+  }
+
+  // Partial / straddling overlap with any <a> → refuse (keep serializer-safe DOM)
+  for (const a of startLine.querySelectorAll('a')) {
+    if (noteEditorRangeStraddles(range, a)) {
+      toast('Select whole link or plain text');
+      noteEditorRestoreRange(ed, saved);
+      return;
+    }
+  }
+
+  const label = range.toString().replace(/\u00a0/g, ' ');
+  range.deleteContents();
+  const a = noteEditorMakeLinkAnchor(url, { label });
+  range.insertNode(a);
+  noteEditorPlaceCaretAfter(a);
+  noteEditorDevAssertStructure(ed);
+  refreshNoteEdit();
 }
 
 function tryPasteNoteLink(text) {
