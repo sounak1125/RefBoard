@@ -11,3 +11,5 @@ dist-release/
 .git-askpass-in.txt
 dist-stage2-check/
 scripts/stage2-*
+probe-*.txt
+probe-*.json
