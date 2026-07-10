@@ -1460,7 +1460,27 @@ body.board-active #whatsNewNotice{ display:none; }
   cursor:text; pointer-events:none;
 }
 #noteEditor [data-note-line]{ min-height:1em; }
-#noteEditor [data-note-prefix]{ display:inline; white-space:pre; }
+#noteEditor [data-note-prefix]{
+  /* Match noteListGutter(size) === size * 1.35 — fixed body column, not free-flow width.
+     overflow:visible matches canvas: wide numbers (10./99.) spill into body space, not clipped. */
+  display:inline-block;
+  width:1.35em;
+  box-sizing:border-box;
+  white-space:pre;
+  overflow:visible;
+  vertical-align:baseline;
+  text-align:left;
+}
+/* drawNoteText: numbers at lineX + gutter*0.12 */
+#noteEditor [data-type="number"] > [data-note-prefix]{
+  padding-left:0.162em; /* 1.35 * 0.12 */
+}
+/* drawNoteText: bullet/check marker near gutter*0.38 */
+#noteEditor [data-type="bullet"] > [data-note-prefix],
+#noteEditor [data-type="check"] > [data-note-prefix]{
+  text-align:center;
+  padding-left:0;
+}
 </style>
 </head>
 <body>
@@ -2839,8 +2859,9 @@ function normalizeItem(it) {
       if (fontSize > 72) { scale = fontSize / 72; fontSize = 72; }
     }
     fontSize = clamp(fontSize, 8, 72);
-    scale = clamp(scale, 0.05, 8000 / fontSize);
-    const k = clamp(fontSize * scale, 0.05, 8000) / 15;
+    // scale itself only needs to be positive and finite; size floor lives on eff
+    scale = (Number.isFinite(scale) && scale > 0) ? Math.min(scale, 8000 / fontSize) : 1;
+    const k = clamp(fontSize * scale, 1e-3, 8000) / 15;
     const minW = NOTE_MIN.w * k, minH = NOTE_MIN.h * k;
     return {
       id: it.id || uid(), kind: 'note',
@@ -4495,7 +4516,57 @@ function parseNoteClipboardPayload(raw) {
   }
 }
 
-async function collectClipboardNotes(dt, { allowAsyncRead = true } = {}) {
+/** Sync-drain a paste DataTransfer before any await (Chromium clears it after a macrotask). */
+function drainClipboardDataTransfer(dt) {
+  if (!dt) {
+    return { types: [], plain: '', html: '', noteMime: '', imageFiles: [], noteFiles: [] };
+  }
+  const types = [...(dt.types || [])];
+  const plain = dt.getData('text/plain') || '';
+  const html = dt.getData('text/html') || '';
+  const noteMime = dt.getData(REFBOARD_NOTE_CLIP_MIME) || '';
+  const imageFiles = [];
+  const noteFiles = [];
+  const seenFile = new Set();
+  const addImageFile = f => {
+    if (!f) return;
+    const key = `${f.size}:${f.type}:${f.name || ''}`;
+    if (seenFile.has(key)) return;
+    seenFile.add(key);
+    imageFiles.push(f);
+  };
+  for (const item of dt.items || []) {
+    if (item.type?.startsWith('image/')) addImageFile(item.getAsFile?.());
+    if (item.type === REFBOARD_NOTE_CLIP_MIME && item.getAsFile) {
+      const f = item.getAsFile();
+      if (f) noteFiles.push(f);
+    }
+  }
+  for (const f of dt.files || []) {
+    if (f.type?.startsWith('image/')) addImageFile(f);
+  }
+  return { types, plain, html, noteMime, imageFiles, noteFiles };
+}
+
+async function collectClipboardNotes(snap, { allowAsyncRead = true } = {}) {
+  const s = snap || { types: [], plain: '', html: '', noteMime: '', imageFiles: [], noteFiles: [] };
+
+  // Sync payload from the drained event (no DataTransfer reads after this).
+  if (s.noteMime) {
+    const parsed = parseNoteClipboardPayload(s.noteMime);
+    if (parsed) return parsed;
+  }
+  if (s.plain) {
+    const parsed = parseNoteClipboardPayload(s.plain);
+    if (parsed) return parsed;
+  }
+  for (const f of s.noteFiles || []) {
+    try {
+      const parsed = parseNoteClipboardPayload(await f.text());
+      if (parsed) return parsed;
+    } catch { /* skip */ }
+  }
+
   if (window.RefBoardAPI?.readClipboardNotes) {
     try {
       const raw = await window.RefBoardAPI.readClipboardNotes();
@@ -4503,23 +4574,7 @@ async function collectClipboardNotes(dt, { allowAsyncRead = true } = {}) {
       if (parsed) return parsed;
     } catch { /* native clipboard read failed */ }
   }
-  if (dt) {
-    if (dt.types?.includes(REFBOARD_NOTE_CLIP_MIME)) {
-      const parsed = parseNoteClipboardPayload(dt.getData(REFBOARD_NOTE_CLIP_MIME));
-      if (parsed) return parsed;
-    }
-    if (dt.types?.includes('text/plain')) {
-      const parsed = parseNoteClipboardPayload(dt.getData('text/plain'));
-      if (parsed) return parsed;
-    }
-    if (dt.items) {
-      for (const item of dt.items) {
-        if (item.type !== REFBOARD_NOTE_CLIP_MIME || !item.getAsFile) continue;
-        const parsed = parseNoteClipboardPayload(await item.getAsFile().text());
-        if (parsed) return parsed;
-      }
-    }
-  }
+
   if (!allowAsyncRead || !navigator.clipboard?.read) return null;
   try {
     for (const item of await navigator.clipboard.read()) {
@@ -4547,6 +4602,7 @@ function pasteNotesFromClipboard(noteDefs, pos) {
     x: cx + (def.x - anchorX),
     y: cy + (def.y - anchorY),
   }));
+  for (const note of clones) fitNoteToText(note);
   state.items.push(...clones);
   invalidateWorkspaceBBox();
   state.sel = new Set(clones.map(c => c.id));
@@ -4569,7 +4625,7 @@ function insertTextAtCursor(editor, text) {
   refreshNoteEdit();
 }
 
-async function collectClipboardImages(dt, { allowAsyncRead = true } = {}) {
+async function collectClipboardImages(snap, { allowAsyncRead = true } = {}) {
   const blobs = [];
   const seen = new Set();
   const add = b => {
@@ -4580,25 +4636,19 @@ async function collectClipboardImages(dt, { allowAsyncRead = true } = {}) {
     blobs.push(b);
   };
 
-  if (dt) {
-    for (const item of dt.items || []) {
-      if (item.type.startsWith('image/')) {
-        const f = item.getAsFile?.();
-        if (f) add(f);
-      }
-    }
-    for (const f of dt.files || []) {
-      if (f.type.startsWith('image/')) add(f);
-    }
-    const html = dt.getData('text/html');
-    if (html) {
-      const dm = html.match(/src="(data:image\/[^"]+)"/i);
-      if (dm) {
-        try {
-          const r = await fetch(htmlDecode(dm[1]));
-          add(await r.blob());
-        } catch (e) { /* data URL decode failed */ }
-      }
+  const s = snap || { types: [], plain: '', html: '', noteMime: '', imageFiles: [], noteFiles: [] };
+
+  // Sync files from the drained event (Blob/File objects stay valid after DT clears).
+  for (const f of s.imageFiles || []) add(f);
+
+  // data: image in already-drained html — fetch after await is fine (string, not DT).
+  if (s.html) {
+    const dm = s.html.match(/src="(data:image\/[^"]+)"/i);
+    if (dm) {
+      try {
+        const r = await fetch(htmlDecode(dm[1]));
+        add(await r.blob());
+      } catch (e) { /* data URL decode failed */ }
     }
   }
 
@@ -4758,39 +4808,34 @@ window.addEventListener('paste', async e => {
   if (e.target.closest('#noteEditor')) return;
   if (e.target.matches('input,textarea') && e.target.id !== 'noteEditor') return;
 
-  const dt = e.clipboardData;
+  // Drain DataTransfer synchronously — Chromium clears getData after a macrotask.
+  const snap = drainClipboardDataTransfer(e.clipboardData);
+  e.preventDefault();
   const pos = mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null;
-  const noteDefs = await collectClipboardNotes(dt, { allowAsyncRead: false });
+
+  const noteDefs = await collectClipboardNotes(snap, { allowAsyncRead: false });
   if (noteDefs?.length) {
-    e.preventDefault();
     if (pasteNotesFromClipboard(noteDefs, pos)) {
       toast(noteDefs.length > 1 ? `Pasted ${noteDefs.length} notes` : 'Pasted note');
     }
     return;
   }
-  const blobs = await collectClipboardImages(dt, { allowAsyncRead: false });
+  const blobs = await collectClipboardImages(snap, { allowAsyncRead: false });
   if (blobs.length) {
-    e.preventDefault();
     await addImages(blobs, pos);
     toast(blobs.length > 1 ? `Pasted ${blobs.length} images` : 'Pasted');
     return;
   }
 
-  if (!dt) return;
-  const html = dt.getData('text/html');
-  const plain = dt.getData('text/plain');
-  if (html && tryClipboardHtmlImageUrl(html, pos)) {
-    e.preventDefault();
-    return;
-  }
+  const html = snap.html;
+  const plain = snap.plain;
+  if (html && tryClipboardHtmlImageUrl(html, pos)) return;
   if (plain && /^https?:\/\/\S+$/i.test(plain.trim()) && !(html && /<img[\s>]/i.test(html))) {
-    e.preventDefault();
     tryFetchImage(plain.trim(), pos);
     return;
   }
   const text = html ? clipboardHtmlToNoteText(html) : plain;
   if (text && text.trim()) {
-    e.preventDefault();
     if (pasteTextAsNote(text, pos)) toast('Pasted note');
   }
 });
@@ -4926,8 +4971,10 @@ function hexToRgba(hex, a) {
 // rendered text size = toolbar font size (base, capped 72) × scale factor (from dragging)
 function noteEffSize(it) {
   // floor is tiny (not 4) so the text scales all the way down in lockstep with
-  // images when a group is shrunk — otherwise the text freezes and overflows its box
-  return clamp((it.fontSize || 15) * (it.scale || 1), 0.05, 8000);
+  // images when a group is shrunk — otherwise the text freezes and overflows its box.
+  // 1e-3 (not 0.05): scale may be 1/view.s at high zoom (e.g. 0.01 at 10000%);
+  // floor effective px, not scale — measure path uses NOTE_TEXT_CANVAS_MIN for sub-pixel.
+  return clamp((it.fontSize || 15) * (it.scale || 1), 1e-3, 8000);
 }
 
 function noteFontFamilySafe(it) {
@@ -8327,8 +8374,133 @@ function toggleNoteChecklistLine(it, lineIdx) {
   return true;
 }
 
-function toggleNoteListMode(_mode) {
-  throw new Error('toggleNoteListMode: textarea API removed — Stage 5 (list toolbar) not implemented for contenteditable yet');
+/** Body-only offset from line start (skips [data-note-prefix]). */
+function noteEditorLineBodyOffset(lineEl, container, offset) {
+  if (!lineEl) return 0;
+  const mark = lineEl.querySelector?.('[data-note-prefix]');
+  const probe = document.createRange();
+  if (mark) probe.setStartAfter(mark);
+  else probe.setStart(lineEl, 0);
+  try {
+    probe.setEnd(container, offset);
+  } catch {
+    return 0;
+  }
+  return probe.toString().replace(/\u00a0/g, ' ').length;
+}
+
+function noteEditorPlaceCaretInLineBody(lineEl, bodyOffset) {
+  if (!lineEl) return;
+  let remaining = Math.max(0, bodyOffset | 0);
+  const nodes = [];
+  for (const c of lineEl.childNodes) {
+    if (c.nodeType === 1 && c.getAttribute?.('data-note-prefix') === '1') continue;
+    nodes.push(c);
+  }
+  for (const n of nodes) {
+    const len = (n.textContent || '').replace(/\u00a0/g, ' ').length;
+    if (remaining <= len) {
+      if (n.nodeType === 3) {
+        noteEditorPlaceCaret(n, Math.min(remaining, n.nodeValue?.length ?? 0));
+      } else {
+        const r = document.createRange();
+        if (remaining <= 0) r.setStartBefore(n);
+        else r.setStartAfter(n);
+        r.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      return;
+    }
+    remaining -= len;
+  }
+  noteEditorPlaceCaretInLineEnd(lineEl);
+}
+
+/**
+ * Contiguous data-note-line slice touched by the selection, or the caret's line.
+ * Behavior change vs whole-note list tools: only these lines are rewritten.
+ */
+function noteEditorTargetLines(ed) {
+  ensureNoteEditorHasLine(ed);
+  const lines = noteEditorLineEls(ed);
+  if (!lines.length) return [];
+  const range = noteEditorCaretRange(ed);
+  if (!range) return [lines[0]];
+  const startEl = noteEditorClosestLine(range.startContainer, ed);
+  const endEl = noteEditorClosestLine(range.endContainer, ed);
+  let a = lines.indexOf(startEl);
+  let b = lines.indexOf(endEl);
+  if (a < 0 && b < 0) return [lines[0]];
+  if (a < 0) a = b;
+  if (b < 0) b = a;
+  if (a > b) [a, b] = [b, a];
+  return lines.slice(a, b + 1);
+}
+
+/**
+ * Apply list mode to the selection (or caret line) only — not the whole note.
+ * Numbering restarts at 1 within that contiguous run. Checked [x] is preserved
+ * when staying in / switching to check. Never hydrates.
+ */
+function toggleNoteListMode(mode) {
+  const ed = $('#noteEditor');
+  if (!ed || !noteEditId) return;
+  if (!['plain', 'bullet', 'number', 'check'].includes(mode)) return;
+
+  const targets = noteEditorTargetLines(ed);
+  if (!targets.length) return;
+
+  const range = noteEditorCaretRange(ed);
+  const caretLine = range ? noteEditorClosestLine(range.startContainer, ed) : targets[0];
+  const caretBodyOff = (range && caretLine)
+    ? noteEditorLineBodyOffset(caretLine, range.startContainer, range.startOffset)
+    : 0;
+  const wasCollapsed = !range || range.collapsed;
+  const allLines = noteEditorLineEls(ed);
+  const firstIdx = allLines.indexOf(targets[0]);
+  const lastIdx = allLines.indexOf(targets[targets.length - 1]);
+
+  // Toggle-off only when every selected line already has this mode
+  const allMatch =
+    mode !== 'plain' &&
+    targets.every(ln => ln.getAttribute('data-type') === mode);
+
+  for (let i = 0; i < targets.length; i++) {
+    const lineEl = targets[i];
+    if (allMatch || mode === 'plain') {
+      noteEditorApplyLineTypeFromPrefix(lineEl, '');
+      continue;
+    }
+    const checked =
+      lineEl.getAttribute('data-type') === 'check' &&
+      lineEl.getAttribute('data-checked') === '1';
+    const prefix = noteListPrefixFor(mode, i, checked);
+    noteEditorApplyLineTypeFromPrefix(lineEl, prefix);
+  }
+
+  const linesAfter = noteEditorLineEls(ed);
+  if (wasCollapsed) {
+    const idx = Math.max(0, allLines.indexOf(caretLine));
+    noteEditorPlaceCaretInLineBody(linesAfter[idx] || linesAfter[firstIdx], caretBodyOff);
+  } else {
+    const a = linesAfter[firstIdx];
+    const b = linesAfter[lastIdx];
+    if (a && b) {
+      const sel = window.getSelection();
+      const r = document.createRange();
+      const markA = a.querySelector?.('[data-note-prefix]');
+      if (markA) r.setStartAfter(markA);
+      else r.setStart(a, 0);
+      r.setEnd(b, b.childNodes.length);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+  }
+
+  noteEditorDevAssertStructure(ed);
+  refreshNoteEdit();
 }
 
 function isItemResizeDrag() {
@@ -8371,6 +8543,14 @@ function roundItemBoardGeom(it) {
   invalidateWorkspaceBBox();
 }
 
+/** After rounding, never leave a note smaller than its text hug (fixes ~1–2px undershoot). */
+function clampNoteBoxToHug(it) {
+  if (!it || !isNoteItem(it)) return;
+  const hug = noteHugSize(it);
+  if (it.w < hug.w) it.w = hug.w;
+  if (it.h < hug.h) it.h = hug.h;
+}
+
 function drawBoardItem(g, it, opts = {}) {
   if (isGroupItem(it)) return;
   if (isNoteItem(it) && noteEditId === it.id) return;
@@ -8406,7 +8586,9 @@ function drawBoardItem(g, it, opts = {}) {
     const innerH = Math.max(NOTE_INNER_MIN, nh - pad.y * 2);
     const lineH = noteLineHeight(it);
     const frozenLines = noteResizeFrozenLines(it);
-    const maxLines = frozenLines ?? Math.max(1, Math.floor(innerH / lineH));
+    // +1e-3: after scale+round, innerH/lineH can be 2.99967… (k=0.7) and floor drops a line.
+    // Shortfall admitted ≈ eps*lineH ≈ 0.022 board units at 15px — a sliver, not a full glyph.
+    const maxLines = frozenLines ?? Math.max(1, Math.floor(innerH / lineH + 1e-3));
     const tcm = noteTextCanvasMetrics(it);
     g.fillStyle = it.textColor || '#f0f2f6';
     g.font = noteFontCanvasPx(it, tcm.font);
@@ -8891,6 +9073,7 @@ function applyGroupProportionalResize(orig, r, kIn, anchorLx, anchorLy) {
     it.x = ncx - nw / 2;
     it.y = ncy - nh / 2;
     roundItemBoardGeom(it);
+    if (note) clampNoteBoxToHug(it);
     if (note && noteEditId === it.id) positionNoteEditor();
   }
   invalidateWorkspaceBBox();
@@ -8956,6 +9139,7 @@ function applyProportionalResize(it, r, k, anchorLx, anchorLy) {
   it.x += anchorBoard[0] - newAnchorBoard[0];
   it.y += anchorBoard[1] - newAnchorBoard[1];
   roundItemBoardGeom(it);
+  if (note) clampNoteBoxToHug(it);
   if (note && noteEditId === it.id) positionNoteEditor();
 }
 
@@ -10854,16 +11038,16 @@ noteEd.addEventListener('click', e => {
   if (e.target.closest('a')) e.preventDefault();
 });
 noteEd.addEventListener('paste', async e => {
-  const dt = e.clipboardData;
-  const html = dt?.getData('text/html') || '';
-  const plain = normalizeClipboardText(dt?.getData('text/plain') || '');
+  // Drain before any await — same race as the board paste handler.
+  const snap = drainClipboardDataTransfer(e.clipboardData);
+  const html = snap.html;
+  const plain = normalizeClipboardText(snap.plain);
   e.preventDefault();
 
   if (onLanding) return;
-  if (!dt) return;
 
   // Images still go to the board (not into the note)
-  const blobs = await collectClipboardImages(dt, { allowAsyncRead: false });
+  const blobs = await collectClipboardImages(snap, { allowAsyncRead: false });
   if (blobs.length) {
     const pos = mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null;
     await addImages(blobs, pos);
