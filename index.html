@@ -6328,6 +6328,101 @@ function noteEditorPlaceCaretInLineEnd(lineEl) {
   sel.addRange(range);
 }
 
+/**
+ * Text nodes in the editable line body, in DOM order.
+ * Skip only the list/check prefix subtree. Descend through links and every
+ * other inline element so clicks inside a label land in the anchor text node.
+ */
+function noteEditorBodyTextNodes(lineEl) {
+  const out = [];
+
+  function walk(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out.push(node);
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.getAttribute?.('data-note-prefix') === '1') return;
+    for (const child of node.childNodes) walk(child);
+  }
+
+  for (const child of lineEl.childNodes) walk(child);
+  return out;
+}
+
+/**
+ * Put the caret in a plain text node immediately after a link. Hydration does
+ * not create a trailing node when the link ends the line, so add an empty one;
+ * serialization is unchanged, and subsequent typing stays outside the link.
+ */
+function noteEditorPlaceCaretAfterLink(link) {
+  if (!link?.parentNode) return false;
+  let after = link.nextSibling;
+  if (!after || after.nodeType !== Node.TEXT_NODE) {
+    after = document.createTextNode('');
+    link.parentNode.insertBefore(after, link.nextSibling);
+  }
+  noteEditorPlaceCaret(after, 0);
+  return true;
+}
+
+function placeNoteEditorCaretAtPosition(ed, pos) {
+  const lines = noteEditorLineEls(ed);
+  if (!lines.length) {
+    placeNoteEditorCaretAtEnd(ed);
+    return;
+  }
+
+  const requestedLine = Number.isFinite(pos?.lineIndex)
+    ? Math.trunc(pos.lineIndex)
+    : 0;
+  const lineIndex = clamp(requestedLine, 0, lines.length - 1);
+  const lineEl = lines[lineIndex];
+  const textNodes = noteEditorBodyTextNodes(lineEl);
+
+  if (!textNodes.length) {
+    noteEditorPlaceCaretInLineStart(lineEl);
+    return;
+  }
+
+  const totalLength = textNodes.reduce(
+    (sum, node) => sum + (node.nodeValue?.length ?? 0),
+    0
+  );
+  const requestedColumn = Number.isFinite(pos?.columnInBody)
+    ? Math.trunc(pos.columnInBody)
+    : 0;
+  let remaining = clamp(requestedColumn, 0, totalLength);
+
+  for (let i = 0; i < textNodes.length; i++) {
+    const node = textNodes[i];
+    const length = node.nodeValue?.length ?? 0;
+
+    if (remaining < length) {
+      noteEditorPlaceCaret(node, remaining);
+      return;
+    }
+
+    if (remaining === length) {
+      const link = node.parentElement?.closest('a');
+      const nextText = textNodes[i + 1] || null;
+      const isTrailingLinkBoundary = link
+        && lineEl.contains(link)
+        && (!nextText || !link.contains(nextText));
+
+      if (isTrailingLinkBoundary && noteEditorPlaceCaretAfterLink(link)) return;
+
+      noteEditorPlaceCaret(node, length);
+      return;
+    }
+
+    remaining -= length;
+  }
+
+  const last = textNodes[textNodes.length - 1];
+  noteEditorPlaceCaret(last, last.nodeValue?.length ?? 0);
+}
+
 /** True if caret is at the start of the line body (after optional prefix span). */
 function noteEditorCaretAtLineBodyStart(range, lineEl) {
   if (!range.collapsed) return false;
@@ -6757,15 +6852,7 @@ function noteEditorInsertMarkdown(ed, markdown) {
 function noteCaretFromClient(it, clientX, clientY) {
   const [bx, by] = clientToBoard(clientX, clientY);
   const [lx, ly] = boardToItemLocal(it, bx, by);
-  const linkHit = noteLinkHitAt(it, lx, ly);
   const text = String(it.text || '');
-  if (linkHit) {
-    const md = `[${linkHit.label}](${linkHit.url})`;
-    let idx = text.indexOf(md);
-    if (idx >= 0) return idx + 1 + String(linkHit.label || '').length;
-    idx = text.indexOf(linkHit.url);
-    if (idx >= 0) return idx;
-  }
   const g = getMeasureCtx();
   const tcm = noteTextCanvasMetrics(it);
   g.font = noteFontCanvasPx(it, tcm.font);
@@ -6781,41 +6868,66 @@ function noteCaretFromClient(it, clientX, clientY) {
   const blockH = shown.length * lineH;
   const y0 = pad.y + Math.max(0, (innerH - blockH) / 2);
   const cs = tcm.coordScale;
-  let lineIdx = 0;
-  for (let i = 0; i < shown.length; i++) {
-    const top = y0 + i * lineH;
-    if (ly >= top && ly < top + lineH) { lineIdx = i; break; }
-    lineIdx = i;
-  }
-  const lineStarts = [];
-  let pos = 0;
+
+  // `shown` is used only for the canvas y hit-test. The resulting index is an
+  // absolute index because shown is always the zero-based prefix of allLines.
   const allLines = text.split('\n');
-  for (let i = 0; i < allLines.length; i++) {
-    lineStarts.push(pos);
-    pos += allLines[i].length + 1;
+  let lineIndex;
+  let verticalSnap = null;
+  if (ly < y0) {
+    lineIndex = 0;
+    verticalSnap = 'start';
+  } else if (ly >= y0 + blockH) {
+    lineIndex = Math.max(0, shown.length - 1);
+    verticalSnap = 'end';
+  } else {
+    lineIndex = clamp(
+      Math.floor((ly - y0) / lineH),
+      0,
+      Math.max(0, shown.length - 1)
+    );
   }
-  const lineStart = lineStarts[lineIdx] ?? 0;
-  const lineText = allLines[lineIdx] ?? '';
+
+  // Parse the selected line from the full stored note, never from the clipped
+  // canvas array. The body column is a visible UTF-16 DOM text offset.
+  const lineText = allLines[lineIndex] ?? '';
   const parsed = parseNoteLine(lineText);
   const gutter = gutterFont * cs;
   const lineX = noteLineStartX(g, it, parsed, gutterFont, innerW, pad.x, cs, size);
   let tx = lineX;
   if (parsed.type !== 'plain') tx = lineX + gutter;
+
+  const visibleBody = parseNoteLinkSegments(parsed.body || '')
+    .map(seg => seg.text || '')
+    .join('');
+
+  if (verticalSnap === 'start') return { lineIndex, columnInBody: 0 };
+  if (verticalSnap === 'end') {
+    return { lineIndex, columnInBody: visibleBody.length };
+  }
+
   const relX = lx - tx;
-  const body = parsed.body || '';
-  if (relX <= 0) return lineStart + (lineText.length - body.length);
+  if (relX <= 0) return { lineIndex, columnInBody: 0 };
+
   let best = 0, bestDist = Infinity;
-  for (let c = 0; c <= body.length; c++) {
-    const w = noteTextMeasure(g, body.slice(0, c)).width * cs;
+  for (let c = 0; c <= visibleBody.length; c++) {
+    const w = noteTextMeasure(g, visibleBody.slice(0, c)).width * cs;
     const d = Math.abs(w - relX);
     if (d < bestDist) { bestDist = d; best = c; }
   }
-  return lineStart + (lineText.length - body.length) + best;
+  return { lineIndex, columnInBody: best };
 }
 
 function startNoteEdit(it, clientX, clientY) {
   if (!it || !isNoteItem(it)) return;
   if (noteEditId && noteEditId !== it.id) finishNoteEdit();
+
+  // Measure against the canvas geometry that received the click.
+  // ensureNoteEditFits below may re-hug and recenter an undersized note.
+  const caretPos = Number.isFinite(clientX) && Number.isFinite(clientY)
+    ? noteCaretFromClient(it, clientX, clientY)
+    : null;
+
   hideNoteLinkPop();
   noteEditId = it.id;
   noteEditorStyleKey = '';
@@ -6833,9 +6945,8 @@ function startNoteEdit(it, clientX, clientY) {
   invalidate();
   requestAnimationFrame(() => {
     ed.focus();
-    // Stage 2: end-of-text only. noteCaretFromClient still returns a markdown
-    // string index (textarea era) — click-to-caret needs a DOM port later.
-    placeNoteEditorCaretAtEnd(ed);
+    if (caretPos) placeNoteEditorCaretAtPosition(ed, caretPos);
+    else placeNoteEditorCaretAtEnd(ed);
   });
 }
 
@@ -8334,23 +8445,37 @@ function noteChecklistHitAt(it, lx, ly) {
   const gutter = gutterFont * cs;
   // Board-space box matches drawNoteText's size*0.82 under g.scale(cs,cs).
   const box = noteEffSize(it) * 0.82;
-  const hitPad = Math.max(4, 8 / (state.view.s || 1));
+  const viewS = Math.max(state.view.s || 1, 1e-6);
+  const hitPad = Math.min(
+    4 / viewS,
+    lineH * 0.4,
+    box * 0.75
+  );
   const lines = String(it.text || '').split('\n');
   const maxLines = Math.max(1, Math.floor(innerH / lineH + 1e-3));
   const shown = lines.slice(0, maxLines);
   const blockH = shown.length * lineH;
   const y0 = pad.y + Math.max(0, (innerH - blockH) / 2);
+  let closestLine = -1;
+  let closestDistance = Infinity;
+
   for (let i = 0; i < shown.length; i++) {
     const parsed = parseNoteLine(shown[i]);
     if (parsed.type !== 'check') continue;
     const lineX = noteLineStartX(g, it, parsed, gutterFont, innerW, pad.x, cs, size);
     const cx = lineX + gutter * 0.38;
     const cy = y0 + i * lineH + lineH / 2;
+
     if (lx >= cx - box / 2 - hitPad && lx <= cx + box / 2 + hitPad &&
-        ly >= cy - box / 2 - hitPad && ly <= cy + box / 2 + hitPad)
-      return i;
+        ly >= cy - box / 2 - hitPad && ly <= cy + box / 2 + hitPad) {
+      const distance = Math.abs(ly - cy);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestLine = i;
+      }
+    }
   }
-  return -1;
+  return closestLine;
 }
 
 function itemToNoteDrawLocal(it, lx, ly) {
@@ -9645,6 +9770,7 @@ canvas.addEventListener('pointerdown', async e => {
   }
   const it = itemAt(sx, sy);
   if (it) {
+    const selectedAtPointerDown = state.sel.has(it.id);
     if (isNoteItem(it) && noteEditId === it.id) return;
     if (isNoteItem(it) && e.detail >= 2) return;
     if (isNoteItem(it) && !noteEditId) {
@@ -9679,6 +9805,7 @@ canvas.addEventListener('pointerdown', async e => {
     if (!idsIncludeLockedGroupItems(moveIds)) {
       mode = {
         type: 'move', sx, sy, hit: it.id, pushed: false,
+        selectedAtPointerDown,
         orig: collectMoveOrig(moveIds),
       };
     }
@@ -9898,10 +10025,17 @@ window.addEventListener('pointerup', e => {
     syncMovedGroupFrames(mode.orig);
     scheduleSave();
     invalidate();
-  } else if (mode.type === 'move' && !mode.pushed && !e.shiftKey && state.sel.size > 1) {
-    // plain click on one of several selected images: select just that one
-    state.sel = new Set([mode.hit]);
-    updateSelBar(); invalidate();
+  } else if (mode.type === 'move' && !mode.pushed && !e.shiftKey) {
+    const hit = byId(mode.hit);
+    if (state.sel.size > 1) {
+      // Plain click on one of several selected items: select just that one.
+      state.sel = new Set([mode.hit]);
+      updateSelBar();
+      invalidate();
+    } else if (mode.selectedAtPointerDown && isNoteItem(hit)) {
+      // A click on an already-selected note edits at the released pointer.
+      startNoteEdit(hit, e.clientX, e.clientY);
+    }
   } else if (mode.type === 'marquee') {
     marquee = null;
     invalidate();
@@ -10566,7 +10700,14 @@ window.addEventListener('keydown', e => {
   else if (mod && e.shiftKey && k === 'h') { e.preventDefault(); flipSelection('x'); }
   else if (mod && e.shiftKey && k === 'v') { e.preventDefault(); flipSelection('y'); }
   else if (!mod) {
-    if (k === 'delete' || k === 'backspace') deleteSelection();
+    if (k === 'enter') {
+      const it = state.sel.size === 1 ? byId([...state.sel][0]) : null;
+      if (isNoteItem(it)) {
+        e.preventDefault();
+        editNote(it);
+      }
+    }
+    else if (k === 'delete' || k === 'backspace') deleteSelection();
     else if (k === 'f') fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i)));
     else if (k === 'p') arrangeAll();
     else if (e.shiftKey && k === 't') {
