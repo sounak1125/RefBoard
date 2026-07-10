@@ -1476,13 +1476,52 @@ body.board-active #whatsNewNotice{ display:none; }
 #noteEditor [data-type="number"] > [data-note-prefix]{
   padding-left:0;
 }
-/* drawNoteText: bullet fillText / check box center at lineX + gutter*0.38.
-   Canvas fillText is left-aligned at that x — pad so the marker's left edge
-   lands there (not text-align:center, which was 0.6–2.4px off). */
-#noteEditor [data-type="bullet"] > [data-note-prefix],
-#noteEditor [data-type="check"] > [data-note-prefix]{
+/* drawNoteText: bullet fillText at lineX + gutter*0.38 (left-aligned glyph). */
+#noteEditor [data-type="bullet"] > [data-note-prefix]{
   text-align:left;
   padding-left:calc(var(--note-gutter, 1.35em) * 0.38);
+}
+/* Checks: keep textContent === data-prefix (invariant) but hide brackets.
+   Canvas draws a box at lineX+gutter*0.38, size 0.82em, stroke box*0.1 —
+   match with ::before. font-size:0 would zero em gutters; use transparent fill. */
+#noteEditor [data-type="check"] > [data-note-prefix]{
+  padding-left:0;
+  position:relative;
+  /* Do NOT set overflow:hidden — on inline-block it moves the baseline to the
+     bottom margin edge and inflates the line box (~+5px), breaking padTop. */
+  color:inherit;
+  -webkit-text-fill-color:transparent;
+}
+#noteEditor [data-type="check"] > [data-note-prefix]::before{
+  content:'';
+  position:absolute;
+  box-sizing:border-box;
+  width:0.82em;
+  height:0.82em;
+  left:calc(var(--note-gutter, 1.35em) * 0.38 - 0.41em);
+  top:50%;
+  transform:translateY(-50%);
+  border:0.082em solid currentColor; /* box * 0.1 */
+  pointer-events:none;
+}
+/* Checkmark path matches drawNoteCheckbox (box-relative polyline, stroke 0.14). */
+#noteEditor [data-type="check"][data-checked="1"] > [data-note-prefix]::after{
+  content:'';
+  position:absolute;
+  box-sizing:border-box;
+  width:0.82em;
+  height:0.82em;
+  left:calc(var(--note-gutter, 1.35em) * 0.38 - 0.41em);
+  top:50%;
+  transform:translateY(-50%);
+  background-color:currentColor;
+  -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolyline fill='none' stroke='%23000' stroke-width='14' stroke-linecap='round' stroke-linejoin='round' points='28,52 48,74 78,28'/%3E%3C/svg%3E");
+  -webkit-mask-size:100% 100%;
+  -webkit-mask-repeat:no-repeat;
+  mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolyline fill='none' stroke='%23000' stroke-width='14' stroke-linecap='round' stroke-linejoin='round' points='28,52 48,74 78,28'/%3E%3C/svg%3E");
+  mask-size:100% 100%;
+  mask-repeat:no-repeat;
+  pointer-events:none;
 }
 </style>
 </head>
@@ -5821,14 +5860,17 @@ function noteListGutter(size) {
 }
 
 /**
- * Widest stored list prefix in the note ("• "/"- "/"* ", "[ ] "/"[x] ", "N. " —
- * same strings as data-prefix / noteLinePrefixOf). One pass, not per line.
+ * Widest stored list prefix in the note ("• "/"- "/"* ", "N. " — same strings as
+ * data-prefix / noteLinePrefixOf). Checks are CSS boxes (~0.82em), not measured
+ * literal "[x] " — that would inflate bold gutters for no visual need.
+ * One pass, not per line.
  */
 function noteWidestPrefixWidth(g, text) {
   let maxW = 0;
   for (const ln of String(text || '').split('\n')) {
     const prefix = noteLinePrefixOf(ln);
     if (!prefix) continue;
+    if (parseNoteLine(ln).type === 'check') continue;
     maxW = Math.max(maxW, g.measureText(prefix).width);
   }
   return maxW;
@@ -5877,15 +5919,15 @@ function noteTextMeasure(g, text) {
   return { width: left + right, inset: left };
 }
 
-// Ink bounds for a font size — used instead of textBaseline 'middle' under coordScale
-// (middle misplaces glyphs when fillText runs after g.scale on sub-pixel notes).
+// Declared font metrics (Chromium strut) — match CSS line boxes so canvas and
+// editor share one baseline. Underlines still use actualBoundingBoxDescent.
 function noteTextVertMetrics(g, fontPx) {
   const prev = g.textBaseline;
   g.textBaseline = 'alphabetic';
   const m = g.measureText('Mg');
   g.textBaseline = prev;
-  const ascent = m.actualBoundingBoxAscent ?? fontPx * 0.78;
-  const descent = m.actualBoundingBoxDescent ?? fontPx * 0.22;
+  const ascent = m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent ?? fontPx * 0.78;
+  const descent = m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent ?? fontPx * 0.22;
   return { ascent, descent, ink: ascent + descent };
 }
 
@@ -6116,21 +6158,17 @@ function syncNoteEditorStyle(it) {
   ed.style.lineHeight = String(lineH / eff);
   const pad = notePadFor(it);
   const s = state.view.s;
-  // Match drawNoteText baseline: canvas ink-centers in the line box; CSS uses
-  // half-leading. Also match block centering (extra) that canvas applies when
-  // innerH > blockH — editor previously padded from the top only.
+  // Block-center like drawNoteText when innerH > blockH. Baseline alignment is
+  // free now: canvas uses fontBoundingBox* (same strut model as CSS).
   const tcm = noteTextCanvasMetrics(it);
   const g = getMeasureCtx();
   g.font = noteFontCanvasPx(it, tcm.font);
-  const vm = noteTextVertMetrics(g, tcm.font);
-  const inkGap = Math.max(0, (lineH / tcm.coordScale - vm.ink) / 2) * tcm.coordScale;
-  const halfLeading = (lineH - eff) / 2;
   const innerH = Math.max(NOTE_INNER_MIN, it.h - pad.y * 2);
   const lineCount = Math.max(1, String(it.text || '').split('\n').length);
   const maxLines = Math.max(1, Math.floor(innerH / lineH + 1e-3));
   const blockH = Math.min(lineCount, maxLines) * lineH;
   const extra = Math.max(0, (innerH - blockH) / 2);
-  const padTop = pad.y + extra + (inkGap - halfLeading);
+  const padTop = pad.y + extra;
   ed.style.padding = `${padTop * s}px ${pad.x * s}px ${pad.y * s}px`;
   // One note-wide list gutter (em), matching canvas noteListGutterForText.
   const gutterFont = noteListGutterForText(g, it.text, tcm.font, it);
@@ -6392,6 +6430,24 @@ function noteEditorDevAssertStructure(ed) {
           innerHTML: lineEl.innerHTML,
           violations,
         });
+      }
+    }
+
+    // Line boxes must match noteLineHeight — padTop / block centering assume it.
+    const it = noteEditId ? byId(noteEditId) : null;
+    if (it && isNoteItem(it)) {
+      const expected = noteLineHeight(it) * (state.view.s || 1);
+      for (const [lineIndex, lineEl] of lines.entries()) {
+        const h = lineEl.getBoundingClientRect().height;
+        if (Math.abs(h - expected) > 0.5) {
+          console.error('[note-dom] line box height mismatch (breaks padTop centering)', {
+            lineIndex,
+            dataType: lineEl.getAttribute('data-type'),
+            measured: h,
+            expected,
+            delta: h - expected,
+          });
+        }
       }
     }
   } catch (err) {
