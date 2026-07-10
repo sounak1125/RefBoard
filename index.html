@@ -1461,25 +1461,28 @@ body.board-active #whatsNewNotice{ display:none; }
 }
 #noteEditor [data-note-line]{ min-height:1em; }
 #noteEditor [data-note-prefix]{
-  /* Match noteListGutter(size) === size * 1.35 — fixed body column, not free-flow width.
-     overflow:visible matches canvas: wide numbers (10./99.) spill into body space, not clipped. */
+  /* Match noteListGutterForText — one slot per note (--note-gutter from syncNoteEditorStyle).
+     overflow:visible matches canvas: wide numbers spill into body space only if gutter undersized. */
   display:inline-block;
-  width:1.35em;
+  width:var(--note-gutter, 1.35em);
   box-sizing:border-box;
   white-space:pre;
   overflow:visible;
   vertical-align:baseline;
   text-align:left;
 }
-/* drawNoteText: numbers at lineX + gutter*0.12 */
+/* Number prefix: full stored "N. " in the gutter slot (no 0.12 inset — that
+   fought measure(prefix)+GAP and overflowed the span). Canvas draws "N." at lineX. */
 #noteEditor [data-type="number"] > [data-note-prefix]{
-  padding-left:0.162em; /* 1.35 * 0.12 */
+  padding-left:0;
 }
-/* drawNoteText: bullet/check marker near gutter*0.38 */
+/* drawNoteText: bullet fillText / check box center at lineX + gutter*0.38.
+   Canvas fillText is left-aligned at that x — pad so the marker's left edge
+   lands there (not text-align:center, which was 0.6–2.4px off). */
 #noteEditor [data-type="bullet"] > [data-note-prefix],
 #noteEditor [data-type="check"] > [data-note-prefix]{
-  text-align:center;
-  padding-left:0;
+  text-align:left;
+  padding-left:calc(var(--note-gutter, 1.35em) * 0.38);
 }
 </style>
 </head>
@@ -5803,8 +5806,53 @@ function parseNoteLinkSegments(text) {
 }
 /* NOTE_PARSERS_END */
 
+/** Min list gutter (bullets/checks); numbered notes may grow past this. */
+const NOTE_LIST_GUTTER_EM = 1.35;
+/** Extra clear after the widest stored list prefix before the body. */
+const NOTE_LIST_PREFIX_GAP_EM = 0.15;
+
+function noteListGutterMin(size) {
+  return size * NOTE_LIST_GUTTER_EM;
+}
+
+/** @deprecated use noteListGutterMin / noteListGutterForText */
 function noteListGutter(size) {
-  return size * 1.35;
+  return noteListGutterMin(size);
+}
+
+/**
+ * Widest stored list prefix in the note ("• "/"- "/"* ", "[ ] "/"[x] ", "N. " —
+ * same strings as data-prefix / noteLinePrefixOf). One pass, not per line.
+ */
+function noteWidestPrefixWidth(g, text) {
+  let maxW = 0;
+  for (const ln of String(text || '').split('\n')) {
+    const prefix = noteLinePrefixOf(ln);
+    if (!prefix) continue;
+    maxW = Math.max(maxW, g.measureText(prefix).width);
+  }
+  return maxW;
+}
+
+/**
+ * ONE gutter per note (shared by bullets/checks/numbers so bodies align).
+ * gutter = max(size*1.35, measure(widestStoredPrefix) + size*GAP)
+ * Per-item memo (WeakMap): key = size+font+text; no invalidation hooks.
+ */
+const _noteGutterByItem = new WeakMap();
+function noteListGutterForText(g, text, size, it) {
+  const key = `${size}\0${g.font}\0${text || ''}`;
+  if (it) {
+    const cached = _noteGutterByItem.get(it);
+    if (cached && cached.key === key) return cached.gutter;
+  }
+  const min = noteListGutterMin(size);
+  const prefixW = noteWidestPrefixWidth(g, text);
+  const gutter = prefixW <= 0
+    ? min
+    : Math.max(min, prefixW + size * NOTE_LIST_PREFIX_GAP_EM);
+  if (it) _noteGutterByItem.set(it, { key, gutter });
+  return gutter;
 }
 
 function noteListPrefixFor(mode, index, checked) {
@@ -5849,14 +5897,30 @@ function measureNoteSegments(g, segs) {
   return segs.reduce((w, s) => w + (s.text ? noteTextMeasure(g, s.text).width : 0), 0);
 }
 
-function noteLineContentWidth(g, parsed, size) {
-  const gutter = parsed.type === 'plain' ? 0 : noteListGutter(size);
+function noteLineContentWidth(g, parsed, size, gutter) {
+  const gutt = parsed.type === 'plain' ? 0 : (gutter ?? noteListGutterMin(size));
   const body = stripNoteMarkdown(parsed.body);
-  return gutter + noteTextMeasure(g, body).width;
+  return gutt + noteTextMeasure(g, body).width;
 }
 
-function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkColor, inset = 0) {
-  let tx = x + inset;
+/**
+ * Alignment-aware content-left x for a note line — single source for draw, hit,
+ * links, and caret. `gutter` is in g.font space; pass coordScale when mapping
+ * into board space (draw path uses 1 — the canvas context is already scaled).
+ * originX defaults to notePadFor(it).x.
+ */
+function noteLineStartX(g, it, parsed, gutter, innerW, originX, coordScale = 1, size) {
+  const align = (it && it.textAlign) || 'left';
+  const sz = size != null ? size : (parseFloat(String(g.font).match(/(\d+(?:\.\d+)?)px/)?.[1]) || 15);
+  const ox = originX != null ? originX : notePadFor(it).x;
+  const lineW = noteLineContentWidth(g, parsed, sz, gutter) * coordScale;
+  if (align === 'center') return ox + (innerW - lineW) / 2;
+  if (align === 'right') return ox + innerW - lineW;
+  return ox;
+}
+
+function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkColor) {
+  let tx = x;
   for (const seg of segs) {
     if (!seg.text) continue;
     if (seg.type === 'link') {
@@ -5900,18 +5964,20 @@ function noteLineHeight(it) {
   return noteEffSize(it) * 1.45;
 }
 
-function layoutNoteLines(g, text) {
+function layoutNoteLines(g, text, it) {
   const lines = String(text || '').split('\n');
   if (!lines.length) lines.push('');
   const size = parseFloat(String(g.font).match(/(\d+(?:\.\d+)?)px/)?.[1]) || 15;
+  // One gutter for the whole note — widest number label, not per-line.
+  const gutter = noteListGutterForText(g, text, size, it);
   let maxLineW = 0;
   for (const ln of lines) {
     const p = parseNoteLine(ln);
-    const gutter = p.type === 'plain' ? 0 : noteListGutter(size);
+    const gutt = p.type === 'plain' ? 0 : gutter;
     const body = stripNoteMarkdown(p.body);
-    maxLineW = Math.max(maxLineW, gutter + noteTextMeasure(g, body).width);
+    maxLineW = Math.max(maxLineW, gutt + noteTextMeasure(g, body).width);
   }
-  return { lines, maxLineW, lineCount: lines.length };
+  return { lines, maxLineW, lineCount: lines.length, gutter };
 }
 
 let _noteMeasureEl = null;
@@ -5935,7 +6001,7 @@ function measureNoteNaturalWidth(it, text) {
   const g = getMeasureCtx();
   const { font, coordScale } = noteTextCanvasMetrics(it);
   g.font = noteFontCanvasPx(it, font);
-  return layoutNoteLines(g, text).maxLineW * coordScale;
+  return layoutNoteLines(g, text, it).maxLineW * coordScale;
 }
 
 // entering edit just re-hugs the text at the current size — never a sudden jump
@@ -5955,7 +6021,7 @@ function noteHugSize(it) {
   const pad = notePadFor(it);
   const padX = pad.x * 2, padY = pad.y * 2;
   const text = String(it.text || '');
-  const { maxLineW, lineCount } = layoutNoteLines(g, text);
+  const { maxLineW, lineCount } = layoutNoteLines(g, text, it);
   const k = eff / 15;
   const textW = maxLineW * coordScale;
   // Box must always hug text in board space — never cap below text width (view.s
@@ -6045,10 +6111,31 @@ function syncNoteEditorStyle(it) {
   ed.style.font = noteFontScreenCss(it);
   ed.style.textDecoration = it.underline ? 'underline' : 'none';
   ed.style.textAlign = it.textAlign || 'left';
-  ed.style.lineHeight = String(noteLineHeight(it) / noteEffSize(it));
+  const lineH = noteLineHeight(it);
+  const eff = noteEffSize(it);
+  ed.style.lineHeight = String(lineH / eff);
   const pad = notePadFor(it);
   const s = state.view.s;
-  ed.style.padding = `${pad.y * s}px ${pad.x * s}px`;
+  // Match drawNoteText baseline: canvas ink-centers in the line box; CSS uses
+  // half-leading. Also match block centering (extra) that canvas applies when
+  // innerH > blockH — editor previously padded from the top only.
+  const tcm = noteTextCanvasMetrics(it);
+  const g = getMeasureCtx();
+  g.font = noteFontCanvasPx(it, tcm.font);
+  const vm = noteTextVertMetrics(g, tcm.font);
+  const inkGap = Math.max(0, (lineH / tcm.coordScale - vm.ink) / 2) * tcm.coordScale;
+  const halfLeading = (lineH - eff) / 2;
+  const innerH = Math.max(NOTE_INNER_MIN, it.h - pad.y * 2);
+  const lineCount = Math.max(1, String(it.text || '').split('\n').length);
+  const maxLines = Math.max(1, Math.floor(innerH / lineH + 1e-3));
+  const blockH = Math.min(lineCount, maxLines) * lineH;
+  const extra = Math.max(0, (innerH - blockH) / 2);
+  const padTop = pad.y + extra + (inkGap - halfLeading);
+  ed.style.padding = `${padTop * s}px ${pad.x * s}px ${pad.y * s}px`;
+  // One note-wide list gutter (em), matching canvas noteListGutterForText.
+  const gutterFont = noteListGutterForText(g, it.text, tcm.font, it);
+  const gutterEm = (gutterFont * tcm.coordScale) / eff;
+  ed.style.setProperty('--note-gutter', `${gutterEm}em`);
   if (card) card.style.borderRadius = '0';
 }
 
@@ -6633,7 +6720,7 @@ function noteCaretFromClient(it, clientX, clientY) {
   const innerW = Math.max(NOTE_INNER_MIN, dm.w - pad.x * 2);
   const innerH = Math.max(NOTE_INNER_MIN, dm.h - pad.y * 2);
   const maxLines = Math.max(1, Math.floor(innerH / lineH));
-  const { lines } = layoutNoteLines(g, text);
+  const { lines, gutter: gutterFont } = layoutNoteLines(g, text, it);
   const shown = lines.slice(0, maxLines);
   const blockH = shown.length * lineH;
   const y0 = pad.y + Math.max(0, (innerH - blockH) / 2);
@@ -6654,15 +6741,10 @@ function noteCaretFromClient(it, clientX, clientY) {
   const lineStart = lineStarts[lineIdx] ?? 0;
   const lineText = allLines[lineIdx] ?? '';
   const parsed = parseNoteLine(lineText);
-  const align = it.textAlign || 'left';
-  const gutter = noteListGutter(tcm.eff);
-  const lineW = noteLineContentWidth(g, parsed, size) * cs;
-  let lineX = pad.x;
-  if (align === 'center') lineX = pad.x + (innerW - lineW) / 2;
-  else if (align === 'right') lineX = pad.x + innerW - lineW;
+  const gutter = gutterFont * cs;
+  const lineX = noteLineStartX(g, it, parsed, gutterFont, innerW, pad.x, cs, size);
   let tx = lineX;
   if (parsed.type !== 'plain') tx = lineX + gutter;
-  tx += noteTextMeasure(g, parsed.body || ' ').inset * cs;
   const relX = lx - tx;
   const body = parsed.body || '';
   if (relX <= 0) return lineStart + (lineText.length - body.length);
@@ -8109,11 +8191,13 @@ function drawWorkspacePlane() {
 function drawNoteCheckbox(g, cx, cy, box, checked, color) {
   g.save();
   g.strokeStyle = color;
-  g.lineWidth = Math.max(1, box * 0.1);
+  // No Math.max floor in font-px — under coordScale that floor made borders ~3×
+  // too thick for high-zoom (sub-pixel eff) notes. Sub-pixel strokes are fine.
+  g.lineWidth = box * 0.1;
   g.strokeRect(cx - box / 2, cy - box / 2, box, box);
   if (checked) {
     g.strokeStyle = color;
-    g.lineWidth = Math.max(1.5, box * 0.14);
+    g.lineWidth = box * 0.14;
     g.lineCap = 'round';
     g.lineJoin = 'round';
     g.beginPath();
@@ -8125,14 +8209,13 @@ function drawNoteCheckbox(g, cx, cy, box, checked, color) {
   g.restore();
 }
 
-function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, innerH, textAlign, textColor, pinTop = false) {
-  const align = textAlign || 'left';
+function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, innerH, textAlign, textColor, pinTop = false, it = null) {
+  const alignIt = it || { textAlign: textAlign || 'left' };
   const linkColor = '#5aa2ff';
-  const { lines } = layoutNoteLines(g, text);
+  const { lines, gutter } = layoutNoteLines(g, text, it);
   const shown = lines.slice(0, maxLines);
   const blockH = shown.length * lineH;
   const y0 = pinTop ? y : y + Math.max(0, ((innerH == null ? blockH : innerH) - blockH) / 2);
-  const gutter = noteListGutter(size);
   const vm = noteTextVertMetrics(g, size);
   const prevBaseline = g.textBaseline;
   const color = textColor || g.fillStyle;
@@ -8142,10 +8225,7 @@ function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, inn
     const lineMid = lineTop + lineH / 2;
     const ly = noteTextLineBaselineY(lineTop, lineH, vm);
     g.textBaseline = 'alphabetic';
-    const lineW = noteLineContentWidth(g, parsed, size);
-    let lineX = x;
-    if (align === 'center') lineX = x + (maxW - lineW) / 2;
-    else if (align === 'right') lineX = x + maxW - lineW;
+    const lineX = noteLineStartX(g, alignIt, parsed, gutter, maxW, x, 1, size);
     let tx = lineX;
     if (parsed.type === 'check') {
       const box = size * 0.82;
@@ -8160,22 +8240,22 @@ function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, inn
     } else if (parsed.type === 'number') {
       g.fillStyle = color;
       const label = `${parsed.n}.`;
-      g.fillText(label, lineX + gutter * 0.12, ly);
+      // At lineX — gutter is sized from stored "N. " + GAP; body at lineX+gutter.
+      g.fillText(label, lineX, ly);
       tx = lineX + gutter;
     }
     g.fillStyle = color;
     const segs = parseNoteLinkSegments(parsed.body);
-    const lineInset = noteTextMeasure(g, parsed.body || ' ').inset;
     if (segs.some(s => s.type === 'link')) {
-      drawNoteTextSegments(g, segs, tx, ly, underline, size, color, linkColor, lineInset);
+      drawNoteTextSegments(g, segs, tx, ly, underline, size, color, linkColor);
     } else {
       const body = parsed.body;
-      g.fillText(body, tx + lineInset, ly);
+      g.fillText(body, tx, ly);
       if (underline && body) {
         const tw = g.measureText(body).width;
         const m = g.measureText(body);
         const desc = m.actualBoundingBoxDescent ?? size * 0.15;
-        g.fillRect(tx + lineInset, ly + desc + 1, tw, Math.max(1, size / 14));
+        g.fillRect(tx, ly + desc + 1, tw, Math.max(1, size / 14));
       }
     }
   }
@@ -8185,21 +8265,33 @@ function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, inn
 function noteChecklistHitAt(it, lx, ly) {
   if (!isNoteItem(it)) return -1;
   const pad = notePadFor(it);
-  const innerX = lx - pad.x, innerY = ly - pad.y;
-  if (innerX < 0 || innerY < 0) return -1;
-  const size = noteEffSize(it);
+  const g = getMeasureCtx();
+  const tcm = noteTextCanvasMetrics(it);
+  g.font = noteFontCanvasPx(it, tcm.font);
+  const size = tcm.font;
+  const cs = tcm.coordScale;
   const lineH = noteLineHeight(it);
-  const gutter = noteListGutter(size);
-  const box = size * 0.82;
+  const dm = noteDrawMetrics(it);
+  const innerW = Math.max(NOTE_INNER_MIN, dm.w - pad.x * 2);
+  const innerH = Math.max(NOTE_INNER_MIN, dm.h - pad.y * 2);
+  const gutterFont = noteListGutterForText(g, it.text, size, it);
+  const gutter = gutterFont * cs;
+  // Board-space box matches drawNoteText's size*0.82 under g.scale(cs,cs).
+  const box = noteEffSize(it) * 0.82;
   const hitPad = Math.max(4, 8 / (state.view.s || 1));
   const lines = String(it.text || '').split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    const parsed = parseNoteLine(lines[i]);
+  const maxLines = Math.max(1, Math.floor(innerH / lineH + 1e-3));
+  const shown = lines.slice(0, maxLines);
+  const blockH = shown.length * lineH;
+  const y0 = pad.y + Math.max(0, (innerH - blockH) / 2);
+  for (let i = 0; i < shown.length; i++) {
+    const parsed = parseNoteLine(shown[i]);
     if (parsed.type !== 'check') continue;
-    const cy = i * lineH + lineH / 2;
-    const cx = gutter * 0.38;
-    if (innerX >= cx - box / 2 - hitPad && innerX <= cx + box / 2 + hitPad &&
-        innerY >= cy - box / 2 - hitPad && innerY <= cy + box / 2 + hitPad)
+    const lineX = noteLineStartX(g, it, parsed, gutterFont, innerW, pad.x, cs, size);
+    const cx = lineX + gutter * 0.38;
+    const cy = y0 + i * lineH + lineH / 2;
+    if (lx >= cx - box / 2 - hitPad && lx <= cx + box / 2 + hitPad &&
+        ly >= cy - box / 2 - hitPad && ly <= cy + box / 2 + hitPad)
       return i;
   }
   return -1;
@@ -8222,26 +8314,20 @@ function getNoteLinkRegions(it) {
   const innerW = Math.max(NOTE_INNER_MIN, dm.w - pad.x * 2);
   const innerH = Math.max(NOTE_INNER_MIN, dm.h - pad.y * 2);
   const maxLines = Math.max(1, Math.floor(innerH / lineH));
-  const align = it.textAlign || 'left';
-  const { lines } = layoutNoteLines(g, it.text);
+  const { lines, gutter: gutterFont } = layoutNoteLines(g, it.text, it);
   const shown = lines.slice(0, maxLines);
   const blockH = shown.length * lineH;
   const y0 = pad.y + Math.max(0, (innerH - blockH) / 2);
-  const gutter = noteListGutter(tcm.eff);
+  const gutter = gutterFont * cs;
   const regions = [];
 
   for (let i = 0; i < shown.length; i++) {
     const parsed = parseNoteLine(shown[i]);
     const ly = y0 + i * lineH + lineH / 2;
-    const lineW = noteLineContentWidth(g, parsed, size) * cs;
-    let lineX = pad.x;
-    if (align === 'center') lineX = pad.x + (innerW - lineW) / 2;
-    else if (align === 'right') lineX = pad.x + innerW - lineW;
+    const lineX = noteLineStartX(g, it, parsed, gutterFont, innerW, pad.x, cs, size);
     let tx = lineX;
     if (parsed.type === 'check') tx = lineX + gutter;
     else if (parsed.type === 'bullet' || parsed.type === 'number') tx = lineX + gutter;
-    const lineInset = noteTextMeasure(g, parsed.body || ' ').inset * cs;
-    tx += lineInset;
 
     const segs = parseNoteLinkSegments(parsed.body);
     for (const seg of segs) {
@@ -8601,7 +8687,7 @@ function drawBoardItem(g, it, opts = {}) {
       g.scale(cs, cs);
       drawNoteText(g, it.text, (-hw + pad.x) / cs, (-hh + pad.y) / cs, innerW / cs, lineH / cs,
         maxLines, !!it.underline, tcm.font, innerH / cs, it.textAlign, it.textColor || '#f0f2f6',
-        !!frozenLines);
+        !!frozenLines, it);
       g.restore();
     }
     g.restore();
