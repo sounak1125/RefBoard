@@ -532,6 +532,7 @@ async function createWindow() {
 
   Menu.setApplicationMenu(null);
   await win.loadFile('index.html');
+  win.webContents.openDevTools();
 
   win.webContents.on('will-navigate', e => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));

@@ -1460,7 +1460,7 @@ body.board-active #whatsNewNotice{ display:none; }
   cursor:text; pointer-events:none;
 }
 #noteEditor [data-note-line]{ min-height:1em; }
-#noteEditor [data-note-prefix]{ white-space:pre; }
+#noteEditor [data-note-prefix]{ display:inline; white-space:pre; }
 </style>
 </head>
 <body>
@@ -6082,16 +6082,56 @@ function noteEditorApplyLineTypeFromPrefix(lineEl, prefix) {
   mark.textContent = p;
 }
 
-/** Dev check: serialize must round-trip through hydrate (does not touch the live editor). */
-function noteEditorDevAssertRoundTrip(ed) {
+/** Dev check: every editor line must have self-consistent prefix structure. */
+function noteEditorDevAssertStructure(ed) {
   try {
-    const s = serializeNoteDom(ed);
-    const wrap = document.createElement('div');
-    wrap.appendChild(hydrateNoteDom(s, document));
-    const s2 = serializeNoteDom(wrap);
-    if (s !== s2) console.error('[note-dom] Enter/Backspace round-trip mismatch', { s, s2 });
+    const lines = noteEditorLineEls(ed);
+    for (const [lineIndex, lineEl] of lines.entries()) {
+      const dataType = lineEl.getAttribute('data-type');
+      const hasPrefix = lineEl.hasAttribute('data-prefix');
+      const dataPrefix = lineEl.getAttribute('data-prefix');
+      const prefixSpans = [...lineEl.querySelectorAll('[data-note-prefix]')];
+      const violations = [];
+
+      if (dataType === 'plain') {
+        if (hasPrefix) violations.push('plain line has data-prefix');
+        if (prefixSpans.length) violations.push('plain line has a prefix span');
+      } else if (dataType === 'bullet') {
+        if (dataPrefix !== '• ') violations.push('bullet data-prefix must be "• "');
+        if (prefixSpans.length !== 1) violations.push('bullet line must have exactly one prefix span');
+      } else if (dataType === 'number') {
+        if (!/^\d+\. $/.test(dataPrefix || '')) violations.push('number data-prefix must match /^\\d+\\. $/');
+        if (prefixSpans.length !== 1) violations.push('number line must have exactly one prefix span');
+      } else if (dataType === 'check') {
+        if (dataPrefix !== '[ ] ' && dataPrefix !== '[x] ') {
+          violations.push('check data-prefix must be "[ ] " or "[x] "');
+        }
+        if (prefixSpans.length !== 1) violations.push('check line must have exactly one prefix span');
+      } else {
+        violations.push(`unknown data-type: ${String(dataType)}`);
+      }
+
+      if (prefixSpans.length && !hasPrefix) {
+        violations.push('prefix span has no matching data-prefix attribute');
+      }
+      for (const span of prefixSpans) {
+        if (span.textContent !== dataPrefix) {
+          violations.push('prefix span textContent does not equal data-prefix');
+        }
+      }
+
+      if (violations.length) {
+        console.error(`[note-dom] structural invariant violation at line ${lineIndex}`, {
+          lineIndex,
+          dataType,
+          dataPrefix,
+          innerHTML: lineEl.innerHTML,
+          violations,
+        });
+      }
+    }
   } catch (err) {
-    console.error('[note-dom] round-trip assert failed', err);
+    console.error('[note-dom] structural invariant check failed', err);
   }
 }
 
@@ -6132,7 +6172,7 @@ function noteEditorHandleEnter(ed) {
   }
   lineEl.after(newLine);
   noteEditorPlaceCaretInLineStart(newLine);
-  noteEditorDevAssertRoundTrip(ed);
+  noteEditorDevAssertStructure(ed);
 }
 
 /**
@@ -6172,7 +6212,7 @@ function noteEditorHandleBackspace(ed) {
       lineEl.insertBefore(document.createTextNode(next), lineEl.firstChild);
     }
     noteEditorPlaceCaretInLineStart(lineEl);
-    noteEditorDevAssertRoundTrip(ed);
+    noteEditorDevAssertStructure(ed);
     return true;
   }
 
@@ -6181,14 +6221,14 @@ function noteEditorHandleBackspace(ed) {
   if (idx <= 0) {
     // First line, no prefix: keep a single empty line; don't delete the shell
     if (lines.length === 1 && noteEditorLineBodyIsEmpty(lineEl)) {
-      noteEditorDevAssertRoundTrip(ed);
+      noteEditorDevAssertStructure(ed);
       return true; // swallow backspace
     }
     return false;
   }
 
   noteEditorMergeLineIntoPrev(ed, lineEl);
-  noteEditorDevAssertRoundTrip(ed);
+  noteEditorDevAssertStructure(ed);
   return true;
 }
 
@@ -6256,8 +6296,41 @@ function noteEditorBuildLineFromMarkdown(line) {
 
 function noteEditorAppendBodyNodes(targetLine, sourceLine) {
   for (const child of [...sourceLine.childNodes]) {
-    if (child.nodeType === 1 && child.getAttribute?.('data-note-prefix') === '1') continue;
+    if (child.nodeType === 1 && child.getAttribute?.('data-note-prefix') === '1') {
+      targetLine.appendChild(document.createTextNode(child.textContent || ''));
+      continue;
+    }
     targetLine.appendChild(child);
+  }
+}
+
+/** Dev check: compare parsed paste-line structure with the lines that landed. */
+function noteEditorDevAssertPasteLanding(ed, expectedLines, actualLines) {
+  try {
+    const editorLines = noteEditorLineEls(ed);
+    for (let i = 0; i < expectedLines.length; i++) {
+      const expectedLine = expectedLines[i];
+      const actualLine = actualLines[i] || null;
+      const expected = {
+        dataType: expectedLine?.getAttribute?.('data-type') ?? null,
+        dataPrefix: expectedLine?.getAttribute?.('data-prefix') ?? null,
+      };
+      const actual = {
+        dataType: actualLine?.getAttribute?.('data-type') ?? null,
+        dataPrefix: actualLine?.getAttribute?.('data-prefix') ?? null,
+        editorLineIndex: actualLine ? editorLines.indexOf(actualLine) : -1,
+        innerHTML: actualLine?.innerHTML ?? null,
+      };
+      if (expected.dataType !== actual.dataType || expected.dataPrefix !== actual.dataPrefix) {
+        console.error(`[note-dom] paste structure mismatch at line ${i}`, {
+          pastedLineIndex: i,
+          expected,
+          actual,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('[note-dom] paste structure diagnostic failed', err);
   }
 }
 
@@ -6290,6 +6363,8 @@ function noteEditorInsertMarkdown(ed, markdown) {
     range = noteEditorCaretRange(ed);
   }
   if (!lineEl || !range) return;
+  const targetLineWasEmpty = noteEditorLineBodyIsEmpty(lineEl);
+  const firstExpectedLine = targetLineWasEmpty ? built[0] : lineEl.cloneNode(false);
 
   // Split current line at caret: keep before, move after into a fragment
   const afterRange = document.createRange();
@@ -6308,11 +6383,17 @@ function noteEditorInsertMarkdown(ed, markdown) {
     }
   };
 
+  if (targetLineWasEmpty) {
+    lineEl.replaceWith(built[0]);
+    lineEl = built[0];
+  } else {
+    noteEditorAppendBodyNodes(lineEl, built[0]);
+  }
+
   if (built.length === 1) {
     const marker = document.createTextNode('');
-    noteEditorAppendBodyNodes(lineEl, built[0]);
     lineEl.appendChild(marker);
-    appendAfterSkippingPrefix(lineEl, afterFrag);
+    if (!targetLineWasEmpty) appendAfterSkippingPrefix(lineEl, afterFrag);
     if (marker.previousSibling?.nodeType === 3) {
       const t = marker.previousSibling;
       const off = t.nodeValue.length;
@@ -6321,12 +6402,12 @@ function noteEditorInsertMarkdown(ed, markdown) {
     } else {
       noteEditorPlaceCaret(marker, 0);
     }
-    noteEditorDevAssertRoundTrip(ed);
+    noteEditorDevAssertPasteLanding(ed, [firstExpectedLine], [lineEl]);
+    noteEditorDevAssertStructure(ed);
     return;
   }
 
   // Multi-line: first chunk joins current line; middle lines inserted; last gets trailing text
-  noteEditorAppendBodyNodes(lineEl, built[0]);
   let insertAfter = lineEl;
   for (let i = 1; i < built.length - 1; i++) {
     insertAfter.after(built[i]);
@@ -6335,7 +6416,7 @@ function noteEditorInsertMarkdown(ed, markdown) {
   const last = built[built.length - 1];
   const marker = document.createTextNode('');
   last.appendChild(marker);
-  appendAfterSkippingPrefix(last, afterFrag);
+  if (!targetLineWasEmpty) appendAfterSkippingPrefix(last, afterFrag);
   insertAfter.after(last);
   if (marker.previousSibling?.nodeType === 3) {
     const t = marker.previousSibling;
@@ -6345,7 +6426,12 @@ function noteEditorInsertMarkdown(ed, markdown) {
   } else {
     noteEditorPlaceCaret(marker, 0);
   }
-  noteEditorDevAssertRoundTrip(ed);
+  noteEditorDevAssertPasteLanding(
+    ed,
+    [firstExpectedLine, ...built.slice(1)],
+    [lineEl, ...built.slice(1)]
+  );
+  noteEditorDevAssertStructure(ed);
 }
 
 function noteCaretFromClient(it, clientX, clientY) {
@@ -10629,36 +10715,36 @@ function refreshNoteEdit() {
   scheduleSave();
   invalidate();
 }
-noteEd.addEventListener('input', refreshNoteEdit);
+noteEd.addEventListener('input', () => {
+  noteEditorDevAssertStructure(noteEd);
+  refreshNoteEdit();
+});
 noteEd.addEventListener('click', e => {
   // Links are not navigable while editing
   if (e.target.closest('a')) e.preventDefault();
 });
 noteEd.addEventListener('paste', async e => {
-  if (onLanding) return;
   const dt = e.clipboardData;
+  const html = dt?.getData('text/html') || '';
+  const plain = normalizeClipboardText(dt?.getData('text/plain') || '');
+  e.preventDefault();
+
+  if (onLanding) return;
   if (!dt) return;
 
   // Images still go to the board (not into the note)
   const blobs = await collectClipboardImages(dt, { allowAsyncRead: false });
   if (blobs.length) {
-    e.preventDefault();
     const pos = mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null;
     await addImages(blobs, pos);
     toast('Pasted image to board');
     return;
   }
 
-  const html = dt.getData('text/html');
   if (html && tryClipboardHtmlImageUrl(html, mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null)) {
-    e.preventDefault();
     return;
   }
 
-  // Always intercept text paste — never let the browser inject raw HTML.
-  e.preventDefault();
-
-  const plain = normalizeClipboardText(dt.getData('text/plain'));
   if (plain && !plain.includes('\n') && tryPasteNoteLink(plain)) return;
 
   let md = '';
