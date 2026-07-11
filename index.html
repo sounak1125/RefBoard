@@ -592,6 +592,8 @@ body.board-instant-open #titlebarPeek{
   position:fixed; top:var(--titlebar-h); left:0; right:0; bottom:0; z-index:80;
   display:flex; align-items:flex-start; justify-content:center;
   overflow:auto;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(122,136,168,.46) rgba(9,11,15,.42);
   scroll-behavior:smooth;
   background:
     radial-gradient(ellipse 50% 42% at 18% 0%, color-mix(in srgb, var(--acc) 13%, transparent), transparent 72%),
@@ -603,6 +605,20 @@ body.board-instant-open #titlebarPeek{
   pointer-events:auto;
   transition:opacity .28s cubic-bezier(.22,1,.36,1), visibility .28s cubic-bezier(.22,1,.36,1);
 }
+#recentWorks::-webkit-scrollbar{ width:10px; height:10px; }
+#recentWorks::-webkit-scrollbar-track{ background:rgba(9,11,15,.42); }
+#recentWorks::-webkit-scrollbar-thumb{
+  background:rgba(122,136,168,.42);
+  border:2px solid transparent;
+  border-radius:999px;
+  background-clip:padding-box;
+}
+#recentWorks::-webkit-scrollbar-thumb:hover{
+  background:rgba(82,158,240,.52);
+  border:2px solid transparent;
+  background-clip:padding-box;
+}
+#recentWorks::-webkit-scrollbar-corner{ background:rgba(9,11,15,.42); }
 #recentWorks.landing-out{
   opacity:0;
   pointer-events:none;
@@ -10200,6 +10216,7 @@ async function pickColorAt(sx, sy) {
 }
 
 window.addEventListener('wheel', e => {
+  if (onLanding || e.target.closest('#recentWorks')) return;
   if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop')) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
