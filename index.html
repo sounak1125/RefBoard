@@ -3418,7 +3418,25 @@ function closeImageRecordBitmaps(records) {
   }
 }
 
+function releaseDrawSessionCanvases(session = drawSession) {
+  if (!session) return;
+  session.released = true;
+  for (const key of ['canvas', 'baseCanvas']) {
+    const canvas = session[key];
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    session[key] = null;
+  }
+  session.ctx = null;
+  session.lastPx = null;
+  session.lastPy = null;
+  if (drawSession === session) drawSession = null;
+}
+
 function releaseAllImages() {
+  releaseDrawSessionCanvases();
   closeImageRecordBitmaps(images);
   images.clear();
 }
@@ -3519,7 +3537,7 @@ function resetLiveSessionToBlank() {
   arrowTool = null;
   tool = null;
   drawActive = false;
-  drawSession = null;
+  cancelDrawSession();
   cachedCurrentBoardThumb = null;
   currentBoardPath = null;
   currentBoardTitle = null;
@@ -3599,7 +3617,7 @@ async function restoreSession() {
     arrowTool = null;
     tool = null;
     drawActive = false;
-    drawSession = null;
+    cancelDrawSession();
     cachedCurrentBoardThumb = null;
     currentBoardPath = null;
     currentBoardTitle = null;
@@ -4032,22 +4050,36 @@ function drawStrokeSegment(it, px, py) {
 }
 
 async function commitDrawSession() {
-  if (!drawSession) return;
-  const im = images.get(drawSession.imgId);
-  if (!im) { drawSession = null; return; }
-  const blob = await new Promise(res => drawSession.canvas.toBlob(res, im.type || 'image/png'));
-  if (!blob) { drawSession = null; return; }
-  const nextBitmap = await createImageBitmap(drawSession.canvas);
-  if (im.bitmap.close) im.bitmap.close();
-  im.bitmap = nextBitmap;
-  im.blob = blob;
-  invalidateImageLods(im, { bumpVersion: true });
-  dbPut('blobs', drawSession.imgId, blob);
-  drawSession = null;
+  const session = drawSession;
+  if (!session) return;
+  const im = images.get(session.imgId);
+  if (!im) {
+    releaseDrawSessionCanvases(session);
+    return;
+  }
+  let nextBitmap = null;
+  try {
+    const blob = await new Promise(res => session.canvas.toBlob(res, im.type || 'image/png'));
+    if (!blob || session.released || !session.canvas) return;
+    nextBitmap = await createImageBitmap(session.canvas);
+    if (session.released || images.get(session.imgId) !== im) {
+      try { nextBitmap?.close?.(); } catch (e) {}
+      return;
+    }
+    if (im.bitmap.close) im.bitmap.close();
+    im.bitmap = nextBitmap;
+    nextBitmap = null;
+    im.blob = blob;
+    invalidateImageLods(im, { bumpVersion: true });
+    dbPut('blobs', session.imgId, blob);
+  } finally {
+    try { nextBitmap?.close?.(); } catch (e) {}
+    releaseDrawSessionCanvases(session);
+  }
 }
 
 function cancelDrawSession() {
-  drawSession = null;
+  releaseDrawSessionCanvases();
 }
 
 async function addBlankCanvas(ratio, atBoardPos) {
@@ -8091,6 +8123,7 @@ async function openNewBoard() {
     if (result !== 'proceed') return;
   }
   suppressBoardDirty = true;
+  releaseAllImages();
   state.items = [];
   invalidateWorkspaceBBox();
   cachedCurrentBoardThumb = null;
