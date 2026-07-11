@@ -4462,6 +4462,9 @@ async function tryFetchImage(url, pos) {
 
 /* ================= clipboard ================= */
 const REFBOARD_NOTE_CLIP_MIME = 'application/x-refboard-note+json';
+const REFBOARD_ITEM_CLIP_MIME = 'web application/x-refboard-items+json';
+let localItemClipboard = null;
+window.addEventListener('blur', () => { localItemClipboard = null; });
 
 function normalizeClipboardText(s) {
   return String(s ?? '').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').replace(/\n+$/, '');
@@ -4623,17 +4626,135 @@ function parseNoteClipboardPayload(raw) {
   }
 }
 
+function buildItemClipboardPayload(roots) {
+  const ids = new Set(roots.map(it => it.id));
+  for (const it of roots) {
+    if (!isGroupItem(it)) continue;
+    for (const child of childrenOfGroup(it.id)) ids.add(child.id);
+  }
+  return {
+    app: 'refboard',
+    kind: 'item-clipboard',
+    v: 1,
+    selectedIds: roots.map(it => it.id),
+    items: state.items.filter(it => ids.has(it.id)).map(it => JSON.parse(JSON.stringify(it))),
+  };
+}
+
+function parseItemClipboardPayload(raw) {
+  if (!raw || !String(raw).trim()) return null;
+  try {
+    const j = JSON.parse(raw);
+    if (j?.app !== 'refboard' || j?.kind !== 'item-clipboard' || j?.v !== 1
+        || !Array.isArray(j.items) || !j.items.length) return null;
+    if (j.items.some(it => !it || typeof it.id !== 'string' || !it.id)) return null;
+    const ids = new Set(j.items.map(it => it.id));
+    if (ids.size !== j.items.length) return null;
+    return {
+      items: j.items,
+      selectedIds: Array.isArray(j.selectedIds) ? j.selectedIds.filter(id => ids.has(id)) : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function collectClipboardItems(snap, { allowAsyncRead = true } = {}) {
+  const s = snap || {
+    types: [], plain: '', html: '', noteMime: '', itemMime: '',
+    imageFiles: [], noteFiles: [], itemFiles: [],
+  };
+  if (s.itemMime) {
+    const parsed = parseItemClipboardPayload(s.itemMime);
+    if (parsed) return parsed;
+  }
+  for (const f of s.itemFiles || []) {
+    try {
+      const parsed = parseItemClipboardPayload(await f.text());
+      if (parsed) return parsed;
+    } catch { /* skip */ }
+  }
+
+  if (allowAsyncRead && navigator.clipboard?.read) {
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        if (item.types.includes(REFBOARD_ITEM_CLIP_MIME)) {
+          const parsed = parseItemClipboardPayload(await (await item.getType(REFBOARD_ITEM_CLIP_MIME)).text());
+          if (parsed) return parsed;
+        }
+        if (localItemClipboard) {
+          const imageType = item.types.find(type => type.startsWith('image/'));
+          if (imageType) {
+            const imageBlob = await item.getType(imageType);
+            if (imageBlob.size === localItemClipboard.pngSize) return localItemClipboard.payload;
+          }
+        }
+      }
+    } catch { /* clipboard.read denied or unavailable */ }
+  }
+
+  if (localItemClipboard && (s.imageFiles || []).some(f => f.size === localItemClipboard.pngSize)) {
+    return localItemClipboard.payload;
+  }
+  return null;
+}
+
+function pasteItemsFromClipboard(payload, pos) {
+  const defs = payload?.items;
+  if (!Array.isArray(defs) || !defs.length) return false;
+  if (defs.some(it => isImageItem(it) && !images.has(it.imgId))) return false;
+
+  const ids = new Set(defs.map(it => it.id));
+  if (ids.size !== defs.length) return false;
+  const groupIds = new Set(defs.filter(isGroupItem).map(it => it.id));
+  const idMap = new Map(defs.map(it => [it.id, uid()]));
+  const bb = bboxOf(defs);
+  const [cx, cy] = pos || toBoard(...boardCenter());
+  const dx = cx - (bb.x + bb.w / 2);
+  const dy = cy - (bb.y + bb.h / 2);
+
+  finishNoteEdit();
+  pushUndo();
+  const clones = defs.map(def => {
+    const base = JSON.parse(JSON.stringify(def));
+    base.id = idMap.get(def.id);
+    if (isArrowItem(def)) {
+      base.x1 = def.x1 + dx; base.y1 = def.y1 + dy;
+      base.x2 = def.x2 + dx; base.y2 = def.y2 + dy;
+    } else {
+      base.x = def.x + dx; base.y = def.y + dy;
+    }
+    if (isGroupableItem(def)) {
+      base.groupId = def.groupId && groupIds.has(def.groupId) ? idMap.get(def.groupId) : null;
+    }
+    return normalizeItem(base);
+  });
+
+  state.items.push(...clones);
+  reconcileGroupOrder();
+  for (const group of clones.filter(isGroupItem)) syncGroupFrame(group);
+  const selectedIds = (payload.selectedIds || []).map(id => idMap.get(id)).filter(Boolean);
+  state.sel = new Set(selectedIds.length ? selectedIds : clones.filter(it => !it.groupId).map(it => it.id));
+  state.anchorId = [...state.sel][0] || null;
+  cropItemId = null;
+  invalidateWorkspaceBBox();
+  updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
+  return true;
+}
+
 /** Sync-drain a paste DataTransfer before any await (Chromium clears it after a macrotask). */
 function drainClipboardDataTransfer(dt) {
   if (!dt) {
-    return { types: [], plain: '', html: '', noteMime: '', imageFiles: [], noteFiles: [] };
+    return { types: [], plain: '', html: '', noteMime: '', itemMime: '', imageFiles: [], noteFiles: [], itemFiles: [] };
   }
   const types = [...(dt.types || [])];
   const plain = dt.getData('text/plain') || '';
   const html = dt.getData('text/html') || '';
   const noteMime = dt.getData(REFBOARD_NOTE_CLIP_MIME) || '';
+  const itemMime = dt.getData(REFBOARD_ITEM_CLIP_MIME) || '';
   const imageFiles = [];
   const noteFiles = [];
+  const itemFiles = [];
   const seenFile = new Set();
   const addImageFile = f => {
     if (!f) return;
@@ -4648,11 +4769,15 @@ function drainClipboardDataTransfer(dt) {
       const f = item.getAsFile();
       if (f) noteFiles.push(f);
     }
+    if (item.type === REFBOARD_ITEM_CLIP_MIME && item.getAsFile) {
+      const f = item.getAsFile();
+      if (f) itemFiles.push(f);
+    }
   }
   for (const f of dt.files || []) {
     if (f.type?.startsWith('image/')) addImageFile(f);
   }
-  return { types, plain, html, noteMime, imageFiles, noteFiles };
+  return { types, plain, html, noteMime, itemMime, imageFiles, noteFiles, itemFiles };
 }
 
 async function collectClipboardNotes(snap, { allowAsyncRead = true } = {}) {
@@ -4722,7 +4847,8 @@ function copyMenuLabel(selItems) {
   if (selItems.length && selItems.every(isNoteItem)) {
     return selItems.length > 1 ? `Copy ${selItems.length} notes` : 'Copy';
   }
-  return selItems.length > 1 ? `Copy ${selItems.length} as one image` : 'Copy image';
+  if (selItems.length === 1 && isGroupItem(selItems[0])) return 'Copy group';
+  return selItems.length > 1 ? `Copy ${selItems.length} items` : 'Copy image';
 }
 
 function insertTextAtCursor(editor, text) {
@@ -4877,9 +5003,23 @@ async function copySelection() {
     return;
   }
   try {
-    const blob = await compositeBlob(items);
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-    toast(items.length > 1 ? `Copied ${items.length} items as one image` : 'Copied selection');
+    const payload = buildItemClipboardPayload(items);
+    const compositeIds = new Set(payload.items.map(it => it.id));
+    const compositeItems = state.items.filter(it => compositeIds.has(it.id));
+    const blob = await compositeBlob(compositeItems);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        'image/png': blob,
+        [REFBOARD_ITEM_CLIP_MIME]: new Blob([JSON.stringify(payload)], { type: REFBOARD_ITEM_CLIP_MIME }),
+      })]);
+    } catch {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    }
+    localItemClipboard = { payload, pngSize: blob.size };
+    const copiedCount = payload.items.filter(it => !isGroupItem(it)).length;
+    toast(items.length === 1 && isGroupItem(items[0])
+      ? `Copied group (${copiedCount} items)`
+      : copiedCount > 1 ? `Copied ${copiedCount} items` : 'Copied selection');
   } catch (e) {
     toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
   }
@@ -4887,6 +5027,12 @@ async function copySelection() {
 
 async function menuPaste(pos) {
   try {
+    const itemPayload = await collectClipboardItems(null);
+    if (itemPayload && pasteItemsFromClipboard(itemPayload, pos)) {
+      const count = itemPayload.items.filter(it => !isGroupItem(it)).length;
+      toast(count > 1 ? `Pasted ${count} items` : 'Pasted');
+      return;
+    }
     const noteDefs = await collectClipboardNotes(null);
     if (noteDefs?.length) {
       if (pasteNotesFromClipboard(noteDefs, pos)) toast(noteDefs.length > 1 ? `Pasted ${noteDefs.length} notes` : 'Pasted note');
@@ -4919,6 +5065,13 @@ window.addEventListener('paste', async e => {
   const snap = drainClipboardDataTransfer(e.clipboardData);
   e.preventDefault();
   const pos = mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null;
+
+  const itemPayload = await collectClipboardItems(snap);
+  if (itemPayload && pasteItemsFromClipboard(itemPayload, pos)) {
+    const count = itemPayload.items.filter(it => !isGroupItem(it)).length;
+    toast(count > 1 ? `Pasted ${count} items` : 'Pasted');
+    return;
+  }
 
   const noteDefs = await collectClipboardNotes(snap, { allowAsyncRead: false });
   if (noteDefs?.length) {
@@ -5016,6 +5169,7 @@ function duplicateSelection() {
       ...it, id: uid(), groupId: newGid,
       x: it.x + off, y: it.y + off,
     }));
+    state.items.push(...clones);
     insertGroupBeforeChildren(newGroup, clones.map(c => c.id));
     state.sel = new Set([newGid]);
     state.anchorId = newGid;
