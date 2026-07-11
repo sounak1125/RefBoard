@@ -2,7 +2,6 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
-using System.Drawing.Text;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -80,26 +79,107 @@ namespace RefBoard
 
         private static string ReadChunk(Stream stream, long offset)
         {
-            if (!stream.CanSeek)
+            // Explorer supplies the initialization stream at position zero. Some shell
+            // streams report CanSeek=true but throw E_NOTIMPL even for Seek(0), so do
+            // not seek before the head read that contains RefBoard's preview field.
+            if (offset != 0)
             {
-                if (offset != 0) return null;
-            }
-            else
-            {
-                stream.Seek(offset, SeekOrigin.Begin);
+                if (!stream.CanSeek) return null;
+                try
+                {
+                    stream.Seek(offset, SeekOrigin.Begin);
+                }
+                catch (NotSupportedException)
+                {
+                    return null;
+                }
+                catch (NotImplementedException)
+                {
+                    return null;
+                }
+                catch (COMException)
+                {
+                    return null;
+                }
             }
 
-            var buffer = new byte[MaxReadBytes];
-            var totalRead = 0;
-            while (totalRead < MaxReadBytes)
+            var bytesToRead = MaxReadBytes;
+            if (stream.CanSeek)
             {
-                var read = stream.Read(buffer, totalRead, MaxReadBytes - totalRead);
+                try
+                {
+                    bytesToRead = (int)Math.Min(MaxReadBytes, Math.Max(0, stream.Length - offset));
+                }
+                catch (NotSupportedException) { }
+                catch (NotImplementedException) { }
+                catch (COMException) { }
+            }
+            if (bytesToRead <= 0) return null;
+
+            var buffer = new byte[bytesToRead];
+            var totalRead = 0;
+            while (totalRead < buffer.Length)
+            {
+                var requested = buffer.Length - totalRead;
+                int read;
+                try
+                {
+                    read = stream.Read(buffer, totalRead, requested);
+                }
+                catch (NotImplementedException)
+                {
+                    if (totalRead == 0) return null;
+                    break;
+                }
                 if (read <= 0) break;
                 totalRead += read;
+                if (read < requested) break;
             }
 
             if (totalRead <= 0) return null;
             return Encoding.UTF8.GetString(buffer, 0, totalRead);
+        }
+
+        private sealed class ThumbnailLayout
+        {
+            public int PreviewX;
+            public int PreviewY;
+            public int PreviewWidth;
+            public int PreviewHeight;
+            public int Radius;
+            public int BrandX;
+            public int BrandY;
+            public int BrandSize;
+            public int DividerX;
+        }
+
+        private static int Round(float value)
+        {
+            return (int)Math.Round(value, MidpointRounding.AwayFromZero);
+        }
+
+        private static ThumbnailLayout CalculateLayout(int size)
+        {
+            var padding = Math.Max(1, Round(size * 0.06f));
+            var railWidth = Math.Max(3, Round(size * 0.19f));
+            var gap = Math.Max(2, Round(size * 0.055f));
+            var previewWidth = Math.Max(4, size - padding * 2 - railWidth - gap);
+            var previewHeight = Math.Max(4, Round(previewWidth * 0.58f));
+            var brandSize = Math.Max(3, Math.Min(railWidth, Round(size * 0.17f)));
+            var previewX = padding;
+
+            return new ThumbnailLayout
+            {
+                PreviewX = previewX,
+                PreviewY = Round((size - previewHeight) / 2f),
+                PreviewWidth = previewWidth,
+                PreviewHeight = previewHeight,
+                Radius = Math.Max(1, Round(size / 28f)),
+                BrandX = Round(size - padding - (railWidth + brandSize) / 2f),
+                BrandY = Round((size - brandSize) / 2f),
+                BrandSize = brandSize,
+                DividerX = previewX + previewWidth + Round(gap / 2f),
+            };
         }
 
         private static Bitmap ComposeBranded(Bitmap source, int size)
@@ -112,36 +192,30 @@ namespace RefBoard
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
                 DrawGradientBackground(g, size);
+                var layout = CalculateLayout(size);
 
-                var stripW = Math.Max(1, (int)Math.Round(size * 0.80));
-                var stripH = Math.Max(1, (int)Math.Round(size * 0.38));
-                var stripX = (size - stripW) / 2;
-                var stripY = (size - stripH) / 2;
-                var radius = Math.Max(4, size / 42);
-
-                using (var shadowPath = RoundedRect(stripX + 1, stripY + 2, stripW, stripH, radius))
+                using (var shadowPath = RoundedRect(layout.PreviewX + 1, layout.PreviewY + 2, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
                 using (var shadowBrush = new SolidBrush(Color.FromArgb(70, 0, 0, 0)))
                     g.FillPath(shadowBrush, shadowPath);
 
-                var scale = Math.Max((float)stripW / source.Width, (float)stripH / source.Height);
+                var scale = Math.Max((float)layout.PreviewWidth / source.Width, (float)layout.PreviewHeight / source.Height);
                 var drawW = source.Width * scale;
                 var drawH = source.Height * scale;
-                var drawX = stripX + (stripW - drawW) / 2f;
-                var drawY = stripY + (stripH - drawH) / 2f;
+                var drawX = layout.PreviewX + (layout.PreviewWidth - drawW) / 2f;
+                var drawY = layout.PreviewY + (layout.PreviewHeight - drawH) / 2f;
 
-                using (var clipPath = RoundedRect(stripX, stripY, stripW, stripH, radius))
+                using (var clipPath = RoundedRect(layout.PreviewX, layout.PreviewY, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
                 {
                     g.SetClip(clipPath);
                     g.DrawImage(source, drawX, drawY, drawW, drawH);
-                    DrawStripVignette(g, stripX, stripY, stripW, stripH);
                     g.ResetClip();
                 }
 
-                using (var borderPath = RoundedRect(stripX, stripY, stripW, stripH, radius))
-                using (var borderPen = new Pen(Color.FromArgb(15, 255, 255, 255), Math.Max(1f, size / 256f)))
+                using (var borderPath = RoundedRect(layout.PreviewX, layout.PreviewY, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
+                using (var borderPen = new Pen(Color.FromArgb(20, 255, 255, 255), Math.Max(1f, size / 256f)))
                     g.DrawPath(borderPen, borderPath);
 
-                DrawBrandBadge(g, size);
+                DrawBrandSide(g, size, layout);
             }
             return canvas;
         }
@@ -150,52 +224,58 @@ namespace RefBoard
         {
             using (var bg = new LinearGradientBrush(
                 new Rectangle(0, 0, size, size),
-                Color.FromArgb(255, 14, 15, 20),
-                Color.FromArgb(255, 24, 26, 34),
+                Color.FromArgb(255, 17, 19, 24),
+                Color.FromArgb(255, 24, 27, 34),
                 LinearGradientMode.Vertical))
             {
                 g.FillRectangle(bg, 0, 0, size, size);
             }
         }
 
-        private static void DrawStripVignette(Graphics g, int x, int y, int w, int h)
+        private static void DrawBrandSide(Graphics g, int size, ThumbnailLayout layout)
         {
-            using (var vignette = new LinearGradientBrush(
-                new Rectangle(x, y, w, h),
-                Color.FromArgb(60, 0, 0, 0),
-                Color.Transparent,
-                LinearGradientMode.Horizontal))
-            {
-                var blend = new ColorBlend(3);
-                blend.Colors = new[] { Color.FromArgb(60, 0, 0, 0), Color.Transparent, Color.FromArgb(60, 0, 0, 0) };
-                blend.Positions = new[] { 0f, 0.5f, 1f };
-                vignette.InterpolationColors = blend;
-                g.FillRectangle(vignette, x, y, w, h);
-            }
-        }
-
-        private static void DrawBrandBadge(Graphics g, int size)
-        {
-            var badgeSize = Math.Max(12, (int)Math.Round(size * 0.18));
-            var margin = Math.Max(3, size / 24);
-            var bx = size - badgeSize - margin;
-            var by = size - badgeSize - margin;
-
-            using (var shadowBrush = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
-                g.FillEllipse(shadowBrush, bx + 1, by + 1, badgeSize, badgeSize);
-
-            using (var plateBrush = new SolidBrush(Color.FromArgb(220, 18, 20, 28)))
-                g.FillEllipse(plateBrush, bx, by, badgeSize, badgeSize);
-
-            using (var platePen = new Pen(Color.FromArgb(120, 90, 200, 255), Math.Max(1f, size / 128f)))
-                g.DrawEllipse(platePen, bx, by, badgeSize, badgeSize);
+            using (var dividerPen = new Pen(Color.FromArgb(51, 82, 158, 240), Math.Max(1f, size / 256f)))
+                g.DrawLine(dividerPen, layout.DividerX, Round(size * 0.31f), layout.DividerX, Round(size * 0.69f));
 
             using (var brand = LoadBrandImage())
             {
                 if (brand == null) return;
-                var inset = Math.Max(2, badgeSize / 6);
-                g.DrawImage(brand, bx + inset, by + inset, badgeSize - inset * 2, badgeSize - inset * 2);
+                g.DrawImage(brand, layout.BrandX, layout.BrandY, layout.BrandSize, layout.BrandSize);
             }
+        }
+
+        private static void DrawFallbackPreview(Graphics g, int size, ThumbnailLayout layout)
+        {
+            using (var shadowPath = RoundedRect(layout.PreviewX + 1, layout.PreviewY + 2, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
+            using (var shadowBrush = new SolidBrush(Color.FromArgb(70, 0, 0, 0)))
+                g.FillPath(shadowBrush, shadowPath);
+
+            using (var cardPath = RoundedRect(layout.PreviewX, layout.PreviewY, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
+            using (var cardBrush = new SolidBrush(Color.FromArgb(255, 22, 25, 32)))
+                g.FillPath(cardBrush, cardPath);
+
+            var innerPad = Math.Max(1, layout.PreviewWidth / 14);
+            var tileGap = Math.Max(1, layout.PreviewWidth / 28);
+            var tileWidth = Math.Max(1, (layout.PreviewWidth - innerPad * 2 - tileGap * 2) / 3);
+            var innerHeight = Math.Max(2, layout.PreviewHeight - innerPad * 2);
+            var tileRadius = Math.Max(1, layout.Radius / 2);
+            var x = layout.PreviewX + innerPad;
+
+            using (var blue = new SolidBrush(Color.FromArgb(72, 82, 158, 240)))
+            using (var warm = new SolidBrush(Color.FromArgb(64, 217, 163, 106)))
+            using (var muted = new SolidBrush(Color.FromArgb(58, 122, 136, 168)))
+            using (var tile1 = RoundedRect(x, layout.PreviewY + innerPad, tileWidth, Math.Max(2, Round(innerHeight * 0.55f)), tileRadius))
+            using (var tile2 = RoundedRect(x + tileWidth + tileGap, layout.PreviewY + innerPad + Round(innerHeight * 0.18f), tileWidth, Math.Max(2, Round(innerHeight * 0.82f)), tileRadius))
+            using (var tile3 = RoundedRect(x + (tileWidth + tileGap) * 2, layout.PreviewY + innerPad, tileWidth, Math.Max(2, Round(innerHeight * 0.65f)), tileRadius))
+            {
+                g.FillPath(blue, tile1);
+                g.FillPath(warm, tile2);
+                g.FillPath(muted, tile3);
+            }
+
+            using (var borderPath = RoundedRect(layout.PreviewX, layout.PreviewY, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
+            using (var borderPen = new Pen(Color.FromArgb(20, 255, 255, 255), Math.Max(1f, size / 256f)))
+                g.DrawPath(borderPen, borderPath);
         }
 
         private static Bitmap FallbackBrand(int size)
@@ -203,28 +283,14 @@ namespace RefBoard
             var canvas = new Bitmap(size, size, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(canvas))
             {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.SmoothingMode = SmoothingMode.HighQuality;
-                g.TextRenderingHint = TextRenderingHint.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
                 DrawGradientBackground(g, size);
-
-                using (var brand = LoadBrandImage())
-                {
-                    if (brand != null)
-                    {
-                        var badge = (int)Math.Round(size * 0.28);
-                        var x = (size - badge) / 2;
-                        var y = (size - badge) / 2 - size / 16;
-                        g.DrawImage(brand, x, y, badge, badge);
-                    }
-                }
-
-                using (var font = new Font("Segoe UI", Math.Max(6f, size / 22f), FontStyle.Regular, GraphicsUnit.Pixel))
-                using (var brush = new SolidBrush(Color.FromArgb(80, 180, 190, 210)))
-                {
-                    var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Near };
-                    g.DrawString("RefBoard", font, brush, size / 2f, size * 0.72f, sf);
-                }
+                var layout = CalculateLayout(size);
+                DrawFallbackPreview(g, size, layout);
+                DrawBrandSide(g, size, layout);
             }
             return canvas;
         }
@@ -235,13 +301,20 @@ namespace RefBoard
             using (var stream = asm.GetManifestResourceStream("RefBoard.brand.png"))
             {
                 if (stream == null) return null;
-                return new Bitmap(stream);
+                using (var embedded = new Bitmap(stream))
+                    return new Bitmap(embedded);
             }
         }
 
         private static GraphicsPath RoundedRect(int x, int y, int w, int h, int r)
         {
             var path = new GraphicsPath();
+            if (w <= 2 || h <= 2 || r <= 0)
+            {
+                path.AddRectangle(new Rectangle(x, y, Math.Max(1, w), Math.Max(1, h)));
+                return path;
+            }
+            r = Math.Max(1, Math.Min(r, Math.Min(w, h) / 2));
             var d = r * 2;
             path.AddArc(x, y, d, d, 180, 90);
             path.AddArc(x + w - d, y, d, d, 270, 90);

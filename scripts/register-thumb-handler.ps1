@@ -9,7 +9,23 @@ $ErrorActionPreference = 'Stop'
 $HandlerGuid = '{B8E4F1A2-3C5D-4E6F-9A0B-1C2D3E4F5A6B}'
 $ThumbShellGuid = '{E357FCCD-A995-4576-B01F-234630154E96}'
 $ProgId = 'RefBoard.refboard'
+$ManagedProgId = 'RefBoard.RefBoardThumbnailHandler'
+$ManagedClass = 'RefBoard.RefBoardThumbnailHandler'
+$ManagedCategoryGuid = '{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}'
 $ClassesRoot = 'Registry::HKEY_CURRENT_USER\Software\Classes'
+
+function Set-DefaultValue([string]$Path, [string]$Value) {
+  New-Item -Path $Path -Force | Out-Null
+  Set-ItemProperty -Path $Path -Name '(default)' -Value $Value
+}
+
+function ThumbnailAssociationRoots {
+  @(
+    "$ClassesRoot\$ProgId",
+    "$ClassesRoot\.refboard",
+    "$ClassesRoot\SystemFileAssociations\.refboard"
+  )
+}
 
 function Refresh-Explorer {
   Add-Type @"
@@ -24,9 +40,18 @@ public static class RefBoardShellNotify {
 
 if ($Action -eq 'uninstall') {
   Remove-Item -Path "$ClassesRoot\CLSID\$HandlerGuid" -Recurse -Force -ErrorAction SilentlyContinue
-  Remove-ItemProperty -Path "$ClassesRoot\$ProgId\shellex" -Name $ThumbShellGuid -Force -ErrorAction SilentlyContinue
+  Remove-Item -Path "$ClassesRoot\$ManagedProgId" -Recurse -Force -ErrorAction SilentlyContinue
+  foreach ($root in (ThumbnailAssociationRoots)) {
+    Remove-Item -Path "$root\shellex\$ThumbShellGuid" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path "$root\shellex" -Name $ThumbShellGuid -Force -ErrorAction SilentlyContinue
+  }
   Refresh-Explorer
   Write-Host 'Unregistered RefBoard thumbnail handler (current user)'
+  exit 0
+}
+
+if ($AppExePath -and ([IO.Path]::GetFileName($AppExePath) -ieq 'electron.exe')) {
+  Write-Host 'Skipped RefBoard shell registration from the Electron development runtime'
   exit 0
 }
 
@@ -41,19 +66,39 @@ if (-not (Test-Path -LiteralPath $sharpDll)) {
   Write-Error 'SharpShell.dll must sit beside RefBoardThumbnailHandler.dll'
 }
 
-New-Item -Path "$ClassesRoot\CLSID\$HandlerGuid" -Force | Out-Null
-New-Item -Path "$ClassesRoot\CLSID\$HandlerGuid\InprocServer32" -Force | Out-Null
-Set-ItemProperty -Path "$ClassesRoot\CLSID\$HandlerGuid" -Name '(default)' -Value 'RefBoard Thumbnail Handler'
-Set-ItemProperty -Path "$ClassesRoot\CLSID\$HandlerGuid\InprocServer32" -Name '(default)' -Value $dllPathResolved
-Set-ItemProperty -Path "$ClassesRoot\CLSID\$HandlerGuid\InprocServer32" -Name 'ThreadingModel' -Value 'Apartment'
-Set-ItemProperty -Path "$ClassesRoot\CLSID\$HandlerGuid\InprocServer32" -Name 'Class' -Value 'RefBoard Thumbnail Handler'
+$assemblyName = [Reflection.AssemblyName]::GetAssemblyName($dllPathResolved)
+$assemblyFullName = $assemblyName.FullName
+$assemblyVersion = $assemblyName.Version.ToString()
+$runtimeVersion = 'v4.0.30319'
+$codeBase = ([Uri]$dllPathResolved).AbsoluteUri
+$clsidKey = "$ClassesRoot\CLSID\$HandlerGuid"
+$inprocKey = "$clsidKey\InprocServer32"
+$versionKey = "$inprocKey\$assemblyVersion"
 
-New-Item -Path "$ClassesRoot\$ProgId" -Force | Out-Null
-Set-ItemProperty -Path "$ClassesRoot\$ProgId" -Name '(default)' -Value 'RefBoard moodboard'
-New-Item -Path "$ClassesRoot\$ProgId\shellex" -Force | Out-Null
-Set-ItemProperty -Path "$ClassesRoot\$ProgId\shellex" -Name $ThumbShellGuid -Value $HandlerGuid
-New-Item -Path "$ClassesRoot\.refboard" -Force | Out-Null
-Set-ItemProperty -Path "$ClassesRoot\.refboard" -Name '(default)' -Value $ProgId
+Set-DefaultValue "$ClassesRoot\$ManagedProgId" $ManagedProgId
+Set-DefaultValue "$ClassesRoot\$ManagedProgId\CLSID" $HandlerGuid
+Set-DefaultValue $clsidKey $ManagedClass
+Set-DefaultValue $inprocKey 'mscoree.dll'
+Set-ItemProperty -Path $inprocKey -Name 'ThreadingModel' -Value 'Both'
+Set-ItemProperty -Path $inprocKey -Name 'Class' -Value $ManagedClass
+Set-ItemProperty -Path $inprocKey -Name 'Assembly' -Value $assemblyFullName
+Set-ItemProperty -Path $inprocKey -Name 'RuntimeVersion' -Value $runtimeVersion
+Set-ItemProperty -Path $inprocKey -Name 'CodeBase' -Value $codeBase
+New-Item -Path $versionKey -Force | Out-Null
+Set-ItemProperty -Path $versionKey -Name 'Class' -Value $ManagedClass
+Set-ItemProperty -Path $versionKey -Name 'Assembly' -Value $assemblyFullName
+Set-ItemProperty -Path $versionKey -Name 'RuntimeVersion' -Value $runtimeVersion
+Set-ItemProperty -Path $versionKey -Name 'CodeBase' -Value $codeBase
+Set-DefaultValue "$clsidKey\ProgId" $ManagedProgId
+New-Item -Path "$clsidKey\Implemented Categories\$ManagedCategoryGuid" -Force | Out-Null
+
+Set-DefaultValue "$ClassesRoot\$ProgId" 'RefBoard moodboard'
+Set-DefaultValue "$ClassesRoot\.refboard" $ProgId
+foreach ($root in (ThumbnailAssociationRoots)) {
+  New-Item -Path "$root\shellex" -Force | Out-Null
+  Remove-ItemProperty -Path "$root\shellex" -Name $ThumbShellGuid -Force -ErrorAction SilentlyContinue
+  Set-DefaultValue "$root\shellex\$ThumbShellGuid" $HandlerGuid
+}
 
 if ($DefaultIconPath -and (Test-Path -LiteralPath $DefaultIconPath)) {
   $iconResolved = (Resolve-Path -LiteralPath $DefaultIconPath).Path

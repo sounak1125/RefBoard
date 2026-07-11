@@ -36,140 +36,122 @@ function extractPreviewBase64(filePath) {
   }
 }
 
-async function compositeBrandedThumbnail(thumbnailBuffer, size = 256) {
-  const stripW = Math.max(1, Math.round(size * 0.80));
-  const stripH = Math.max(1, Math.round(size * 0.38));
-  const stripX = Math.round((size - stripW) / 2);
-  const stripY = Math.round((size - stripH) / 2);
-  const radius = Math.max(4, Math.round(size / 42));
-  const badgeSize = Math.max(12, Math.round(size * 0.18));
-  const margin = Math.max(3, Math.round(size / 24));
-  const inset = Math.max(2, Math.round(badgeSize / 6));
+function thumbnailLayout(size) {
+  const padding = Math.max(1, Math.round(size * 0.06));
+  const railWidth = Math.max(3, Math.round(size * 0.19));
+  const gap = Math.max(2, Math.round(size * 0.055));
+  const previewWidth = Math.max(4, size - padding * 2 - railWidth - gap);
+  const previewHeight = Math.max(4, Math.round(previewWidth * 0.58));
+  const brandSize = Math.max(3, Math.min(railWidth, Math.round(size * 0.17)));
+  const previewX = padding;
+  return {
+    previewX,
+    previewY: Math.round((size - previewHeight) / 2),
+    previewWidth,
+    previewHeight,
+    radius: Math.max(1, Math.round(size / 28)),
+    brandX: Math.round(size - padding - (railWidth + brandSize) / 2),
+    brandY: Math.round((size - brandSize) / 2),
+    brandSize,
+    dividerX: previewX + previewWidth + Math.round(gap / 2),
+  };
+}
 
-  const board = await sharp(thumbnailBuffer)
-    .resize(stripW, stripH, { fit: 'cover', position: 'centre' })
-    .png()
-    .toBuffer();
-
-  const roundedMask = Buffer.from(
-    `<svg width="${stripW}" height="${stripH}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="${stripW}" height="${stripH}" rx="${radius}" ry="${radius}" fill="white"/>
-    </svg>`
-  );
-
-  const roundedBoard = await sharp(board)
-    .composite([{
-      input: await sharp(roundedMask).resize(stripW, stripH).png().toBuffer(),
-      blend: 'dest-in',
-    }])
-    .png()
-    .toBuffer();
-
-  const vignette = Buffer.from(
-    `<svg width="${stripW}" height="${stripH}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="v" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stop-color="rgba(0,0,0,0.24)"/>
-          <stop offset="50%" stop-color="rgba(0,0,0,0)"/>
-          <stop offset="100%" stop-color="rgba(0,0,0,0.24)"/>
-        </linearGradient>
-      </defs>
-      <rect width="${stripW}" height="${stripH}" rx="${radius}" fill="url(#v)"/>
-    </svg>`
-  );
-
-  const boardWithVignette = await sharp(roundedBoard)
-    .composite([{ input: vignette, blend: 'over' }])
-    .png()
-    .toBuffer();
-
-  const border = Buffer.from(
-    `<svg width="${stripW}" height="${stripH}" xmlns="http://www.w3.org/2000/svg">
-      <rect x="0.5" y="0.5" width="${stripW - 1}" height="${stripH - 1}" rx="${radius}" ry="${radius}"
-        fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
-    </svg>`
-  );
-
-  const badgePlate = Buffer.from(
-    `<svg width="${badgeSize}" height="${badgeSize}" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="${badgeSize / 2}" cy="${badgeSize / 2}" r="${badgeSize / 2 - 1}"
-        fill="rgba(18,20,28,0.86)" stroke="rgba(90,200,255,0.47)" stroke-width="1"/>
-    </svg>`
-  );
-
-  const brandSized = await sharp(loadBrandPng())
-    .resize(badgeSize - inset * 2, badgeSize - inset * 2, { fit: 'inside' })
-    .png()
-    .toBuffer();
-
-  const bgGradient = Buffer.from(
+function thumbnailBackground(size, dividerX) {
+  return Buffer.from(
     `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#0e0f14"/>
-          <stop offset="100%" stop-color="#181a22"/>
+          <stop offset="0%" stop-color="#111318"/>
+          <stop offset="100%" stop-color="#181b22"/>
         </linearGradient>
       </defs>
       <rect width="${size}" height="${size}" fill="url(#g)"/>
+      <line x1="${dividerX}" y1="${Math.round(size * 0.31)}" x2="${dividerX}" y2="${Math.round(size * 0.69)}"
+        stroke="#529ef0" stroke-opacity="0.2" stroke-width="${Math.max(1, size / 256)}"/>
     </svg>`
   );
+}
 
-  const bg = await sharp(bgGradient).resize(size, size).png().toBuffer();
-
-  const shadow = Buffer.from(
-    `<svg width="${stripW + 4}" height="${stripH + 4}" xmlns="http://www.w3.org/2000/svg">
-      <rect x="2" y="3" width="${stripW}" height="${stripH}" rx="${radius}" fill="rgba(0,0,0,0.27)"/>
+function previewShadow(layout) {
+  return Buffer.from(
+    `<svg width="${layout.previewWidth + 2}" height="${layout.previewHeight + 3}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="2" width="${layout.previewWidth}" height="${layout.previewHeight}"
+        rx="${layout.radius}" fill="rgba(0,0,0,0.27)"/>
     </svg>`
   );
+}
 
-  const badgeX = size - badgeSize - margin;
-  const badgeY = size - badgeSize - margin;
+function previewBorder(layout) {
+  return Buffer.from(
+    `<svg width="${layout.previewWidth}" height="${layout.previewHeight}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="0.5" y="0.5" width="${Math.max(1, layout.previewWidth - 1)}" height="${Math.max(1, layout.previewHeight - 1)}"
+        rx="${layout.radius}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+    </svg>`
+  );
+}
 
-  return sharp(bg)
+async function sideBrand(size, layout) {
+  return sharp(loadBrandPng())
+    .resize(layout.brandSize, layout.brandSize, { fit: 'contain' })
+    .png()
+    .toBuffer();
+}
+
+async function compositeBrandedThumbnail(thumbnailBuffer, size = 256) {
+  const layout = thumbnailLayout(size);
+  const board = await sharp(thumbnailBuffer)
+    .resize(layout.previewWidth, layout.previewHeight, { fit: 'cover', position: 'centre' })
+    .png()
+    .toBuffer();
+  const roundedMask = Buffer.from(
+    `<svg width="${layout.previewWidth}" height="${layout.previewHeight}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${layout.previewWidth}" height="${layout.previewHeight}" rx="${layout.radius}" fill="white"/>
+    </svg>`
+  );
+  const roundedBoard = await sharp(board)
+    .composite([{ input: roundedMask, blend: 'dest-in' }])
+    .png()
+    .toBuffer();
+  const brand = await sideBrand(size, layout);
+
+  return sharp(thumbnailBackground(size, layout.dividerX))
     .composite([
-      { input: shadow, left: stripX - 1, top: stripY },
-      { input: boardWithVignette, left: stripX, top: stripY },
-      { input: border, left: stripX, top: stripY },
-      { input: badgePlate, left: badgeX, top: badgeY },
-      { input: brandSized, left: badgeX + inset, top: badgeY + inset },
+      { input: previewShadow(layout), left: layout.previewX, top: layout.previewY },
+      { input: roundedBoard, left: layout.previewX, top: layout.previewY },
+      { input: previewBorder(layout), left: layout.previewX, top: layout.previewY },
+      { input: brand, left: layout.brandX, top: layout.brandY },
     ])
     .png()
     .toBuffer();
 }
 
 async function compositeFallbackBrand(size = 256) {
-  const badge = Math.round(size * 0.28);
-  const brandSized = await sharp(loadBrandPng())
-    .resize(badge, badge, { fit: 'inside' })
-    .png()
-    .toBuffer();
-
-  const label = Buffer.from(
-    `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-      <text x="50%" y="${Math.round(size * 0.72)}" text-anchor="middle"
-        font-family="Segoe UI, sans-serif" font-size="${Math.max(6, Math.round(size / 22))}"
-        fill="rgba(180,190,210,0.31)">RefBoard</text>
+  const layout = thumbnailLayout(size);
+  const innerPad = Math.max(1, Math.floor(layout.previewWidth / 14));
+  const tileGap = Math.max(1, Math.floor(layout.previewWidth / 28));
+  const tileWidth = Math.max(1, Math.floor((layout.previewWidth - innerPad * 2 - tileGap * 2) / 3));
+  const innerHeight = Math.max(2, layout.previewHeight - innerPad * 2);
+  const tileRadius = Math.max(1, Math.floor(layout.radius / 2));
+  const tile2X = innerPad + tileWidth + tileGap;
+  const tile3X = innerPad + (tileWidth + tileGap) * 2;
+  const placeholder = Buffer.from(
+    `<svg width="${layout.previewWidth}" height="${layout.previewHeight}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${layout.previewWidth}" height="${layout.previewHeight}" rx="${layout.radius}" fill="#161920"/>
+      <rect x="${innerPad}" y="${innerPad}" width="${tileWidth}" height="${Math.max(1, Math.round(innerHeight * 0.55))}" rx="${tileRadius}" fill="rgba(82,158,240,0.28)"/>
+      <rect x="${tile2X}" y="${innerPad + Math.round(innerHeight * 0.18)}" width="${tileWidth}" height="${Math.max(1, Math.round(innerHeight * 0.82))}" rx="${tileRadius}" fill="rgba(217,163,106,0.25)"/>
+      <rect x="${tile3X}" y="${innerPad}" width="${tileWidth}" height="${Math.max(1, Math.round(innerHeight * 0.65))}" rx="${tileRadius}" fill="rgba(122,136,168,0.23)"/>
+      <rect x="0.5" y="0.5" width="${Math.max(1, layout.previewWidth - 1)}" height="${Math.max(1, layout.previewHeight - 1)}"
+        rx="${layout.radius}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
     </svg>`
   );
+  const brand = await sideBrand(size, layout);
 
-  const bgGradient = Buffer.from(
-    `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#0e0f14"/>
-          <stop offset="100%" stop-color="#181a22"/>
-        </linearGradient>
-      </defs>
-      <rect width="${size}" height="${size}" fill="url(#g)"/>
-    </svg>`
-  );
-
-  const bg = await sharp(bgGradient).resize(size, size).png().toBuffer();
-
-  return sharp(bg)
+  return sharp(thumbnailBackground(size, layout.dividerX))
     .composite([
-      { input: brandSized, left: Math.round((size - badge) / 2), top: Math.round((size - badge) / 2 - size / 16) },
-      { input: label, left: 0, top: 0 },
+      { input: previewShadow(layout), left: layout.previewX, top: layout.previewY },
+      { input: placeholder, left: layout.previewX, top: layout.previewY },
+      { input: brand, left: layout.brandX, top: layout.brandY },
     ])
     .png()
     .toBuffer();
