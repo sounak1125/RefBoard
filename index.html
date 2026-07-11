@@ -2286,7 +2286,7 @@ function effectiveZoomMin() {
   if (!Number.isFinite(fitS) || fitS <= 0) return ZOOM_MIN;
   return Math.max(ZOOM_ABS_FLOOR, Math.min(ZOOM_MIN, fitS * 0.18));
 }
-const images = new Map();       // imgId -> {bitmap, pristineBitmap|null, w, h, blob, type, name}
+const images = new Map();       // imgId -> {bitmap, pristineBlob|null, w, h, blob, type, name}
 
 let dirty = true;
 let workspaceBBoxCache = null;
@@ -3414,13 +3414,14 @@ function closeImageRecordBitmaps(records) {
   for (const im of values) {
     invalidateImageLods(im, { bumpVersion: true });
     try { im?.bitmap?.close?.(); } catch (e) {}
-    try { im?.pristineBitmap?.close?.(); } catch (e) {}
   }
 }
 
 function releaseDrawSessionCanvases(session = drawSession) {
   if (!session) return;
   session.released = true;
+  try { session.pristineBitmap?.close?.(); } catch (e) {}
+  session.pristineBitmap = null;
   for (const key of ['canvas', 'baseCanvas']) {
     const canvas = session[key];
     if (canvas) {
@@ -3457,7 +3458,7 @@ async function restoreSessionImages(imgIds, imageNames) {
           imgId,
           image: {
             bitmap,
-            pristineBitmap: null,
+            pristineBlob: null,
             version: 0,
             w: bitmap.width,
             h: bitmap.height,
@@ -3809,25 +3810,16 @@ async function decodeToBitmap(blob) {
   }
 }
 
-async function cloneBitmap(bitmap) {
-  const c = document.createElement('canvas');
-  c.width = bitmap.width;
-  c.height = bitmap.height;
-  c.getContext('2d').drawImage(bitmap, 0, 0);
-  return createImageBitmap(c);
-}
-
-async function ensurePristineBitmap(im) {
-  if (im.pristineBitmap) return im.pristineBitmap;
-  im.pristineBitmap = await cloneBitmap(im.bitmap);
-  return im.pristineBitmap;
+function ensurePristineBlob(im) {
+  if (!im.pristineBlob) im.pristineBlob = im.blob;
+  return im.pristineBlob;
 }
 
 async function registerBlob(blob, name) {
   const imgId = uid();
   const bitmap = await decodeToBitmap(blob);
   images.set(imgId, {
-    bitmap, pristineBitmap: null, w: bitmap.width, h: bitmap.height,
+    bitmap, pristineBlob: null, w: bitmap.width, h: bitmap.height,
     blob, type: blob.type || 'image/png', name: name || '', version: 0,
   });
   dbPut('blobs', imgId, blob);
@@ -3980,9 +3972,9 @@ function imageBitmapForDraw(it) {
   return im ? im.bitmap : null;
 }
 
-function startDrawSession(it) {
+function startDrawSession(it, pristineBitmap) {
   const im = images.get(it.imgId);
-  if (!im || !im.pristineBitmap) return;
+  if (!im || !pristineBitmap || drawSession) return false;
   const c = document.createElement('canvas');
   c.width = im.w;
   c.height = im.h;
@@ -3990,11 +3982,12 @@ function startDrawSession(it) {
   const base = document.createElement('canvas');
   base.width = im.w;
   base.height = im.h;
-  base.getContext('2d').drawImage(im.pristineBitmap, 0, 0);
+  base.getContext('2d').drawImage(pristineBitmap, 0, 0);
   drawSession = {
     imgId: it.imgId, itemId: it.id, canvas: c, baseCanvas: base,
-    ctx: c.getContext('2d'), lastPx: null, lastPy: null,
+    ctx: c.getContext('2d'), pristineBitmap, lastPx: null, lastPy: null,
   };
+  return true;
 }
 
 function resetDrawCtxStyle(ctx) {
@@ -4017,9 +4010,8 @@ function applyPenBrushStyle(ctx, baseLw, color) {
 }
 
 function drawStrokeSegment(it, px, py) {
-  if (!drawSession || drawSession.itemId !== it.id) startDrawSession(it);
   const s = drawSession;
-  if (!s) return;
+  if (!s || s.itemId !== it.id) return;
   const baseLw = Math.max(1, drawWidth * bitmapScaleForItem(it));
   s.ctx.beginPath();
   if (s.lastPx != null) {
@@ -8188,7 +8180,7 @@ async function applyBoardPayload(j, meta = {}) {
         const bitmap = await decodeToBitmap(blob);
         nextImages.set(imgId, {
           bitmap,
-          pristineBitmap: null,
+          pristineBlob: null,
           version: 0,
           w: bitmap.width,
           h: bitmap.height,
@@ -9729,15 +9721,23 @@ canvas.addEventListener('pointerdown', async e => {
       if (pt) {
         const im = images.get(hit.imgId);
         if (!im) return;
+        const pristineBlob = ensurePristineBlob(im);
+        let pristineBitmap = null;
         try {
-          await ensurePristineBitmap(im);
+          pristineBitmap = await decodeToBitmap(pristineBlob);
         } catch (err) {
           console.error('[draw] failed to prepare image:', err);
           return;
         }
-        if (!canvas.hasPointerCapture(e.pointerId)) return;
+        if (!canvas.hasPointerCapture(e.pointerId)) {
+          try { pristineBitmap?.close?.(); } catch (err) {}
+          return;
+        }
+        if (!startDrawSession(hit, pristineBitmap)) {
+          try { pristineBitmap?.close?.(); } catch (err) {}
+          return;
+        }
         pushUndo({ imgId: hit.imgId });
-        startDrawSession(hit);
         drawStrokeSegment(hit, pt.x, pt.y);
         mode = { type: 'draw', it: hit.id, sx, sy };
       }
