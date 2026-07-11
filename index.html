@@ -2342,6 +2342,7 @@ let cropItemId = null;
 let menuBoardPos = null;
 let noteEditId = null;
 let noteEditorStyleKey = '';
+let noteEditStartSnapshot = null;
 
 const $ = s => document.querySelector(s);
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now());
@@ -7141,6 +7142,9 @@ function startNoteEdit(it, clientX, clientY) {
   if (!it || !isNoteItem(it)) return;
   if (noteEditId && noteEditId !== it.id) finishNoteEdit();
 
+  // Compare the persisted note, not editor focus/DOM state, when editing ends.
+  const editStartSnapshot = JSON.stringify(it);
+
   // Measure against the canvas geometry that received the click.
   // ensureNoteEditFits below may re-hug and recenter an undersized note.
   const caretPos = Number.isFinite(clientX) && Number.isFinite(clientY)
@@ -7149,6 +7153,7 @@ function startNoteEdit(it, clientX, clientY) {
 
   hideNoteLinkPop();
   noteEditId = it.id;
+  noteEditStartSnapshot = editStartSnapshot;
   noteEditorStyleKey = '';
   state.sel = new Set([it.id]);
   updateSelBar();
@@ -7171,14 +7176,18 @@ function startNoteEdit(it, clientX, clientY) {
 
 function finishNoteEdit() {
   if (!noteEditId) return;
+  const editStartSnapshot = noteEditStartSnapshot;
   closeFmtPopups();
   hideNoteLinkPop();
   pullNoteFromEditor(true);
   const it = byId(noteEditId);
   if (it && isNoteItem(it) && !it.text.trim()) it.text = '';
+  const noteChanged = !!it && isNoteItem(it)
+    && (!editStartSnapshot || JSON.stringify(it) !== editStartSnapshot);
   noteEditId = null;
+  noteEditStartSnapshot = null;
   $('#noteOverlay').classList.remove('show');
-  scheduleSave();
+  if (noteChanged) scheduleSave();
   invalidate();
 }
 
@@ -11427,7 +11436,9 @@ $('#sGroupName')?.addEventListener('keydown', e => {
 $('#sGroupName')?.addEventListener('blur', () => {
   const g = singleSelectedGroup();
   if (!g) return;
-  g.name = sanitizeGroupName($('#sGroupName').value);
+  const name = sanitizeGroupName($('#sGroupName').value);
+  if (name === g.name) return;
+  g.name = name;
   scheduleSave();
   invalidate();
 });
