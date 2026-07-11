@@ -14,5 +14,11 @@
   ],
   "1.0.4": [
     "Fixed copied and exported images coming out blurry."
+  ],
+  "1.0.5": [
+    "Notes now show links as clickable text instead of raw markdown while editing.",
+    "Click anywhere in a note to place your cursor there.",
+    "Checkboxes render properly, and pasting from ChatGPT or the web keeps your bullets.",
+    "Fixed text alignment, spacing, and sizing issues in notes."
   ]
 }
