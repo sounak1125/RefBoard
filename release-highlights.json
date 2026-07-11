@@ -1,8 +1,6 @@
 {
   "highlights": [
-    "Notes now show links as clickable text instead of raw markdown while editing.",
-    "Click anywhere in a note to place your cursor there.",
-    "Checkboxes render properly, and pasting from ChatGPT or the web keeps your bullets.",
-    "Fixed text alignment, spacing, and sizing issues in notes."
+    "New app icon and a refreshed look.",
+    "RefBoard files now show a preview thumbnail in File Explorer."
   ]
 }
