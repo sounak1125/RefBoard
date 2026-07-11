@@ -6193,7 +6193,7 @@ function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkCol
       const m = g.measureText(seg.text);
       const desc = m.actualBoundingBoxDescent ?? size * 0.15;
       g.fillStyle = linkColor || '#5aa2ff';
-      g.fillRect(tx, y + desc + 1, tw, Math.max(1, size / 14));
+      g.fillRect(tx, y + desc + 1, tw, size / 14);
       g.restore();
       g.fillStyle = textColor;
       tx += tw;
@@ -6203,7 +6203,7 @@ function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkCol
         const tw = g.measureText(seg.text).width;
         const m = g.measureText(seg.text);
         const desc = m.actualBoundingBoxDescent ?? size * 0.15;
-        g.fillRect(tx, y + desc + 1, tw, Math.max(1, size / 14));
+        g.fillRect(tx, y + desc + 1, tw, size / 14);
       }
       tx += g.measureText(seg.text).width;
     }
@@ -8651,7 +8651,7 @@ function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, inn
         const tw = g.measureText(body).width;
         const m = g.measureText(body);
         const desc = m.actualBoundingBoxDescent ?? size * 0.15;
-        g.fillRect(tx, ly + desc + 1, tw, Math.max(1, size / 14));
+        g.fillRect(tx, ly + desc + 1, tw, size / 14);
       }
     }
   }
@@ -8759,13 +8759,22 @@ function getNoteLinkRegions(it) {
 
 function noteLinkHitAt(it, lx, ly) {
   if (!isNoteItem(it)) return null;
-  const hitPad = Math.max(2, 4 / (state.view.s || 1));
+  const viewS = Math.max(state.view.s || 1, 1e-6);
+  const hitPad = Math.min(4 / viewS, noteLineHeight(it) * 0.4);
+  let closest = null;
+  let closestDistance = Infinity;
   for (const r of getNoteLinkRegions(it)) {
-    if (lx >= r.x1 - hitPad && lx <= r.x2 + hitPad &&
-        ly >= r.y1 - hitPad && ly <= r.y2 + hitPad)
-      return r;
+    if (lx < r.x1 - hitPad || lx > r.x2 + hitPad ||
+        ly < r.y1 - hitPad || ly > r.y2 + hitPad) continue;
+    const dx = Math.max(r.x1 - lx, 0, lx - r.x2);
+    const dy = Math.max(r.y1 - ly, 0, ly - r.y2);
+    const distance = Math.hypot(dx, dy);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closest = r;
+    }
   }
-  return null;
+  return closest;
 }
 
 let noteLinkHoverKey = '';
