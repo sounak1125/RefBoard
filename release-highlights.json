@@ -1,6 +1,10 @@
 {
   "highlights": [
     "New app icon and a refreshed look.",
-    "RefBoard files now show a preview thumbnail in File Explorer."
+    "RefBoard files now show a preview thumbnail in File Explorer.",
+    "Notes: click to place your cursor, cleaner lists and checkboxes, and links show as clickable text.",
+    "Copy and paste now keeps your groups and pastes images individually.",
+    "Uses less memory with large image boards.",
+    "Fixed the save prompt after exporting, wheel scrolling on the home screen, and several zoom-related glitches."
   ]
 }
