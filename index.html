@@ -10773,8 +10773,9 @@ function updateCursor(sx, sy) {
         canvas.style.cursor = 'pointer';
         return;
       }
-      // Editable-text affordance: double-click here opens full text editing.
-      if (!isInLockedGroup(it)) {
+      // Keep the text affordance for an unselected note's double-click entry,
+      // but selected notes use the normal arrow while they can be dragged.
+      if (!state.sel.has(it.id) && !isInLockedGroup(it)) {
         canvas.style.cursor = 'text';
         return;
       }
