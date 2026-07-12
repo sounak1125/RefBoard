@@ -2290,6 +2290,12 @@ body.board-active #whatsNewNotice{ display:none; }
 
 <script type="module">
 import { hydrateNoteDom, serializeNoteDom } from './scripts/note-dom.mjs';
+import {
+  createCopyOperationGate,
+  createClipboardWriteQueue,
+  expandSelectionDeleteIds,
+  deleteIdsAfterSuccessfulCutCopy,
+} from './scripts/clipboard-copy-order.mjs';
 
 'use strict';
 
@@ -4810,6 +4816,9 @@ const REFBOARD_ITEM_CLIP_MIME = 'web application/x-refboard-items+json';
 let localItemClipboard = null;
 window.addEventListener('blur', () => { localItemClipboard = null; });
 
+const copyOps = createCopyOperationGate();
+const clipboardWrites = createClipboardWriteQueue();
+
 function normalizeClipboardText(s) {
   return String(s ?? '').replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').replace(/\n+$/, '');
 }
@@ -5291,17 +5300,21 @@ function pasteTextAsNote(text, pos) {
   return true;
 }
 
-async function compositeBlob(items) {
+async function compositeBlob(items, { isCancelled } = {}) {
+  if (isCancelled?.()) return null;
   const bb = bboxOf(items);
   let k = 1;
   for (const it of items) {
+    if (isCancelled?.()) return null;
     if (!isImageItem(it)) continue;
     const im = images.get(it.imgId);
     if (!im) continue;
     await ensureFullBitmap(im);
+    if (isCancelled?.()) return null;
     const cr = cropOf(it);
     if (im.bitmap) k = Math.max(k, (im.w * (cr.r - cr.l)) / it.w, (im.h * (cr.b - cr.t)) / it.h);
   }
+  if (isCancelled?.()) return null;
   const MAX = 8192;
   k = Math.min(k, MAX / bb.w, MAX / bb.h);
   const c = document.createElement('canvas');
@@ -5312,62 +5325,121 @@ async function compositeBlob(items) {
   g.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
   g.scale(k, k);
   g.translate(-bb.x, -bb.y);
-  for (const it of state.items) {
-    if (!items.includes(it) || isNoteItem(it) || isArrowItem(it)) continue;
+  // Draw from the immutable snapshot only — never re-scan live state.items.
+  for (const it of items) {
+    if (isNoteItem(it) || isArrowItem(it)) continue;
     drawBoardItem(g, it, { noLod: true });
   }
-  for (const it of state.items) {
-    if (!items.includes(it) || !isNoteItem(it)) continue;
+  for (const it of items) {
+    if (!isNoteItem(it)) continue;
     drawBoardItem(g, it, { noLod: true });
   }
-  for (const it of state.items) {
-    if (!items.includes(it) || !isArrowItem(it)) continue;
+  for (const it of items) {
+    if (!isArrowItem(it)) continue;
     drawBoardItem(g, it, { noLod: true });
   }
+  if (isCancelled?.()) return null;
   return await new Promise(r => c.toBlob(r, 'image/png'));
 }
 
+async function writeNotesToClipboard(payload, plainText) {
+  if (window.RefBoardAPI?.writeClipboardNotes) {
+    const res = await window.RefBoardAPI.writeClipboardNotes(payload, plainText);
+    if (!res?.ok) throw new Error('clipboard write failed');
+    return;
+  }
+  await navigator.clipboard.write([
+    new ClipboardItem({ 'text/plain': new Blob([payload], { type: 'text/plain' }) }),
+  ]);
+}
+
+async function writeItemClipboard(pngBlob, payload) {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      'image/png': pngBlob,
+      [REFBOARD_ITEM_CLIP_MIME]: new Blob([JSON.stringify(payload)], { type: REFBOARD_ITEM_CLIP_MIME }),
+    })]);
+  } catch {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+  }
+}
+
+/**
+ * Copy the current selection to the system clipboard.
+ * @returns {Promise<false|{ ok: true, deleteIds: string[] }>}
+ *   Winning successful write returns captured delete IDs for Cut; otherwise false.
+ */
 async function copySelection() {
+  const op = copyOps.begin();
+  const isCurrent = () => copyOps.isCurrent(op);
+
   const items = selectedItems();
-  if (!items.length) { toast('Nothing selected'); return; }
+  if (!items.length) {
+    if (isCurrent()) toast('Nothing selected');
+    return false;
+  }
+
+  // Capture cut/delete IDs immediately with the copy snapshot (group children included).
+  const deleteIds = [...expandSelectionDeleteIds(
+    items.map(it => it.id),
+    gid => {
+      const it = byId(gid);
+      if (!it || !isGroupItem(it)) return [];
+      return childrenOfGroup(gid).map(c => c.id);
+    },
+  )];
+
   if (items.every(isNoteItem)) {
     const payload = buildNoteClipboardPayload(items);
     const plainText = items.map(n => String(n.text || '')).join('\n\n');
-    try {
-      if (window.RefBoardAPI?.writeClipboardNotes) {
-        const res = await window.RefBoardAPI.writeClipboardNotes(payload, plainText);
-        if (!res?.ok) throw new Error('clipboard write failed');
-      } else {
-        await navigator.clipboard.write([
-          new ClipboardItem({ 'text/plain': new Blob([payload], { type: 'text/plain' }) }),
-        ]);
-      }
-      toast(items.length > 1 ? `Copied ${items.length} notes` : 'Copied note');
-    } catch (e) {
-      toast('Could not copy note to clipboard');
+    if (!isCurrent()) return false;
+    const result = await clipboardWrites.enqueue(op, copyOps.isCurrent.bind(copyOps), () =>
+      writeNotesToClipboard(payload, plainText));
+    if (!result.ok) {
+      if (!result.stale && isCurrent()) toast('Could not copy note to clipboard');
+      return false;
     }
-    return;
+    if (!isCurrent()) return false;
+    toast(items.length > 1 ? `Copied ${items.length} notes` : 'Copied note');
+    return { ok: true, deleteIds };
   }
+
+  if (isCurrent()) toast('Copying…', { duration: 60000 });
+
   try {
+    // Snapshot metadata + board-order items immediately (payload already deep-clones).
     const payload = buildItemClipboardPayload(items);
-    const compositeIds = new Set(payload.items.map(it => it.id));
-    const compositeItems = state.items.filter(it => compositeIds.has(it.id));
-    const blob = await compositeBlob(compositeItems);
-    try {
-      await navigator.clipboard.write([new ClipboardItem({
-        'image/png': blob,
-        [REFBOARD_ITEM_CLIP_MIME]: new Blob([JSON.stringify(payload)], { type: REFBOARD_ITEM_CLIP_MIME }),
-      })]);
-    } catch {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    const compositeItems = payload.items;
+    if (!isCurrent()) return false;
+
+    const blob = await compositeBlob(compositeItems, { isCancelled: () => !isCurrent() });
+    if (!isCurrent()) return false;
+    if (!blob) {
+      if (isCurrent()) toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
+      return false;
     }
+
+    const result = await clipboardWrites.enqueue(op, copyOps.isCurrent.bind(copyOps), () =>
+      writeItemClipboard(blob, payload));
+    if (!result.ok) {
+      if (!result.stale && isCurrent()) {
+        toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
+      }
+      return false;
+    }
+    if (!isCurrent()) return false;
+
     localItemClipboard = { payload, pngSize: blob.size };
     const copiedCount = payload.items.filter(it => !isGroupItem(it)).length;
     toast(items.length === 1 && isGroupItem(items[0])
       ? `Copied group (${copiedCount} items)`
       : copiedCount > 1 ? `Copied ${copiedCount} items` : 'Copied selection');
+    return { ok: true, deleteIds };
   } catch (e) {
-    toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
+    if (isCurrent()) {
+      toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
+    }
+    return false;
   }
 }
 
@@ -5468,17 +5540,14 @@ window.addEventListener('drop', async e => {
 });
 
 /* ================= edit ops ================= */
-function deleteSelection() {
-  if (!state.sel.size) return;
-  if (noteEditId && state.sel.has(noteEditId)) finishNoteEdit();
+/** Delete specific item IDs (and empty parent groups). Does not read state.sel for the target set. */
+function deleteItemsByIds(idIterable) {
+  const toDelete = idIterable instanceof Set ? new Set(idIterable) : new Set(idIterable || []);
+  if (!toDelete.size) return false;
+
+  if (noteEditId && toDelete.has(noteEditId)) finishNoteEdit();
   pushUndo();
-  const toDelete = new Set(state.sel);
-  for (const id of [...state.sel]) {
-    const it = byId(id);
-    if (it && isGroupItem(it)) {
-      for (const c of childrenOfGroup(it.id)) toDelete.add(c.id);
-    }
-  }
+
   const affectedGroups = new Set();
   for (const id of toDelete) {
     const it = byId(id);
@@ -5492,9 +5561,32 @@ function deleteSelection() {
     else syncGroupFrame(g);
   }
   invalidateWorkspaceBBox();
-  state.sel.clear();
+  // Drop only deleted ids from the live selection; keep unrelated newly selected items.
+  for (const id of toDelete) state.sel.delete(id);
+  if (state.anchorId && toDelete.has(state.anchorId)) state.anchorId = null;
   demoteUnreferencedImages();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
+  return true;
+}
+
+function deleteSelection() {
+  if (!state.sel.size) return;
+  const toDelete = expandSelectionDeleteIds(
+    [...state.sel],
+    gid => {
+      const it = byId(gid);
+      if (!it || !isGroupItem(it)) return [];
+      return childrenOfGroup(gid).map(c => c.id);
+    },
+  );
+  deleteItemsByIds(toDelete);
+}
+
+async function cutSelection() {
+  const result = await copySelection();
+  const ids = deleteIdsAfterSuccessfulCutCopy(result);
+  if (!ids) return false;
+  return deleteItemsByIds(ids);
 }
 
 function duplicateSelection() {
@@ -11676,7 +11768,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'AltLeft' || e.code === 'AltRight') { altDown = true; canvas.style.cursor = 'grab'; e.preventDefault(); return; }
 
   if (mod && k === 'c') { e.preventDefault(); copySelection(); }
-  else if (mod && k === 'x') { e.preventDefault(); copySelection().then(deleteSelection); }
+  else if (mod && k === 'x') { e.preventDefault(); cutSelection(); }
   else if (mod && k === 'd') { e.preventDefault(); duplicateSelection(); }
   else if (mod && k === 'a') { e.preventDefault(); selectAll(); }
   else if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
