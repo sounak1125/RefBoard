@@ -3,7 +3,10 @@
  * Run: node scripts/test-group-model.mjs
  */
 
-const GROUP_DEFAULT_PADDING = 20;
+const GROUP_MIN_PADDING = 40;
+const GROUP_DEFAULT_PADDING = GROUP_MIN_PADDING;
+const GROUP_CORNER_RADIUS_PX = 12;
+const GROUP_SCREEN_PADDING_PX = 16;
 const GROUP_DEFAULT_COLOR = '#5aa2ff';
 const GROUP_NAME_MAX = 48;
 
@@ -50,7 +53,7 @@ function normalizeItem(it) {
       x: Number(it.x) || 0, y: Number(it.y) || 0,
       w: Math.max(20, Number(it.w) || 100), h: Math.max(20, Number(it.h) || 100),
       rot: Number(it.rot) || 0,
-      padding: Math.min(120, Math.max(4, Number(it.padding) || GROUP_DEFAULT_PADDING)),
+      padding: Math.min(120, Math.max(GROUP_MIN_PADDING, Number(it.padding) || GROUP_DEFAULT_PADDING)),
       color: normalizeGroupColor(it.color || GROUP_DEFAULT_COLOR),
       locked: !!it.locked,
       name: sanitizeGroupName(it.name),
@@ -87,13 +90,36 @@ function childrenOfGroup(state, gid) {
 
 function syncGroupFrame(state, group) {
   const kids = childrenOfGroup(state, group.id);
-  const pad = group.padding ?? GROUP_DEFAULT_PADDING;
+  const pad = Math.min(120, Math.max(GROUP_MIN_PADDING, Number(group.padding) || GROUP_DEFAULT_PADDING));
   if (!kids.length) return;
   const bb = bboxOf(kids);
   group.x = bb.x - pad;
   group.y = bb.y - pad;
   group.w = bb.w + pad * 2;
   group.h = bb.h + pad * 2;
+}
+
+function groupFrameHit(group, sx, sy, scale) {
+  const x1 = group.x * scale, y1 = group.y * scale;
+  const x2 = (group.x + group.w) * scale, y2 = (group.y + group.h) * scale;
+  const w = x2 - x1, h = y2 - y1;
+  const hitPx = 10;
+  const inward = Math.min(hitPx, Math.min(w, h) * 0.2);
+  const inOuter = sx >= x1 - hitPx && sx <= x2 + hitPx
+    && sy >= y1 - hitPx && sy <= y2 + hitPx;
+  const inInner = sx > x1 + inward && sx < x2 - inward
+    && sy > y1 + inward && sy < y2 - inward;
+  return inOuter && !inInner;
+}
+
+function groupUiRectAtScale(kidsBox, scale) {
+  const pad = GROUP_SCREEN_PADDING_PX / scale;
+  return {
+    x: kidsBox.x - pad,
+    y: kidsBox.y - pad,
+    w: kidsBox.w + pad * 2,
+    h: kidsBox.h + pad * 2,
+  };
 }
 
 function reconcileGroupOrder(state) {
@@ -144,8 +170,35 @@ const v3 = {
 const state = { items: v3.items.map(normalizeItem) };
 const group = state.items.find(isGroupItem);
 syncGroupFrame(state, group);
-assert(group.w === 220 + 40 && group.h === 80 + 40, `syncGroupFrame bbox: got ${group.w}x${group.h}`);
-assert(group.x === -20 && group.y === -20, 'syncGroupFrame origin');
+assert(group.w === 220 + 80 && group.h === 80 + 80, `syncGroupFrame bbox: got ${group.w}x${group.h}`);
+assert(group.x === -40 && group.y === -40, 'syncGroupFrame origin');
+assert(group.padding === GROUP_MIN_PADDING, 'legacy narrow padding should migrate to the minimum clickable gap');
+const groupKidsBox = bboxOf(childrenOfGroup(state, group.id));
+assert(groupKidsBox.x - group.x === GROUP_MIN_PADDING, 'group left gap');
+assert(groupKidsBox.y - group.y === GROUP_MIN_PADDING, 'group top gap');
+assert(group.x + group.w - (groupKidsBox.x + groupKidsBox.w) === GROUP_MIN_PADDING, 'group right gap');
+assert(group.y + group.h - (groupKidsBox.y + groupKidsBox.h) === GROUP_MIN_PADDING, 'group bottom gap');
+for (const scale of [0.05, 0.25, 1, 4, 16, 100]) {
+  const ui = groupUiRectAtScale(groupKidsBox, scale);
+  const leftGapPx = (groupKidsBox.x - ui.x) * scale;
+  const rightGapPx = (ui.x + ui.w - groupKidsBox.x - groupKidsBox.w) * scale;
+  const topGapPx = (groupKidsBox.y - ui.y) * scale;
+  const bottomGapPx = (ui.y + ui.h - groupKidsBox.y - groupKidsBox.h) * scale;
+  const gapStable = [leftGapPx, rightGapPx, topGapPx, bottomGapPx]
+    .every(gap => Math.abs(gap - GROUP_SCREEN_PADDING_PX) < 1e-6);
+  assert(gapStable,
+  `group visual padding should stay stable at ${scale}x zoom`);
+  const edgeX = ui.x * scale;
+  const midY = (ui.y + ui.h / 2) * scale;
+  assert(groupFrameHit(ui, edgeX - 8, midY, scale), `group frame should be clickable at ${scale}x zoom`);
+  const centerX = (ui.x + ui.w / 2) * scale;
+  assert(!groupFrameHit(ui, centerX, midY, scale), `group center should preserve child hits at ${scale}x zoom`);
+  const radiusBoard = Math.min(GROUP_CORNER_RADIUS_PX / scale, ui.w / 2, ui.h / 2);
+  const radiusScreen = radiusBoard * scale;
+  const maxPossibleRadius = Math.min(ui.w * scale, ui.h * scale) / 2;
+  assert(Math.abs(radiusScreen - Math.min(GROUP_CORNER_RADIUS_PX, maxPossibleRadius)) < 1e-6,
+    `group corner radius should stay visually stable at ${scale}x zoom`);
+}
 reconcileGroupOrder(state);
 const gi = state.items.findIndex(i => i.id === gId);
 const c1i = state.items.findIndex(i => i.id === 'c1');

@@ -634,7 +634,7 @@ body.board-instant-open #titlebarPeek{
   width:min(1080px, calc(100vw - 48px));
   padding:64px 0 72px;
 }
-.rw-header{ margin-bottom:44px; }
+.rw-header{ margin-bottom:20px; }
 .rw-brand{
   display:inline-flex; align-items:center; gap:12px;
   color:var(--txt); margin-bottom:20px;
@@ -658,6 +658,12 @@ body.board-instant-open #titlebarPeek{
   font-size:32px; font-weight:500; letter-spacing:-.03em; line-height:1.15;
   color:var(--txt); margin-bottom:8px;
 }
+.rw-heading-row{
+  display:flex; align-items:flex-end; justify-content:space-between; gap:24px;
+  padding-bottom:16px;
+  border-bottom:1px solid var(--line);
+}
+.rw-heading-copy{ min-width:0; }
 .rw-sub{
   font-size:14px; font-weight:400; line-height:1.5;
   color:var(--mut); max-width:420px;
@@ -667,7 +673,7 @@ body.board-instant-open #titlebarPeek{
   display:grid;
   grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));
   gap:16px;
-  margin-bottom:32px;
+  margin-bottom:8px;
 }
 .rw-grid.hide{ display:none; }
 
@@ -751,7 +757,7 @@ body.board-instant-open #titlebarPeek{
 
 .rw-empty{
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:16px; padding:64px 32px; margin-bottom:32px;
+  gap:16px; padding:64px 32px; margin-bottom:8px;
   background:rgba(22,24,30,.45);
   border:1px solid var(--line); border-radius:16px;
   color:var(--dim); text-align:center;
@@ -775,7 +781,17 @@ body.board-instant-open #titlebarPeek{
 }
 
 .rw-actions{
-  display:flex; flex-wrap:wrap; gap:10px;
+  display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center;
+  gap:10px;
+  flex:0 0 auto;
+}
+.rw-actions .rw-btn{
+  padding:8px 16px;
+  font-size:12.5px;
+}
+@media (max-width:520px){
+  .rw-heading-row{ flex-direction:column; align-items:stretch; }
+  .rw-actions{ align-self:flex-end; }
 }
 .rw-btn{
   padding:10px 20px; border-radius:10px; border:1px solid var(--line);
@@ -1622,8 +1638,16 @@ body.board-active #whatsNewNotice{ display:none; }
           <span class="rw-brand-kicker">Reference workspace</span>
         </span>
       </div>
-      <h1>Recent Works</h1>
-      <p class="rw-sub">Pick a board to continue, or start fresh</p>
+      <div class="rw-heading-row">
+        <div class="rw-heading-copy">
+          <h1>Recent Boards</h1>
+          <p class="rw-sub">Pick a board to continue, or start fresh</p>
+        </div>
+        <div class="rw-actions">
+          <button type="button" class="rw-btn" id="rwOpenFile">Open board</button>
+          <button type="button" class="rw-btn primary" id="rwNewBoard">New board</button>
+        </div>
+      </div>
     </header>
     <div class="rw-grid hide" id="recentGrid"></div>
     <div class="rw-empty" id="recentEmpty">
@@ -1632,10 +1656,6 @@ body.board-active #whatsNewNotice{ display:none; }
       </div>
       <h2>Create your first board</h2>
       <p>Start a new moodboard or open a saved .refboard file from disk.</p>
-    </div>
-    <div class="rw-actions">
-      <button type="button" class="rw-btn primary" id="rwNewBoard">New board</button>
-      <button type="button" class="rw-btn" id="rwOpenFile">Open file…</button>
     </div>
   </div>
 </div>
@@ -2405,12 +2425,14 @@ const isNoteItem = it => it.kind === 'note';
 const isArrowItem = it => it.kind === 'arrow';
 const isGroupItem = it => it.kind === 'group';
 const isGroupableItem = it => isImageItem(it) || isNoteItem(it);
-const GROUP_DEFAULT_PADDING = 20;
+const GROUP_MIN_PADDING = 40;
+const GROUP_DEFAULT_PADDING = GROUP_MIN_PADDING;
+const GROUP_FRAME_HIT_PX = 10;
+const GROUP_CORNER_RADIUS_PX = 12;
+const GROUP_SCREEN_PADDING_PX = 16;
 const GROUP_DEFAULT_COLOR = '#5aa2ff';
-const GROUP_LABEL_GAP = 6;
-const GROUP_LABEL_SIZE_MIN = 10;
-const GROUP_LABEL_SIZE_RATIO = 0.032;
-const GROUP_LABEL_SIZE_MAX = 28;
+const GROUP_LABEL_GAP_PX = 6;
+const GROUP_LABEL_SIZE_PX = 13;
 const GROUP_NAME_MAX = 48;
 const GROUP_LABEL_FONT_FAMILY = '"Comic Sans MS", "Comic Sans", cursive';
 
@@ -2446,6 +2468,23 @@ function normalizeGroupColor(hex) {
   return parsed ? rgbToHexColor(parsed.r, parsed.g, parsed.b) : GROUP_DEFAULT_COLOR;
 }
 
+function groupPadding(group) {
+  return clamp(Number(group?.padding) || GROUP_DEFAULT_PADDING, GROUP_MIN_PADDING, 120);
+}
+
+function groupUiRect(group) {
+  const kids = childrenOfGroup(group.id);
+  if (!kids.length) return { x: group.x, y: group.y, w: group.w, h: group.h };
+  const bb = bboxOf(kids);
+  const pad = GROUP_SCREEN_PADDING_PX / Math.max(state.view.s, 0.0001);
+  return {
+    x: bb.x - pad,
+    y: bb.y - pad,
+    w: bb.w + pad * 2,
+    h: bb.h + pad * 2,
+  };
+}
+
 function effectiveHitItem(it) {
   return it;
 }
@@ -2470,7 +2509,7 @@ function idsIncludeLockedGroupItems(ids) {
 function syncGroupFrame(group) {
   if (!group || !isGroupItem(group)) return;
   const kids = childrenOfGroup(group.id);
-  const pad = group.padding ?? GROUP_DEFAULT_PADDING;
+  const pad = groupPadding(group);
   if (!kids.length) {
     group.w = Math.max(40, group.w || 40);
     group.h = Math.max(40, group.h || 40);
@@ -2517,7 +2556,7 @@ function insertGroupBeforeChildren(group, childIds) {
 function layoutItemsInGroup(group, items) {
   const kids = items || childrenOfGroup(group.id);
   if (kids.length < 2) return;
-  const pad = group.padding ?? GROUP_DEFAULT_PADDING;
+  const pad = groupPadding(group);
   const innerX = group.x + pad;
   const innerY = group.y + pad;
   packItems(kids, 12);
@@ -2628,7 +2667,7 @@ function ungroupFromSelection() {
 }
 
 function groupLabelFontSizeBoard(g) {
-  return clamp(GROUP_LABEL_SIZE_MIN, Math.round(g.w * GROUP_LABEL_SIZE_RATIO), GROUP_LABEL_SIZE_MAX);
+  return GROUP_LABEL_SIZE_PX / Math.max(state.view.s, 0.0001);
 }
 
 function groupLabelFont(g) {
@@ -2643,9 +2682,11 @@ function groupLabelBoardRect(g) {
   ctx.font = groupLabelFont(g);
   const tw = ctx.measureText(name).width;
   ctx.restore();
+  const r = itemUiRect(g);
+  const gap = GROUP_LABEL_GAP_PX / Math.max(state.view.s, 0.0001);
   return {
-    x: g.x,
-    y: g.y - GROUP_LABEL_GAP - fontSize,
+    x: r.x,
+    y: r.y - gap - fontSize,
     w: tw,
     h: fontSize,
     name,
@@ -2666,6 +2707,27 @@ function groupAt(sx, sy) {
     if (pointInBoardRect(bx, by, r)) return it;
     const lr = groupLabelBoardRect(it);
     if (lr && pointInBoardRect(bx, by, lr)) return it;
+  }
+  return null;
+}
+
+// Keep the group border easy to grab even when board-space padding becomes
+// only a few screen pixels at low zoom. The generous target extends outward;
+// its inward portion stays narrow so child images remain directly clickable.
+function groupFrameAt(sx, sy) {
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const it = state.items[i];
+    if (!isGroupItem(it)) continue;
+    const r = itemUiRect(it);
+    const [x1, y1] = toScreen(r.x, r.y);
+    const [x2, y2] = toScreen(r.x + r.w, r.y + r.h);
+    const w = Math.max(0, x2 - x1), h = Math.max(0, y2 - y1);
+    const inward = Math.min(GROUP_FRAME_HIT_PX, Math.min(w, h) * 0.2);
+    const inOuter = sx >= x1 - GROUP_FRAME_HIT_PX && sx <= x2 + GROUP_FRAME_HIT_PX
+      && sy >= y1 - GROUP_FRAME_HIT_PX && sy <= y2 + GROUP_FRAME_HIT_PX;
+    const inInner = sx > x1 + inward && sx < x2 - inward
+      && sy > y1 + inward && sy < y2 - inward;
+    if (inOuter && !inInner) return it;
   }
   return null;
 }
@@ -2873,9 +2935,10 @@ function boardToLocalRect(r, bx, by) {
   const v = rotateVec(bx - cx, by - cy, a);
   return [v.x + r.w / 2, v.y + r.h / 2];
 }
-// Visual rect for hit-testing and selection UI — always matches stored geometry.
+// Group chrome uses screen-space geometry; regular items use stored board geometry.
 function itemUiRect(it) {
   if (isArrowItem(it)) return arrowBBox(it);
+  if (isGroupItem(it)) return groupUiRect(it);
   return { x: it.x, y: it.y, w: it.w, h: it.h };
 }
 
@@ -2977,7 +3040,7 @@ function normalizeItem(it) {
       x: Number(it.x) || 0, y: Number(it.y) || 0,
       w: Math.max(20, Number(it.w) || 100), h: Math.max(20, Number(it.h) || 100),
       rot: Number(it.rot) || 0,
-      padding: clamp(Number(it.padding) || GROUP_DEFAULT_PADDING, 4, 120),
+      padding: clamp(Number(it.padding) || GROUP_DEFAULT_PADDING, GROUP_MIN_PADDING, 120),
       color: normalizeGroupColor(it.color || GROUP_DEFAULT_COLOR),
       locked: !!it.locked,
       name: sanitizeGroupName(it.name),
@@ -3044,7 +3107,10 @@ function bboxOf(items) {
 }
 
 function workspaceContentBBox() {
-  if (!workspaceBBoxCache) workspaceBBoxCache = bboxOf(state.items);
+  if (!workspaceBBoxCache) {
+    const content = state.items.filter(it => !isGroupItem(it));
+    workspaceBBoxCache = bboxOf(content.length ? content : state.items);
+  }
   return workspaceBBoxCache;
 }
 
@@ -3820,7 +3886,7 @@ async function restoreSessionImages(imgIds, imageNames) {
 function syncGroupFrameInItems(group, items) {
   if (!group || !isGroupItem(group)) return;
   const kids = items.filter(i => i.groupId === group.id);
-  const pad = group.padding ?? GROUP_DEFAULT_PADDING;
+  const pad = groupPadding(group);
   if (!kids.length) {
     group.w = Math.max(40, group.w || 40);
     group.h = Math.max(40, group.h || 40);
@@ -9973,6 +10039,24 @@ function drawSelectionUi(pts) {
   drawEdgePills(pts);
 }
 
+function drawGroupSelectionUi(it, pts) {
+  const r = itemUiRect(it);
+  const [x1, y1] = toScreen(r.x, r.y);
+  const [x2, y2] = toScreen(r.x + r.w, r.y + r.h);
+  const w = x2 - x1, h = y2 - y1;
+  const rad = Math.min(GROUP_CORNER_RADIUS_PX, w / 2, h / 2);
+  ctx.save();
+  ctx.strokeStyle = ACC;
+  ctx.lineWidth = SEL_OUTLINE_W;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x1, y1, w, h, rad);
+  else ctx.rect(x1, y1, w, h);
+  ctx.stroke();
+  ctx.restore();
+  drawCornerHandles(pts);
+  drawEdgePills(pts);
+}
+
 const RESIZE_HANDLE_R = 5;
 const RESIZE_HANDLE_HIT = 14;
 
@@ -10038,7 +10122,8 @@ function drawArrowSelectionUi(it) {
 
 function drawResizeUi(it) {
   const pts = itemCorners(it).map(p => toScreen(p[0], p[1]));
-  drawSelectionUi(pts);
+  if (isGroupItem(it)) drawGroupSelectionUi(it, pts);
+  else drawSelectionUi(pts);
 }
 
 function drawCropUi(it) {
@@ -10049,7 +10134,13 @@ function drawCropUi(it) {
 
 function drawGroupFrame(g, { pulse = false } = {}) {
   const r = itemUiRect(g);
-  const rad = Math.min(12, Math.min(r.w, r.h) * 0.08);
+  // Canvas is scaled with the board, so convert the desired screen radius
+  // back to board units to keep corners visually consistent at every zoom.
+  const rad = Math.min(
+    GROUP_CORNER_RADIUS_PX / Math.max(state.view.s, 0.0001),
+    r.w / 2,
+    r.h / 2
+  );
   const color = g.color || GROUP_DEFAULT_COLOR;
   const activePulse = pulse && !g.locked;
   const t = performance.now() / 300;
@@ -10074,7 +10165,9 @@ function drawGroupLabel(g) {
   ctx.fillStyle = hexToRgba(color, 0.9);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
-  ctx.fillText(name, g.x, g.y - GROUP_LABEL_GAP);
+  const r = itemUiRect(g);
+  const gap = GROUP_LABEL_GAP_PX / Math.max(state.view.s, 0.0001);
+  ctx.fillText(name, r.x, r.y - gap);
   ctx.textBaseline = 'alphabetic';
 }
 
@@ -10186,6 +10279,8 @@ document.addEventListener('visibilitychange', () => {
 
 /* ================= hit testing ================= */
 function itemAt(sx, sy) {
+  const frame = groupFrameAt(sx, sy);
+  if (frame) return frame;
   const [bx, by] = toBoard(sx, sy);
   for (let i = state.items.length - 1; i >= 0; i--) {
     const it = state.items[i];
