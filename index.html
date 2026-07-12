@@ -1430,6 +1430,13 @@ body.board-active #whatsNewNotice{ display:none; }
 .note-overlay.show .note-card{
   box-shadow:0 14px 36px rgba(0,0,0,.45), 0 0 0 2px rgba(90,162,255,.55);
 }
+/* Toolbar-only (single-click) selection: the note stays canvas-rendered and
+   draggable underneath — only the format bar floats above it. Hiding the
+   note-card here (rather than leaving it visible-but-inert) keeps this DOM
+   element out of the hit-testing path entirely, so canvas pointer events for
+   drag/checkbox/link keep working exactly as for an unselected note. */
+.note-overlay.toolbar-only .note-card{ display:none; }
+.fmt-disabled{ opacity:.35; pointer-events:none; }
 .fmt-tb{
   min-width:28px; height:28px; padding:0 8px; border:0; border-radius:7px;
   background:transparent; color:var(--mut); font-size:13px; font-weight:700;
@@ -1494,7 +1501,28 @@ body.board-active #whatsNewNotice{ display:none; }
   color:#5aa2ff; text-decoration:underline;
   cursor:text; pointer-events:none;
 }
-#noteEditor [data-note-line]{ min-height:1em; }
+/* Pin DOM underline geometry so it matches drawNoteText at every font/zoom.
+   `text-underline-position: under` places the underline TOP at the alphabetic
+   baseline + fontBoundingBoxDescent — a value the canvas can query directly
+   via noteTextVertMetrics, so DOM and canvas end up at the same y. Thickness
+   is pinned to 0.06em (matching drawNoteText's size * 0.06); browser defaults
+   pick thickness from font metrics and shift ~1–2px on edit entry/exit. */
+#noteEditor, #noteEditor a{
+  text-decoration-thickness:0.06em;
+  text-underline-position:under;
+  text-underline-offset:0;
+  -webkit-text-decoration-thickness:0.06em;
+}
+/* One DOM row per canvas line.  A minimum height lets the browser's inline
+   strut (and list/link children) choose its own line box, which accumulates
+   vertically in a long note.  Lock each row to the exact screen-space line
+   height supplied by syncNoteEditorStyle so entry/exit never shifts a line. */
+#noteEditor [data-note-line]{
+  height:var(--note-line-height, 1.45em);
+  min-height:0;
+  line-height:var(--note-line-height, 1.45em);
+  box-sizing:border-box;
+}
 #noteEditor [data-note-prefix]{
   /* Match noteListGutterForText — one slot per note (--note-gutter from syncNoteEditorStyle).
      overflow:visible matches canvas: wide numbers spill into body space only if gutter undersized. */
@@ -2341,8 +2369,20 @@ let lastRightDrag = 0;
 let cropItemId = null;
 let menuBoardPos = null;
 let noteEditId = null;
+// True only while the contenteditable caret is live (double-click / Enter / new
+// note). False when a note is merely selected via a single click — the format
+// bar shows and whole-note formatting works, but there is no caret, no text
+// selection, and no hyperlink insertion until the user upgrades via dblclick.
+let noteTextLive = false;
 let noteEditorStyleKey = '';
 let noteEditStartSnapshot = null;
+let noteEditStartBoardSnapshot = null;
+// The browser's contenteditable history cannot see custom list-marker DOM changes
+// or note-level formatting such as alignment. Keep a small, edit-local history so
+// Ctrl+Z/Ctrl+Y treats text and note formatting as one coherent editing surface.
+const NOTE_EDIT_HISTORY_LIMIT = 300;
+let noteEditUndoStack = [];
+let noteEditRedoStack = [];
 
 const $ = s => document.querySelector(s);
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now());
@@ -3552,6 +3592,7 @@ function resetLiveSessionToBlank() {
   state.gridAppearance = 'dots';
   cropItemId = null;
   noteEditId = null;
+  noteTextLive = false;
   arrowTool = null;
   tool = null;
   drawActive = false;
@@ -3632,6 +3673,7 @@ async function restoreSession() {
     state.sel.clear();
     cropItemId = null;
     noteEditId = null;
+    noteTextLive = false;
     arrowTool = null;
     tool = null;
     drawActive = false;
@@ -3739,6 +3781,20 @@ function pushUndo(opts) {
   while (undoStack.length > undoLimit) undoStack.shift();
   redoStack.length = 0;
 }
+function pushUndoSnapshot(snapshot) {
+  if (!snapshot) return false;
+  const top = undoStack.length ? normalizeUndoEntry(undoStack[undoStack.length - 1]) : null;
+  // A bitmap entry may share the same board JSON but represents a separate
+  // image edit, so only deduplicate an identical plain board snapshot.
+  if (top && !top.bitmap && top.snap === snapshot) {
+    redoStack.length = 0;
+    return false;
+  }
+  undoStack.push({ snap: snapshot });
+  while (undoStack.length > undoLimit) undoStack.shift();
+  redoStack.length = 0;
+  return true;
+}
 function clearUndoHistory() {
   undoStack.length = 0;
   redoStack.length = 0;
@@ -3780,6 +3836,7 @@ async function restoreBitmapSnap(bitmapSnap) {
   dbPut('blobs', bitmapSnap.imgId, bitmapSnap.blob);
 }
 async function applyUndoEntry(entry) {
+  discardNoteEditForBoardHistory();
   cancelDrawSession();
   const e = normalizeUndoEntry(entry);
   restoreSnap(e.snap);
@@ -3792,7 +3849,8 @@ function pruneSel() {
   if (cropItemId && !ids.has(cropItemId)) cropItemId = null;
   if (noteEditId && !ids.has(noteEditId)) {
     noteEditId = null;
-    $('#noteOverlay').classList.remove('show');
+    noteTextLive = false;
+    $('#noteOverlay').classList.remove('show', 'toolbar-only');
   }
   updateSelBar();
 }
@@ -5676,7 +5734,10 @@ function initFmtDropdown(root, { items, onSelect }) {
 function setupNoteFmtDropdowns() {
   const onFmtChange = () => {
     const it = noteEditId ? byId(noteEditId) : null;
-    if (it) refreshNoteEdit();
+    if (it) {
+      noteEditPushUndo();
+      refreshNoteEdit();
+    }
   };
   noteSizeDd = initFmtDropdown('#noteFontSizeDd', {
     items: () => NOTE_FONT_SIZES.map(n => ({ value: String(n), label: String(n) })),
@@ -5772,7 +5833,9 @@ function setupNoteIconDropdowns() {
   noteListDd = initIconPopoverDd('#noteListDd', {
     getValue: () => {
       const mode = detectNoteListMode($('#noteEditor'));
-      return mode === 'plain' ? 'bullet' : mode;
+      // Keep the bullet icon as the plain-mode affordance, but never mark it
+      // active unless the caret/selection is actually on a bullet line.
+      return mode;
     },
     onSelect: mode => {
       const it = noteEditId ? byId(noteEditId) : null;
@@ -5789,6 +5852,8 @@ function setupNoteIconDropdowns() {
     onSelect: align => {
       const it = noteEditId ? byId(noteEditId) : null;
       if (!it) return;
+      if ((it.textAlign || 'left') === align) return;
+      noteEditPushUndo();
       it.textAlign = align;
       refreshNoteEdit();
     },
@@ -5864,7 +5929,9 @@ function noteEditorMakeLinkAnchor(url, { bare = false, label = '' } = {}) {
 
 async function insertNoteLink() {
   const ed = $('#noteEditor');
-  if (!ed || !noteEditId) return;
+  // Requires a live caret/selection — disabled (fmt-disabled) while the note
+  // is merely toolbar-selected, but guard here too in case of a stray call.
+  if (!ed || !noteEditId || !noteTextLive) return;
 
   // Snapshot BEFORE modal steals focus. Modal does not mutate editor DOM, so
   // the cloned Range stays valid. Never read getSelection() after the await.
@@ -5895,6 +5962,7 @@ async function insertNoteLink() {
   }
 
   if (range.collapsed) {
+    noteEditPushUndo();
     const a = noteEditorMakeLinkAnchor(url, { bare: true });
     range.insertNode(a);
     noteEditorPlaceCaretAfter(a);
@@ -5932,6 +6000,7 @@ async function insertNoteLink() {
     parentA.contains(range.startContainer) &&
     parentA.contains(range.endContainer)
   ) {
+    noteEditPushUndo();
     parentA.setAttribute('href', url);
     parentA.removeAttribute('data-bare');
     noteEditorRestoreRange(ed, saved);
@@ -5950,6 +6019,7 @@ async function insertNoteLink() {
   }
 
   const label = range.toString().replace(/\u00a0/g, ' ');
+  noteEditPushUndo();
   range.deleteContents();
   const a = noteEditorMakeLinkAnchor(url, { label });
   range.insertNode(a);
@@ -6133,21 +6203,32 @@ function stripNoteMarkdown(text) {
 }
 
 function noteTextMeasure(g, text) {
-  const m = g.measureText(text || ' ');
-  const left = m.actualBoundingBoxLeft ?? 0;
-  const right = m.actualBoundingBoxRight ?? m.width;
-  return { width: left + right, inset: left };
+  // Advance width — the DOM editor lays text out by advances (white-space:pre
+  // keeps trailing spaces). Ink-based width (actualBoundingBox*) made canvas
+  // and editor disagree on line width, center/right alignment and caret x,
+  // and let the box lag behind trailing spaces while typing.
+  return { width: g.measureText(text || '').width, inset: 0 };
 }
 
 // Declared font metrics (Chromium strut) — match CSS line boxes so canvas and
-// editor share one baseline. Underlines still use actualBoundingBoxDescent.
-function noteTextVertMetrics(g, fontPx) {
-  const prev = g.textBaseline;
+// editor share one baseline. Chromium rounds fontBoundingBox* per font size,
+// so measuring at the small g.font size and letting the view transform scale
+// it up amplified the rounding into a visible baseline jump at high zoom.
+// Measure at the size the glyphs actually rasterize on screen (screenPx) and
+// map back into g.font space — the canvas baseline then stays within a screen
+// pixel of the editor's CSS strut at every zoom level.
+function noteTextVertMetrics(g, fontPx, screenPx = fontPx) {
+  const probePx = clamp(screenPx || fontPx, 4, 3000);
+  const prevFont = g.font;
+  const prevBaseline = g.textBaseline;
+  g.font = String(prevFont).replace(/(\d+(?:\.\d+)?)px/, `${probePx}px`);
   g.textBaseline = 'alphabetic';
   const m = g.measureText('Mg');
-  g.textBaseline = prev;
-  const ascent = m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent ?? fontPx * 0.78;
-  const descent = m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent ?? fontPx * 0.22;
+  g.font = prevFont;
+  g.textBaseline = prevBaseline;
+  const k = fontPx / probePx;
+  const ascent = (m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent ?? probePx * 0.78) * k;
+  const descent = (m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent ?? probePx * 0.22) * k;
   return { ascent, descent, ink: ascent + descent };
 }
 
@@ -6181,8 +6262,19 @@ function noteLineStartX(g, it, parsed, gutter, innerW, originX, coordScale = 1, 
   return ox;
 }
 
-function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkColor) {
+// Fixed em-based underline geometry to match CSS text-underline-position:under
+// with text-decoration-thickness:0.06em. Screen-space font metrics keep the
+// descent accurate at every zoom (see noteTextVertMetrics for screenPx use).
+function noteUnderlineOffsetY(g, size, screenPx) {
+  const vm = noteTextVertMetrics(g, size, screenPx);
+  return vm.descent;
+}
+function noteUnderlineThickness(size) { return size * 0.06; }
+
+function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkColor, screenPx) {
   let tx = x;
+  const underlineOffset = noteUnderlineOffsetY(g, size, screenPx);
+  const underlineThick = noteUnderlineThickness(size);
   for (const seg of segs) {
     if (!seg.text) continue;
     if (seg.type === 'link') {
@@ -6190,10 +6282,8 @@ function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkCol
       g.fillStyle = linkColor || '#5aa2ff';
       g.fillText(seg.text, tx, y);
       const tw = g.measureText(seg.text).width;
-      const m = g.measureText(seg.text);
-      const desc = m.actualBoundingBoxDescent ?? size * 0.15;
       g.fillStyle = linkColor || '#5aa2ff';
-      g.fillRect(tx, y + desc + 1, tw, size / 14);
+      g.fillRect(tx, y + underlineOffset, tw, underlineThick);
       g.restore();
       g.fillStyle = textColor;
       tx += tw;
@@ -6201,9 +6291,7 @@ function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkCol
       g.fillText(seg.text, tx, y);
       if (underline) {
         const tw = g.measureText(seg.text).width;
-        const m = g.measureText(seg.text);
-        const desc = m.actualBoundingBoxDescent ?? size * 0.15;
-        g.fillRect(tx, y + desc + 1, tw, size / 14);
+        g.fillRect(tx, y + underlineOffset, tw, underlineThick);
       }
       tx += g.measureText(seg.text).width;
     }
@@ -6266,11 +6354,6 @@ function measureNoteNaturalWidth(it, text) {
   return layoutNoteLines(g, text, it).maxLineW * coordScale;
 }
 
-// entering edit just re-hugs the text at the current size — never a sudden jump
-function ensureNoteEditFits(it) {
-  fitNoteToText(it, true);
-}
-
 // PureRef-style: box hugs text when typing. Used on input/finish — not during resize/zoom.
 // The one source of truth for a note's box size: it hugs the text. Width = longest
 // line (line breaks come only from the user's Enter keys, never mid-word), height =
@@ -6329,6 +6412,29 @@ function fitNoteToText(it, anchorCenter = false) {
   invalidateWorkspaceBBox();
 }
 
+/**
+ * PureRef-style hug while editing: the box tracks the text without moving it.
+ * Center-anchored refit shifted every line by half the delta on each keystroke
+ * (left AND up), which read as the whole note jumping while typing. Anchor the
+ * top edge plus the alignment edge (left/center/right) so the note only grows
+ * away from the text. Rotation-safe: the anchored local point keeps its board
+ * position.
+ */
+function fitNoteToTextEditAnchored(it) {
+  if (!it || !isNoteItem(it)) return;
+  const hug = noteHugSize(it);
+  if (Math.abs(it.w - hug.w) < 1e-6 && Math.abs(it.h - hug.h) < 1e-6) return;
+  const align = it.textAlign || 'left';
+  const ax = align === 'right' ? it.w : align === 'center' ? it.w / 2 : 0;
+  const nax = align === 'right' ? hug.w : align === 'center' ? hug.w / 2 : 0;
+  const anchorBoard = localToBoardRect(it, ax, 0);
+  it.w = hug.w; it.h = hug.h;
+  const newAnchorBoard = localToBoardRect(it, nax, 0);
+  it.x += anchorBoard[0] - newAnchorBoard[0];
+  it.y += anchorBoard[1] - newAnchorBoard[1];
+  invalidateWorkspaceBBox();
+}
+
 function syncNoteFmtUi(it) {
   ensureFontOption(it.fontFamily || 'Segoe UI');
   noteFontDd?.setValue(it.fontFamily || 'Segoe UI');
@@ -6345,6 +6451,13 @@ function syncNoteFmtUi(it) {
   $('#noteOpacity').value = String(Math.round((it.opacity == null ? 1 : it.opacity) * 100));
   noteListDd?.syncUi();
   noteAlignDd?.syncUi();
+  // List style and hyperlink insertion need a live caret/selection in the
+  // text — both are no-ops (or worse, silently apply to just the first line)
+  // without one, so gray them out until the note is double-clicked into full
+  // text-edit mode. Alignment and whole-note formatting (bold/font/color/…)
+  // stay enabled — they don't depend on a caret.
+  $('#noteLink')?.classList.toggle('fmt-disabled', !noteTextLive);
+  $('#noteListDd')?.classList.toggle('fmt-disabled', !noteTextLive);
 }
 
 function applyNoteFmtFromUi(it) {
@@ -6371,13 +6484,20 @@ function syncNoteEditorStyle(it) {
   if (card) card.style.background = hexToRgba(it.color || '#15161c', op);
   ed.style.color = it.textColor || '#f0f2f6';
   ed.style.font = noteFontScreenCss(it);
-  ed.style.textDecoration = it.underline ? 'underline' : 'none';
+  // Use the longhand — the `textDecoration` shorthand resets
+  // text-decoration-thickness / underline-offset / underline-position to
+  // `auto`, undoing the CSS that pins them to the canvas math.
+  ed.style.textDecorationLine = it.underline ? 'underline' : 'none';
   ed.style.textAlign = it.textAlign || 'left';
   const lineH = noteLineHeight(it);
   const eff = noteEffSize(it);
   ed.style.lineHeight = String(lineH / eff);
   const pad = notePadFor(it);
   const s = state.view.s;
+  // DOM rows must use the same final screen-space advance as drawNoteText.
+  // This is deliberately a px value: a browser's computed inline strut can
+  // otherwise differ by a fraction of a pixel and compound down a long note.
+  ed.style.setProperty('--note-line-height', `${lineH * s}px`);
   // Block-center like drawNoteText when innerH > blockH. Baseline alignment is
   // free now: canvas uses fontBoundingBox* (same strut model as CSS).
   const tcm = noteTextCanvasMetrics(it);
@@ -6425,7 +6545,75 @@ function pullNoteFromEditor(fit = true) {
   if (!it || !isNoteItem(it)) return;
   it.text = serializeNoteDom($('#noteEditor'));
   applyNoteFmtFromUi(it);
-  if (fit) fitNoteToText(it, true);
+  if (fit) fitNoteToTextEditAnchored(it);
+}
+
+function clearNoteEditHistory() {
+  noteEditUndoStack = [];
+  noteEditRedoStack = [];
+}
+
+/** Save the pre-change note model. Call after a DOM-only mutation but before
+    refreshNoteEdit, or before a direct mutation of the model. */
+function noteEditPushUndo() {
+  const it = noteEditId ? byId(noteEditId) : null;
+  if (!it || !isNoteItem(it)) return;
+  const snapshot = JSON.stringify(it);
+  if (noteEditUndoStack[noteEditUndoStack.length - 1] === snapshot) return;
+  noteEditUndoStack.push(snapshot);
+  if (noteEditUndoStack.length > NOTE_EDIT_HISTORY_LIMIT) noteEditUndoStack.shift();
+  noteEditRedoStack = [];
+}
+
+function restoreNoteEditHistorySnapshot(snapshot) {
+  const it = noteEditId ? byId(noteEditId) : null;
+  if (!it || !isNoteItem(it) || !snapshot) return false;
+  let saved;
+  try { saved = JSON.parse(snapshot); } catch { return false; }
+  if (!saved || saved.id !== it.id || saved.kind !== 'note') return false;
+
+  for (const key of Object.keys(it)) {
+    if (!Object.prototype.hasOwnProperty.call(saved, key)) delete it[key];
+  }
+  Object.assign(it, saved);
+  invalidateWorkspaceBBox();
+
+  // Undo is an intentional content replacement, so rehydrating is correct here.
+  // Normal typing still never rehydrates and therefore keeps its caret stable.
+  const ed = $('#noteEditor');
+  hydrateNoteEditor(ed, it.text || '');
+  syncNoteFmtUi(it);
+  noteEditorStyleKey = '';
+  syncNoteEditorStyle(it);
+  positionNoteEditor();
+  noteEditorDevAssertStructure(ed);
+  if (noteTextLive) {
+    requestAnimationFrame(() => {
+      ed.focus();
+      placeNoteEditorCaretAtEnd(ed);
+    });
+  }
+  scheduleSave();
+  invalidate();
+  return true;
+}
+
+function undoNoteEdit() {
+  if (!noteEditUndoStack.length) return false;
+  const it = noteEditId ? byId(noteEditId) : null;
+  if (!it || !isNoteItem(it)) return false;
+  const previous = noteEditUndoStack.pop();
+  noteEditRedoStack.push(JSON.stringify(it));
+  return restoreNoteEditHistorySnapshot(previous);
+}
+
+function redoNoteEdit() {
+  if (!noteEditRedoStack.length) return false;
+  const it = noteEditId ? byId(noteEditId) : null;
+  if (!it || !isNoteItem(it)) return false;
+  const next = noteEditRedoStack.pop();
+  noteEditUndoStack.push(JSON.stringify(it));
+  return restoreNoteEditHistorySnapshot(next);
 }
 
 function placeNoteEditorCaretAtEnd(ed) {
@@ -6442,6 +6630,10 @@ function placeNoteEditorCaretAtEnd(ed) {
 function hydrateNoteEditor(ed, markdown) {
   ed.replaceChildren();
   ed.appendChild(hydrateNoteDom(markdown || '', document));
+  // Legacy "- "/"* " bullets and "[X] " checks hydrate with their stored
+  // prefix but the canvas draws the canonical glyph — normalize so the editor
+  // shows exactly what was rendered (undo snapshots included).
+  noteEditorNormalizeTypedPrefixes(ed);
 }
 
 // --- Stage 3: contenteditable keyboard (DOM only — never hydrate while typing) ---
@@ -6699,6 +6891,112 @@ function noteEditorApplyLineTypeFromPrefix(lineEl, prefix) {
   mark.textContent = p;
 }
 
+let noteEditorComposing = false;
+
+/**
+ * Make the live editor DOM agree with what the canvas will draw. A typed
+ * "• " / "- " / "* " / "N. " / "[ ] " / "[x] " at the start of a plain line is
+ * a list marker to parseNoteLine, so the canvas draws it guttered — but the
+ * DOM kept it as plain body text, which misaligned bullets/numbers/boxes
+ * against the other lines and made the text jump on edit exit. Convert such
+ * lines to the structured form immediately, and normalize legacy "- "/"* "
+ * bullets and "[X] " checks to their canonical prefixes ("• ", "[x] ").
+ * Never mutates during IME composition; preserves a collapsed caret.
+ */
+function noteEditorNormalizeTypedPrefixes(ed) {
+  if (noteEditorComposing || !ed) return false;
+  let changed = false;
+  const range = noteEditorCaretRange(ed);
+  const caretCollapsed = !!range && range.collapsed;
+  const caretLine = range ? noteEditorClosestLine(range.startContainer, ed) : null;
+
+  for (const lineEl of noteEditorLineEls(ed)) {
+    let type = lineEl.getAttribute('data-type') || 'plain';
+
+    // A browser-default paragraph split (IME, dictation, synthetic text — any
+    // path that bypasses our Enter handling) clones the line div: list attrs
+    // without the prefix span. Demote to plain; if the body starts with a
+    // typed marker, the plain branch below rebuilds the right structure.
+    if (type !== 'plain' && !lineEl.querySelector('[data-note-prefix]')) {
+      noteEditorApplyLineTypeFromPrefix(lineEl, '');
+      type = 'plain';
+      changed = true;
+    }
+
+    // Default multi-line deletions can strand, duplicate, or displace the
+    // non-editable prefix span — serialization skips spans, so heal the DOM
+    // to match what will be stored and drawn.
+    const marks = lineEl.querySelectorAll('[data-note-prefix]');
+    if (type === 'plain') {
+      for (const m of marks) { m.remove(); changed = true; }
+    } else if (marks.length) {
+      for (let i = 1; i < marks.length; i++) { marks[i].remove(); changed = true; }
+      if (marks[0] !== lineEl.firstChild) {
+        lineEl.insertBefore(marks[0], lineEl.firstChild);
+        changed = true;
+      }
+    }
+
+    if (type === 'bullet' || type === 'check') {
+      // Canonical prefixes only — the canvas always draws "•" and a box glyph,
+      // so DOM, storage and canvas must all carry the same marker text.
+      const cur = lineEl.getAttribute('data-prefix') || '';
+      const canonical = type === 'bullet'
+        ? '• '
+        : (parseNoteLine(cur).checked ? '[x] ' : '[ ] ');
+      if (cur !== canonical) {
+        noteEditorApplyLineTypeFromPrefix(lineEl, canonical);
+        changed = true;
+      }
+      continue;
+    }
+    if (type !== 'plain') continue;
+
+    // Cheap pre-filter before joining the line's text.
+    const head = (lineEl.textContent || '').charAt(0);
+    if (!head || !'•-*0123456789['.includes(head)) continue;
+
+    // Match against the DOM body text (1:1 with what we strip). Links
+    // serialize as [label](url), so a marker inside a link is not a marker
+    // in storage — require the marker chars to sit outside any <a>.
+    const bodyNodes = noteEditorBodyTextNodes(lineEl);
+    const domText = bodyNodes.map(n => n.nodeValue || '').join('').replace(/\u00a0/g, ' ');
+    const typed = noteLinePrefixOf(domText);
+    if (!typed) continue;
+    let scanned = 0, markerInLink = false;
+    for (const n of bodyNodes) {
+      if (scanned >= typed.length) break;
+      if (n.parentElement?.closest('a')) { markerInLink = true; break; }
+      scanned += n.nodeValue?.length ?? 0;
+    }
+    if (markerInLink) continue;
+
+    const isCaretLine = caretLine === lineEl;
+    if (isCaretLine && range && !caretCollapsed) continue; // keep a live selection intact
+    const caretOff = isCaretLine
+      ? noteEditorLineBodyOffset(lineEl, range.startContainer, range.startOffset)
+      : 0;
+
+    // Strip the typed marker characters from the leading body text nodes.
+    let remaining = typed.length;
+    for (const n of bodyNodes) {
+      if (remaining <= 0) break;
+      const take = Math.min(remaining, n.nodeValue?.length ?? 0);
+      if (take > 0) { n.nodeValue = n.nodeValue.slice(take); remaining -= take; }
+    }
+    const parsed = parseNoteLine(typed);
+    const prefix = parsed.type === 'bullet' ? '• '
+      : parsed.type === 'check' ? (parsed.checked ? '[x] ' : '[ ] ')
+      : typed;
+    noteEditorApplyLineTypeFromPrefix(lineEl, prefix);
+    changed = true;
+    if (isCaretLine) {
+      noteEditorPlaceCaretInLineBody(lineEl, Math.max(0, caretOff - typed.length));
+    }
+  }
+  return changed;
+}
+
 /** Dev check: every editor line must have self-consistent prefix structure. */
 function noteEditorDevAssertStructure(ed) {
   try {
@@ -6771,10 +7069,12 @@ function noteEditorDevAssertStructure(ed) {
 }
 
 /**
- * Old textarea: Enter / Shift+Enter both insert a plain \\n (no list continue,
- * no exit-on-empty-list). Match that: always a new plain data-note-line.
+ * Enter continues the current list (bullet → bullet, check → unchecked check,
+ * number → n+1), like PureRef and every list editor. Enter on a list line
+ * with an empty body exits the list (marker removed, no new line). Shift+Enter
+ * always inserts a plain line — the old textarea behavior as escape hatch.
  */
-function noteEditorHandleEnter(ed) {
+function noteEditorHandleEnter(ed, shiftKey = false) {
   ensureNoteEditorHasLine(ed);
   const range = noteEditorCaretRange(ed);
   if (!range) return;
@@ -6789,13 +7089,33 @@ function noteEditorHandleEnter(ed) {
     noteEditorPlaceCaretInLineEnd(lineEl);
   }
 
-  // Move caret-to-end-of-line content into a new plain line
+  const lineType = lineEl.getAttribute('data-type') || 'plain';
+
+  // Enter on an empty list line: exit the list instead of continuing it.
+  if (!shiftKey && lineType !== 'plain' && noteEditorLineBodyIsEmpty(lineEl)) {
+    noteEditorApplyLineTypeFromPrefix(lineEl, '');
+    noteEditorPlaceCaretInLineStart(lineEl);
+    noteEditorDevAssertStructure(ed);
+    return;
+  }
+
+  let continuation = '';
+  if (!shiftKey) {
+    if (lineType === 'bullet') continuation = '• ';
+    else if (lineType === 'check') continuation = '[ ] ';
+    else if (lineType === 'number') {
+      const n = parseInt(lineEl.getAttribute('data-n'), 10);
+      continuation = `${(Number.isFinite(n) ? n : 0) + 1}. `;
+    }
+  }
+
+  // Move caret-to-end-of-line content into the new line
   const after = document.createRange();
   after.setStart(range.startContainer, range.startOffset);
   after.setEnd(lineEl, lineEl.childNodes.length);
   const moved = after.extractContents();
 
-  const newLine = createNoteLineEl(); // plain — matches old textarea \\n
+  const newLine = createNoteLineEl(continuation);
   // Don't pull prefix spans into the new line
   while (moved.firstChild) {
     const c = moved.firstChild;
@@ -6865,6 +7185,29 @@ function noteEditorHandleBackspace(ed) {
   noteEditorMergeLineIntoPrev(ed, lineEl);
   noteEditorDevAssertStructure(ed);
   return true;
+}
+
+/**
+ * Delete at line-body end: merge the NEXT line in (skipping its prefix span),
+ * mirroring Backspace-at-start. The contenteditable default merge drags the
+ * non-editable prefix span into the body, where serialization silently drops
+ * its text and the line renders misaligned.
+ * @returns {boolean} true if handled (caller should preventDefault)
+ */
+function noteEditorHandleDelete(ed) {
+  ensureNoteEditorHasLine(ed);
+  const range = noteEditorCaretRange(ed);
+  if (!range || !range.collapsed) return false;
+  const lineEl = noteEditorClosestLine(range.startContainer, ed);
+  if (!lineEl) return false;
+  const probe = document.createRange();
+  probe.setStart(range.startContainer, range.startOffset);
+  probe.setEnd(lineEl, lineEl.childNodes.length);
+  if (probe.toString() !== '') return false; // not at end of the line body
+  const lines = noteEditorLineEls(ed);
+  const idx = lines.indexOf(lineEl);
+  if (idx < 0 || idx >= lines.length - 1) return false;
+  return noteEditorMergeLineIntoPrev(ed, lines[idx + 1]);
 }
 
 function noteEditorMergeLineIntoPrev(ed, lineEl) {
@@ -6974,6 +7317,7 @@ function noteEditorDevAssertPasteLanding(ed, expectedLines, actualLines) {
  * Multi-line → one data-note-line per \\n. Never calls hydrateNoteDom on `ed`.
  */
 function noteEditorInsertMarkdown(ed, markdown) {
+  if (noteEditId && ed === $('#noteEditor')) noteEditPushUndo();
   ensureNoteEditorHasLine(ed);
   const text = String(markdown ?? '');
   const pasteLines = text.split('\n');
@@ -7082,7 +7426,9 @@ function noteCaretFromClient(it, clientX, clientY) {
   const dm = noteDrawMetrics(it);
   const innerW = Math.max(NOTE_INNER_MIN, dm.w - pad.x * 2);
   const innerH = Math.max(NOTE_INNER_MIN, dm.h - pad.y * 2);
-  const maxLines = Math.max(1, Math.floor(innerH / lineH));
+  // Same +1e-3 as drawNoteText — without it a scale-rounded innerH drops the
+  // last shown line and the whole block recenters, misplacing the caret.
+  const maxLines = Math.max(1, Math.floor(innerH / lineH + 1e-3));
   const { lines, gutter: gutterFont } = layoutNoteLines(g, text, it);
   const shown = lines.slice(0, maxLines);
   const blockH = shown.length * lineH;
@@ -7138,57 +7484,103 @@ function noteCaretFromClient(it, clientX, clientY) {
   return { lineIndex, columnInBody: best };
 }
 
-function startNoteEdit(it, clientX, clientY) {
+/**
+ * Open the note overlay. `textLive: true` (default — dblclick, Enter, new
+ * note) gives a real caret: contenteditable, focus, text selection, and
+ * hyperlink insertion. `textLive: false` (single clean click) shows only the
+ * format bar over the note — the note stays canvas-rendered and draggable,
+ * checkboxes/ctrl+click-links keep working, but the body isn't typable until
+ * the user double-clicks to upgrade to textLive.
+ */
+function startNoteEdit(it, clientX, clientY, { textLive = true } = {}) {
   if (!it || !isNoteItem(it)) return;
+  const continuingSameNote = noteEditId === it.id;
   if (noteEditId && noteEditId !== it.id) finishNoteEdit();
 
   // Compare the persisted note, not editor focus/DOM state, when editing ends.
-  const editStartSnapshot = JSON.stringify(it);
+  const editStartSnapshot = continuingSameNote && noteEditStartSnapshot
+    ? noteEditStartSnapshot
+    : JSON.stringify(it);
 
-  // Measure against the canvas geometry that received the click.
-  // ensureNoteEditFits below may re-hug and recenter an undersized note.
-  const caretPos = Number.isFinite(clientX) && Number.isFinite(clientY)
+  // Measure against the canvas geometry that received the click. Keep that
+  // geometry through edit entry so the editor lands exactly over rendered text.
+  const caretPos = textLive && Number.isFinite(clientX) && Number.isFinite(clientY)
     ? noteCaretFromClient(it, clientX, clientY)
     : null;
 
   hideNoteLinkPop();
   noteEditId = it.id;
+  noteTextLive = textLive;
   noteEditStartSnapshot = editStartSnapshot;
+  if (!continuingSameNote || !noteEditStartBoardSnapshot) noteEditStartBoardSnapshot = snap();
+  if (!continuingSameNote) clearNoteEditHistory();
   noteEditorStyleKey = '';
   state.sel = new Set([it.id]);
   updateSelBar();
   enrichFontsFromSystem();
   const ed = $('#noteEditor');
   // THE RULE: hydrate exactly once on open. Never rehydrate while typing.
+  // Hydrated even in toolbar-only mode — refreshNoteEdit() always
+  // re-serializes ed back into it.text, so the DOM must reflect the real
+  // text before ANY toolbar toggle (bold/opacity/etc.) can safely round-trip.
   hydrateNoteEditor(ed, it.text || '');
+  ed.contentEditable = textLive ? 'true' : 'false';
   syncNoteFmtUi(it);
-  ensureNoteEditFits(it);
   syncNoteEditorStyle(it);
+  $('#noteOverlay').classList.toggle('toolbar-only', !textLive);
   $('#noteOverlay').classList.add('show');
   positionNoteEditor();
   invalidate();
-  requestAnimationFrame(() => {
-    ed.focus();
-    if (caretPos) placeNoteEditorCaretAtPosition(ed, caretPos);
-    else placeNoteEditorCaretAtEnd(ed);
-  });
+  if (textLive) {
+    requestAnimationFrame(() => {
+      ed.focus();
+      if (caretPos) placeNoteEditorCaretAtPosition(ed, caretPos);
+      else placeNoteEditorCaretAtEnd(ed);
+    });
+  }
 }
 
 function finishNoteEdit() {
   if (!noteEditId) return;
   const editStartSnapshot = noteEditStartSnapshot;
+  const editStartBoardSnapshot = noteEditStartBoardSnapshot;
   closeFmtPopups();
   hideNoteLinkPop();
-  pullNoteFromEditor(true);
+  pullNoteFromEditor(false);
   const it = byId(noteEditId);
   if (it && isNoteItem(it) && !it.text.trim()) it.text = '';
-  const noteChanged = !!it && isNoteItem(it)
+  let noteChanged = !!it && isNoteItem(it)
     && (!editStartSnapshot || JSON.stringify(it) !== editStartSnapshot);
+  if (noteChanged) {
+    // Same anchor as while typing — a center-anchored exit fit moved the text.
+    fitNoteToTextEditAnchored(it);
+    noteChanged = !editStartSnapshot || JSON.stringify(it) !== editStartSnapshot;
+  }
+  if (noteChanged) pushUndoSnapshot(editStartBoardSnapshot);
   noteEditId = null;
+  noteTextLive = false;
   noteEditStartSnapshot = null;
-  $('#noteOverlay').classList.remove('show');
+  noteEditStartBoardSnapshot = null;
+  clearNoteEditHistory();
+  $('#noteOverlay').classList.remove('show', 'toolbar-only');
   if (noteChanged) scheduleSave();
   invalidate();
+}
+
+function discardNoteEditForBoardHistory() {
+  if (!noteEditId) return;
+  closeFmtPopups();
+  hideNoteLinkPop();
+  const ed = $('#noteEditor');
+  ed.blur();
+  ed.contentEditable = 'false';
+  noteEditId = null;
+  noteTextLive = false;
+  noteEditorStyleKey = '';
+  noteEditStartSnapshot = null;
+  noteEditStartBoardSnapshot = null;
+  clearNoteEditHistory();
+  $('#noteOverlay').classList.remove('show', 'toolbar-only');
 }
 
 function editNote(it) {
@@ -8589,8 +8981,15 @@ function drawNoteCheckbox(g, cx, cy, box, checked, color) {
   g.strokeStyle = color;
   // No Math.max floor in font-px — under coordScale that floor made borders ~3×
   // too thick for high-zoom (sub-pixel eff) notes. Sub-pixel strokes are fine.
-  g.lineWidth = box * 0.1;
-  g.strokeRect(cx - box / 2, cy - box / 2, box, box);
+  const stroke = box * 0.1;
+  g.lineWidth = stroke;
+  // strokeRect centers the stroke on the path — inset the path by stroke/2
+  // so the visual outer edge is exactly `box`. Matches the DOM checkbox,
+  // which uses box-sizing:border-box and its border is drawn INSIDE 0.82em.
+  // Without this inset the canvas box was ~stroke wider than the editor's,
+  // and the outer edge appeared to jump ~0.05em on edit entry/exit.
+  const half = box / 2 - stroke / 2;
+  g.strokeRect(cx - half, cy - half, half * 2, half * 2);
   if (checked) {
     g.strokeStyle = color;
     g.lineWidth = box * 0.14;
@@ -8612,7 +9011,10 @@ function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, inn
   const shown = lines.slice(0, maxLines);
   const blockH = shown.length * lineH;
   const y0 = pinTop ? y : y + Math.max(0, ((innerH == null ? blockH : innerH) - blockH) / 2);
-  const vm = noteTextVertMetrics(g, size);
+  // Metrics at the on-screen glyph size so the baseline matches the editor's
+  // CSS strut at any zoom (see noteTextVertMetrics).
+  const screenPx = it ? noteEffSize(it) * (state.view.s || 1) : size;
+  const vm = noteTextVertMetrics(g, size, screenPx);
   const prevBaseline = g.textBaseline;
   const color = textColor || g.fillStyle;
   for (let i = 0; i < shown.length; i++) {
@@ -8628,10 +9030,10 @@ function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, inn
       drawNoteCheckbox(g, lineX + gutter * 0.38, lineMid, box, parsed.checked, color);
       tx = lineX + gutter;
     } else if (parsed.type === 'bullet') {
-      g.textBaseline = 'middle';
+      // Alphabetic baseline like the DOM prefix span — 'middle' sat the glyph
+      // ~0.14em higher than the editor's bullet and jumped on edit entry/exit.
       g.fillStyle = color;
-      g.fillText('•', lineX + gutter * 0.38, lineMid);
-      g.textBaseline = 'alphabetic';
+      g.fillText('•', lineX + gutter * 0.38, ly);
       tx = lineX + gutter;
     } else if (parsed.type === 'number') {
       g.fillStyle = color;
@@ -8643,15 +9045,13 @@ function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, inn
     g.fillStyle = color;
     const segs = parseNoteLinkSegments(parsed.body);
     if (segs.some(s => s.type === 'link')) {
-      drawNoteTextSegments(g, segs, tx, ly, underline, size, color, linkColor);
+      drawNoteTextSegments(g, segs, tx, ly, underline, size, color, linkColor, screenPx);
     } else {
       const body = parsed.body;
       g.fillText(body, tx, ly);
       if (underline && body) {
         const tw = g.measureText(body).width;
-        const m = g.measureText(body);
-        const desc = m.actualBoundingBoxDescent ?? size * 0.15;
-        g.fillRect(tx, ly + desc + 1, tw, size / 14);
+        g.fillRect(tx, ly + noteUnderlineOffsetY(g, size, screenPx), tw, noteUnderlineThickness(size));
       }
     }
   }
@@ -8723,7 +9123,8 @@ function getNoteLinkRegions(it) {
   const dm = noteDrawMetrics(it);
   const innerW = Math.max(NOTE_INNER_MIN, dm.w - pad.x * 2);
   const innerH = Math.max(NOTE_INNER_MIN, dm.h - pad.y * 2);
-  const maxLines = Math.max(1, Math.floor(innerH / lineH));
+  // Same +1e-3 as drawNoteText — keeps link regions on the drawn lines.
+  const maxLines = Math.max(1, Math.floor(innerH / lineH + 1e-3));
   const { lines, gutter: gutterFont } = layoutNoteLines(g, it.text, it);
   const shown = lines.slice(0, maxLines);
   const blockH = shown.length * lineH;
@@ -8845,7 +9246,7 @@ function showNoteLinkPop(it, link) {
 }
 
 function updateNoteLinkHover(sx, sy) {
-  if (noteEditId || mode || tool === 'eyedropper') {
+  if ((noteEditId && noteTextLive) || mode || tool === 'eyedropper') {
     hideNoteLinkPop();
     return;
   }
@@ -8951,7 +9352,9 @@ function noteEditorTargetLines(ed) {
  */
 function toggleNoteListMode(mode) {
   const ed = $('#noteEditor');
-  if (!ed || !noteEditId) return;
+  // Requires a live caret/selection to know which lines to target — disabled
+  // (fmt-disabled) while merely toolbar-selected, guarded here as a backstop.
+  if (!ed || !noteEditId || !noteTextLive) return;
   if (!['plain', 'bullet', 'number', 'check'].includes(mode)) return;
 
   const targets = noteEditorTargetLines(ed);
@@ -9004,6 +9407,9 @@ function toggleNoteListMode(mode) {
     }
   }
 
+  // The line DOM has changed, but the model has not been serialized yet.
+  // Record that model now so Ctrl+Z restores the exact pre-list note.
+  noteEditPushUndo();
   noteEditorDevAssertStructure(ed);
   refreshNoteEdit();
 }
@@ -9058,7 +9464,9 @@ function clampNoteBoxToHug(it) {
 
 function drawBoardItem(g, it, opts = {}) {
   if (isGroupItem(it)) return;
-  if (isNoteItem(it) && noteEditId === it.id) return;
+  // Toolbar-only selection keeps the note canvas-rendered (only the format
+  // bar overlays it) — only a truly live text editor replaces the canvas draw.
+  if (isNoteItem(it) && noteEditId === it.id && noteTextLive) return;
   if (isArrowItem(it)) {
     drawArrowShape(g, it.x1, it.y1, it.x2, it.y2, {
       color: it.color || '#000000',
@@ -10016,10 +10424,12 @@ canvas.addEventListener('pointerdown', async e => {
   }
   const it = itemAt(sx, sy);
   if (it) {
-    const selectedAtPointerDown = state.sel.has(it.id);
-    if (isNoteItem(it) && noteEditId === it.id) return;
+    // Only a truly live text editor on THIS note should swallow the click —
+    // a toolbar-only selected note still drags and its checkboxes/links work.
+    const editingThisNoteText = isNoteItem(it) && noteEditId === it.id && noteTextLive;
+    if (editingThisNoteText) return;
     if (isNoteItem(it) && e.detail >= 2) return;
-    if (isNoteItem(it) && !noteEditId) {
+    if (isNoteItem(it) && !editingThisNoteText) {
       const [bx, by] = toBoard(sx, sy);
       const [lx, ly] = boardToItemLocal(it, bx, by);
       const linkHit = noteLinkHitAt(it, lx, ly);
@@ -10051,7 +10461,6 @@ canvas.addEventListener('pointerdown', async e => {
     if (!idsIncludeLockedGroupItems(moveIds)) {
       mode = {
         type: 'move', sx, sy, hit: it.id, pushed: false,
-        selectedAtPointerDown,
         orig: collectMoveOrig(moveIds),
       };
     }
@@ -10278,9 +10687,12 @@ window.addEventListener('pointerup', e => {
       state.sel = new Set([mode.hit]);
       updateSelBar();
       invalidate();
-    } else if (mode.selectedAtPointerDown && isNoteItem(hit)) {
-      // A click on an already-selected note edits at the released pointer.
-      startNoteEdit(hit, e.clientX, e.clientY);
+    } else if (isNoteItem(hit)) {
+      // A clean click (no drag) selects the note and shows the format bar
+      // (bold/italic/underline/font/color/opacity/alignment) — no caret, no
+      // hyperlinks, no text selection until the user double-clicks to enter
+      // full text editing. Dragging still moves; shift-click still multi-selects.
+      startNoteEdit(hit, e.clientX, e.clientY, { textLive: false });
     }
   } else if (mode.type === 'marquee') {
     marquee = null;
@@ -10348,14 +10760,22 @@ function updateCursor(sx, sy) {
     }
     return;
   }
-  if (!noteEditId) {
+  {
     const it = itemAt(sx, sy);
     if (it && isArrowItem(it)) { canvas.style.cursor = 'default'; return; }
-    if (it && isNoteItem(it)) {
+    // Skip only for the note that's truly caret-live — its checkboxes/links
+    // are inert while typing, and a toolbar-only selected note (or any other
+    // note) should still show these hints.
+    if (it && isNoteItem(it) && !(noteEditId === it.id && noteTextLive)) {
       const [bx, by] = toBoard(sx, sy);
       const [lx, ly] = boardToItemLocal(it, bx, by);
       if (noteLinkHitAt(it, lx, ly) || noteChecklistHitAt(it, lx, ly) >= 0) {
         canvas.style.cursor = 'pointer';
+        return;
+      }
+      // Editable-text affordance: double-click here opens full text editing.
+      if (!isInLockedGroup(it)) {
+        canvas.style.cursor = 'text';
         return;
       }
     }
@@ -10878,9 +11298,22 @@ window.addEventListener('pointerdown', e => {
 
 /* ================= keyboard ================= */
 window.addEventListener('keydown', e => {
-  if (e.target.matches('input,textarea,select') || e.target.closest('#noteEditor')) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
+  const formControl = e.target.matches('input,textarea,select');
+  // Formatting popovers keep focus on their button. While a note is open,
+  // Ctrl+Z/Ctrl+Y must still operate on that note instead of board history.
+  if (noteEditId && !formControl && mod && (k === 'z' || k === 'y')) {
+    e.preventDefault();
+    const wantsRedo = k === 'y' || e.shiftKey;
+    const handled = wantsRedo ? redoNoteEdit() : undoNoteEdit();
+    if (!handled) {
+      if (wantsRedo) redo();
+      else undo();
+    }
+    return;
+  }
+  if (formControl || e.target.closest('#noteEditor')) return;
 
   if (onLanding) {
     if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
@@ -11554,10 +11987,14 @@ const noteEd = $('#noteEditor');
 function refreshNoteEdit() {
   const it = noteEditId ? byId(noteEditId) : null;
   if (!it) return;
+  // Typed "• "/"1. "/"[ ] " must become structured lines NOW — the canvas
+  // parses them from the stored text either way, and unconverted lines render
+  // without the gutter, so the text would jump on edit exit.
+  noteEditorNormalizeTypedPrefixes(noteEd);
   // Serialize only — never hydrate here (caret would jump).
   it.text = serializeNoteDom(noteEd);
   applyNoteFmtFromUi(it);
-  fitNoteToText(it, true);
+  fitNoteToTextEditAnchored(it);
   syncNoteEditorStyle(it);
   positionNoteEditor();
   noteListDd?.syncUi();
@@ -11566,8 +12003,41 @@ function refreshNoteEdit() {
   invalidate();
 }
 noteEd.addEventListener('input', () => {
+  // The DOM has already changed but the model has not; this is the exact
+  // pre-change snapshot needed for deterministic note undo.
+  noteEditPushUndo();
   noteEditorDevAssertStructure(noteEd);
   refreshNoteEdit();
+});
+// Never restructure lines mid-IME-composition — Chromium aborts the
+// composition if the DOM under it changes. Normalize once it commits.
+noteEd.addEventListener('compositionstart', () => { noteEditorComposing = true; });
+noteEd.addEventListener('compositionend', () => {
+  noteEditorComposing = false;
+  refreshNoteEdit();
+});
+// Paragraph breaks that arrive WITHOUT a keydown (IME confirm, dictation,
+// synthetic input) hit contenteditable's default split, which clones the line
+// div — list attributes but no prefix span. Route every break through our
+// Enter handling instead so lines are always well-formed.
+noteEd.addEventListener('beforeinput', e => {
+  if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') {
+    // During IME composition, leave the event entirely to Chromium. Cancelling
+    // it here discards the committed text/break; the following input event and
+    // compositionend refresh will normalize the resulting DOM once, afterward.
+    if (noteEditorComposing || e.isComposing) return;
+    e.preventDefault();
+    noteEditorHandleEnter(noteEd, e.inputType === 'insertLineBreak');
+    noteEditPushUndo();
+    refreshNoteEdit();
+    return;
+  }
+  // Multi-line text insertion → structured lines (never the default split).
+  if (e.inputType === 'insertText' && typeof e.data === 'string' && e.data.includes('\n')) {
+    e.preventDefault();
+    noteEditorInsertMarkdown(noteEd, e.data);
+    refreshNoteEdit();
+  }
 });
 noteEd.addEventListener('click', e => {
   // Links are not navigable while editing
@@ -11605,12 +12075,31 @@ noteEd.addEventListener('paste', async e => {
   refreshNoteEdit();
 });
 noteEd.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { e.stopPropagation(); finishNoteEdit(); return; }
-  if (e.key === 'Enter') {
-    // Old textarea: Enter and Shift+Enter both insert \\n (no list continue).
+  const mod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+  if (mod && key === 'z') {
     e.preventDefault();
     e.stopPropagation();
-    noteEditorHandleEnter(noteEd);
+    const handled = e.shiftKey ? redoNoteEdit() : undoNoteEdit();
+    if (!handled) {
+      if (e.shiftKey) redo();
+      else undo();
+    }
+    return;
+  }
+  if (mod && key === 'y') {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!redoNoteEdit()) redo();
+    return;
+  }
+  if (e.key === 'Escape') { e.stopPropagation(); finishNoteEdit(); return; }
+  if (e.key === 'Enter') {
+    if (noteEditorComposing || e.isComposing) return; // let the IME commit its text/break
+    e.preventDefault();
+    e.stopPropagation();
+    noteEditorHandleEnter(noteEd, e.shiftKey);
+    noteEditPushUndo();
     refreshNoteEdit();
     return;
   }
@@ -11618,6 +12107,16 @@ noteEd.addEventListener('keydown', e => {
     if (noteEditorHandleBackspace(noteEd)) {
       e.preventDefault();
       e.stopPropagation();
+      noteEditPushUndo();
+      refreshNoteEdit();
+      return;
+    }
+  }
+  if (e.key === 'Delete') {
+    if (noteEditorHandleDelete(noteEd)) {
+      e.preventDefault();
+      e.stopPropagation();
+      noteEditPushUndo();
       refreshNoteEdit();
       return;
     }
@@ -11628,6 +12127,7 @@ for (const id of ['#noteOpacity']) {
   $(id).addEventListener('input', () => {
     const it = noteEditId ? byId(noteEditId) : null;
     if (!it) return;
+    noteEditPushUndo();
     refreshNoteEdit();
   });
 }
@@ -11636,6 +12136,7 @@ for (const [id] of [['#noteBold'], ['#noteItalic'], ['#noteUnderline']]) {
     const it = noteEditId ? byId(noteEditId) : null;
     if (!it) return;
     $(id).classList.toggle('on');
+    noteEditPushUndo();
     refreshNoteEdit();
   });
 }
