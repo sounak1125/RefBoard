@@ -48,6 +48,7 @@
       "preload.js",
       "index.html",
       "scripts/note-dom.mjs",
+      "scripts/clipboard-copy-order.mjs",
       "changelog.json",
       "package.json",
       "assets/icons/sel/**"
