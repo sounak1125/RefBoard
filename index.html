@@ -1826,7 +1826,7 @@ body.board-active #whatsNewNotice{ display:none; }
   <button class="tb" id="sDup" data-tip="Duplicate  (Ctrl+D)">
     <svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 4H6a2 2 0 0 0-2 2v10M14 11v6M11 14h6"/></svg>
   </button>
-  <button class="tb" id="sOrig" data-tip="Export images…">
+  <button class="tb" id="sOrig" data-tip="Export images…  (Ctrl+Shift+I)">
     <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6M12 11v6M9 14.5l3 3 3-3"/></svg>
   </button>
   <span class="sep sel-multi-only"></span>
@@ -2110,6 +2110,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>Arrows</kbd></span><span class="d">Nudge selection (Shift = faster)</span>
       <span class="ks">2× click image</span><span class="d">Enter crop mode; drag edges, Esc to finish</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>E</kbd></span><span class="d">Export board as PNG</span>
+      <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>I</kbd></span><span class="d">Export selected images</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>S</kbd> / <kbd>O</kbd></span><span class="d">Save / open board file</span>
       <span class="ks"><kbd>Alt</kbd>+<kbd>Arrows</kbd></span><span class="d">Pan the board view</span>
       <span class="ks">Right-click → Appearance</span><span class="d">None (plain) or Dots grid — Dots snap when moving or scaling</span>
@@ -11263,7 +11264,7 @@ function showMenu(x, y, hitItem) {
       );
     }
     entries.push(
-      { l: sel > 1 ? 'Export images' : 'Export image', k: '', f: exportOriginals },
+      { l: sel > 1 ? 'Export images' : 'Export image', k: 'Ctrl+Shift+I', f: exportOriginals },
     );
     if (sel > 1) {
       entries.push({ l: 'Alignment', sub: 'align' });
@@ -11461,6 +11462,7 @@ const SHORTCUTS = [
   { cat:'Files', label:'Save board', keys:['Ctrl','S'] },
   { cat:'Files', label:'Open board', keys:['Ctrl','O'] },
   { cat:'Files', label:'Export PNG', keys:['Ctrl','E'] },
+  { cat:'Files', label:'Export images', keys:['Ctrl','Shift','I'] },
 ];
 function renderShortcutsList(){
   const pane = document.querySelector('.s2-pane[data-pane="shortcuts"]');
@@ -11682,6 +11684,7 @@ window.addEventListener('keydown', e => {
   else if (mod && k === 's') { e.preventDefault(); saveBoardFile(); }
   else if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
   else if (mod && k === 'e') { e.preventDefault(); openExport(); }
+  else if (mod && e.shiftKey && k === 'i') { e.preventDefault(); exportOriginals(); }
   else if (mod && e.shiftKey && k === 'g') { e.preventDefault(); ungroupFromSelection(); }
   else if (mod && k === 'g') { e.preventDefault(); createGroupFromSelection(); }
   else if (mod && k === '0') { e.preventDefault(); zoomAt(...boardCenter(), 1); }
