@@ -1,17 +1,9 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 const sharp = require('sharp');
 
-const ROOT = path.join(__dirname, '..');
-const BRAND_PATH = path.join(ROOT, 'build', 'icon.png');
-
 const PREVIEW_REGEX = /"preview"\s*:\s*"([A-Za-z0-9+/=]+)"/;
-
-function loadBrandPng() {
-  return fs.readFileSync(BRAND_PATH);
-}
 
 function extractPreviewBase64(filePath) {
   const fd = fs.openSync(filePath, 'r');
@@ -38,11 +30,8 @@ function extractPreviewBase64(filePath) {
 
 function thumbnailLayout(size) {
   const padding = Math.max(1, Math.round(size * 0.06));
-  const railWidth = Math.max(3, Math.round(size * 0.19));
-  const gap = Math.max(2, Math.round(size * 0.055));
-  const previewWidth = Math.max(4, size - padding * 2 - railWidth - gap);
+  const previewWidth = Math.max(4, size - padding * 2);
   const previewHeight = Math.max(4, Math.round(previewWidth * 0.58));
-  const brandSize = Math.max(3, Math.min(railWidth, Math.round(size * 0.17)));
   const previewX = padding;
   return {
     previewX,
@@ -50,14 +39,10 @@ function thumbnailLayout(size) {
     previewWidth,
     previewHeight,
     radius: Math.max(1, Math.round(size / 28)),
-    brandX: Math.round(size - padding - (railWidth + brandSize) / 2),
-    brandY: Math.round((size - brandSize) / 2),
-    brandSize,
-    dividerX: previewX + previewWidth + Math.round(gap / 2),
   };
 }
 
-function thumbnailBackground(size, dividerX) {
+function thumbnailBackground(size) {
   return Buffer.from(
     `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -67,8 +52,6 @@ function thumbnailBackground(size, dividerX) {
         </linearGradient>
       </defs>
       <rect width="${size}" height="${size}" fill="url(#g)"/>
-      <line x1="${dividerX}" y1="${Math.round(size * 0.31)}" x2="${dividerX}" y2="${Math.round(size * 0.69)}"
-        stroke="#529ef0" stroke-opacity="0.2" stroke-width="${Math.max(1, size / 256)}"/>
     </svg>`
   );
 }
@@ -82,51 +65,16 @@ function previewShadow(layout) {
   );
 }
 
-function previewBorder(layout) {
-  return Buffer.from(
-    `<svg width="${layout.previewWidth}" height="${layout.previewHeight}" xmlns="http://www.w3.org/2000/svg">
-      <rect x="0.5" y="0.5" width="${Math.max(1, layout.previewWidth - 1)}" height="${Math.max(1, layout.previewHeight - 1)}"
-        rx="${layout.radius}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
-    </svg>`
-  );
-}
-
-async function sideBrand(size, layout) {
-  return sharp(loadBrandPng())
-    .resize(layout.brandSize, layout.brandSize, { fit: 'contain' })
+async function compositeThumbnail(thumbnailBuffer, size = 256) {
+  // The Explorer type overlay owns the single lower-right RefBoard logo.
+  // This mirrors the handler by returning only the complete board preview.
+  return sharp(thumbnailBuffer)
+    .resize(size, size, { fit: 'inside', withoutEnlargement: false })
     .png()
     .toBuffer();
 }
 
-async function compositeBrandedThumbnail(thumbnailBuffer, size = 256) {
-  const layout = thumbnailLayout(size);
-  const board = await sharp(thumbnailBuffer)
-    .resize(layout.previewWidth, layout.previewHeight, { fit: 'cover', position: 'centre' })
-    .png()
-    .toBuffer();
-  const roundedMask = Buffer.from(
-    `<svg width="${layout.previewWidth}" height="${layout.previewHeight}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="${layout.previewWidth}" height="${layout.previewHeight}" rx="${layout.radius}" fill="white"/>
-    </svg>`
-  );
-  const roundedBoard = await sharp(board)
-    .composite([{ input: roundedMask, blend: 'dest-in' }])
-    .png()
-    .toBuffer();
-  const brand = await sideBrand(size, layout);
-
-  return sharp(thumbnailBackground(size, layout.dividerX))
-    .composite([
-      { input: previewShadow(layout), left: layout.previewX, top: layout.previewY },
-      { input: roundedBoard, left: layout.previewX, top: layout.previewY },
-      { input: previewBorder(layout), left: layout.previewX, top: layout.previewY },
-      { input: brand, left: layout.brandX, top: layout.brandY },
-    ])
-    .png()
-    .toBuffer();
-}
-
-async function compositeFallbackBrand(size = 256) {
+async function compositeFallbackThumbnail(size = 256) {
   const layout = thumbnailLayout(size);
   const innerPad = Math.max(1, Math.floor(layout.previewWidth / 14));
   const tileGap = Math.max(1, Math.floor(layout.previewWidth / 28));
@@ -145,13 +93,10 @@ async function compositeFallbackBrand(size = 256) {
         rx="${layout.radius}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
     </svg>`
   );
-  const brand = await sideBrand(size, layout);
-
-  return sharp(thumbnailBackground(size, layout.dividerX))
+  return sharp(thumbnailBackground(size))
     .composite([
       { input: previewShadow(layout), left: layout.previewX, top: layout.previewY },
       { input: placeholder, left: layout.previewX, top: layout.previewY },
-      { input: brand, left: layout.brandX, top: layout.brandY },
     ])
     .png()
     .toBuffer();
@@ -159,6 +104,6 @@ async function compositeFallbackBrand(size = 256) {
 
 module.exports = {
   extractPreviewBase64,
-  compositeBrandedThumbnail,
-  compositeFallbackBrand,
+  compositeThumbnail,
+  compositeFallbackThumbnail,
 };

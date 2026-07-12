@@ -2105,7 +2105,7 @@ body.board-active #whatsNewNotice{ display:none; }
     <h3>Keyboard shortcuts</h3>
     <div class="shortcuts">
       <span class="ks"><kbd>Ctrl</kbd><kbd>V</kbd></span><span class="d">Paste image(s) from clipboard</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>C</kbd></span><span class="d">Copy selection to clipboard (full resolution)</span>
+      <span class="ks"><kbd>Ctrl</kbd><kbd>C</kbd></span><span class="d">Copy selection to clipboard (high resolution)</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>D</kbd></span><span class="d">Duplicate selection</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>G</kbd></span><span class="d">Group selected images or notes</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>G</kbd></span><span class="d">Ungroup selection</span>
@@ -3215,6 +3215,7 @@ let autosaveTimer = null;
 let wheelNavUntil = 0;
 let wasNavigatingView = false;
 let boardFileDirty = false;
+let boardChangeVersion = 0;
 let suppressBoardDirty = false;
 let onLanding = true;
 let currentBoardPath = null;
@@ -4052,7 +4053,10 @@ async function restoreSession() {
 }
 
 function markBoardDirty() {
-  if (!suppressBoardDirty) boardFileDirty = true;
+  if (!suppressBoardDirty) {
+    boardFileDirty = true;
+    boardChangeVersion++;
+  }
 }
 
 function persistBoardNow() {
@@ -5366,7 +5370,7 @@ function pasteTextAsNote(text, pos) {
   return true;
 }
 
-async function compositeBlob(items, { isCancelled } = {}) {
+async function compositeBlob(items, { isCancelled, maxDimension = 8192 } = {}) {
   if (isCancelled?.()) return null;
   const bb = bboxOf(items);
   let k = 1;
@@ -5381,7 +5385,7 @@ async function compositeBlob(items, { isCancelled } = {}) {
     if (im.bitmap) k = Math.max(k, (im.w * (cr.r - cr.l)) / it.w, (im.h * (cr.b - cr.t)) / it.h);
   }
   if (isCancelled?.()) return null;
-  const MAX = 8192;
+  const MAX = Math.max(512, Number(maxDimension) || 8192);
   k = Math.min(k, MAX / bb.w, MAX / bb.h);
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(bb.w * k));
@@ -5406,6 +5410,54 @@ async function compositeBlob(items, { isCancelled } = {}) {
   }
   if (isCancelled?.()) return null;
   return await new Promise(r => c.toBlob(r, 'image/png'));
+}
+
+function directClipboardPng(items) {
+  const drawable = items.filter(it => !isGroupItem(it));
+  if (drawable.length !== 1 || !isImageItem(drawable[0])) return null;
+  const it = drawable[0];
+  const im = images.get(it.imgId);
+  if (!im?.blob || im.blob.type !== 'image/png') return null;
+  const cr = cropOf(it);
+  const uncropped = cr.l === 0 && cr.t === 0 && cr.r === 1 && cr.b === 1;
+  if (!uncropped || it.rot || it.flipX || it.flipY || it.gray || state.boardGray) return null;
+  return im.blob;
+}
+
+async function boundedCompositeCanvas(items, { maxWidth, maxHeight, fit = 'inside' } = {}) {
+  if (!items?.length) return null;
+  const bb = bboxOf(items);
+  if (!(bb.w > 0) || !(bb.h > 0)) return null;
+  for (const it of items) {
+    if (!isImageItem(it)) continue;
+    const im = images.get(it.imgId);
+    if (im) await ensureFullBitmap(im);
+  }
+
+  const mw = Math.max(1, Number(maxWidth) || 1);
+  const mh = Math.max(1, Number(maxHeight) || mw);
+  const scale = fit === 'cover'
+    ? Math.max(mw / bb.w, mh / bb.h)
+    : Math.min(mw / bb.w, mh / bb.h);
+  const c = document.createElement('canvas');
+  c.width = fit === 'cover' ? Math.round(mw) : Math.max(1, Math.round(bb.w * scale));
+  c.height = fit === 'cover' ? Math.round(mh) : Math.max(1, Math.round(bb.h * scale));
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.translate(c.width / 2, c.height / 2);
+  g.scale(scale, scale);
+  g.translate(-(bb.x + bb.w / 2), -(bb.y + bb.h / 2));
+  for (const it of items) {
+    if (!isNoteItem(it) && !isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
+  }
+  for (const it of items) {
+    if (isNoteItem(it)) drawBoardItem(g, it, { noLod: true });
+  }
+  for (const it of items) {
+    if (isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
+  }
+  return c;
 }
 
 async function writeNotesToClipboard(payload, plainText) {
@@ -5478,7 +5530,14 @@ async function copySelection() {
     const compositeItems = payload.items;
     if (!isCurrent()) return false;
 
-    const blob = await compositeBlob(compositeItems, { isCancelled: () => !isCurrent() });
+    const drawableCount = compositeItems.filter(it => !isGroupItem(it)).length;
+    const directPng = directClipboardPng(compositeItems);
+    const blob = directPng || await compositeBlob(compositeItems, {
+      isCancelled: () => !isCurrent(),
+      // Multi-item clipboard composites remain crisp while avoiding a 256 MB
+      // 8192×8192 canvas and its expensive PNG encode.
+      maxDimension: drawableCount > 1 ? 4096 : 8192,
+    });
     if (!isCurrent()) return false;
     if (!blob) {
       if (isCurrent()) toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
@@ -8693,52 +8752,138 @@ async function doExportPNG(mult, bg) {
   }, 'image/png');
 }
 
-const blobToDataURL = blob => new Promise((res, rej) => {
-  const r = new FileReader();
-  r.onload = () => res(r.result);
-  r.onerror = rej;
-  r.readAsDataURL(blob);
-});
+const SAVE_DATA_URL_CACHE_MAX = 64 * 1024 * 1024;
+const saveDataUrlCache = new Map();
+let saveDataUrlCacheBytes = 0;
 
-async function buildBoardPayload() {
-  const used = [...new Set(state.items.filter(isImageItem).map(i => i.imgId))];
-  const imgs = [];
-  for (const id of used) {
-    const im = images.get(id); if (!im) continue;
-    imgs.push({ id, type: im.type, name: im.name, data: await blobToDataURL(im.blob) });
+function blobToDataURL(blob) {
+  const cached = saveDataUrlCache.get(blob);
+  if (cached) {
+    saveDataUrlCache.delete(blob);
+    saveDataUrlCache.set(blob, cached);
+    return cached.promise;
   }
-  const core = { app: 'refboard', version: 3, view: state.view, boardGray: state.boardGray, snapEnabled: state.snapEnabled, gridAppearance: state.gridAppearance, items: state.items, images: imgs };
+  const promise = new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+  const bytes = Math.ceil((blob?.size || 0) * 4 / 3);
+  if (bytes <= SAVE_DATA_URL_CACHE_MAX / 2) {
+    saveDataUrlCache.set(blob, { promise, bytes });
+    saveDataUrlCacheBytes += bytes;
+    while (saveDataUrlCacheBytes > SAVE_DATA_URL_CACHE_MAX && saveDataUrlCache.size > 1) {
+      const oldest = saveDataUrlCache.entries().next().value;
+      if (!oldest) break;
+      saveDataUrlCache.delete(oldest[0]);
+      saveDataUrlCacheBytes -= oldest[1].bytes;
+    }
+    promise.catch(() => {
+      const entry = saveDataUrlCache.get(blob);
+      if (entry?.promise !== promise) return;
+      saveDataUrlCache.delete(blob);
+      saveDataUrlCacheBytes -= entry.bytes;
+    });
+  }
+  return promise;
+}
+
+function boardSaveSnapshot() {
+  const items = JSON.parse(JSON.stringify(state.items));
+  const used = [...new Set(items.filter(isImageItem).map(i => i.imgId))];
+  const imageRefs = used.map(id => {
+    const im = images.get(id);
+    return im ? { id, type: im.type, name: im.name, blob: im.blob } : null;
+  }).filter(Boolean);
+  return {
+    core: {
+      app: 'refboard', version: 3,
+      view: { ...state.view },
+      boardGray: state.boardGray,
+      snapEnabled: state.snapEnabled,
+      gridAppearance: state.gridAppearance,
+      items,
+    },
+    imageRefs,
+    changeVersion: boardChangeVersion,
+  };
+}
+
+async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
+  const imgs = [];
+  for (const im of snapshot.imageRefs) {
+    imgs.push({ id: im.id, type: im.type, name: im.name, data: await blobToDataURL(im.blob) });
+  }
   let preview = null;
-  if (state.items.length) {
+  if (snapshot.core.items.length) {
     try { preview = await captureBoardPreviewStrip(640); } catch { /* ignore */ }
   }
+  const core = { ...snapshot.core, images: imgs };
   return preview ? { preview, ...core } : core;
 }
 
-async function saveBoardFile(opts = {}) {
+let activeBoardSave = null;
+
+async function performBoardSave(opts = {}) {
   const silent = !!opts.silent;
   if (!state.items.length) { if (!silent) toast('Board is empty'); return false; }
-  const payload = await buildBoardPayload();
-  const json = JSON.stringify(payload);
+  const snapshot = boardSaveSnapshot();
   const defaultName = currentBoardTitle
     ? `${currentBoardTitle}.refboard`
     : `moodboard-${stamp()}.refboard`;
-  if (window.RefBoardAPI?.saveBoardFile) {
-    const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, currentBoardPath || undefined);
-    if (!result?.saved) return false;
-    currentBoardPath = result.filePath;
-    currentBoardTitle = boardTitleFromPath(result.filePath);
-    boardFileDirty = false;
-    await trackRecentWork({ edited: true });
-    if (!silent) toast('Board file saved (originals embedded)');
-    else toast('Autosaved');
-    return true;
+
+  if (window.RefBoardAPI?.beginBoardSave) {
+    let token = null;
+    let preview = null;
+    try {
+      preview = await captureBoardPreviewStrip(640);
+      const begin = await window.RefBoardAPI.beginBoardSave(
+        defaultName, currentBoardPath || undefined, snapshot.core, preview,
+      );
+      if (!begin?.started) return false;
+      token = begin.token;
+      for (const im of snapshot.imageRefs) {
+        const data = await im.blob.arrayBuffer();
+        await window.RefBoardAPI.appendBoardSaveImage(token, {
+          id: im.id, type: im.type, name: im.name,
+        }, data);
+      }
+      const result = await window.RefBoardAPI.finishBoardSave(token);
+      token = null;
+      if (!result?.saved) return false;
+      currentBoardPath = result.filePath;
+      currentBoardTitle = boardTitleFromPath(result.filePath);
+    } catch (err) {
+      if (token) await window.RefBoardAPI.abortBoardSave(token).catch(() => {});
+      console.error('[save] streamed board save failed:', err);
+      if (!silent) toast('Save failed — the previous board file was kept');
+      return false;
+    }
+  } else {
+    const payload = await buildBoardPayload(snapshot);
+    const json = JSON.stringify(payload);
+    if (window.RefBoardAPI?.saveBoardFile) {
+      const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, currentBoardPath || undefined);
+      if (!result?.saved) return false;
+      currentBoardPath = result.filePath;
+      currentBoardTitle = boardTitleFromPath(result.filePath);
+    } else {
+      downloadBlob(new Blob([json], { type: 'application/json' }), defaultName);
+    }
   }
-  downloadBlob(new Blob([json], { type: 'application/json' }), defaultName);
-  boardFileDirty = false;
+
+  if (boardChangeVersion === snapshot.changeVersion) boardFileDirty = false;
+  await trackRecentWork({ edited: true });
   if (!silent) toast('Board file saved (originals embedded)');
   else toast('Autosaved');
   return true;
+}
+
+async function saveBoardFile(opts = {}) {
+  if (activeBoardSave) return activeBoardSave;
+  activeBoardSave = performBoardSave(opts).finally(() => { activeBoardSave = null; });
+  return activeBoardSave;
 }
 
 function boardTitleFromPath(filePath) {
@@ -8750,20 +8895,8 @@ function boardTitleFromPath(filePath) {
 async function captureBoardThumbnailBase64(maxPx = 360) {
   if (!state.items.length) return null;
   try {
-    const blob = await compositeBlob(state.items);
-    if (!blob) return null;
-    const bmp = await createImageBitmap(blob);
-    const scale = Math.min(1, maxPx / Math.max(bmp.width, bmp.height, 1));
-    const w = Math.max(1, Math.round(bmp.width * scale));
-    const h = Math.max(1, Math.round(bmp.height * scale));
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    const g = c.getContext('2d');
-    g.imageSmoothingEnabled = true;
-    g.imageSmoothingQuality = 'high';
-    g.drawImage(bmp, 0, 0, w, h);
-    bmp.close();
+    const c = await boundedCompositeCanvas(state.items, { maxWidth: maxPx, maxHeight: maxPx });
+    if (!c) return null;
     const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.84));
     if (!small) return null;
     return await blobToBase64(small);
@@ -8775,25 +8908,13 @@ async function captureBoardThumbnailBase64(maxPx = 360) {
 async function captureBoardPreviewStrip(maxW = 640) {
   if (!state.items.length) return null;
   try {
-    const blob = await compositeBlob(state.items);
-    if (!blob) return null;
-    const bmp = await createImageBitmap(blob);
     const aspect = 2.4;
     const tw = maxW;
     const th = Math.max(1, Math.round(maxW / aspect));
-    const c = document.createElement('canvas');
-    c.width = tw;
-    c.height = th;
-    const g = c.getContext('2d');
-    g.imageSmoothingEnabled = true;
-    g.imageSmoothingQuality = 'high';
-    const scale = Math.max(tw / bmp.width, th / bmp.height);
-    const sw = tw / scale;
-    const sh = th / scale;
-    const sx = (bmp.width - sw) / 2;
-    const sy = (bmp.height - sh) / 2;
-    g.drawImage(bmp, sx, sy, sw, sh, 0, 0, tw, th);
-    bmp.close();
+    const c = await boundedCompositeCanvas(state.items, {
+      maxWidth: tw, maxHeight: th, fit: 'cover',
+    });
+    if (!c) return null;
     const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
     if (!small) return null;
     return await blobToBase64(small);

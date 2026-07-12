@@ -6,6 +6,7 @@ const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-format');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -151,6 +152,14 @@ function setupAutoUpdate() {
 }
 
 function setupIpc() {
+  const boardSaveSessions = new Map();
+
+  async function discardBoardSaveSession(session) {
+    if (!session) return;
+    try { await session.handle?.close(); } catch { /* already closed */ }
+    await fs.unlink(session.tempPath).catch(() => {});
+  }
+
   ipcMain.handle('choose-folder', async () => {
     const r = await dialog.showOpenDialog(win, {
       title: 'Choose export folder',
@@ -204,6 +213,81 @@ function setupIpc() {
     await fs.writeFile(target, data, 'utf8');
     refreshShellIcons(target);
     return { saved: true, filePath: target };
+  });
+
+  ipcMain.handle('begin-board-save', async (event, { defaultName, filePath, core, preview }) => {
+    let target = filePath;
+    if (!target) {
+      const r = await dialog.showSaveDialog(win, {
+        title: 'Save RefBoard board',
+        defaultPath: path.join(app.getPath('documents'), defaultName),
+        filters: [{ name: 'RefBoard board', extensions: ['refboard'] }],
+      });
+      if (r.canceled || !r.filePath) return { started: false };
+      target = r.filePath;
+    }
+
+    const token = crypto.randomUUID();
+    const tempPath = `${target}.saving-${process.pid}-${token}`;
+    const session = {
+      token, target, tempPath, ownerId: event.sender.id, handle: null, firstImage: true,
+    };
+    try {
+      session.handle = await fs.open(tempPath, 'wx');
+      await session.handle.write(boardHeaderPrefix(core, preview));
+      boardSaveSessions.set(token, session);
+      return { started: true, token, filePath: target };
+    } catch (err) {
+      await discardBoardSaveSession(session);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('append-board-save-image', async (event, { token, image, data }) => {
+    const session = boardSaveSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
+    const parts = boardImageParts(image, data);
+    await session.handle.write((session.firstImage ? '' : ',') + parts.prefix);
+    await session.handle.write(parts.base64);
+    await session.handle.write(parts.suffix);
+    session.firstImage = false;
+    return { appended: true };
+  });
+
+  ipcMain.handle('finish-board-save', async (event, token) => {
+    const session = boardSaveSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
+    boardSaveSessions.delete(token);
+    let backupPath = null;
+    try {
+      await session.handle.write(']}');
+      await session.handle.sync();
+      await session.handle.close();
+      session.handle = null;
+
+      if (fsSync.existsSync(session.target)) {
+        backupPath = `${session.target}.backup-${process.pid}-${session.token}`;
+        await fs.rename(session.target, backupPath);
+      }
+      await fs.rename(session.tempPath, session.target);
+      if (backupPath) await fs.unlink(backupPath).catch(() => {});
+      refreshShellIcons(session.target);
+      return { saved: true, filePath: session.target };
+    } catch (err) {
+      if (backupPath && !fsSync.existsSync(session.target)) {
+        await fs.rename(backupPath, session.target).catch(() => {});
+      }
+      await discardBoardSaveSession(session);
+      throw err;
+    }
+  });
+
+  ipcMain.handle('abort-board-save', async (event, token) => {
+    const session = boardSaveSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) return { aborted: false };
+    boardSaveSessions.delete(token);
+    await discardBoardSaveSession(session);
+    return { aborted: true };
   });
 
   ipcMain.handle('open-board-dialog', async () => {

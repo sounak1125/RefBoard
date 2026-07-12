@@ -4,8 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const {
   extractPreviewBase64,
-  compositeBrandedThumbnail,
-  compositeFallbackBrand,
+  compositeThumbnail,
+  compositeFallbackThumbnail,
 } = require('./file-icon-composite');
 
 async function main() {
@@ -33,10 +33,10 @@ async function main() {
   let png;
   if (previewB64) {
     const previewBuf = Buffer.from(previewB64, 'base64');
-    png = await compositeBrandedThumbnail(previewBuf, size);
-    console.log('Rendered branded thumbnail from embedded preview.');
+    png = await compositeThumbnail(previewBuf, size);
+    console.log('Rendered content thumbnail from embedded preview.');
   } else {
-    png = await compositeFallbackBrand(size);
+    png = await compositeFallbackThumbnail(size);
     console.log('No preview field found — rendered fallback placeholder.');
   }
 

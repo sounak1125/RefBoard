@@ -3,7 +3,6 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -32,23 +31,23 @@ namespace RefBoard
                 using (var stream = SelectedItemStream)
                 {
                     if (stream == null || !stream.CanRead)
-                        return FallbackBrand(target);
+                        return FallbackThumbnail(target);
 
                     var previewB64 = ExtractPreviewBase64(stream);
                     if (previewB64 == null)
-                        return FallbackBrand(target);
+                        return FallbackThumbnail(target);
 
                     var bytes = Convert.FromBase64String(previewB64);
                     using (var ms = new MemoryStream(bytes))
                     using (var src = new Bitmap(ms))
                     {
-                        return ComposeBranded(src, target);
+                        return ResizePreview(src, target);
                     }
                 }
             }
             catch
             {
-                return FallbackBrand(target);
+                return FallbackThumbnail(target);
             }
         }
 
@@ -147,10 +146,6 @@ namespace RefBoard
             public int PreviewWidth;
             public int PreviewHeight;
             public int Radius;
-            public int BrandX;
-            public int BrandY;
-            public int BrandSize;
-            public int DividerX;
         }
 
         private static int Round(float value)
@@ -161,11 +156,8 @@ namespace RefBoard
         private static ThumbnailLayout CalculateLayout(int size)
         {
             var padding = Math.Max(1, Round(size * 0.06f));
-            var railWidth = Math.Max(3, Round(size * 0.19f));
-            var gap = Math.Max(2, Round(size * 0.055f));
-            var previewWidth = Math.Max(4, size - padding * 2 - railWidth - gap);
+            var previewWidth = Math.Max(4, size - padding * 2);
             var previewHeight = Math.Max(4, Round(previewWidth * 0.58f));
-            var brandSize = Math.Max(3, Math.Min(railWidth, Round(size * 0.17f)));
             var previewX = padding;
 
             return new ThumbnailLayout
@@ -175,47 +167,24 @@ namespace RefBoard
                 PreviewWidth = previewWidth,
                 PreviewHeight = previewHeight,
                 Radius = Math.Max(1, Round(size / 28f)),
-                BrandX = Round(size - padding - (railWidth + brandSize) / 2f),
-                BrandY = Round((size - brandSize) / 2f),
-                BrandSize = brandSize,
-                DividerX = previewX + previewWidth + Round(gap / 2f),
             };
         }
 
-        private static Bitmap ComposeBranded(Bitmap source, int size)
+        private static Bitmap ResizePreview(Bitmap source, int size)
         {
-            var canvas = new Bitmap(size, size, PixelFormat.Format32bppArgb);
+            // Explorer supplies the RefBoard file-type icon as the lower-right
+            // overlay. Keep the provider bitmap content-only so the logo is not
+            // drawn twice, and preserve the preview's full aspect ratio.
+            var scale = Math.Min((float)size / source.Width, (float)size / source.Height);
+            var width = Math.Max(1, Round(source.Width * scale));
+            var height = Math.Max(1, Round(source.Height * scale));
+            var canvas = new Bitmap(width, height, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(canvas))
             {
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.SmoothingMode = SmoothingMode.HighQuality;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-
-                DrawGradientBackground(g, size);
-                var layout = CalculateLayout(size);
-
-                using (var shadowPath = RoundedRect(layout.PreviewX + 1, layout.PreviewY + 2, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
-                using (var shadowBrush = new SolidBrush(Color.FromArgb(70, 0, 0, 0)))
-                    g.FillPath(shadowBrush, shadowPath);
-
-                var scale = Math.Max((float)layout.PreviewWidth / source.Width, (float)layout.PreviewHeight / source.Height);
-                var drawW = source.Width * scale;
-                var drawH = source.Height * scale;
-                var drawX = layout.PreviewX + (layout.PreviewWidth - drawW) / 2f;
-                var drawY = layout.PreviewY + (layout.PreviewHeight - drawH) / 2f;
-
-                using (var clipPath = RoundedRect(layout.PreviewX, layout.PreviewY, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
-                {
-                    g.SetClip(clipPath);
-                    g.DrawImage(source, drawX, drawY, drawW, drawH);
-                    g.ResetClip();
-                }
-
-                using (var borderPath = RoundedRect(layout.PreviewX, layout.PreviewY, layout.PreviewWidth, layout.PreviewHeight, layout.Radius))
-                using (var borderPen = new Pen(Color.FromArgb(20, 255, 255, 255), Math.Max(1f, size / 256f)))
-                    g.DrawPath(borderPen, borderPath);
-
-                DrawBrandSide(g, size, layout);
+                g.DrawImage(source, 0, 0, width, height);
             }
             return canvas;
         }
@@ -229,18 +198,6 @@ namespace RefBoard
                 LinearGradientMode.Vertical))
             {
                 g.FillRectangle(bg, 0, 0, size, size);
-            }
-        }
-
-        private static void DrawBrandSide(Graphics g, int size, ThumbnailLayout layout)
-        {
-            using (var dividerPen = new Pen(Color.FromArgb(51, 82, 158, 240), Math.Max(1f, size / 256f)))
-                g.DrawLine(dividerPen, layout.DividerX, Round(size * 0.31f), layout.DividerX, Round(size * 0.69f));
-
-            using (var brand = LoadBrandImage())
-            {
-                if (brand == null) return;
-                g.DrawImage(brand, layout.BrandX, layout.BrandY, layout.BrandSize, layout.BrandSize);
             }
         }
 
@@ -278,7 +235,7 @@ namespace RefBoard
                 g.DrawPath(borderPen, borderPath);
         }
 
-        private static Bitmap FallbackBrand(int size)
+        private static Bitmap FallbackThumbnail(int size)
         {
             var canvas = new Bitmap(size, size, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(canvas))
@@ -290,20 +247,8 @@ namespace RefBoard
                 DrawGradientBackground(g, size);
                 var layout = CalculateLayout(size);
                 DrawFallbackPreview(g, size, layout);
-                DrawBrandSide(g, size, layout);
             }
             return canvas;
-        }
-
-        private static Bitmap LoadBrandImage()
-        {
-            var asm = Assembly.GetExecutingAssembly();
-            using (var stream = asm.GetManifestResourceStream("RefBoard.brand.png"))
-            {
-                if (stream == null) return null;
-                using (var embedded = new Bitmap(stream))
-                    return new Bitmap(embedded);
-            }
         }
 
         private static GraphicsPath RoundedRect(int x, int y, int w, int h, int r)
