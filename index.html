@@ -2330,7 +2330,7 @@ function effectiveZoomMin() {
   if (!Number.isFinite(fitS) || fitS <= 0) return ZOOM_MIN;
   return Math.max(ZOOM_ABS_FLOOR, Math.min(ZOOM_MIN, fitS * 0.18));
 }
-const images = new Map();       // imgId -> {bitmap, pristineBlob|null, w, h, blob, type, name}
+const images = new Map();       // imgId -> {bitmap|null, pristineBlob|null, w, h, blob, type, name, decodePromise?}
 
 let dirty = true;
 let workspaceBBoxCache = null;
@@ -3207,6 +3207,15 @@ let imageLodActiveJobs = 0;
 let imageLodPumpScheduled = false;
 const imageLodQueue = [];
 
+/** Cap simultaneous createImageBitmap work (display + high-priority share slots). */
+const IMAGE_DECODE_MAX_CONCURRENT = 3;
+const IMAGE_DECODE_PRI_HIGH = 2;
+const IMAGE_DECODE_PRI_DISPLAY = 1;
+let imageDecodeActiveCount = 0;
+let imageDecodePumpScheduled = false;
+/** @type {{ im: object, priority: number, display: boolean, itemId: string|null, started: boolean, resolveSlot: () => void }[]} */
+const imageDecodeQueue = [];
+
 function ensureImageVersion(im) {
   if (!Number.isFinite(im.version)) im.version = 0;
   return im.version;
@@ -3239,6 +3248,241 @@ function invalidateImageLods(im, opts = {}) {
   for (const bucket of [...lod.entries.keys()]) deleteImageLodEntry(im, bucket);
   lod.pending.clear();
 }
+
+function collectReferencedImgIds(items = state.items) {
+  const ids = new Set();
+  for (const it of items) {
+    if (it && isImageItem(it) && typeof it.imgId === 'string') ids.add(it.imgId);
+  }
+  return ids;
+}
+
+function imageDecodeItemDist2(itemId) {
+  if (!itemId) return Number.POSITIVE_INFINITY;
+  const it = state.items.find(x => x.id === itemId);
+  if (!it || !isImageItem(it)) return Number.POSITIVE_INFINITY;
+  const { w, h } = boardSize();
+  const sx = (it.x + it.w / 2) * state.view.s + state.view.tx;
+  const sy = (it.y + it.h / 2) * state.view.s + state.view.ty;
+  const dx = sx - w / 2;
+  const dy = sy - h / 2;
+  return dx * dx + dy * dy;
+}
+
+function findImageDecodeItem(im, itemId) {
+  if (itemId) {
+    const it = state.items.find(x => x.id === itemId && isImageItem(x) && images.get(x.imgId) === im);
+    if (it) return it;
+  }
+  return state.items.find(x => isImageItem(x) && images.get(x.imgId) === im) || null;
+}
+
+function isImageDecodeDisplayStillNeeded(job) {
+  if (!job?.display || !job.im) return false;
+  if (job.im.bitmap) return false;
+  if (!(job.im.blob instanceof Blob) || !job.im.blob.size) return false;
+  const it = findImageDecodeItem(job.im, job.itemId);
+  if (!it) return false;
+  return isItemVisible(it, currentLodViewport());
+}
+
+function upgradeImageDecodeJob(im, priority, display, itemId) {
+  const job = im.decodeJob;
+  if (!job) return;
+  // High-priority callers (copy/export/edit) must permanently disable display
+  // visibility cancellation even if the shared job already started.
+  if (priority > job.priority) {
+    job.priority = priority;
+    job.display = false;
+  }
+  if (job.display && itemId) job.itemId = itemId;
+}
+
+function scheduleImageDecodePump() {
+  if (imageDecodePumpScheduled) return;
+  imageDecodePumpScheduled = true;
+  setTimeout(() => {
+    imageDecodePumpScheduled = false;
+    pumpImageDecodeQueue();
+  }, 0);
+}
+
+function pickNextImageDecodeJob() {
+  if (!imageDecodeQueue.length) return null;
+  let bestIdx = 0;
+  let best = imageDecodeQueue[0];
+  let bestDist = best.display ? imageDecodeItemDist2(best.itemId) : -1;
+  for (let i = 1; i < imageDecodeQueue.length; i++) {
+    const job = imageDecodeQueue[i];
+    if (job.priority !== best.priority) {
+      if (job.priority > best.priority) {
+        bestIdx = i;
+        best = job;
+        bestDist = job.display ? imageDecodeItemDist2(job.itemId) : -1;
+      }
+      continue;
+    }
+    if (!best.display) continue;
+    const d = imageDecodeItemDist2(job.itemId);
+    if (d < bestDist) {
+      bestIdx = i;
+      best = job;
+      bestDist = d;
+    }
+  }
+  imageDecodeQueue.splice(bestIdx, 1);
+  return best;
+}
+
+function pumpImageDecodeQueue() {
+  while (imageDecodeActiveCount < IMAGE_DECODE_MAX_CONCURRENT && imageDecodeQueue.length) {
+    const job = pickNextImageDecodeJob();
+    if (!job) break;
+    // Re-read display flag: a high-priority waiter may have upgraded this job while queued.
+    if (job.display && !isImageDecodeDisplayStillNeeded(job)) {
+      job.im.decodeWasSkipped = true;
+      // Drop the coalesced promise so copy/export can enqueue a fresh high-priority decode.
+      if (job.im.decodeJob === job) job.im.decodeJob = null;
+      if (job.im.decodePromise) job.im.decodePromise = null;
+      job.resolveSlot();
+      continue;
+    }
+    job.started = true;
+    imageDecodeActiveCount++;
+    job.resolveSlot();
+  }
+}
+
+function releaseImageDecodeSlot(im, job) {
+  if (im.decodeJob === job) im.decodeJob = null;
+  if (job.started) {
+    imageDecodeActiveCount = Math.max(0, imageDecodeActiveCount - 1);
+    if (imageDecodeQueue.length) scheduleImageDecodePump();
+  }
+}
+
+/** Close decoded pixels for an unreferenced image; keep blob + metadata + IDB. */
+function demoteImageDecodedMemory(im) {
+  if (!im) return;
+  invalidateImageLods(im, { bumpVersion: true });
+  const job = im.decodeJob;
+  if (job && !job.started) {
+    const idx = imageDecodeQueue.indexOf(job);
+    if (idx >= 0) imageDecodeQueue.splice(idx, 1);
+    im.decodeWasSkipped = true;
+    im.decodeJob = null;
+    im.decodePromise = null;
+    im.decodeFailed = false;
+    try { im.bitmap?.close?.(); } catch (e) {}
+    im.bitmap = null;
+    job.resolveSlot();
+    return;
+  }
+  im.decodePromise = null;
+  im.decodeJob = null;
+  im.decodeFailed = false;
+  im.decodeWasSkipped = false;
+  try { im.bitmap?.close?.(); } catch (e) {}
+  im.bitmap = null;
+}
+
+function demoteUnreferencedImages(items = state.items) {
+  const used = collectReferencedImgIds(items);
+  for (const [imgId, im] of images) {
+    if (!used.has(imgId)) demoteImageDecodedMemory(im);
+  }
+}
+
+/**
+ * Coalesced full-resolution decode. Never returns LOD/canvas stand-ins.
+ * opts.priority: 'display' (background, visibility-gated) or default high (copy/export/edit).
+ * opts.itemId: board item used for viewport-centre prioritization of display jobs.
+ */
+async function ensureFullBitmap(im, opts = {}) {
+  if (!im) return null;
+  if (im.bitmap) return im.bitmap;
+  if (!(im.blob instanceof Blob) || !im.blob.size) return null;
+
+  const display = opts.priority === 'display';
+  const priority = display ? IMAGE_DECODE_PRI_DISPLAY : IMAGE_DECODE_PRI_HIGH;
+  const itemId = opts.itemId || null;
+
+  if (im.decodePromise) {
+    upgradeImageDecodeJob(im, priority, display, itemId);
+    return im.decodePromise;
+  }
+
+  const version = ensureImageVersion(im);
+  let job = null;
+  const promise = (async () => {
+    let bitmap = null;
+    let heldSlot = false;
+    try {
+      await new Promise(resolveSlot => {
+        job = { im, priority, display, itemId, started: false, resolveSlot };
+        im.decodeJob = job;
+        imageDecodeQueue.push(job);
+        scheduleImageDecodePump();
+      });
+      heldSlot = !!(job && job.started);
+      if (im.decodeWasSkipped && !job.started) {
+        return im.bitmap || null;
+      }
+      if (job.display && !isImageDecodeDisplayStillNeeded(job)) {
+        im.decodeWasSkipped = true;
+        return im.bitmap || null;
+      }
+      if (im.bitmap) return im.bitmap;
+      if (ensureImageVersion(im) !== version) return im.bitmap || null;
+      if (!(im.blob instanceof Blob) || !im.blob.size) return null;
+
+      bitmap = await decodeToBitmap(im.blob);
+      if (ensureImageVersion(im) !== version) {
+        try { bitmap?.close?.(); } catch (e) {}
+        return im.bitmap || null;
+      }
+      if (im.bitmap) {
+        try { bitmap?.close?.(); } catch (e) {}
+        return im.bitmap;
+      }
+      im.bitmap = bitmap;
+      bitmap = null;
+      im.decodeFailed = false;
+      im.decodeWasSkipped = false;
+      invalidate();
+      return im.bitmap;
+    } catch (err) {
+      console.error('[image] decode failed:', err);
+      try { bitmap?.close?.(); } catch (e) {}
+      return null;
+    } finally {
+      if (heldSlot || (job && job.started)) releaseImageDecodeSlot(im, job);
+      else if (im.decodeJob === job) im.decodeJob = null;
+      if (im.decodePromise === promise) im.decodePromise = null;
+    }
+  })();
+
+  im.decodePromise = promise;
+  return promise;
+}
+
+function requestImageDecode(im, it) {
+  if (!im || im.bitmap || im.decodePromise || im.decodeFailed) return;
+  const result = ensureFullBitmap(im, { priority: 'display', itemId: it?.id || null });
+  // ensureFullBitmap may return sync null when the source Blob is missing/empty.
+  if (!result || typeof result.then !== 'function') {
+    if (!im.bitmap) im.decodeFailed = true;
+    return;
+  }
+  result.then(bmp => {
+    if (!bmp && !im.bitmap && !im.decodeWasSkipped) im.decodeFailed = true;
+    im.decodeWasSkipped = false;
+  }).catch(() => {
+    if (!im.bitmap) im.decodeFailed = true;
+  });
+}
+
+let historyApplySeq = 0;
 
 function imageLodDims(im, bucket) {
   return {
@@ -3305,6 +3549,7 @@ function dropOldestQueuedImageLodJob() {
 }
 
 function queueImageLod(im, it, bucket) {
+  if (!im?.bitmap) return;
   const lod = ensureImageLodState(im);
   if (lod.entries.has(bucket) || lod.pending.has(bucket)) return;
   while (imageLodQueue.length >= IMAGE_LOD_MAX_QUEUE) dropOldestQueuedImageLodJob();
@@ -3383,6 +3628,10 @@ async function runImageLodJob(job) {
   const { im, bucket, version } = job;
   let bitmap = null;
   try {
+    if (!im.bitmap) {
+      await ensureFullBitmap(im, { priority: 'display', itemId: job.itemId });
+      if (!im.bitmap || !isImageLodJobStillNeeded(job) || ensureImageVersion(im) !== version) return;
+    }
     const d = imageLodDims(im, bucket);
     bitmap = await createProgressiveImageLodBitmap(im.bitmap, im.w, im.h, d.w, d.h);
     if (!isImageLodJobStillNeeded(job) || ensureImageVersion(im) !== version) {
@@ -3424,6 +3673,10 @@ function evictImageLods() {
 }
 
 function getImageLodForDraw(im, it, cr) {
+  if (!im?.bitmap) {
+    requestImageDecode(im, it);
+    return null;
+  }
   const bucket = chooseImageLodBucket(im, imageDisplayScale(it, im, cr));
   if (!bucket) return null;
   const lod = ensureImageLodState(im);
@@ -3469,8 +3722,23 @@ function collectSessionImageRefs(items) {
 function closeImageRecordBitmaps(records) {
   const values = records instanceof Map ? records.values() : records;
   for (const im of values) {
+    if (!im) continue;
     invalidateImageLods(im, { bumpVersion: true });
-    try { im?.bitmap?.close?.(); } catch (e) {}
+    const job = im.decodeJob;
+    if (job && !job.started) {
+      const idx = imageDecodeQueue.indexOf(job);
+      if (idx >= 0) imageDecodeQueue.splice(idx, 1);
+      im.decodeWasSkipped = true;
+      im.decodeJob = null;
+      im.decodePromise = null;
+      job.resolveSlot();
+    } else {
+      im.decodePromise = null;
+      im.decodeJob = null;
+    }
+    im.decodeFailed = false;
+    try { im.bitmap?.close?.(); } catch (e) {}
+    im.bitmap = null;
   }
 }
 
@@ -3830,17 +4098,29 @@ async function restoreBitmapSnap(bitmapSnap) {
   if (!im) return;
   const bitmap = await decodeToBitmap(bitmapSnap.blob);
   if (im.bitmap && im.bitmap.close) im.bitmap.close();
+  im.decodePromise = null;
+  im.decodeFailed = false;
   im.bitmap = bitmap;
   im.blob = bitmapSnap.blob;
   invalidateImageLods(im, { bumpVersion: true });
   dbPut('blobs', bitmapSnap.imgId, bitmapSnap.blob);
 }
 async function applyUndoEntry(entry) {
+  const gen = ++historyApplySeq;
   discardNoteEditForBoardHistory();
   cancelDrawSession();
   const e = normalizeUndoEntry(entry);
   restoreSnap(e.snap);
-  if (e.bitmap) await restoreBitmapSnap(e.bitmap);
+  if (e.bitmap) {
+    await restoreBitmapSnap(e.bitmap);
+    if (gen !== historyApplySeq) {
+      demoteUnreferencedImages();
+      return;
+    }
+  }
+  // Do not eagerly decode every referenced image — visible items decode lazily
+  // via drawBoardItem/requestImageDecode; copy/export/draw call ensureFullBitmap.
+  demoteUnreferencedImages();
 }
 function pruneSel() {
   const ids = new Set(state.items.map(i => i.id));
@@ -4044,12 +4324,12 @@ function boardPointToBitmap(it, bx, by) {
 function imageBitmapForDraw(it) {
   if (drawSession && drawSession.itemId === it.id) return drawSession.canvas;
   const im = images.get(it.imgId);
-  return im ? im.bitmap : null;
+  return im?.bitmap || null;
 }
 
 function startDrawSession(it, pristineBitmap) {
   const im = images.get(it.imgId);
-  if (!im || !pristineBitmap || drawSession) return false;
+  if (!im || !im.bitmap || !pristineBitmap || drawSession) return false;
   const c = document.createElement('canvas');
   c.width = im.w;
   c.height = im.h;
@@ -4133,7 +4413,9 @@ async function commitDrawSession() {
       try { nextBitmap?.close?.(); } catch (e) {}
       return;
     }
-    if (im.bitmap.close) im.bitmap.close();
+    if (im.bitmap?.close) im.bitmap.close();
+    im.decodePromise = null;
+    im.decodeFailed = false;
     im.bitmap = nextBitmap;
     nextBitmap = null;
     im.blob = blob;
@@ -5012,8 +5294,10 @@ async function compositeBlob(items) {
   for (const it of items) {
     if (!isImageItem(it)) continue;
     const im = images.get(it.imgId);
+    if (!im) continue;
+    await ensureFullBitmap(im);
     const cr = cropOf(it);
-    if (im) k = Math.max(k, (im.w * (cr.r - cr.l)) / it.w, (im.h * (cr.b - cr.t)) / it.h);
+    if (im.bitmap) k = Math.max(k, (im.w * (cr.r - cr.l)) / it.w, (im.h * (cr.b - cr.t)) / it.h);
   }
   const MAX = 8192;
   k = Math.min(k, MAX / bb.w, MAX / bb.h);
@@ -5206,6 +5490,7 @@ function deleteSelection() {
   }
   invalidateWorkspaceBBox();
   state.sel.clear();
+  demoteUnreferencedImages();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
 }
 
@@ -8044,7 +8329,7 @@ function applyNamePattern(pattern, index, baseName, ext) {
 
 function drawBoardItemExport(g, it, useCrop) {
   const im = images.get(it.imgId);
-  if (!im) return;
+  if (!im?.bitmap) return;
   const drawIt = useCrop ? it : { ...it, crop: { l: 0, t: 0, r: 1, b: 1 } };
   g.save();
   g.translate(drawIt.x + drawIt.w / 2, drawIt.y + drawIt.h / 2);
@@ -8061,6 +8346,8 @@ function drawBoardItemExport(g, it, useCrop) {
 async function itemToExportBlob(it, format, useCrop) {
   const im = images.get(it.imgId);
   if (!im) return null;
+  await ensureFullBitmap(im);
+  if (!im.bitmap) return null;
   const cr = useCrop ? cropOf(it) : { l: 0, t: 0, r: 1, b: 1 };
   const srcW = (cr.r - cr.l) * im.w;
   const srcH = (cr.b - cr.t) * im.h;
@@ -8216,6 +8503,11 @@ async function doExportPNG(mult, bg) {
   bb.x -= pad; bb.y -= pad; bb.w += pad * 2; bb.h += pad * 2;
   const MAX = 16000;
   const k = Math.min(mult, MAX / bb.w, MAX / bb.h);
+  for (const it of state.items) {
+    if (!isImageItem(it)) continue;
+    const im = images.get(it.imgId);
+    if (im) await ensureFullBitmap(im);
+  }
   const c = document.createElement('canvas');
   c.width = Math.round(bb.w * k);
   c.height = Math.round(bb.h * k);
@@ -9525,7 +9817,7 @@ function drawBoardItem(g, it, opts = {}) {
   const cr = cropOf(it);
   const sx = cr.l * im.w, sy = cr.t * im.h;
   const sw = Math.max(1, (cr.r - cr.l) * im.w), sh = Math.max(1, (cr.b - cr.t) * im.h);
-  let bitmap = im.bitmap;
+  let bitmap = null;
   let sourceScaleX = 1;
   let sourceScaleY = 1;
   if (drawSession?.itemId === it.id) {
@@ -9537,6 +9829,12 @@ function drawBoardItem(g, it, opts = {}) {
       sourceScaleX = lod.w / im.w;
       sourceScaleY = lod.h / im.h;
     }
+  }
+  if (!bitmap) bitmap = im.bitmap;
+  if (!bitmap) {
+    if (opts.noLod) requestImageDecode(im, it);
+    g.restore();
+    return;
   }
   if (state.boardGray || it.gray) g.filter = 'grayscale(1)';
   g.scale(it.flipX ? -1 : 1, it.flipY ? -1 : 1);
@@ -10317,6 +10615,13 @@ canvas.addEventListener('pointerdown', async e => {
       if (pt) {
         const im = images.get(hit.imgId);
         if (!im) return;
+        try {
+          await ensureFullBitmap(im);
+        } catch (err) {
+          console.error('[draw] failed to prepare image:', err);
+          return;
+        }
+        if (!im.bitmap) return;
         const pristineBlob = ensurePristineBlob(im);
         let pristineBitmap = null;
         try {
