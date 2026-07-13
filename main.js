@@ -1,6 +1,7 @@
 'use strict';
 const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { scanBoardFile, readBoardImageBytes } = require('./scripts/board-open-stream');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -163,6 +164,7 @@ function setupAutoUpdate() {
 
 function setupIpc() {
   const boardSaveSessions = new Map();
+  const boardOpenSessions = new Map();
 
   async function discardBoardSaveSession(session) {
     if (!session) return;
@@ -181,6 +183,14 @@ function setupIpc() {
 
   ipcMain.handle('get-default-export-dir', async () => {
     return path.join(app.getPath('documents'), 'RefBoard Exports');
+  });
+
+  ipcMain.handle('get-process-memory-info', async () => {
+    return app.getAppMetrics().map(metric => ({
+      pid: metric.pid,
+      type: metric.type,
+      memory: metric.memory,
+    }));
   });
 
   ipcMain.handle('write-export-files', async (_, { dir, files }) => {
@@ -314,6 +324,33 @@ function setupIpc() {
   ipcMain.handle('read-board-file', async (_, filePath) => {
     const data = await fs.readFile(filePath, 'utf8');
     return { filePath, data };
+  });
+
+  ipcMain.handle('begin-board-open', async (event, filePath) => {
+    const resolved = path.resolve(String(filePath || ''));
+    const scanned = await scanBoardFile(resolved);
+    const token = crypto.randomUUID();
+    boardOpenSessions.set(token, {
+      token, ownerId: event.sender.id, filePath: resolved, images: scanned.images,
+      timer: setTimeout(() => boardOpenSessions.delete(token), 5 * 60 * 1000),
+    });
+    return { token, core: scanned.core, images: scanned.images.map(({ dataStart, dataLength, ...meta }) => meta) };
+  });
+
+  ipcMain.handle('read-board-open-image', async (event, { token, index }) => {
+    const session = boardOpenSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board open session');
+    const image = session.images[index];
+    if (!image) throw new Error('Unknown board image');
+    return await readBoardImageBytes(session.filePath, image);
+  });
+
+  ipcMain.handle('finish-board-open', async (event, token) => {
+    const session = boardOpenSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) return { finished: false };
+    clearTimeout(session.timer);
+    boardOpenSessions.delete(token);
+    return { finished: true };
   });
 
   ipcMain.handle('get-recent-works', async () => loadRecentWorks());

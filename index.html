@@ -1272,6 +1272,11 @@ body.board-active #whatsNewNotice{ display:none; }
   font-size:12.5px; color:var(--txt);
 }
 .check-row input{ width:15px; height:15px; accent-color:var(--acc); cursor:pointer; }
+.check-row input:disabled{ cursor:not-allowed; opacity:.45; }
+.export-crop-hint{
+  grid-column:2; margin-top:-7px; font-size:11.5px; line-height:1.35;
+  color:var(--dim); text-align:right;
+}
 .name-row{ display:flex; gap:6px; align-items:center; }
 .name-row .text-in{ flex:1; }
 .name-row select{
@@ -2268,6 +2273,7 @@ body.board-active #whatsNewNotice{ display:none; }
         <input type="checkbox" id="expImgCrop">
         <span>Use current crop</span>
       </div>
+      <div class="export-crop-hint" id="expImgCropHint"></div>
     </div>
     <div class="form-row">
       <label for="expImgName">Naming</label>
@@ -2328,6 +2334,7 @@ import {
   createAsyncQueue,
   promiseWithTimeout,
 } from './scripts/navigation-guards.mjs';
+import { createImageResidencyController } from './scripts/image-residency.mjs';
 
 'use strict';
 
@@ -2371,7 +2378,101 @@ function effectiveZoomMin() {
   if (!Number.isFinite(fitS) || fitS <= 0) return ZOOM_MIN;
   return Math.max(ZOOM_ABS_FLOOR, Math.min(ZOOM_MIN, fitS * 0.18));
 }
-const images = new Map();       // imgId -> {bitmap|null, pristineBlob|null, w, h, blob, type, name, decodePromise?}
+const images = new Map();       // imgId -> disk-backed image record; full bitmap is an LRU working-set entry
+const FULL_BITMAP_MAX_PIXELS = 8_000_000; // ~31 MiB RGBA, plus one protected oversized image when required
+const imageResidency = createImageResidencyController({
+  maxFullPixels: FULL_BITMAP_MAX_PIXELS,
+  records: () => images.values(),
+  closeBitmap: bitmap => bitmap?.close?.(),
+});
+let fullBitmapEvictTimer = 0;
+let lastBoardOpenError = null;
+
+function prepareImageRecord(im, imgId) {
+  if (!im) return im;
+  if (imgId && !im.id) im.id = imgId;
+  if (!Number.isFinite(im.blobSize)) im.blobSize = im.blob instanceof Blob ? im.blob.size : 0;
+  imageResidency.prepare(im);
+  return im;
+}
+
+function scheduleFullBitmapEviction() {
+  clearTimeout(fullBitmapEvictTimer);
+  fullBitmapEvictTimer = setTimeout(() => {
+    fullBitmapEvictTimer = 0;
+    imageResidency.evict();
+  }, 120);
+}
+
+function touchFullBitmap(im) {
+  if (!im?.bitmap) return;
+  imageResidency.touch(im);
+}
+
+function imageMemoryStats() {
+  const full = imageResidency.stats();
+  let residentBlobBytes = 0, diskBlobBytes = 0, lodPixels = 0, lodCount = 0;
+  for (const im of images.values()) {
+    residentBlobBytes += im.blob instanceof Blob ? im.blob.size : 0;
+    diskBlobBytes += im.blobSize || 0;
+    for (const entry of im.lod?.entries?.values?.() || []) {
+      lodPixels += entry.pixels || 0;
+      lodCount++;
+    }
+  }
+  return {
+    imageRecords: images.size,
+    decodedFullCount: full.decodedCount,
+    pinnedFullCount: full.pinnedCount,
+    decodedFullMiB: Math.round(full.fullPixels * 4 / 104857.6) / 10,
+    decodedFullBudgetMiB: Math.round(full.maxFullPixels * 4 / 104857.6) / 10,
+    lodCount,
+    lodMiB: Math.round(lodPixels * 4 / 104857.6) / 10,
+    residentBlobMiB: Math.round(residentBlobBytes / 104857.6) / 10,
+    diskBackedOriginalMiB: Math.round(diskBlobBytes / 104857.6) / 10,
+  };
+}
+
+async function memoryDiagnostics() {
+  const processes = window.RefBoardAPI?.getProcessMemoryInfo
+    ? await window.RefBoardAPI.getProcessMemoryInfo().catch(() => [])
+    : [];
+  return { images: imageMemoryStats(), processes, lastBoardOpenError };
+}
+
+async function getImageBlob(im) {
+  if (!im) return null;
+  if (im.blob instanceof Blob && im.blob.size) return im.blob;
+  if (im.blobPromise) return im.blobPromise;
+  const key = im.id;
+  if (!key || !db) return null;
+  const promise = dbGet('blobs', key).then(blob => {
+    if (!(blob instanceof Blob) || !blob.size) return null;
+    if (!im.blobSize) im.blobSize = blob.size;
+    if (!im.type) im.type = blob.type || 'image/png';
+    return blob;
+  }).finally(() => {
+    if (im.blobPromise === promise) im.blobPromise = null;
+  });
+  im.blobPromise = promise;
+  return promise;
+}
+
+async function persistImageBlob(im, blob) {
+  if (!im?.id || !(blob instanceof Blob) || !blob.size) return false;
+  im.blobSize = blob.size;
+  im.type = blob.type || im.type || 'image/png';
+  if (!db) {
+    im.blob = blob;
+    im.diskStored = false;
+    return false;
+  }
+  const stored = await dbPut('blobs', im.id, blob);
+  im.diskStored = !!stored;
+  if (stored && im.blob === blob) im.blob = null;
+  else im.blob = blob;
+  return !!stored;
+}
 
 let dirty = true;
 let workspaceBBoxCache = null;
@@ -3187,11 +3288,12 @@ let db = null;
 function openDB() {
   return new Promise(res => {
     try {
-      const rq = indexedDB.open('refboard', 1);
+      const rq = indexedDB.open('refboard', 2);
       rq.onupgradeneeded = () => {
         const d = rq.result;
         if (!d.objectStoreNames.contains('blobs')) d.createObjectStore('blobs');
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
+        if (!d.objectStoreNames.contains('historyBlobs')) d.createObjectStore('historyBlobs');
       };
       rq.onsuccess = () => res(rq.result);
       rq.onerror = () => res(null);
@@ -3199,10 +3301,12 @@ function openDB() {
   });
 }
 const dbPut = (store, key, val) => new Promise(res => {
-  if (!db) return res();
+  if (!db) return res(false);
   const tx = db.transaction(store, 'readwrite');
   tx.objectStore(store).put(val, key);
-  tx.oncomplete = res; tx.onerror = res;
+  tx.oncomplete = () => res(true);
+  tx.onerror = () => res(false);
+  tx.onabort = () => res(false);
 });
 const dbGet = (store, key) => new Promise(res => {
   if (!db) return res(undefined);
@@ -3220,6 +3324,22 @@ const dbKeys = store => new Promise(res => {
   const rq = db.transaction(store).objectStore(store).getAllKeys();
   rq.onsuccess = () => res(rq.result || []); rq.onerror = () => res([]);
 });
+const dbClear = store => new Promise(res => {
+  if (!db) return res(false);
+  const tx = db.transaction(store, 'readwrite');
+  tx.objectStore(store).clear();
+  tx.oncomplete = () => res(true);
+  tx.onerror = () => res(false);
+  tx.onabort = () => res(false);
+});
+async function pruneDiskImageBlobs(keepIds) {
+  if (!db) return;
+  const keep = keepIds instanceof Set ? keepIds : new Set(keepIds || []);
+  const keys = await dbKeys('blobs');
+  for (const key of keys) {
+    if (!keep.has(key)) await dbDel('blobs', key);
+  }
+}
 
 let saveTimer = 0;
 let recentEditedTimer = 0;
@@ -3286,7 +3406,7 @@ function applyRenderSmoothing(g) {
 const IMAGE_LOD_BUCKETS = [0.5, 0.25, 0.125, 0.0625];
 const IMAGE_LOD_FULL_RES_CUTOVER = 0.75;
 const IMAGE_LOD_MIN_DIM = 64;
-const IMAGE_LOD_MAX_PIXELS = 40_000_000;
+const IMAGE_LOD_MAX_PIXELS = 8_000_000; // ~31 MiB RGBA; disk-backed originals remain lossless
 const IMAGE_LOD_MAX_CONCURRENT = 1;
 const IMAGE_LOD_MAX_QUEUE = 8;
 let imageLodTotalPixels = 0;
@@ -3368,7 +3488,7 @@ function findImageDecodeItem(im, itemId) {
 function isImageDecodeDisplayStillNeeded(job) {
   if (!job?.display || !job.im) return false;
   if (job.im.bitmap) return false;
-  if (!(job.im.blob instanceof Blob) || !job.im.blob.size) return false;
+  if (!job.im.id && !(job.im.blob instanceof Blob && job.im.blob.size)) return false;
   const it = findImageDecodeItem(job.im, job.itemId);
   if (!it) return false;
   return isItemVisible(it, currentLodViewport());
@@ -3488,8 +3608,12 @@ function demoteUnreferencedImages(items = state.items) {
  */
 async function ensureFullBitmap(im, opts = {}) {
   if (!im) return null;
-  if (im.bitmap) return im.bitmap;
-  if (!(im.blob instanceof Blob) || !im.blob.size) return null;
+  prepareImageRecord(im);
+  if (im.bitmap) {
+    touchFullBitmap(im);
+    return im.bitmap;
+  }
+  if (!im.id && !(im.blob instanceof Blob && im.blob.size)) return null;
 
   const display = opts.priority === 'display';
   const priority = display ? IMAGE_DECODE_PRI_DISPLAY : IMAGE_DECODE_PRI_HIGH;
@@ -3522,9 +3646,9 @@ async function ensureFullBitmap(im, opts = {}) {
       }
       if (im.bitmap) return im.bitmap;
       if (ensureImageVersion(im) !== version) return im.bitmap || null;
-      if (!(im.blob instanceof Blob) || !im.blob.size) return null;
-
-      bitmap = await decodeToBitmap(im.blob);
+      const sourceBlob = await getImageBlob(im);
+      if (!(sourceBlob instanceof Blob) || !sourceBlob.size) return null;
+      bitmap = await decodeToBitmap(sourceBlob);
       if (ensureImageVersion(im) !== version) {
         try { bitmap?.close?.(); } catch (e) {}
         return im.bitmap || null;
@@ -3535,8 +3659,11 @@ async function ensureFullBitmap(im, opts = {}) {
       }
       im.bitmap = bitmap;
       bitmap = null;
+      touchFullBitmap(im);
       im.decodeFailed = false;
       im.decodeWasSkipped = false;
+      imageResidency.evict({ protect: im });
+      scheduleFullBitmapEviction();
       invalidate();
       return im.bitmap;
     } catch (err) {
@@ -3552,6 +3679,21 @@ async function ensureFullBitmap(im, opts = {}) {
 
   im.decodePromise = promise;
   return promise;
+}
+
+async function withFullBitmap(im, fn, opts = {}) {
+  if (!im) return null;
+  prepareImageRecord(im);
+  imageResidency.pin(im);
+  try {
+    const bitmap = await ensureFullBitmap(im, opts);
+    if (!bitmap) return null;
+    touchFullBitmap(im);
+    return await fn(bitmap);
+  } finally {
+    imageResidency.unpin(im);
+    scheduleFullBitmapEviction();
+  }
 }
 
 function requestImageDecode(im, it) {
@@ -3634,17 +3776,22 @@ function scheduleImageLodPump() {
 function dropOldestQueuedImageLodJob() {
   const job = imageLodQueue.shift();
   if (job?.im?.lod?.pending?.get(job.bucket) === job) job.im.lod.pending.delete(job.bucket);
+  job?.resolve?.(null);
 }
 
 function queueImageLod(im, it, bucket) {
-  if (!im?.bitmap) return;
+  if (!im || !it) return Promise.resolve(null);
   const lod = ensureImageLodState(im);
-  if (lod.entries.has(bucket) || lod.pending.has(bucket)) return;
+  if (lod.entries.has(bucket)) return Promise.resolve(lod.entries.get(bucket));
+  if (lod.pending.has(bucket)) return lod.pending.get(bucket).promise;
   while (imageLodQueue.length >= IMAGE_LOD_MAX_QUEUE) dropOldestQueuedImageLodJob();
-  const job = { im, itemId: it.id, bucket, version: ensureImageVersion(im) };
+  let resolve;
+  const promise = new Promise(r => { resolve = r; });
+  const job = { im, itemId: it.id, bucket, version: ensureImageVersion(im), promise, resolve };
   lod.pending.set(bucket, job);
   imageLodQueue.push(job);
   scheduleImageLodPump();
+  return promise;
 }
 
 function pumpImageLodQueue() {
@@ -3652,11 +3799,13 @@ function pumpImageLodQueue() {
     const job = imageLodQueue.shift();
     if (!isImageLodJobStillNeeded(job)) {
       if (job?.im?.lod?.pending?.get(job.bucket) === job) job.im.lod.pending.delete(job.bucket);
+      job?.resolve?.(null);
       continue;
     }
     imageLodActiveJobs++;
     runImageLodJob(job).finally(() => {
       imageLodActiveJobs = Math.max(0, imageLodActiveJobs - 1);
+      job.resolve?.(job.im?.lod?.entries?.get(job.bucket) || null);
       if (imageLodQueue.length) scheduleImageLodPump();
     });
   }
@@ -3709,19 +3858,35 @@ async function createProgressiveImageLodBitmap(source, srcW, srcH, targetW, targ
     currentCanvas = finalCanvas;
   }
 
-  return createImageBitmap(currentCanvas);
+  const result = await createImageBitmap(currentCanvas);
+  if (currentCanvas) { currentCanvas.width = 0; currentCanvas.height = 0; }
+  return result;
 }
 
 async function runImageLodJob(job) {
   const { im, bucket, version } = job;
   let bitmap = null;
   try {
-    if (!im.bitmap) {
-      await ensureFullBitmap(im, { priority: 'display', itemId: job.itemId });
-      if (!im.bitmap || !isImageLodJobStillNeeded(job) || ensureImageVersion(im) !== version) return;
-    }
     const d = imageLodDims(im, bucket);
-    bitmap = await createProgressiveImageLodBitmap(im.bitmap, im.w, im.h, d.w, d.h);
+    const sourceBlob = await getImageBlob(im);
+    if (!(sourceBlob instanceof Blob) || !sourceBlob.size) return;
+    try {
+      // Ask Chromium's image decoder for the display-sized result directly.
+      // This avoids creating a full-resolution GPU bitmap merely to render a
+      // thumbnail while retaining the original compressed bytes on disk.
+      bitmap = await createImageBitmap(sourceBlob, {
+        resizeWidth: d.w,
+        resizeHeight: d.h,
+        resizeQuality: 'high',
+      });
+    } catch (directResizeError) {
+      // Some older Chromium/codecs do not support resize-on-decode. Keep the
+      // proven progressive canvas path as a compatibility fallback.
+      bitmap = await withFullBitmap(im, source =>
+        createProgressiveImageLodBitmap(source, im.w, im.h, d.w, d.h),
+      { priority: 'display', itemId: job.itemId });
+    }
+    if (!bitmap) return;
     if (!isImageLodJobStillNeeded(job) || ensureImageVersion(im) !== version) {
       try { bitmap?.close?.(); } catch (e) {}
       return;
@@ -3761,20 +3926,45 @@ function evictImageLods() {
 }
 
 function getImageLodForDraw(im, it, cr) {
-  if (!im?.bitmap) {
-    requestImageDecode(im, it);
-    return null;
-  }
+  if (!im) return null;
   const bucket = chooseImageLodBucket(im, imageDisplayScale(it, im, cr));
-  if (!bucket) return null;
   const lod = ensureImageLodState(im);
+  const nearestLod = target => {
+    let best = null, bestDistance = Infinity;
+    for (const [entryBucket, entry] of lod.entries) {
+      const distance = Math.abs(Math.log((entryBucket || 1) / (target || 1)));
+      if (distance < bestDistance) { best = entry; bestDistance = distance; }
+    }
+    if (best) best.lastUsed = ++imageLodClock;
+    return best;
+  };
+  if (!bucket) {
+    if (!im.bitmap) requestImageDecode(im, it);
+    else touchFullBitmap(im);
+    return im.bitmap ? null : nearestLod(1);
+  }
   const entry = lod.entries.get(bucket);
   if (entry) {
     entry.lastUsed = ++imageLodClock;
     return entry;
   }
   queueImageLod(im, it, bucket);
-  return null;
+  if (im.bitmap) touchFullBitmap(im);
+  return nearestLod(bucket);
+}
+
+async function warmVisibleImageProxies() {
+  const viewport = currentLodViewport();
+  for (const it of state.items) {
+    if (!isImageItem(it) || !isItemVisible(it, viewport)) continue;
+    const im = images.get(it.imgId);
+    if (!im) continue;
+    const bucket = chooseImageLodBucket(im, imageDisplayScale(it, im, cropOf(it)));
+    if (bucket) await queueImageLod(im, it, bucket);
+    else await withFullBitmap(im, () => null, { priority: 'display', itemId: it.id });
+  }
+  imageResidency.evict();
+  invalidate();
 }
 
 const SESSION_RESTORE_IMAGE_CONCURRENCY = 3;
@@ -3855,9 +4045,12 @@ function releaseAllImages() {
   images.clear();
 }
 
-async function restoreSessionImages(imgIds, imageNames) {
+async function restoreSessionImages(imgIds, imageNames, savedImageMeta = []) {
   const nextImages = new Map();
   let missingImages = false;
+  const metaById = new Map((Array.isArray(savedImageMeta) ? savedImageMeta : [])
+    .filter(x => x && typeof x.id === 'string')
+    .map(x => [x.id, x]));
 
   for (let i = 0; i < imgIds.length; i += SESSION_RESTORE_IMAGE_CONCURRENCY) {
     const batch = imgIds.slice(i, i + SESSION_RESTORE_IMAGE_CONCURRENCY);
@@ -3866,19 +4059,32 @@ async function restoreSessionImages(imgIds, imageNames) {
       try {
         const blob = await dbGet('blobs', imgId);
         if (!(blob instanceof Blob) || !blob.size) return null;
-        bitmap = await decodeToBitmap(blob);
+        const saved = metaById.get(imgId);
+        let w = Number(saved?.w) || 0;
+        let h = Number(saved?.h) || 0;
+        // Legacy recovery metadata did not store dimensions. Decode once to
+        // discover them, then immediately close; normal rendering stays lazy.
+        if (!(w > 0 && h > 0)) {
+          bitmap = await decodeToBitmap(blob);
+          w = bitmap.width;
+          h = bitmap.height;
+          try { bitmap?.close?.(); } catch (e) {}
+          bitmap = null;
+        }
         return {
           imgId,
-          image: {
-            bitmap,
+          image: prepareImageRecord({
+            id: imgId,
+            bitmap: null,
             pristineBlob: null,
             version: 0,
-            w: bitmap.width,
-            h: bitmap.height,
-            blob,
-            type: blob.type || 'image/png',
-            name: imageNames.get(imgId) || '',
-          },
+            w, h,
+            blob: null,
+            blobSize: blob.size,
+            diskStored: true,
+            type: saved?.type || blob.type || 'image/png',
+            name: saved?.name || imageNames.get(imgId) || '',
+          }, imgId),
         };
       } catch {
         try { bitmap?.close?.(); } catch (e) {}
@@ -3978,7 +4184,7 @@ async function restoreSession() {
     await nextUiFrame();
 
     const { ids: imgIds, names: imageNames } = collectSessionImageRefs(meta.items);
-    const restoredImages = await restoreSessionImages(imgIds, imageNames);
+    const restoredImages = await restoreSessionImages(imgIds, imageNames, meta.imageMeta);
     nextImages = restoredImages.nextImages;
     missingImages = restoredImages.missingImages;
 
@@ -4041,6 +4247,7 @@ async function restoreSession() {
     closeDrawFeatures();
     boardFileDirty = false;
     clearUndoHistory();
+    await pruneDiskImageBlobs(new Set(nextImages.size ? nextImages.keys() : images.keys()));
     updateSelBar();
     updateEmpty();
     syncDrawUi();
@@ -4078,6 +4285,9 @@ function persistBoardNow() {
     boardGray: state.boardGray,
     snapEnabled: state.snapEnabled,
     gridAppearance: state.gridAppearance,
+    imageMeta: [...images.entries()].map(([id, im]) => ({
+      id, w: im.w, h: im.h, type: im.type, name: im.name || '', blobSize: im.blobSize || 0,
+    })),
     savedAt: Date.now(),
   });
 }
@@ -4122,23 +4332,53 @@ const snap = () => JSON.stringify({ items: state.items, boardGray: state.boardGr
 function normalizeUndoEntry(entry) {
   return typeof entry === 'string' ? { snap: entry } : entry;
 }
-function captureUndoState(bitmapEntry) {
+function createBitmapHistoryRef(imgId, blob) {
+  if (!(blob instanceof Blob) || !blob.size) return null;
+  if (!db) return { imgId, blob };
+  const blobKey = uid();
+  const ref = { imgId, blobKey, ready: null };
+  ref.ready = dbPut('historyBlobs', blobKey, blob).then(ok => {
+    if (!ok) ref.blob = blob;
+    return ok;
+  });
+  return ref;
+}
+async function bitmapHistoryBlob(ref) {
+  if (!ref) return null;
+  if (ref.blob instanceof Blob) return ref.blob;
+  if (ref.ready) await ref.ready;
+  return ref.blobKey ? await dbGet('historyBlobs', ref.blobKey) : null;
+}
+function releaseUndoEntry(entry) {
+  const ref = normalizeUndoEntry(entry)?.bitmap;
+  if (ref?.blobKey) Promise.resolve(ref.ready).finally(() => dbDel('historyBlobs', ref.blobKey));
+  if (ref) ref.blob = null;
+}
+function clearRedoHistory() {
+  for (const entry of redoStack) releaseUndoEntry(entry);
+  redoStack.length = 0;
+}
+function trimUndoHistory() {
+  while (undoStack.length > undoLimit) releaseUndoEntry(undoStack.shift());
+}
+async function captureUndoState(bitmapEntry) {
   const entry = { snap: snap() };
   if (bitmapEntry && bitmapEntry.bitmap) {
     const im = images.get(bitmapEntry.bitmap.imgId);
-    if (im && im.blob) entry.bitmap = { imgId: bitmapEntry.bitmap.imgId, blob: im.blob };
+    const blob = im ? await getImageBlob(im) : null;
+    if (blob) entry.bitmap = createBitmapHistoryRef(bitmapEntry.bitmap.imgId, blob);
   }
   return entry;
 }
 function pushUndo(opts) {
   const entry = { snap: snap() };
   if (opts && opts.imgId) {
-    const im = images.get(opts.imgId);
-    if (im && im.blob) entry.bitmap = { imgId: opts.imgId, blob: im.blob };
+    const blob = opts.blob;
+    if (blob instanceof Blob) entry.bitmap = createBitmapHistoryRef(opts.imgId, blob);
   }
   undoStack.push(entry);
-  while (undoStack.length > undoLimit) undoStack.shift();
-  redoStack.length = 0;
+  trimUndoHistory();
+  clearRedoHistory();
 }
 function pushUndoSnapshot(snapshot) {
   if (!snapshot) return false;
@@ -4146,15 +4386,17 @@ function pushUndoSnapshot(snapshot) {
   // A bitmap entry may share the same board JSON but represents a separate
   // image edit, so only deduplicate an identical plain board snapshot.
   if (top && !top.bitmap && top.snap === snapshot) {
-    redoStack.length = 0;
+    clearRedoHistory();
     return false;
   }
   undoStack.push({ snap: snapshot });
-  while (undoStack.length > undoLimit) undoStack.shift();
-  redoStack.length = 0;
+  trimUndoHistory();
+  clearRedoHistory();
   return true;
 }
 function clearUndoHistory() {
+  for (const entry of undoStack) releaseUndoEntry(entry);
+  for (const entry of redoStack) releaseUndoEntry(entry);
   undoStack.length = 0;
   redoStack.length = 0;
 }
@@ -4187,14 +4429,16 @@ async function restoreBitmapSnap(bitmapSnap) {
   if (!bitmapSnap) return;
   const im = images.get(bitmapSnap.imgId);
   if (!im) return;
-  const bitmap = await decodeToBitmap(bitmapSnap.blob);
+  const blob = await bitmapHistoryBlob(bitmapSnap);
+  if (!blob) return;
+  const bitmap = await decodeToBitmap(blob);
   if (im.bitmap && im.bitmap.close) im.bitmap.close();
   im.decodePromise = null;
   im.decodeFailed = false;
   im.bitmap = bitmap;
-  im.blob = bitmapSnap.blob;
+  touchFullBitmap(im);
   invalidateImageLods(im, { bumpVersion: true });
-  dbPut('blobs', bitmapSnap.imgId, bitmapSnap.blob);
+  await persistImageBlob(im, blob);
 }
 async function applyUndoEntry(entry) {
   const gen = ++historyApplySeq;
@@ -4225,17 +4469,35 @@ function pruneSel() {
   }
   updateSelBar();
 }
+const boardHistoryQueue = createAsyncQueue();
 function undo() {
-  if (!undoStack.length) return;
-  const entry = undoStack.pop();
-  redoStack.push(captureUndoState(entry));
-  applyUndoEntry(entry).then(() => { pruneSel(); scheduleSave(); invalidate(); updateEmpty(); });
+  return boardHistoryQueue.run(async () => {
+    if (!undoStack.length) {
+      // A freshly opened board can enter crop mode before any history exists.
+      // Ctrl+Z should still return to normal selection in that case.
+      if (cropItemId) exitCropMode();
+      return;
+    }
+    // Crop is an editing mode, not persistent image state. Leaving it here makes
+    // Ctrl+Z both restore the previous frame and return to normal selection.
+    exitCropMode();
+    const entry = undoStack.pop();
+    redoStack.push(await captureUndoState(entry));
+    try { await applyUndoEntry(entry); }
+    finally { releaseUndoEntry(entry); }
+    pruneSel(); scheduleSave(); invalidate(); updateEmpty();
+  });
 }
 function redo() {
-  if (!redoStack.length) return;
-  const entry = redoStack.pop();
-  undoStack.push(captureUndoState(entry));
-  applyUndoEntry(entry).then(() => { pruneSel(); scheduleSave(); invalidate(); updateEmpty(); });
+  return boardHistoryQueue.run(async () => {
+    if (!redoStack.length) return;
+    const entry = redoStack.pop();
+    undoStack.push(await captureUndoState(entry));
+    trimUndoHistory();
+    try { await applyUndoEntry(entry); }
+    finally { releaseUndoEntry(entry); }
+    pruneSel(); scheduleSave(); invalidate(); updateEmpty();
+  });
 }
 
 /* ================= image intake ================= */
@@ -4251,24 +4513,40 @@ async function decodeToBitmap(blob) {
       const w = img.naturalWidth || 512, h = img.naturalHeight || 512;
       const c = document.createElement('canvas'); c.width = w; c.height = h;
       c.getContext('2d').drawImage(img, 0, 0, w, h);
-      return await createImageBitmap(c);
+      const bitmap = await createImageBitmap(c);
+      c.width = 0; c.height = 0;
+      return bitmap;
     } finally { URL.revokeObjectURL(url); }
   }
 }
 
-function ensurePristineBlob(im) {
-  if (!im.pristineBlob) im.pristineBlob = im.blob;
-  return im.pristineBlob;
+async function ensurePristineBlob(im) {
+  if (!im) return null;
+  if (im.pristineBlob instanceof Blob) return im.pristineBlob;
+  const key = `pristine:${im.id}`;
+  if (im.pristineStored && db) {
+    const stored = await dbGet('blobs', key);
+    if (stored instanceof Blob && stored.size) return stored;
+  }
+  const blob = await getImageBlob(im);
+  if (!blob) return null;
+  if (db && await dbPut('blobs', key, blob)) im.pristineStored = true;
+  else im.pristineBlob = blob;
+  return blob;
 }
 
 async function registerBlob(blob, name) {
   const imgId = uid();
   const bitmap = await decodeToBitmap(blob);
-  images.set(imgId, {
-    bitmap, pristineBlob: null, w: bitmap.width, h: bitmap.height,
-    blob, type: blob.type || 'image/png', name: name || '', version: 0,
-  });
-  dbPut('blobs', imgId, blob);
+  const im = prepareImageRecord({
+    id: imgId, bitmap, pristineBlob: null, w: bitmap.width, h: bitmap.height,
+    blob, blobSize: blob.size, type: blob.type || 'image/png', name: name || '', version: 0,
+  }, imgId);
+  images.set(imgId, im);
+  touchFullBitmap(im);
+  await persistImageBlob(im, blob);
+  imageResidency.evict({ protect: im });
+  scheduleFullBitmapEviction();
   return imgId;
 }
 
@@ -4509,9 +4787,10 @@ async function commitDrawSession() {
     im.decodeFailed = false;
     im.bitmap = nextBitmap;
     nextBitmap = null;
-    im.blob = blob;
+    touchFullBitmap(im);
     invalidateImageLods(im, { bumpVersion: true });
-    dbPut('blobs', session.imgId, blob);
+    await persistImageBlob(im, blob);
+    scheduleFullBitmapEviction();
   } finally {
     try { nextBitmap?.close?.(); } catch (e) {}
     releaseDrawSessionCanvases(session);
@@ -5391,10 +5670,8 @@ async function compositeBlob(items, { isCancelled, maxDimension = 8192 } = {}) {
     if (!isImageItem(it)) continue;
     const im = images.get(it.imgId);
     if (!im) continue;
-    await ensureFullBitmap(im);
-    if (isCancelled?.()) return null;
     const cr = cropOf(it);
-    if (im.bitmap) k = Math.max(k, (im.w * (cr.r - cr.l)) / it.w, (im.h * (cr.b - cr.t)) / it.h);
+    k = Math.max(k, (im.w * (cr.r - cr.l)) / it.w, (im.h * (cr.b - cr.t)) / it.h);
   }
   if (isCancelled?.()) return null;
   const MAX = Math.max(512, Number(maxDimension) || 8192);
@@ -5410,7 +5687,11 @@ async function compositeBlob(items, { isCancelled, maxDimension = 8192 } = {}) {
   // Draw from the immutable snapshot only — never re-scan live state.items.
   for (const it of items) {
     if (isNoteItem(it) || isArrowItem(it)) continue;
-    drawBoardItem(g, it, { noLod: true });
+    if (isImageItem(it)) {
+      const im = images.get(it.imgId);
+      if (im) await withFullBitmap(im, () => drawBoardItem(g, it, { noLod: true }));
+    } else drawBoardItem(g, it, { noLod: true });
+    if (isCancelled?.()) return null;
   }
   for (const it of items) {
     if (!isNoteItem(it)) continue;
@@ -5421,31 +5702,27 @@ async function compositeBlob(items, { isCancelled, maxDimension = 8192 } = {}) {
     drawBoardItem(g, it, { noLod: true });
   }
   if (isCancelled?.()) return null;
-  return await new Promise(r => c.toBlob(r, 'image/png'));
+  const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+  c.width = 0; c.height = 0;
+  return blob;
 }
 
-function directClipboardPng(items) {
+async function directClipboardPng(items) {
   const drawable = items.filter(it => !isGroupItem(it));
   if (drawable.length !== 1 || !isImageItem(drawable[0])) return null;
   const it = drawable[0];
   const im = images.get(it.imgId);
-  if (!im?.blob || im.blob.type !== 'image/png') return null;
+  if (!im || im.type !== 'image/png') return null;
   const cr = cropOf(it);
   const uncropped = cr.l === 0 && cr.t === 0 && cr.r === 1 && cr.b === 1;
   if (!uncropped || it.rot || it.flipX || it.flipY || it.gray || state.boardGray) return null;
-  return im.blob;
+  return await getImageBlob(im);
 }
 
 async function boundedCompositeCanvas(items, { maxWidth, maxHeight, fit = 'inside' } = {}) {
   if (!items?.length) return null;
   const bb = bboxOf(items);
   if (!(bb.w > 0) || !(bb.h > 0)) return null;
-  for (const it of items) {
-    if (!isImageItem(it)) continue;
-    const im = images.get(it.imgId);
-    if (im) await ensureFullBitmap(im);
-  }
-
   const mw = Math.max(1, Number(maxWidth) || 1);
   const mh = Math.max(1, Number(maxHeight) || mw);
   const scale = fit === 'cover'
@@ -5461,7 +5738,11 @@ async function boundedCompositeCanvas(items, { maxWidth, maxHeight, fit = 'insid
   g.scale(scale, scale);
   g.translate(-(bb.x + bb.w / 2), -(bb.y + bb.h / 2));
   for (const it of items) {
-    if (!isNoteItem(it) && !isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
+    if (isNoteItem(it) || isArrowItem(it)) continue;
+    if (isImageItem(it)) {
+      const im = images.get(it.imgId);
+      if (im) await withFullBitmap(im, () => drawBoardItem(g, it, { noLod: true }));
+    } else drawBoardItem(g, it, { noLod: true });
   }
   for (const it of items) {
     if (isNoteItem(it)) drawBoardItem(g, it, { noLod: true });
@@ -5543,7 +5824,7 @@ async function copySelection() {
     if (!isCurrent()) return false;
 
     const drawableCount = compositeItems.filter(it => !isGroupItem(it)).length;
-    const directPng = directClipboardPng(compositeItems);
+    const directPng = await directClipboardPng(compositeItems);
     const blob = directPng || await compositeBlob(compositeItems, {
       isCancelled: () => !isCurrent(),
       // Multi-item clipboard composites remain crisp while avoiding a 256 MB
@@ -8452,6 +8733,7 @@ async function prepareBoardOpen(opts = {}) {
   updateEmpty();
   if (v) applyTargetView(v);
   invalidate();
+  if (state.items.length) await warmVisibleImageProxies();
 }
 
 async function transitionToBoard(opts = {}) {
@@ -8543,6 +8825,34 @@ const EXT = {
 
 let exportImageItems = [];
 
+function hasActiveCrop(it) {
+  const cr = cropOf(it);
+  return cr.l > 0 || cr.t > 0 || cr.r < 1 || cr.b < 1;
+}
+
+/** Integer source-pixel bounds. A cropped export never goes through a board/LOD-sized bitmap. */
+function sourcePixelRect(im, it, useCrop) {
+  if (!useCrop) return { x: 0, y: 0, w: im.w, h: im.h };
+  const cr = cropOf(it);
+  const x0 = clamp(Math.floor(cr.l * im.w), 0, Math.max(0, im.w - 1));
+  const y0 = clamp(Math.floor(cr.t * im.h), 0, Math.max(0, im.h - 1));
+  const x1 = clamp(Math.ceil(cr.r * im.w), x0 + 1, im.w);
+  const y1 = clamp(Math.ceil(cr.b * im.h), y0 + 1, im.h);
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+function exportEncoding(format, sourceType) {
+  if (format === 'png') return { mime: 'image/png', ext: 'png' };
+  if (format === 'jpeg') return { mime: 'image/jpeg', ext: 'jpg' };
+  if (format === 'webp') return { mime: 'image/webp', ext: 'webp' };
+  // Cropping requires a re-encode. Chromium canvas reliably encodes these
+  // formats; GIF/SVG/BMP/AVIF originals safely fall back to a real PNG file.
+  if (sourceType === 'image/jpeg') return { mime: sourceType, ext: 'jpg' };
+  if (sourceType === 'image/webp') return { mime: sourceType, ext: 'webp' };
+  if (sourceType === 'image/png') return { mime: sourceType, ext: 'png' };
+  return { mime: 'image/png', ext: 'png' };
+}
+
 function sanitizeFilename(name) {
   return String(name || 'image').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'image';
 }
@@ -8566,56 +8876,53 @@ function drawBoardItemExport(g, it, useCrop) {
   g.save();
   g.translate(drawIt.x + drawIt.w / 2, drawIt.y + drawIt.h / 2);
   g.rotate(rotRad(drawIt));
-  const cr = cropOf(drawIt);
-  const sx = cr.l * im.w, sy = cr.t * im.h;
-  const sw = Math.max(1, (cr.r - cr.l) * im.w), sh = Math.max(1, (cr.b - cr.t) * im.h);
+  const src = sourcePixelRect(im, it, useCrop);
   if (drawIt.gray || state.boardGray) g.filter = 'grayscale(1)';
   g.scale(drawIt.flipX ? -1 : 1, drawIt.flipY ? -1 : 1);
-  g.drawImage(im.bitmap, sx, sy, sw, sh, -drawIt.w / 2, -drawIt.h / 2, drawIt.w, drawIt.h);
+  g.drawImage(im.bitmap, src.x, src.y, src.w, src.h, -drawIt.w / 2, -drawIt.h / 2, drawIt.w, drawIt.h);
   g.restore();
 }
 
 async function itemToExportBlob(it, format, useCrop) {
   const im = images.get(it.imgId);
   if (!im) return null;
-  await ensureFullBitmap(im);
-  if (!im.bitmap) return null;
-  const cr = useCrop ? cropOf(it) : { l: 0, t: 0, r: 1, b: 1 };
-  const srcW = (cr.r - cr.l) * im.w;
-  const srcH = (cr.b - cr.t) * im.h;
+  const src = sourcePixelRect(im, it, useCrop);
   const noTransform = !it.rot && !it.flipX && !it.flipY && !it.gray && !state.boardGray;
 
   if (format === 'original' && !useCrop && noTransform) {
-    return { blob: im.blob, ext: EXT[im.type] || 'png' };
+    const blob = await getImageBlob(im);
+    return blob ? { blob, ext: EXT[im.type] || 'png' } : null;
   }
-  if (format === 'original' && useCrop && noTransform) {
+  return await withFullBitmap(im, async bitmap => {
+    if (noTransform) {
+      const c = document.createElement('canvas');
+      c.width = src.w;
+      c.height = src.h;
+      c.getContext('2d').drawImage(bitmap, src.x, src.y, src.w, src.h, 0, 0, src.w, src.h);
+      const enc = exportEncoding(format, im.type);
+      const quality = enc.mime === 'image/jpeg' || enc.mime === 'image/webp' ? 0.98 : undefined;
+      const blob = await new Promise(r => c.toBlob(r, enc.mime, quality));
+      c.width = 0; c.height = 0;
+      return blob ? { blob, ext: enc.ext } : null;
+    }
+
+    const b = boundsOf(it);
+    const k = Math.max(src.w / it.w, src.h / it.h, 1);
     const c = document.createElement('canvas');
-    c.width = Math.max(1, Math.round(srcW));
-    c.height = Math.max(1, Math.round(srcH));
-    c.getContext('2d').drawImage(im.bitmap, cr.l * im.w, cr.t * im.h, srcW, srcH, 0, 0, c.width, c.height);
-    const ext = EXT[im.type] || 'png';
-    const blob = await new Promise(r => c.toBlob(r, im.type || 'image/png'));
-    return { blob, ext };
-  }
+    c.width = Math.max(1, Math.ceil(b.w * k));
+    c.height = Math.max(1, Math.ceil(b.h * k));
+    const g = c.getContext('2d');
+    applyRenderSmoothing(g);
+    g.scale(k, k);
+    g.translate(-b.x, -b.y);
+    drawBoardItemExport(g, it, useCrop);
 
-  const b = boundsOf(it);
-  const k = Math.max(srcW / it.w, srcH / it.h, 1);
-  const c = document.createElement('canvas');
-  const g = c.getContext('2d');
-  c.width = Math.max(1, Math.round(b.w * k));
-  c.height = Math.max(1, Math.round(b.h * k));
-  applyRenderSmoothing(g);
-  g.scale(k, k);
-  g.translate(-b.x, -b.y);
-  drawBoardItemExport(g, it, useCrop);
-
-  let mime = 'image/png', ext = 'png';
-  if (format === 'jpeg') { mime = 'image/jpeg'; ext = 'jpg'; }
-  else if (format === 'webp') { mime = 'image/webp'; ext = 'webp'; }
-  else if (format === 'original') { mime = 'image/png'; ext = 'png'; }
-
-  const blob = await new Promise(r => c.toBlob(r, mime, mime === 'image/jpeg' ? 0.92 : undefined));
-  return blob ? { blob, ext } : null;
+    const enc = exportEncoding(format, im.type);
+    const quality = enc.mime === 'image/jpeg' || enc.mime === 'image/webp' ? 0.98 : undefined;
+    const blob = await new Promise(r => c.toBlob(r, enc.mime, quality));
+    c.width = 0; c.height = 0;
+    return blob ? { blob, ext: enc.ext } : null;
+  });
 }
 
 const blobToBase64 = blob => new Promise((res, rej) => {
@@ -8644,6 +8951,7 @@ async function openExportImagesDialog() {
   const items = (state.sel.size ? selectedItems() : state.items).filter(isImageItem);
   if (!items.length) { toast('No images to export'); return; }
   exportImageItems = items;
+  const croppedCount = items.filter(hasActiveCrop).length;
   $('#expImgCount').textContent = `${items.length} image${items.length === 1 ? '' : 's'} will be exported`;
   const saved = localStorage.getItem('refboard.exportDir');
   if (saved) $('#expImgDir').value = saved;
@@ -8653,7 +8961,20 @@ async function openExportImagesDialog() {
   $('#expImgName').value = '%n_%0';
   $('#expImgNamePreset').value = '%n_%0';
   $('#expImgFormat').value = 'original';
-  $('#expImgCrop').checked = false;
+  const cropCheck = $('#expImgCrop');
+  cropCheck.disabled = croppedCount === 0;
+  cropCheck.checked = croppedCount > 0;
+  if (croppedCount === 1 && items.length === 1) {
+    const im = images.get(items[0].imgId);
+    const px = im ? sourcePixelRect(im, items[0], true) : null;
+    $('#expImgCropHint').textContent = px
+      ? `Cropped image will export at ${px.w}×${px.h} source pixels.`
+      : 'Cropped image will export at full source resolution.';
+  } else {
+    $('#expImgCropHint').textContent = croppedCount
+      ? `${croppedCount} cropped images will export at full source resolution.`
+      : 'No crop is currently applied; the full frame will be exported.';
+  }
   updateExportNamePreview();
   $('#exportImagesModal').classList.add('show');
 }
@@ -8735,11 +9056,6 @@ async function doExportPNG(mult, bg) {
   bb.x -= pad; bb.y -= pad; bb.w += pad * 2; bb.h += pad * 2;
   const MAX = 16000;
   const k = Math.min(mult, MAX / bb.w, MAX / bb.h);
-  for (const it of state.items) {
-    if (!isImageItem(it)) continue;
-    const im = images.get(it.imgId);
-    if (im) await ensureFullBitmap(im);
-  }
   const c = document.createElement('canvas');
   c.width = Math.round(bb.w * k);
   c.height = Math.round(bb.h * k);
@@ -8749,7 +9065,11 @@ async function doExportPNG(mult, bg) {
   g.scale(k, k);
   g.translate(-bb.x, -bb.y);
   for (const it of state.items) {
-    if (!isNoteItem(it) && !isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
+    if (isNoteItem(it) || isArrowItem(it)) continue;
+    if (isImageItem(it)) {
+      const im = images.get(it.imgId);
+      if (im) await withFullBitmap(im, () => drawBoardItem(g, it, { noLod: true }));
+    } else drawBoardItem(g, it, { noLod: true });
   }
   for (const it of state.items) {
     if (isNoteItem(it)) drawBoardItem(g, it, { noLod: true });
@@ -8757,11 +9077,12 @@ async function doExportPNG(mult, bg) {
   for (const it of state.items) {
     if (isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
   }
-  c.toBlob(b => {
-    if (!b) { toast('Export failed — try a lower resolution'); return; }
-    downloadBlob(b, `refboard-${stamp()}.png`);
-    toast(`Exported ${c.width}×${c.height} PNG`);
-  }, 'image/png');
+  const outW = c.width, outH = c.height;
+  const b = await new Promise(r => c.toBlob(r, 'image/png'));
+  c.width = 0; c.height = 0;
+  if (!b) { toast('Export failed — try a lower resolution'); return; }
+  downloadBlob(b, `refboard-${stamp()}.png`);
+  toast(`Exported ${outW}×${outH} PNG`);
 }
 
 const SAVE_DATA_URL_CACHE_MAX = 64 * 1024 * 1024;
@@ -8806,7 +9127,10 @@ function boardSaveSnapshot() {
   const used = [...new Set(items.filter(isImageItem).map(i => i.imgId))];
   const imageRefs = used.map(id => {
     const im = images.get(id);
-    return im ? { id, type: im.type, name: im.name, blob: im.blob } : null;
+    return im ? {
+      id, type: im.type, name: im.name, w: im.w, h: im.h,
+      blobSize: im.blobSize || 0,
+    } : null;
   }).filter(Boolean);
   return {
     core: {
@@ -8824,8 +9148,11 @@ function boardSaveSnapshot() {
 
 async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
   const imgs = [];
-  for (const im of snapshot.imageRefs) {
-    imgs.push({ id: im.id, type: im.type, name: im.name, data: await blobToDataURL(im.blob) });
+  for (const ref of snapshot.imageRefs) {
+    const im = images.get(ref.id);
+    const blob = await getImageBlob(im);
+    if (!blob) continue;
+    imgs.push({ ...ref, data: await blobToDataURL(blob) });
   }
   let preview = null;
   if (snapshot.core.items.length) {
@@ -8855,10 +9182,14 @@ async function performBoardSave(opts = {}) {
       );
       if (!begin?.started) return false;
       token = begin.token;
-      for (const im of snapshot.imageRefs) {
-        const data = await im.blob.arrayBuffer();
+      for (const ref of snapshot.imageRefs) {
+        const im = images.get(ref.id);
+        const blob = await getImageBlob(im);
+        if (!blob) throw new Error(`Missing image data: ${ref.id}`);
+        const data = await blob.arrayBuffer();
         await window.RefBoardAPI.appendBoardSaveImage(token, {
-          id: im.id, type: im.type, name: im.name,
+          id: ref.id, type: ref.type, name: ref.name,
+          w: ref.w, h: ref.h, size: blob.size,
         }, data);
       }
       const result = await window.RefBoardAPI.finishBoardSave(token);
@@ -8910,6 +9241,7 @@ async function captureBoardThumbnailBase64(maxPx = 360) {
     const c = await boundedCompositeCanvas(state.items, { maxWidth: maxPx, maxHeight: maxPx });
     if (!c) return null;
     const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.84));
+    c.width = 0; c.height = 0;
     if (!small) return null;
     return await blobToBase64(small);
   } catch {
@@ -8928,6 +9260,7 @@ async function captureBoardPreviewStrip(maxW = 640) {
     });
     if (!c) return null;
     const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+    c.width = 0; c.height = 0;
     if (!small) return null;
     return await blobToBase64(small);
   } catch {
@@ -9338,7 +9671,7 @@ async function openNewBoardImpl() {
   toast('New board');
 }
 
-async function applyBoardPayload(j, meta = {}) {
+async function applyBoardPayload(j, meta = {}, imageLoader = null) {
   if (!j || j.app !== 'refboard' || !Array.isArray(j.items)) return 'failed';
   if (!onLanding && boardFileDirty) {
     const result = await resolveUnsavedChanges('leave');
@@ -9353,6 +9686,8 @@ async function applyBoardPayload(j, meta = {}) {
   for (const im of images.values()) demoteImageDecodedMemory(im);
   let nextImages = new Map();
   let droppedImageItems = false;
+  let firstImageLoadError = null;
+  lastBoardOpenError = null;
   try {
     const payloadImageIds = new Set();
     const payloadHasImageItems = j.items.some(it =>
@@ -9364,20 +9699,37 @@ async function applyBoardPayload(j, meta = {}) {
       if (!imgId || payloadImageIds.has(imgId)) continue;
       payloadImageIds.add(imgId);
       try {
-        const raw = await (await fetch(rec.data)).blob();
-        const blob = raw.type ? raw : new Blob([raw], { type: rec.type || 'image/png' });
-        const bitmap = await decodeToBitmap(blob);
-        nextImages.set(imgId, {
-          bitmap,
+        const loaded = imageLoader ? await imageLoader(rec) : await (await fetch(rec.data)).blob();
+        const blob = loaded instanceof Blob
+          ? (loaded.type ? loaded : new Blob([loaded], { type: rec.type || 'image/png' }))
+          : new Blob([loaded], { type: rec.type || 'image/png' });
+        let w = Number(rec.w) || 0;
+        let h = Number(rec.h) || 0;
+        if (!(w > 0 && h > 0)) {
+          const probe = await decodeToBitmap(blob);
+          w = probe.width;
+          h = probe.height;
+          try { probe?.close?.(); } catch (e) {}
+        }
+        const im = prepareImageRecord({
+          id: imgId,
+          bitmap: null,
           pristineBlob: null,
           version: 0,
-          w: bitmap.width,
-          h: bitmap.height,
+          w, h,
           blob,
+          blobSize: blob.size,
           type: blob.type || 'image/png',
           name: rec.name || '',
-        });
-      } catch (e) { /* skip broken record */ }
+        }, imgId);
+        await persistImageBlob(im, blob);
+        nextImages.set(imgId, im);
+      } catch (e) {
+        if (!firstImageLoadError) {
+          firstImageLoadError = `${imgId || 'unknown image'}: ${e?.message || String(e)}`;
+        }
+        console.warn('[openBoard] skipped image record:', imgId || '(missing id)', e);
+      }
     }
 
     let nextItems = [];
@@ -9392,7 +9744,7 @@ async function applyBoardPayload(j, meta = {}) {
     }
 
     if (j.items.length && !nextItems.length && payloadHasImageItems) {
-      throw new Error('No loadable items in board payload');
+      throw new Error(`No loadable items in board payload${firstImageLoadError ? ` (${firstImageLoadError})` : ''}`);
     }
 
     const nextIds = new Set(nextItems.map(it => it.id));
@@ -9405,8 +9757,7 @@ async function applyBoardPayload(j, meta = {}) {
 
     releaseAllImages();
     for (const [imgId, im] of nextImages) {
-      images.set(imgId, im);
-      dbPut('blobs', imgId, im.blob);
+      images.set(imgId, prepareImageRecord(im, imgId));
     }
     nextImages = new Map();
 
@@ -9427,11 +9778,14 @@ async function applyBoardPayload(j, meta = {}) {
     suppressBoardDirty = false;
     boardFileDirty = false;
     clearUndoHistory();
+    await pruneDiskImageBlobs(new Set(images.keys()));
     await transitionToBoard({ fit: state.items.length > 0 });
     await nextUiFrame();
   } catch (err) {
+    lastBoardOpenError = err?.stack || err?.message || String(err);
     console.error('[openBoard] failed:', err);
     closeImageRecordBitmaps(nextImages);
+    await pruneDiskImageBlobs(new Set(images.keys()));
     return 'failed';
   } finally {
     hideOpeningOverlay();
@@ -9455,16 +9809,40 @@ function openBoardFromPath(filePath) {
   return navigationQueue.run(() => openBoardFromPathImpl(filePath));
 }
 
+async function openBoardPayloadFromDesktop(filePath) {
+  if (window.RefBoardAPI?.beginBoardOpen && window.RefBoardAPI?.readBoardOpenImage) {
+    let token = null;
+    try {
+      const opened = await window.RefBoardAPI.beginBoardOpen(filePath);
+      token = opened?.token || null;
+      if (!token || !opened?.core || !Array.isArray(opened.images)) throw new Error('Invalid board stream');
+      const payload = { ...opened.core, images: opened.images };
+      return await applyBoardPayload(
+        payload,
+        { path: filePath, title: boardTitleFromPath(filePath) },
+        rec => window.RefBoardAPI.readBoardOpenImage(token, rec.index),
+      );
+    } finally {
+      if (token) await window.RefBoardAPI.finishBoardOpen?.(token).catch(() => {});
+    }
+  }
+  const { data } = await window.RefBoardAPI.readBoardFile(filePath);
+  return await applyBoardPayload(
+    JSON.parse(data),
+    { path: filePath, title: boardTitleFromPath(filePath) },
+  );
+}
+
 async function openBoardFromPathImpl(filePath) {
   if (!filePath) return;
   if (await returnToCurrentBoardForPath(filePath)) return;
   if (window.RefBoardAPI?.readBoardFile) {
     try {
-      const { data } = await window.RefBoardAPI.readBoardFile(filePath);
-      const j = JSON.parse(data);
-      const result = await applyBoardPayload(j, { path: filePath, title: boardTitleFromPath(filePath) });
+      const result = await openBoardPayloadFromDesktop(filePath);
       if (result === 'failed') toast('Could not open that board');
-    } catch {
+    } catch (err) {
+      lastBoardOpenError = err?.stack || err?.message || String(err);
+      console.error('[openBoard] desktop open failed:', err);
       toast('Could not open that board');
     }
     return;
@@ -9482,13 +9860,11 @@ async function openBoardFromDialogImpl() {
     if (!r) return;
     if (await returnToCurrentBoardForPath(r.filePath)) return;
     try {
-      const opened = r.data != null
-        ? r
-        : await window.RefBoardAPI.readBoardFile(r.filePath);
-      const j = JSON.parse(opened.data);
-      const result = await applyBoardPayload(j, { path: r.filePath, title: boardTitleFromPath(r.filePath) });
+      const result = await openBoardPayloadFromDesktop(r.filePath);
       if (result === 'failed') toast('Could not read that file');
-    } catch {
+    } catch (err) {
+      lastBoardOpenError = err?.stack || err?.message || String(err);
+      console.error('[openBoard] desktop dialog open failed:', err);
       toast('Could not read that file');
     }
     return;
@@ -10180,7 +10556,10 @@ function drawBoardItem(g, it, opts = {}) {
       sourceScaleY = lod.h / im.h;
     }
   }
-  if (!bitmap) bitmap = im.bitmap;
+  if (!bitmap) {
+    bitmap = im.bitmap;
+    if (bitmap) touchFullBitmap(im);
+  }
   if (!bitmap) {
     if (opts.noLod) requestImageDecode(im, it);
     g.restore();
@@ -11001,7 +11380,9 @@ canvas.addEventListener('pointerdown', async e => {
           return;
         }
         if (!im.bitmap) return;
-        const pristineBlob = ensurePristineBlob(im);
+        const undoBlob = await getImageBlob(im);
+        const pristineBlob = await ensurePristineBlob(im);
+        if (!pristineBlob || !undoBlob) return;
         let pristineBitmap = null;
         try {
           pristineBitmap = await decodeToBitmap(pristineBlob);
@@ -11017,7 +11398,7 @@ canvas.addEventListener('pointerdown', async e => {
           try { pristineBitmap?.close?.(); } catch (err) {}
           return;
         }
-        pushUndo({ imgId: hit.imgId });
+        pushUndo({ imgId: hit.imgId, blob: undoBlob });
         drawStrokeSegment(hit, pt.x, pt.y);
         mode = { type: 'draw', it: hit.id, sx, sy };
       }
@@ -12896,6 +13277,7 @@ async function init() {
   setupGroupColorPicker();
   populateFontSelect();
   db = await openDB();
+  if (db) await dbClear('historyBlobs');
   if (!db) toast('Autosave unavailable in this browser — use Save board (Ctrl+S) to keep your work');
   const restoreResult = db
     ? await restoreSession()
@@ -12912,14 +13294,20 @@ async function init() {
   }
   tick();
 
-  await showLanding();
+  const startupBoardPath = await window.RefBoardAPI?.getPendingOpenPath?.();
+  if (startupBoardPath) await openBoardFromPath(startupBoardPath);
+  if (!startupBoardPath || !sameFilePath(startupBoardPath, currentBoardPath)) {
+    await showLanding();
+  } else {
+    await refreshWhatsNew();
+  }
   if (restoreResult.missingImages) toast('Restored session with some missing images');
 
   const info = await window.RefBoardAPI?.getAppInfo?.();
   if (info) await window.RefBoardAPI?.updaterInit?.({ checkOnStartup: !!appSettings.checkUpdatesOnStartup });
 }
 
-window.RefBoard = { state, images, addImages, fitAll };
+window.RefBoard = { state, images, addImages, fitAll, memoryStats: memoryDiagnostics };
 
 init();
 </script>

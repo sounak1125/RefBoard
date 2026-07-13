@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('RefBoardAPI', {
   chooseFolder: () => ipcRenderer.invoke('choose-folder'),
   getDefaultExportDir: () => ipcRenderer.invoke('get-default-export-dir'),
+  getProcessMemoryInfo: () => ipcRenderer.invoke('get-process-memory-info'),
   writeExportFiles: (dir, files) => ipcRenderer.invoke('write-export-files', { dir, files }),
   saveBoardFile: (defaultName, data, filePath) => ipcRenderer.invoke('save-board-file', { defaultName, data, filePath }),
   beginBoardSave: (defaultName, filePath, core, preview) => ipcRenderer.invoke('begin-board-save', { defaultName, filePath, core, preview }),
@@ -12,6 +13,9 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   abortBoardSave: (token) => ipcRenderer.invoke('abort-board-save', token),
   openBoardDialog: () => ipcRenderer.invoke('open-board-dialog'),
   readBoardFile: (filePath) => ipcRenderer.invoke('read-board-file', filePath),
+  beginBoardOpen: (filePath) => ipcRenderer.invoke('begin-board-open', filePath),
+  readBoardOpenImage: (token, index) => ipcRenderer.invoke('read-board-open-image', { token, index }),
+  finishBoardOpen: (token) => ipcRenderer.invoke('finish-board-open', token),
   getRecentWorks: () => ipcRenderer.invoke('get-recent-works'),
   addRecentWork: (entry) => ipcRenderer.invoke('add-recent-work', entry),
   touchRecentWorkEdited: (filePath) => ipcRenderer.invoke('touch-recent-work-edited', filePath),

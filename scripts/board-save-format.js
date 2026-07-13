@@ -11,11 +11,6 @@ function boardImageParts(image, data) {
   const type = /^image\/[a-z0-9.+-]+$/i.test(String(image?.type || ''))
     ? String(image.type)
     : 'application/octet-stream';
-  const meta = JSON.stringify({
-    id: String(image?.id || ''),
-    type,
-    name: String(image?.name || ''),
-  });
   const bytes = Buffer.isBuffer(data)
     ? data
     : data instanceof ArrayBuffer
@@ -24,6 +19,14 @@ function boardImageParts(image, data) {
         ? Buffer.from(data.buffer, data.byteOffset, data.byteLength)
         : null;
   if (!bytes) throw new TypeError('Invalid streamed board image data');
+  const meta = JSON.stringify({
+    id: String(image?.id || ''),
+    type,
+    name: String(image?.name || ''),
+    w: Math.max(0, Math.round(Number(image?.w) || 0)),
+    h: Math.max(0, Math.round(Number(image?.h) || 0)),
+    size: Math.max(0, Math.round(Number(image?.size) || bytes.length)),
+  });
   return {
     prefix: meta.slice(0, -1) + `,"data":"data:${type};base64,`,
     base64: bytes.toString('base64'),
