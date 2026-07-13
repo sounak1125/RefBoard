@@ -16,7 +16,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "test": "node scripts/test-group-model.mjs && node scripts/test-note-roundtrip.mjs && node scripts/test-note-parsers.mjs && node scripts/test-image-decode-queue.mjs && node scripts/test-clipboard-copy-order.mjs && node scripts/test-board-save-format.mjs",
+    "test": "node scripts/test-group-model.mjs && node scripts/test-note-roundtrip.mjs && node scripts/test-note-parsers.mjs && node scripts/test-image-decode-queue.mjs && node scripts/test-clipboard-copy-order.mjs && node scripts/test-board-save-format.mjs && node scripts/test-navigation-guards.mjs",
     "predist": "npm test && node scripts/sync-changelog.mjs",
     "dist": "electron-builder --win",
     "dist:publish": "electron-builder --win --publish always",
@@ -49,6 +49,7 @@
       "index.html",
       "scripts/note-dom.mjs",
       "scripts/clipboard-copy-order.mjs",
+      "scripts/navigation-guards.mjs",
       "scripts/board-save-format.js",
       "changelog.json",
       "package.json",

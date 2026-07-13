@@ -298,8 +298,7 @@ function setupIpc() {
     });
     if (r.canceled || !r.filePaths.length) return null;
     const filePath = r.filePaths[0];
-    const data = await fs.readFile(filePath, 'utf8');
-    return { filePath, data };
+    return { filePath };
   });
 
   ipcMain.handle('read-board-file', async (_, filePath) => {

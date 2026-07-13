@@ -2316,6 +2316,12 @@ import {
   expandSelectionDeleteIds,
   deleteIdsAfterSuccessfulCutCopy,
 } from './scripts/clipboard-copy-order.mjs';
+import {
+  sameFilePath,
+  createSingleFlight,
+  createAsyncQueue,
+  promiseWithTimeout,
+} from './scripts/navigation-guards.mjs';
 
 'use strict';
 
@@ -8874,7 +8880,7 @@ async function performBoardSave(opts = {}) {
   }
 
   if (boardChangeVersion === snapshot.changeVersion) boardFileDirty = false;
-  await trackRecentWork({ edited: true });
+  scheduleSavedRecentWork(snapshot, currentBoardPath, currentBoardTitle);
   if (!silent) toast('Board file saved (originals embedded)');
   else toast('Autosaved');
   return true;
@@ -8961,18 +8967,44 @@ async function removeRecentWork(filePath) {
   await renderRecentWorks();
 }
 
+let savedRecentWorkSeq = 0;
+
+function scheduleSavedRecentWork(snapshot, filePath, title) {
+  if (!filePath) return;
+  const seq = ++savedRecentWorkSeq;
+  const base = {
+    path: filePath,
+    title: title || boardTitleFromPath(filePath),
+    itemCount: snapshot.core.items.length,
+    edited: true,
+    generateThumbnail: false,
+  };
+  void trackRecentWork(base).then(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    if (seq !== savedRecentWorkSeq) return;
+    if (!sameFilePath(currentBoardPath, filePath)) return;
+    if (boardChangeVersion !== snapshot.changeVersion) return;
+    await trackRecentWork({ ...base, generateThumbnail: true, cacheThumbnail: true });
+  }).catch(() => {});
+}
+
 async function trackRecentWork(opts = {}) {
-  if (!currentBoardPath) return;
+  const filePath = opts.path || currentBoardPath;
+  if (!filePath) return;
   const now = Date.now();
   const entry = {
-    path: currentBoardPath,
-    title: currentBoardTitle || boardTitleFromPath(currentBoardPath),
-    itemCount: state.items.length,
+    path: filePath,
+    title: opts.title || currentBoardTitle || boardTitleFromPath(filePath),
+    itemCount: opts.itemCount ?? state.items.length,
     lastEdited: opts.edited ? now : undefined,
   };
   try {
-    if (appSettings.generateThumbnails)
+    if (opts.generateThumbnail !== false && appSettings.generateThumbnails) {
       entry.thumbnailBase64 = await captureBoardThumbnailBase64();
+      if (opts.cacheThumbnail !== false && sameFilePath(currentBoardPath, filePath)) {
+        cachedCurrentBoardThumb = entry.thumbnailBase64 || cachedCurrentBoardThumb;
+      }
+    }
   } catch { /* ignore */ }
   if (window.RefBoardAPI?.addRecentWork) {
     try {
@@ -9121,12 +9153,6 @@ async function renderRecentWorks() {
     thumb.appendChild(badge);
     if (cachedCurrentBoardThumb) {
       setRwThumbImage(thumb, 'data:image/jpeg;base64,' + cachedCurrentBoardThumb);
-    } else {
-      void captureBoardThumbnailBase64().then(b64 => {
-        if (!b64) return;
-        cachedCurrentBoardThumb = b64;
-        setRwThumbImage(thumb, 'data:image/jpeg;base64,' + b64);
-      });
     }
     const meta = document.createElement('div');
     meta.className = 'rw-meta';
@@ -9247,14 +9273,22 @@ async function enterBoard(opts = {}) {
   });
 }
 
-async function goHome() {
-  if (onLanding) return;
-  closeDrawFeatures();
-  const result = await resolveUnsavedChanges('leave');
-  if (result === 'proceed') await showLanding();
+const navigationQueue = createAsyncQueue();
+
+function goHome() {
+  return navigationQueue.run(async () => {
+    if (onLanding) return;
+    closeDrawFeatures();
+    const result = await resolveUnsavedChanges('leave');
+    if (result === 'proceed') await showLanding();
+  });
 }
 
-async function openNewBoard() {
+function openNewBoard() {
+  return navigationQueue.run(openNewBoardImpl);
+}
+
+async function openNewBoardImpl() {
   if (!onLanding) {
     const result = await resolveUnsavedChanges('leave');
     if (result !== 'proceed') return;
@@ -9307,6 +9341,10 @@ async function applyBoardPayload(j, meta = {}) {
     if (!confirm('Opening this board replaces the current one. Continue?')) return 'cancelled';
   }
   showOpeningOverlay();
+  // Keep the current board recoverable through its Blobs, but release decoded
+  // pixels before decoding a replacement board so opening does not require two
+  // complete bitmap sets in memory at once.
+  for (const im of images.values()) demoteImageDecodedMemory(im);
   let nextImages = new Map();
   let droppedImageItems = false;
   try {
@@ -9400,8 +9438,20 @@ async function applyBoardPayload(j, meta = {}) {
   return 'ok';
 }
 
-async function openBoardFromPath(filePath) {
+async function returnToCurrentBoardForPath(filePath) {
+  if (!state.items.length || !sameFilePath(filePath, currentBoardPath)) return false;
+  if (onLanding) await enterBoard();
+  else toast('This board is already open');
+  return true;
+}
+
+function openBoardFromPath(filePath) {
+  return navigationQueue.run(() => openBoardFromPathImpl(filePath));
+}
+
+async function openBoardFromPathImpl(filePath) {
   if (!filePath) return;
+  if (await returnToCurrentBoardForPath(filePath)) return;
   if (window.RefBoardAPI?.readBoardFile) {
     try {
       const { data } = await window.RefBoardAPI.readBoardFile(filePath);
@@ -9416,12 +9466,20 @@ async function openBoardFromPath(filePath) {
   toast('Open saved boards in the desktop app');
 }
 
-async function openBoardFromDialog() {
+function openBoardFromDialog() {
+  return navigationQueue.run(openBoardFromDialogImpl);
+}
+
+async function openBoardFromDialogImpl() {
   if (window.RefBoardAPI?.openBoardDialog) {
     const r = await window.RefBoardAPI.openBoardDialog();
     if (!r) return;
+    if (await returnToCurrentBoardForPath(r.filePath)) return;
     try {
-      const j = JSON.parse(r.data);
+      const opened = r.data != null
+        ? r
+        : await window.RefBoardAPI.readBoardFile(r.filePath);
+      const j = JSON.parse(opened.data);
       const result = await applyBoardPayload(j, { path: r.filePath, title: boardTitleFromPath(r.filePath) });
       if (result === 'failed') toast('Could not read that file');
     } catch {
@@ -9432,7 +9490,11 @@ async function openBoardFromDialog() {
   boardPick.click();
 }
 
-async function loadBoardFile(file) {
+function loadBoardFile(file) {
+  return navigationQueue.run(() => loadBoardFileImpl(file));
+}
+
+async function loadBoardFileImpl(file) {
   let j;
   try { j = JSON.parse(await file.text()); } catch (e) { toast('Could not read that file'); return; }
   const title = (file.name || '').replace(/\.refboard$/i, '') || 'Untitled';
@@ -12206,13 +12268,35 @@ function hideConfirm(ok) {
   if (resolve) resolve(!!ok);
 }
 
-async function resolveUnsavedChanges(action = 'close') {
+const NAVIGATION_SAVE_TIMEOUT_MS = 120000;
+const unsavedResolutionFlight = createSingleFlight();
+const closeRequestFlight = createSingleFlight();
+
+async function saveForNavigation() {
+  try {
+    const result = await promiseWithTimeout(saveBoardFile(), NAVIGATION_SAVE_TIMEOUT_MS);
+    if (result.timedOut) {
+      toast('Save is taking too long. The board remains open; try saving again.');
+      return false;
+    }
+    return !!result.value;
+  } catch (err) {
+    console.error('[save] navigation save failed:', err);
+    return false;
+  }
+}
+
+function resolveUnsavedChanges(action = 'close') {
+  return unsavedResolutionFlight.run(() => resolveUnsavedChangesImpl(action));
+}
+
+async function resolveUnsavedChangesImpl(action = 'close') {
   if (!boardFileDirty) return 'proceed';
   const remembered = getRememberedCloseChoice();
   if (remembered === 'discard') return 'proceed';
   if (remembered === 'save') {
     showSavingOverlay();
-    const ok = await saveBoardFile();
+    const ok = await saveForNavigation();
     if (!ok) { hideSavingOverlay(); return 'cancel'; }
     markSavingOverlayDone();
     await new Promise(r => setTimeout(r, 750));
@@ -12232,9 +12316,11 @@ function confirmAppClose() {
   window.RefBoardAPI?.confirmClose();
 }
 
-async function handleAppCloseRequest() {
-  const result = await resolveUnsavedChanges('close');
-  if (result === 'proceed') confirmAppClose();
+function handleAppCloseRequest() {
+  return closeRequestFlight.run(async () => {
+    const result = await resolveUnsavedChanges('close');
+    if (result === 'proceed') confirmAppClose();
+  });
 }
 
 if (window.RefBoardAPI?.onCloseRequest) {
@@ -12448,8 +12534,12 @@ $('#unsavedSave').addEventListener('click', async () => {
   card.classList.add('saving');
   label.textContent = 'Saving your board…';
   rememberCloseChoice('save');
-  const ok = await saveBoardFile();
-  if (!ok) { card.classList.remove('saving'); return; }
+  const ok = await saveForNavigation();
+  if (!ok) {
+    card.classList.remove('saving');
+    label.textContent = 'Save did not finish. Your board is still open.';
+    return;
+  }
   card.classList.remove('saving');
   card.classList.add('saved');
   label.textContent = 'Saved';
