@@ -122,8 +122,13 @@ async function evaluateWhatsNew() {
     .filter(v => Array.isArray(changelog[v]) && changelog[v].length)
     .filter(v => (v === current) || (semverGt(current, v) && (lastSeen === null ? false : semverGt(v, lastSeen))))
     .sort((a, b) => (semverGt(a, b) ? -1 : semverGt(b, a) ? 1 : 0));
+  const seen = new Set();
   const highlights = [];
-  for (const v of versions) highlights.push(...changelog[v]);
+  for (const v of versions) {
+    for (const h of changelog[v]) {
+      if (!seen.has(h)) { seen.add(h); highlights.push(h); }
+    }
+  }
   if (!Array.isArray(highlights) || !highlights.length) {
     return { show: false };
   }
