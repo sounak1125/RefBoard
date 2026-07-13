@@ -2543,6 +2543,7 @@ const GROUP_DEFAULT_PADDING = GROUP_MIN_PADDING;
 const GROUP_FRAME_HIT_PX = 10;
 const GROUP_CORNER_RADIUS_PX = 12;
 const GROUP_SCREEN_PADDING_PX = 16;
+const GROUP_CHROME_FULL_SIZE_ZOOM = 0.01;
 const GROUP_DEFAULT_COLOR = '#5aa2ff';
 const GROUP_LABEL_GAP_PX = 6;
 const GROUP_LABEL_SIZE_PX = 13;
@@ -2585,11 +2586,18 @@ function groupPadding(group) {
   return clamp(Number(group?.padding) || GROUP_DEFAULT_PADDING, GROUP_MIN_PADDING, 120);
 }
 
+// Group chrome stays comfortably readable down to 1% zoom. Below that point
+// it scales with the board instead of dominating tiny grouped content. The
+// separate screen-space hit target remains large enough to select the frame.
+function groupChromeZoomDivisor() {
+  return Math.max(state.view.s, GROUP_CHROME_FULL_SIZE_ZOOM);
+}
+
 function groupUiRect(group) {
   const kids = childrenOfGroup(group.id);
   if (!kids.length) return { x: group.x, y: group.y, w: group.w, h: group.h };
   const bb = bboxOf(kids);
-  const pad = GROUP_SCREEN_PADDING_PX / Math.max(state.view.s, 0.0001);
+  const pad = GROUP_SCREEN_PADDING_PX / groupChromeZoomDivisor();
   return {
     x: bb.x - pad,
     y: bb.y - pad,
@@ -2780,7 +2788,7 @@ function ungroupFromSelection() {
 }
 
 function groupLabelFontSizeBoard(g) {
-  return GROUP_LABEL_SIZE_PX / Math.max(state.view.s, 0.0001);
+  return GROUP_LABEL_SIZE_PX / groupChromeZoomDivisor();
 }
 
 function groupLabelFont(g) {
@@ -2796,7 +2804,7 @@ function groupLabelBoardRect(g) {
   const tw = ctx.measureText(name).width;
   ctx.restore();
   const r = itemUiRect(g);
-  const gap = GROUP_LABEL_GAP_PX / Math.max(state.view.s, 0.0001);
+  const gap = GROUP_LABEL_GAP_PX / groupChromeZoomDivisor();
   return {
     x: r.x,
     y: r.y - gap - fontSize,
@@ -10702,10 +10710,10 @@ function drawCropUi(it) {
 
 function drawGroupFrame(g, { pulse = false } = {}) {
   const r = itemUiRect(g);
-  // Canvas is scaled with the board, so convert the desired screen radius
-  // back to board units to keep corners visually consistent at every zoom.
+  // Canvas is scaled with the board. Chrome stays screen-sized at normal zoom
+  // and scales down with the group once the view drops below 1%.
   const rad = Math.min(
-    GROUP_CORNER_RADIUS_PX / Math.max(state.view.s, 0.0001),
+    GROUP_CORNER_RADIUS_PX / groupChromeZoomDivisor(),
     r.w / 2,
     r.h / 2
   );
@@ -10719,8 +10727,13 @@ function drawGroupFrame(g, { pulse = false } = {}) {
   ctx.fillStyle = hexToRgba(color, activePulse ? 0.1 : 0.06);
   ctx.fill();
   ctx.strokeStyle = hexToRgba(color, borderAlpha);
-  ctx.lineWidth = Math.max(1, 1 / state.view.s);
-  if (g.locked) ctx.setLineDash([6 / state.view.s, 4 / state.view.s]);
+  ctx.lineWidth = state.view.s < GROUP_CHROME_FULL_SIZE_ZOOM
+    ? 1 / GROUP_CHROME_FULL_SIZE_ZOOM
+    : Math.max(1, 1 / state.view.s);
+  if (g.locked) {
+    const chromeZoom = groupChromeZoomDivisor();
+    ctx.setLineDash([6 / chromeZoom, 4 / chromeZoom]);
+  }
   ctx.stroke();
   ctx.setLineDash([]);
 }
@@ -10734,7 +10747,7 @@ function drawGroupLabel(g) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
   const r = itemUiRect(g);
-  const gap = GROUP_LABEL_GAP_PX / Math.max(state.view.s, 0.0001);
+  const gap = GROUP_LABEL_GAP_PX / groupChromeZoomDivisor();
   ctx.fillText(name, r.x, r.y - gap);
   ctx.textBaseline = 'alphabetic';
 }
@@ -11838,12 +11851,8 @@ function updateCursor(sx, sy) {
         canvas.style.cursor = 'pointer';
         return;
       }
-      // Keep the text affordance for an unselected note's double-click entry,
-      // but selected notes use the normal arrow while they can be dragged.
-      if (!state.sel.has(it.id) && !isInLockedGroup(it)) {
-        canvas.style.cursor = 'text';
-        return;
-      }
+      // Note bodies keep the normal selection arrow. The text cursor appears
+      // only after double-click opens the contenteditable note editor.
     }
   }
   canvas.style.cursor = 'default';

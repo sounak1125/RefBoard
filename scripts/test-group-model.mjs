@@ -7,6 +7,9 @@ const GROUP_MIN_PADDING = 40;
 const GROUP_DEFAULT_PADDING = GROUP_MIN_PADDING;
 const GROUP_CORNER_RADIUS_PX = 12;
 const GROUP_SCREEN_PADDING_PX = 16;
+const GROUP_CHROME_FULL_SIZE_ZOOM = 0.01;
+const GROUP_LABEL_GAP_PX = 6;
+const GROUP_LABEL_SIZE_PX = 13;
 const GROUP_DEFAULT_COLOR = '#5aa2ff';
 const GROUP_NAME_MAX = 48;
 
@@ -113,7 +116,7 @@ function groupFrameHit(group, sx, sy, scale) {
 }
 
 function groupUiRectAtScale(kidsBox, scale) {
-  const pad = GROUP_SCREEN_PADDING_PX / scale;
+  const pad = GROUP_SCREEN_PADDING_PX / Math.max(scale, GROUP_CHROME_FULL_SIZE_ZOOM);
   return {
     x: kidsBox.x - pad,
     y: kidsBox.y - pad,
@@ -178,7 +181,7 @@ assert(groupKidsBox.x - group.x === GROUP_MIN_PADDING, 'group left gap');
 assert(groupKidsBox.y - group.y === GROUP_MIN_PADDING, 'group top gap');
 assert(group.x + group.w - (groupKidsBox.x + groupKidsBox.w) === GROUP_MIN_PADDING, 'group right gap');
 assert(group.y + group.h - (groupKidsBox.y + groupKidsBox.h) === GROUP_MIN_PADDING, 'group bottom gap');
-for (const scale of [0.05, 0.25, 1, 4, 16, 100]) {
+for (const scale of [0.01, 0.05, 0.25, 1, 4, 16, 100]) {
   const ui = groupUiRectAtScale(groupKidsBox, scale);
   const leftGapPx = (groupKidsBox.x - ui.x) * scale;
   const rightGapPx = (ui.x + ui.w - groupKidsBox.x - groupKidsBox.w) * scale;
@@ -199,6 +202,33 @@ for (const scale of [0.05, 0.25, 1, 4, 16, 100]) {
   assert(Math.abs(radiusScreen - Math.min(GROUP_CORNER_RADIUS_PX, maxPossibleRadius)) < 1e-6,
     `group corner radius should stay visually stable at ${scale}x zoom`);
 }
+
+// At extreme zoom, visual group chrome must shrink with the board rather than
+// staying 16px/13px and overwhelming tiny child previews. Hit-testing remains
+// screen-sized and independent of this visual scale.
+for (const scale of [0.005, 0.004, 0.001, 0.0001]) {
+  const ui = groupUiRectAtScale(groupKidsBox, scale);
+  const expectedFactor = scale / GROUP_CHROME_FULL_SIZE_ZOOM;
+  const expectedPadPx = GROUP_SCREEN_PADDING_PX * expectedFactor;
+  const leftGapPx = (groupKidsBox.x - ui.x) * scale;
+  const labelPx = GROUP_LABEL_SIZE_PX * expectedFactor;
+  const labelGapPx = GROUP_LABEL_GAP_PX * expectedFactor;
+  const radiusBoard = Math.min(
+    GROUP_CORNER_RADIUS_PX / Math.max(scale, GROUP_CHROME_FULL_SIZE_ZOOM),
+    ui.w / 2,
+    ui.h / 2,
+  );
+  assert(Math.abs(leftGapPx - expectedPadPx) < 1e-6,
+    `group padding should shrink at ${scale}x zoom`);
+  assert(labelPx < GROUP_LABEL_SIZE_PX && labelGapPx < GROUP_LABEL_GAP_PX,
+    `group label chrome should shrink at ${scale}x zoom`);
+  assert(radiusBoard * scale <= GROUP_CORNER_RADIUS_PX * expectedFactor + 1e-6,
+    `group corner radius should shrink at ${scale}x zoom`);
+  const edgeX = ui.x * scale;
+  const midY = (ui.y + ui.h / 2) * scale;
+  assert(groupFrameHit(ui, edgeX - 8, midY, scale),
+    `group frame should remain clickable at ${scale}x zoom`);
+}
 reconcileGroupOrder(state);
 const gi = state.items.findIndex(i => i.id === gId);
 const c1i = state.items.findIndex(i => i.id === 'c1');
@@ -216,5 +246,121 @@ assert(legacyGroup.color === GROUP_DEFAULT_COLOR && legacyGroup.locked === false
 assert(bareGroup.name === '', 'default group name empty');
 const namedGroup = normalizeItem({ id: 'g3', kind: 'group', x: 0, y: 0, w: 100, h: 100, name: '  Mood refs\n  ' });
 assert(namedGroup.name === 'Mood refs', 'sanitizeGroupName trims and strips newlines');
+
+function buildItemClipboardPayload(testState, roots) {
+  const ids = new Set(roots.map(it => it.id));
+  for (const it of roots) {
+    if (!isGroupItem(it)) continue;
+    for (const child of childrenOfGroup(testState, it.id)) ids.add(child.id);
+  }
+  return {
+    app: 'refboard', kind: 'item-clipboard', v: 1,
+    selectedIds: roots.map(it => it.id),
+    items: testState.items.filter(it => ids.has(it.id)).map(it => structuredClone(it)),
+  };
+}
+
+function pasteItemsFromClipboard(testState, payload, pos, nextId) {
+  const defs = payload.items;
+  const ids = new Set(defs.map(it => it.id));
+  if (ids.size !== defs.length) return null;
+  const groupIds = new Set(defs.filter(isGroupItem).map(it => it.id));
+  const idMap = new Map(defs.map(it => [it.id, nextId()]));
+  const bb = bboxOf(defs);
+  const dx = pos[0] - (bb.x + bb.w / 2);
+  const dy = pos[1] - (bb.y + bb.h / 2);
+  const clones = defs.map(def => {
+    const base = structuredClone(def);
+    base.id = idMap.get(def.id);
+    base.x = def.x + dx;
+    base.y = def.y + dy;
+    if (isGroupableItem(def)) {
+      base.groupId = def.groupId && groupIds.has(def.groupId) ? idMap.get(def.groupId) : null;
+    }
+    return normalizeItem(base);
+  });
+  testState.items.push(...clones);
+  reconcileGroupOrder(testState);
+  for (const pastedGroup of clones.filter(isGroupItem)) syncGroupFrame(testState, pastedGroup);
+  return {
+    clones,
+    selectedIds: payload.selectedIds.map(id => idMap.get(id)).filter(Boolean),
+  };
+}
+
+function duplicateGroup(testState, groupId, scale, nextId) {
+  const sourceGroup = testState.items.find(it => it.id === groupId && isGroupItem(it));
+  const sourceKids = childrenOfGroup(testState, groupId);
+  const offset = 26 / scale;
+  const newGroupId = nextId();
+  const newGroup = normalizeItem({
+    ...sourceGroup, id: newGroupId,
+    x: sourceGroup.x + offset, y: sourceGroup.y + offset,
+  });
+  const clones = sourceKids.map(it => normalizeItem({
+    ...it, id: nextId(), groupId: newGroupId,
+    x: it.x + offset, y: it.y + offset,
+  }));
+  testState.items.push(newGroup, ...clones);
+  reconcileGroupOrder(testState);
+  return { newGroup, clones, offset };
+}
+
+// Same-board Ctrl+C/Ctrl+V: group metadata and every child travel together,
+// IDs are remapped, and repeated paste never reuses a previous clone's IDs.
+const clipboardSource = {
+  items: [
+    normalizeItem({ id: 'copy-g', kind: 'group', x: 0, y: 0, w: 100, h: 100,
+      padding: 60, color: '#ff6b6b', locked: true, name: 'Copied refs' }),
+    normalizeItem({ id: 'copy-a', kind: 'image', imgId: 'shared-img-a', x: 100, y: 80, w: 320, h: 180, groupId: 'copy-g' }),
+    normalizeItem({ id: 'copy-b', kind: 'image', imgId: 'shared-img-b', x: 450, y: 100, w: 200, h: 300, groupId: 'copy-g' }),
+  ],
+};
+syncGroupFrame(clipboardSource, clipboardSource.items[0]);
+const clipboardPayload = buildItemClipboardPayload(clipboardSource, [clipboardSource.items[0]]);
+assert(clipboardPayload.items.length === 3, 'copying a group should include both children');
+assert(clipboardPayload.selectedIds.length === 1 && clipboardPayload.selectedIds[0] === 'copy-g',
+  'clipboard should remember the group as the selected root');
+
+const pasteState = { items: clipboardSource.items.map(it => structuredClone(it)) };
+let pasteSeq = 0;
+const nextPasteId = () => `paste-${++pasteSeq}`;
+const firstPaste = pasteItemsFromClipboard(pasteState, clipboardPayload, [1200, 700], nextPasteId);
+const firstGroup = firstPaste.clones.find(isGroupItem);
+const firstKids = firstPaste.clones.filter(isGroupableItem);
+assert(firstPaste.selectedIds.length === 1 && firstPaste.selectedIds[0] === firstGroup.id,
+  'pasting a group should select the new group root');
+assert(firstKids.length === 2 && firstKids.every(it => it.groupId === firstGroup.id),
+  'pasted children should point to the new group ID');
+assert(firstKids.map(it => it.imgId).join(',') === 'shared-img-a,shared-img-b',
+  'same-board paste should reuse source image records without duplicating pixels');
+assert(firstGroup.name === 'Copied refs' && firstGroup.color === '#ff6b6b'
+  && firstGroup.locked === true && firstGroup.padding === 60,
+  'pasted group should preserve name, color, lock, and padding');
+
+const secondPaste = pasteItemsFromClipboard(pasteState, clipboardPayload, [1600, 900], nextPasteId);
+const allIds = pasteState.items.map(it => it.id);
+assert(new Set(allIds).size === allIds.length, 'repeated Ctrl+V should always generate unique IDs');
+assert(secondPaste.clones.filter(isGroupableItem).every(it =>
+  it.groupId === secondPaste.clones.find(isGroupItem).id),
+  'repeated paste should remap children to its own new group');
+assert(clipboardSource.items.filter(isGroupableItem).every(it => it.groupId === 'copy-g'),
+  'copy/paste should not mutate the original group');
+
+// Ctrl+D: clone the complete group at a screen-consistent offset while
+// retaining metadata and child membership.
+const duplicateState = { items: clipboardSource.items.map(it => structuredClone(it)) };
+let duplicateSeq = 0;
+const duplicated = duplicateGroup(duplicateState, 'copy-g', 0.25, () => `dup-${++duplicateSeq}`);
+assert(duplicated.clones.length === 2 && duplicated.clones.every(it => it.groupId === duplicated.newGroup.id),
+  'Ctrl+D should duplicate the full group and remap its children');
+assert(duplicated.newGroup.name === 'Copied refs' && duplicated.newGroup.color === '#ff6b6b'
+  && duplicated.newGroup.locked === true && duplicated.newGroup.padding === 60,
+  'Ctrl+D should preserve group metadata');
+assert(duplicated.clones[0].x - clipboardSource.items[1].x === duplicated.offset
+  && duplicated.clones[0].y - clipboardSource.items[1].y === duplicated.offset,
+  'Ctrl+D should offset group children consistently');
+assert(new Set(duplicateState.items.map(it => it.id)).size === duplicateState.items.length,
+  'Ctrl+D should generate unique IDs');
 
 console.log('All grouping model checks passed.');
