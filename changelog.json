@@ -32,5 +32,14 @@
     "Copy and paste now keeps your groups and pastes images individually.",
     "Uses less memory with large image boards.",
     "Fixed the save prompt after exporting, wheel scrolling on the home screen, and several zoom-related glitches."
+  ],
+  "1.1.1": [
+    "Saving is faster and safer - boards write to a temporary file first, so a failed save never damages your existing board.",
+    "Big boards save quickly - a 22 MB board saves in well under a second.",
+    "Copying large selections uses far less memory.",
+    "Reopening the board you already have open is now instant - no reloading or re-decoding images.",
+    "Switching between boards frees memory sooner, lowering peak usage.",
+    "Closing and returning Home no longer hangs - saves time out safely and keep your board open.",
+    "Fixed the duplicate R logo on File Explorer thumbnails - the preview now shows once, in the bottom-right corner."
   ]
 }
