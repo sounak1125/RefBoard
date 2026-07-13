@@ -118,7 +118,12 @@ async function evaluateWhatsNew() {
   }
 
   const changelog = await loadChangelog();
-  const highlights = changelog[current];
+  const versions = Object.keys(changelog)
+    .filter(v => Array.isArray(changelog[v]) && changelog[v].length)
+    .filter(v => (v === current) || (semverGt(current, v) && (lastSeen === null ? false : semverGt(v, lastSeen))))
+    .sort((a, b) => (semverGt(a, b) ? -1 : semverGt(b, a) ? 1 : 0));
+  const highlights = [];
+  for (const v of versions) highlights.push(...changelog[v]);
   if (!Array.isArray(highlights) || !highlights.length) {
     return { show: false };
   }
