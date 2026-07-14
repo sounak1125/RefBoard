@@ -36,6 +36,51 @@ try {
   const handlerSource = await readFile(new URL('../build/thumbnail-handler/RefBoardThumbnailHandler.cs', import.meta.url), 'utf8');
   assert.match(handlerSource, /MaxReadBytes\s*=\s*512\s*\*\s*1024/, 'native handler should scan enough header data');
   assert.match(handlerSource, /PreviewRegex\s*=\s*new Regex/, 'native handler should extract the embedded preview field');
+
+  const rendererSource = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(
+    rendererSource,
+    /\.rw-thumb\s*\{[\s\S]*?background:\s*#1b1d24[\s\S]*?const THUMBNAIL_CANVAS_BACKGROUND\s*=\s*['"]#1b1d24['"]/i,
+    'thumbnail rendering should use the same opaque backdrop as the landing thumbnail surface',
+  );
+  assert.match(
+    rendererSource,
+    /if \(background\)\s*\{[\s\S]*?g\.fillStyle\s*=\s*background;[\s\S]*?g\.fillRect\(0, 0, c\.width, c\.height\);[\s\S]*?\}\s*g\.translate/,
+    'the backdrop must be painted before board transforms and item drawing',
+  );
+  assert.match(
+    rendererSource,
+    /captureBoardThumbnailBase64[\s\S]*?boundedCompositeCanvas\(state\.items,\s*\{[\s\S]*?background:\s*THUMBNAIL_CANVAS_BACKGROUND/,
+    'landing-page thumbnails should never flatten transparent layout gaps to black',
+  );
+  assert.match(
+    rendererSource,
+    /captureBoardPreviewStrip[\s\S]*?boundedCompositeCanvas\(state\.items,\s*\{[\s\S]*?background:\s*THUMBNAIL_CANVAS_BACKGROUND/,
+    'saved board previews should use the same safe backdrop',
+  );
+  assert.match(
+    rendererSource,
+    /scheduleSavedRecentWork[\s\S]*?await trackRecentWork\(\{[\s\S]*?cacheThumbnail:\s*true[\s\S]*?if \(onLanding\) await renderRecentWorks\(\)/,
+    'the landing grid should refresh when deferred thumbnail generation finishes',
+  );
+  const setThumbImage = rendererSource.match(
+    /function setRwThumbImage\(thumbEl, src\)\s*\{([\s\S]*?)\n\}/,
+  )?.[1] || '';
+  assert.match(
+    setThumbImage,
+    /thumbEl\.querySelector\(['"]:scope > svg['"]\)\?\.remove\(\)/,
+    'loading a thumbnail must remove the empty-state SVG instead of leaving a black flex child',
+  );
+  assert.ok(
+    setThumbImage.indexOf("querySelector(':scope > svg')")
+      < setThumbImage.indexOf("classList.remove('rw-thumb-empty')"),
+    'the placeholder SVG should be removed before its empty-state styling is detached',
+  );
+  assert.match(
+    rendererSource,
+    /\.rw-thumb img\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 100%;[^}]*object-fit:\s*cover/s,
+    'loaded thumbnails should own the complete flex width for current and recent cards',
+  );
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

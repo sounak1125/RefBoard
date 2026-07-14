@@ -756,7 +756,7 @@ body.board-instant-open #titlebarPeek{
   box-shadow:0 0 24px rgba(90,162,255,.14);
 }
 .rw-thumb img{
-  width:100%; height:100%; object-fit:cover; display:block;
+  width:100%; height:100%; min-width:0; flex:1 1 100%; object-fit:cover; display:block;
 }
 .rw-thumb-empty svg{
   width:36px; height:36px; stroke:#3a3e4c; stroke-width:1.5; fill:none;
@@ -5878,7 +5878,13 @@ async function directClipboardPng(items) {
   return await getImageBlob(im);
 }
 
-async function boundedCompositeCanvas(items, { maxWidth, maxHeight, fit = 'inside' } = {}) {
+// Keep unoccupied space in irregular board layouts visually continuous with
+// the landing thumbnail surface instead of exposing a separate black block.
+const THUMBNAIL_CANVAS_BACKGROUND = '#1b1d24';
+
+async function boundedCompositeCanvas(items, {
+  maxWidth, maxHeight, fit = 'inside', background = null,
+} = {}) {
   if (!items?.length) return null;
   const bb = bboxOf(items);
   if (!(bb.w > 0) || !(bb.h > 0)) return null;
@@ -5893,6 +5899,12 @@ async function boundedCompositeCanvas(items, { maxWidth, maxHeight, fit = 'insid
   const g = c.getContext('2d');
   g.imageSmoothingEnabled = true;
   g.imageSmoothingQuality = 'high';
+  // JPEG has no alpha channel. Without an explicit backdrop, empty space in
+  // mixed-size/irregular board layouts is flattened to black by Chromium.
+  if (background) {
+    g.fillStyle = background;
+    g.fillRect(0, 0, c.width, c.height);
+  }
   g.translate(c.width / 2, c.height / 2);
   g.scale(scale, scale);
   g.translate(-(bb.x + bb.w / 2), -(bb.y + bb.h / 2));
@@ -9431,7 +9443,11 @@ function boardTitleFromPath(filePath) {
 async function captureBoardThumbnailBase64(maxPx = 360) {
   if (!state.items.length) return null;
   try {
-    const c = await boundedCompositeCanvas(state.items, { maxWidth: maxPx, maxHeight: maxPx });
+    const c = await boundedCompositeCanvas(state.items, {
+      maxWidth: maxPx,
+      maxHeight: maxPx,
+      background: THUMBNAIL_CANVAS_BACKGROUND,
+    });
     if (!c) return null;
     const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.84));
     c.width = 0; c.height = 0;
@@ -9449,7 +9465,10 @@ async function captureBoardPreviewStrip(maxW = 640) {
     const tw = maxW;
     const th = Math.max(1, Math.round(maxW / aspect));
     const c = await boundedCompositeCanvas(state.items, {
-      maxWidth: tw, maxHeight: th, fit: 'cover',
+      maxWidth: tw,
+      maxHeight: th,
+      fit: 'cover',
+      background: THUMBNAIL_CANVAS_BACKGROUND,
     });
     if (!c) return null;
     const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
@@ -9517,6 +9536,10 @@ function scheduleSavedRecentWork(snapshot, filePath, title) {
     if (!sameFilePath(currentBoardPath, filePath)) return;
     if (boardChangeVersion !== snapshot.changeVersion) return;
     await trackRecentWork({ ...base, generateThumbnail: true, cacheThumbnail: true });
+    // A user can return to the landing page while the deferred thumbnail is
+    // still being encoded. Refresh the grid so it does not retain the old
+    // cached image until the next navigation or app restart.
+    if (onLanding) await renderRecentWorks();
   }).catch(() => {});
 }
 
@@ -9647,6 +9670,10 @@ function rwPlaceholderThumb() {
 }
 
 function setRwThumbImage(thumbEl, src) {
+  // The empty-state SVG is a real flex child. Leaving it mounted beside the
+  // image makes its shapes fall back to solid black after rw-thumb-empty is
+  // removed, producing the rounded black block on the right of every card.
+  thumbEl.querySelector(':scope > svg')?.remove();
   thumbEl.classList.remove('rw-thumb-empty');
   let img = thumbEl.querySelector('img');
   if (!img) {
