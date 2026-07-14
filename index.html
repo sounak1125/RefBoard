@@ -2317,18 +2317,31 @@ body.board-active #whatsNewNotice{ display:none; }
       <div class="export-crop-hint" id="expImgCropHint"></div>
     </div>
     <div class="form-row">
+      <label for="expImgOrder">Export order</label>
+      <select id="expImgOrder">
+        <option value="selection">As selected / arranged</option>
+        <option value="visual">Visual layout (row by row)</option>
+        <option value="horizontal">Left to right</option>
+        <option value="vertical">Top to bottom</option>
+      </select>
+      <div class="export-crop-hint">Shift-click follows click order; marquee follows the layout.</div>
+    </div>
+    <div class="form-row">
       <label for="expImgName">Naming</label>
       <div class="name-row">
-        <input type="text" id="expImgName" class="text-in" value="%n_%0" spellcheck="false">
+        <input type="text" id="expImgName" class="text-in" value="%N_%0" spellcheck="false"
+          title="%N = padded order, %n = number, %0 = original name">
         <select id="expImgNamePreset" title="Naming presets">
+          <option value="%N_%0">%N_%0</option>
           <option value="%n_%0">%n_%0</option>
+          <option value="%N">%N</option>
           <option value="%0">%0</option>
           <option value="Image_%n">Image_%n</option>
           <option value="%n">%n</option>
         </select>
       </div>
     </div>
-    <div class="name-preview" id="expImgPreview">1_image.png</div>
+    <div class="name-preview" id="expImgPreview">01_image.png</div>
     <div class="row-btns">
       <button class="btn primary" id="expImgGo">Export</button>
       <button class="btn" id="expImgCancel">Cancel</button>
@@ -2376,6 +2389,13 @@ import {
   promiseWithTimeout,
 } from './scripts/navigation-guards.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
+import {
+  finalizeExportFilename,
+  paddedSequence,
+  reconcileSelectionOrder,
+  resolveExportItems,
+  sortItemsForExport,
+} from './scripts/export-order.mjs';
 
 'use strict';
 
@@ -2403,6 +2423,7 @@ const state = {
   snapEnabled: false,
   gridAppearance: 'dots', // 'none' | 'dots'
 };
+let selectionOrderIds = [];
 const ZOOM_MIN = 0.004;
 const ZOOM_ABS_FLOOR = 1e-6;
 const ZOOM_MAX = 100; // 10000%
@@ -2653,6 +2674,37 @@ function groupUiRect(group) {
 
 function effectiveHitItem(it) {
   return it;
+}
+
+function marqueeSelectionIds(bx1, by1, bx2, by2, keep = new Set()) {
+  const hits = new Set(keep);
+  const promotedGroups = new Set();
+
+  // A group already kept by Shift-marquee remains atomic.
+  for (const id of hits) {
+    if (isGroupItem(byId(id))) promotedGroups.add(id);
+  }
+
+  for (const it of state.items) {
+    if (isGroupItem(it)) continue;
+    const b = boundsOf(it);
+    if (b.x < bx2 && b.x + b.w > bx1 && b.y < by2 && b.y + b.h > by1) {
+      const group = groupOfItem(it);
+      if (group) {
+        promotedGroups.add(group.id);
+        hits.add(group.id);
+      } else {
+        hits.add(effectiveHitItem(it).id);
+      }
+    }
+  }
+
+  // Marquee selection treats grouped content atomically. Direct clicks still
+  // select children, but a marquee touching any child resolves to its group.
+  for (const gid of promotedGroups) {
+    for (const child of childrenOfGroup(gid)) hits.delete(child.id);
+  }
+  return hits;
 }
 
 function isInLockedGroup(it) {
@@ -3173,6 +3225,16 @@ function boundsOf(it) {
   const x2 = Math.max(...xs), y2 = Math.max(...ys);
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
 }
+
+function orderedSelectedIds(preferredIds = selectionOrderIds) {
+  selectionOrderIds = reconcileSelectionOrder(preferredIds, selectedItems(), boundsOf);
+  return [...selectionOrderIds];
+}
+
+function resetSelectionOrder(ids = []) {
+  selectionOrderIds = [...new Set(ids)];
+}
+
 function setRectFromTopLeftBoard(it, topLeft, w, h) {
   const a = rotRad(it);
   const c = rotateVec(w / 2, h / 2, a);
@@ -4202,6 +4264,7 @@ function resetLiveSessionToBlank() {
   state.items = [];
   invalidateWorkspaceBBox();
   state.sel.clear();
+  resetSelectionOrder();
   state.boardGray = false;
   state.snapEnabled = false;
   state.gridAppearance = 'dots';
@@ -4286,6 +4349,7 @@ async function restoreSession() {
       state.view.s = savedView.s;
     }
     state.sel.clear();
+    resetSelectionOrder();
     cropItemId = null;
     noteEditId = null;
     noteTextLive = false;
@@ -8487,6 +8551,7 @@ function selectAll() {
     ids.add(effectiveHitItem(it).id);
   }
   state.sel = ids;
+  resetSelectionOrder(sortItemsForExport(selectedItems(), 'visual', boundsOf).map(it => it.id));
   updateSelBar(); invalidate();
 }
 
@@ -8908,6 +8973,7 @@ async function clearBoard() {
   state.items = [];
   invalidateWorkspaceBBox();
   state.sel.clear();
+  resetSelectionOrder();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
 }
 
@@ -8928,6 +8994,8 @@ const EXT = {
 };
 
 let exportImageItems = [];
+let exportSelectionItems = [];
+let exportSelectionPreferredIds = [];
 
 function hasActiveCrop(it) {
   const cr = cropOf(it);
@@ -8961,16 +9029,16 @@ function sanitizeFilename(name) {
   return String(name || 'image').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'image';
 }
 
-function applyNamePattern(pattern, index, baseName, ext) {
+function applyNamePattern(pattern, index, baseName, ext, total = 1) {
   const stem = (baseName || 'image').replace(/\.[^.]+$/i, '') || 'image';
   let name = pattern
     .replace(/%%/g, '\x00P\x00')
+    .replace(/%N/g, paddedSequence(index, total))
     .replace(/%n/g, String(index))
     .replace(/%0/g, stem)
     .replace(/\x00P\x00/g, '%');
   name = sanitizeFilename(name);
-  if (!/\.[a-z0-9]{2,5}$/i.test(name)) name += '.' + ext;
-  return name;
+  return finalizeExportFilename(name, ext);
 }
 
 function drawBoardItemExport(g, it, useCrop) {
@@ -9037,24 +9105,45 @@ const blobToBase64 = blob => new Promise((res, rej) => {
 });
 
 function updateExportNamePreview() {
-  const pattern = $('#expImgName').value || '%n_%0';
+  const pattern = $('#expImgName').value || '%N_%0';
   const format = $('#expImgFormat').value;
   const ext = format === 'original' ? 'png' : (format === 'jpeg' ? 'jpg' : format);
   const first = exportImageItems[0];
   const base = first ? (first.name || images.get(first.imgId)?.name || 'image') : 'image';
-  let text = applyNamePattern(pattern, 1, base, ext);
+  let text = applyNamePattern(pattern, 1, base, ext, exportImageItems.length);
   if (exportImageItems.length > 1) {
     const last = exportImageItems[exportImageItems.length - 1];
     const baseLast = last.name || images.get(last.imgId)?.name || 'image';
-    text += ' … ' + applyNamePattern(pattern, exportImageItems.length, baseLast, ext);
+    text += ' … ' + applyNamePattern(pattern, exportImageItems.length, baseLast, ext, exportImageItems.length);
   }
   $('#expImgPreview').textContent = text;
 }
 
+function rebuildExportImageOrder() {
+  exportImageItems = resolveExportItems({
+    selectedItems: exportSelectionItems,
+    preferredIds: exportSelectionPreferredIds,
+    order: $('#expImgOrder').value || 'selection',
+    isImage: isImageItem,
+    isGroup: isGroupItem,
+    childrenOfGroup,
+    getBounds: boundsOf,
+  });
+  updateExportNamePreview();
+}
+
 async function openExportImagesDialog() {
-  const items = (state.sel.size ? selectedItems() : state.items).filter(isImageItem);
+  if (state.sel.size) {
+    exportSelectionItems = selectedItems();
+    exportSelectionPreferredIds = orderedSelectedIds();
+  } else {
+    exportSelectionItems = state.items.filter(isImageItem);
+    exportSelectionPreferredIds = sortItemsForExport(exportSelectionItems, 'visual', boundsOf).map(it => it.id);
+  }
+  $('#expImgOrder').value = 'selection';
+  rebuildExportImageOrder();
+  const items = exportImageItems;
   if (!items.length) { toast('No images to export'); return; }
-  exportImageItems = items;
   const croppedCount = items.filter(hasActiveCrop).length;
   $('#expImgCount').textContent = `${items.length} image${items.length === 1 ? '' : 's'} will be exported`;
   const saved = localStorage.getItem('refboard.exportDir');
@@ -9062,8 +9151,8 @@ async function openExportImagesDialog() {
   else if (window.RefBoardAPI?.getDefaultExportDir) {
     try { $('#expImgDir').value = await window.RefBoardAPI.getDefaultExportDir(); } catch (e) { /* ignore */ }
   }
-  $('#expImgName').value = '%n_%0';
-  $('#expImgNamePreset').value = '%n_%0';
+  $('#expImgName').value = '%N_%0';
+  $('#expImgNamePreset').value = '%N_%0';
   $('#expImgFormat').value = 'original';
   const cropCheck = $('#expImgCrop');
   cropCheck.disabled = croppedCount === 0;
@@ -9099,7 +9188,7 @@ async function runExportImages() {
   const dir = $('#expImgDir').value.trim();
   const format = $('#expImgFormat').value;
   const useCrop = $('#expImgCrop').checked;
-  const pattern = $('#expImgName').value || '%n_%0';
+  const pattern = $('#expImgName').value || '%N_%0';
   const useDesktop = !!(window.RefBoardAPI?.writeExportFiles && dir);
   if (useDesktop && !dir) { toast('Choose a save location first'); return; }
 
@@ -9117,7 +9206,7 @@ async function runExportImages() {
       if (!out?.blob) continue;
       n++;
       const base = it.name || im.name || `image-${n}`;
-      const name = applyNamePattern(pattern, n, base, out.ext);
+      const name = applyNamePattern(pattern, n, base, out.ext, exportImageItems.length);
       if (useDesktop) {
         files.push({ name, data: await blobToBase64(out.blob) });
       } else {
@@ -9742,6 +9831,7 @@ async function openNewBoardImpl() {
   invalidateWorkspaceBBox();
   cachedCurrentBoardThumb = null;
   state.sel.clear();
+  resetSelectionOrder();
   state.boardGray = false;
   state.snapEnabled = false;
   state.gridAppearance = 'dots';
@@ -9872,6 +9962,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
     const ga = normalizeGridAppearance(j.gridAppearance);
     if (ga) state.gridAppearance = ga;
     state.sel.clear();
+    resetSelectionOrder();
     cropItemId = null;
     arrowTool = null;
     setDrawActive(false);
@@ -11622,12 +11713,20 @@ canvas.addEventListener('pointerdown', async e => {
       }
     }
     if (e.shiftKey) {
-      if (state.sel.has(it.id)) { if (state.anchorId === it.id) state.anchorId = null; state.sel.delete(it.id); updateSelBar(); invalidate(); return; }
+      const order = orderedSelectedIds();
+      if (state.sel.has(it.id)) {
+        if (state.anchorId === it.id) state.anchorId = null;
+        state.sel.delete(it.id);
+        resetSelectionOrder(order.filter(id => id !== it.id));
+        updateSelBar(); invalidate(); return;
+      }
       state.sel.add(it.id);
+      resetSelectionOrder([...order, it.id]);
       if (!state.anchorId || !state.sel.has(state.anchorId)) state.anchorId = it.id;
       updateSelBar(); invalidate();
     } else if (!state.sel.has(it.id)) {
       state.sel = new Set([it.id]);
+      resetSelectionOrder([it.id]);
       state.anchorId = it.id;
       updateSelBar(); invalidate();
     }
@@ -11639,8 +11738,11 @@ canvas.addEventListener('pointerdown', async e => {
       };
     }
   } else {
-    if (!e.shiftKey && state.sel.size) { state.sel.clear(); state.anchorId = null; updateSelBar(); invalidate(); }
-    mode = { type: 'marquee', sx, sy, keep: e.shiftKey ? new Set(state.sel) : new Set() };
+    const orderBase = e.shiftKey ? orderedSelectedIds() : [];
+    if (!e.shiftKey && state.sel.size) {
+      state.sel.clear(); resetSelectionOrder(); state.anchorId = null; updateSelBar(); invalidate();
+    }
+    mode = { type: 'marquee', sx, sy, keep: e.shiftKey ? new Set(state.sel) : new Set(), orderBase };
     marquee = { sx, sy, ex: sx, ey: sy };
   }
 });
@@ -11781,15 +11883,8 @@ window.addEventListener('pointermove', e => {
     marquee.ex = sx; marquee.ey = sy;
     const [bx1, by1] = toBoard(Math.min(marquee.sx, marquee.ex), Math.min(marquee.sy, marquee.ey));
     const [bx2, by2] = toBoard(Math.max(marquee.sx, marquee.ex), Math.max(marquee.sy, marquee.ey));
-    state.sel = new Set(mode.keep);
-    const marqueeHits = new Set();
-    for (const it of state.items) {
-      if (isGroupItem(it)) continue;
-      const b = boundsOf(it);
-      if (b.x < bx2 && b.x + b.w > bx1 && b.y < by2 && b.y + b.h > by1)
-        marqueeHits.add(effectiveHitItem(it).id);
-    }
-    for (const id of marqueeHits) state.sel.add(id);
+    state.sel = marqueeSelectionIds(bx1, by1, bx2, by2, mode.keep);
+    resetSelectionOrder(reconcileSelectionOrder(mode.orderBase, selectedItems(), boundsOf));
     updateSelBar(); invalidate();
   } else if (mode.type === 'arrowCreate') {
     const [bx, by] = toBoard(sx, sy);
@@ -11863,6 +11958,7 @@ window.addEventListener('pointerup', e => {
     if (state.sel.size > 1) {
       // Plain click on one of several selected items: select just that one.
       state.sel = new Set([mode.hit]);
+      resetSelectionOrder([mode.hit]);
       updateSelBar();
       invalidate();
     } else if (isNoteItem(hit)) {
@@ -12095,6 +12191,7 @@ window.addEventListener('contextmenu', e => {
   const it = itemAt(sx, sy);
   if (it && !state.sel.has(it.id)) {
     state.sel = new Set([it.id]);
+    resetSelectionOrder([it.id]);
     updateSelBar(); invalidate();
   }
   showMenu(e.clientX, e.clientY, it);
@@ -12607,7 +12704,7 @@ window.addEventListener('keydown', e => {
     else if (k === 'v') activateSelectMode();
     else if (k === 'g') e.shiftKey ? toggleBoardGray() : toggleImageGray();
     else if (k === '?') helpModal.classList.toggle('show');
-    else if (k === 'escape') { state.sel.clear(); updateSelBar(); closeMenu(); invalidate(); }
+    else if (k === 'escape') { state.sel.clear(); resetSelectionOrder(); updateSelBar(); closeMenu(); invalidate(); }
     else if (k.startsWith('arrow')) {
       e.preventDefault();
       if (e.altKey) {
@@ -13173,6 +13270,7 @@ $('#expImgNamePreset').addEventListener('change', e => {
 });
 $('#expImgName').addEventListener('input', updateExportNamePreview);
 $('#expImgFormat').addEventListener('change', updateExportNamePreview);
+$('#expImgOrder').addEventListener('change', rebuildExportImageOrder);
 $('#confirmOk').addEventListener('click', () => hideConfirm(true));
 $('#confirmCancel').addEventListener('click', () => hideConfirm(false));
 $('#confirmClose').addEventListener('click', () => hideConfirm(false));

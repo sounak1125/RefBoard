@@ -8,6 +8,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-format');
+const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -624,7 +625,12 @@ ${itemArg}${itemNotify}[RefBoardShellNotify]::SHChangeNotify(0x08000000, 0x00001
 }
 
 function registerFileTypeIntegration() {
-  if (process.platform !== 'win32') return;
+  if (!isInstalledWindowsBuild({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    exePath: process.execPath,
+    productName: 'RefBoard',
+  })) return;
   const { dll, script } = thumbnailHandlerPaths();
   if (!fsSync.existsSync(dll) || !fsSync.existsSync(script)) return;
   const exePath = process.execPath;
