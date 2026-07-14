@@ -2390,6 +2390,12 @@ import {
 } from './scripts/navigation-guards.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
 import {
+  IMAGE_FULL_TIER,
+  IMAGE_PROXY_TIER,
+  selectImageRenderDemand,
+  selectScreenImageTier,
+} from './scripts/image-render-demand.mjs';
+import {
   finalizeExportFilename,
   paddedSequence,
   reconcileSelectionOrder,
@@ -2473,10 +2479,14 @@ function touchFullBitmap(im) {
 
 function imageMemoryStats() {
   const full = imageResidency.stats();
-  let residentBlobBytes = 0, diskBlobBytes = 0, lodPixels = 0, lodCount = 0;
+  let residentBlobBytes = 0, diskBlobBytes = 0, lodPixels = 0, lodCount = 0, proxyPixels = 0, proxyCount = 0;
   for (const im of images.values()) {
     residentBlobBytes += im.blob instanceof Blob ? im.blob.size : 0;
     diskBlobBytes += im.blobSize || 0;
+    if (im.proxy) {
+      proxyPixels += Math.max(1, im.proxyW || im.proxy.width || 1) * Math.max(1, im.proxyH || im.proxy.height || 1);
+      proxyCount++;
+    }
     for (const entry of im.lod?.entries?.values?.() || []) {
       lodPixels += entry.pixels || 0;
       lodCount++;
@@ -2488,6 +2498,8 @@ function imageMemoryStats() {
     pinnedFullCount: full.pinnedCount,
     decodedFullMiB: Math.round(full.fullPixels * 4 / 104857.6) / 10,
     decodedFullBudgetMiB: Math.round(full.maxFullPixels * 4 / 104857.6) / 10,
+    stableProxyCount: proxyCount,
+    stableProxyMiB: Math.round(proxyPixels * 4 / 104857.6) / 10,
     lodCount,
     lodMiB: Math.round(lodPixels * 4 / 104857.6) / 10,
     residentBlobMiB: Math.round(residentBlobBytes / 104857.6) / 10,
@@ -3518,12 +3530,10 @@ function applyRenderSmoothing(g) {
   g.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
 }
 
-const IMAGE_LOD_BUCKETS = [0.5, 0.25, 0.125, 0.0625];
-const IMAGE_LOD_FULL_RES_CUTOVER = 0.75;
-const IMAGE_LOD_MIN_DIM = 64;
 const IMAGE_LOD_MAX_PIXELS = 8_000_000; // ~31 MiB RGBA; disk-backed originals remain lossless
 const IMAGE_LOD_MAX_CONCURRENT = 1;
 const IMAGE_LOD_MAX_QUEUE = 8;
+const IMAGE_STABLE_PROXY_MAX_DIM = IMAGE_PROXY_TIER;
 let imageLodTotalPixels = 0;
 let imageLodClock = 0;
 let imageLodActiveJobs = 0;
@@ -3538,6 +3548,166 @@ let imageDecodeActiveCount = 0;
 let imageDecodePumpScheduled = false;
 /** @type {{ im: object, priority: number, display: boolean, itemId: string|null, started: boolean, resolveSlot: () => void }[]} */
 const imageDecodeQueue = [];
+let allowedImageLodDemand = new Set();
+let allowedImageFullDemand = new Set();
+const imageDisplayTargets = new Map();
+let activeImageLodDemand = new Set();
+
+const imageLodDemandKey = (imgId, bucket) => `lod:${imgId}:${bucket}`;
+const imageFullDemandKey = imgId => `full:${imgId}`;
+
+function imageItemScreenDistance2(it) {
+  const { w, h } = boardSize();
+  const sx = (it.x + it.w / 2) * state.view.s + state.view.tx;
+  const sy = (it.y + it.h / 2) * state.view.s + state.view.ty;
+  return (sx - w / 2) ** 2 + (sy - h / 2) ** 2;
+}
+
+function imageRequiredTexturePixels(it, im, cr) {
+  const sourceLongEdge = Math.max(1, im.w, im.h);
+  const displayScale = imageDisplayScale(it, im, cr);
+  const physicalScale = Math.max(1, Math.min(2, devicePixelRatio || 1));
+  return Math.max(1, Math.ceil(sourceLongEdge * displayScale * physicalScale));
+}
+
+function imageTargetForItem(it) {
+  return imageDisplayTargets.get(it?.id) || IMAGE_PROXY_TIER;
+}
+
+/**
+ * Admit only the closest high-quality surfaces that fit the decoded budgets.
+ * Every other visible image keeps drawing its stable proxy, so a fixed view can
+ * never create an evict/redecode loop.
+ */
+function updateImageRenderDemandPlan(items) {
+  const lodCandidates = [];
+  const fullCandidates = [];
+  const navigating = isNavigatingView();
+  for (const it of items || []) {
+    if (!isImageItem(it)) continue;
+    const im = images.get(it.imgId);
+    if (!im) continue;
+    const cr = cropOf(it);
+    const target = selectScreenImageTier({
+      requiredPixels: imageRequiredTexturePixels(it, im, cr),
+      sourcePixels: Math.max(im.w, im.h),
+      previousTier: imageDisplayTargets.get(it.id),
+      navigating,
+    });
+    imageDisplayTargets.set(it.id, target);
+    const distance = imageItemScreenDistance2(it) - (state.sel.has(it.id) ? 1e15 : 0);
+    if (target === IMAGE_FULL_TIER) {
+      fullCandidates.push({
+        key: imageFullDemandKey(it.imgId),
+        pixels: Math.max(1, im.w) * Math.max(1, im.h),
+        distance,
+      });
+    } else if (target > IMAGE_PROXY_TIER) {
+      const d = imageLodDims(im, target);
+      lodCandidates.push({
+        key: imageLodDemandKey(it.imgId, target),
+        pixels: d.w * d.h,
+        distance,
+      });
+    }
+  }
+  allowedImageLodDemand = selectImageRenderDemand(lodCandidates, IMAGE_LOD_MAX_PIXELS).selected;
+  allowedImageFullDemand = selectImageRenderDemand(fullCandidates, FULL_BITMAP_MAX_PIXELS).selected;
+}
+
+function stableProxyDims(w, h) {
+  const sourceW = Math.max(1, Number(w) || 1);
+  const sourceH = Math.max(1, Number(h) || 1);
+  const scale = Math.min(1, IMAGE_STABLE_PROXY_MAX_DIM / Math.max(sourceW, sourceH));
+  return {
+    w: Math.max(1, Math.round(sourceW * scale)),
+    h: Math.max(1, Math.round(sourceH * scale)),
+  };
+}
+
+async function createStableImageProxy(blob, sourceW, sourceH) {
+  if (!(blob instanceof Blob) || !blob.size) return null;
+  const d = stableProxyDims(sourceW, sourceH);
+  try {
+    return await createImageBitmap(blob, {
+      resizeWidth: d.w,
+      resizeHeight: d.h,
+      resizeQuality: 'high',
+    });
+  } catch {
+    let source = null;
+    try {
+      source = await decodeToBitmap(blob);
+      const canvas = document.createElement('canvas');
+      canvas.width = d.w;
+      canvas.height = d.h;
+      const g = canvas.getContext('2d');
+      g.imageSmoothingEnabled = true;
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(source, 0, 0, d.w, d.h);
+      const proxy = await createImageBitmap(canvas);
+      canvas.width = 0;
+      canvas.height = 0;
+      return proxy;
+    } finally {
+      try { source?.close?.(); } catch (e) {}
+    }
+  }
+}
+
+async function ensureStableImageProxy(im, suppliedBlob = null) {
+  if (!im) return null;
+  if (im.proxy) return im.proxy;
+  if (im.proxyPromise) return im.proxyPromise;
+  const version = ensureImageVersion(im);
+  const promise = (async () => {
+    const blob = suppliedBlob instanceof Blob ? suppliedBlob : await getImageBlob(im);
+    const proxy = await createStableImageProxy(blob, im.w, im.h);
+    if (!proxy) return null;
+    if (ensureImageVersion(im) !== version || im.proxy) {
+      try { proxy.close?.(); } catch (e) {}
+      return im.proxy || null;
+    }
+    const d = stableProxyDims(im.w, im.h);
+    im.proxy = proxy;
+    im.proxyW = d.w;
+    im.proxyH = d.h;
+    invalidate();
+    return proxy;
+  })().catch(err => {
+    console.warn('[image] stable proxy failed:', err);
+    return null;
+  }).finally(() => {
+    if (im.proxyPromise === promise) im.proxyPromise = null;
+  });
+  im.proxyPromise = promise;
+  return promise;
+}
+
+async function replaceStableImageProxy(im, blob) {
+  if (!im) return null;
+  const version = ensureImageVersion(im);
+  let proxy = null;
+  try {
+    proxy = await createStableImageProxy(blob, im.w, im.h);
+  } catch (err) {
+    console.warn('[image] stable proxy refresh failed:', err);
+    return im.proxy || null;
+  }
+  if (!proxy) return im.proxy || null;
+  if (ensureImageVersion(im) !== version) {
+    try { proxy.close?.(); } catch (e) {}
+    return im.proxy || null;
+  }
+  const old = im.proxy;
+  const d = stableProxyDims(im.w, im.h);
+  im.proxy = proxy;
+  im.proxyW = d.w;
+  im.proxyH = d.h;
+  try { old?.close?.(); } catch (e) {}
+  invalidate();
+  return proxy;
+}
 
 function ensureImageVersion(im) {
   if (!Number.isFinite(im.version)) im.version = 0;
@@ -3606,7 +3776,9 @@ function isImageDecodeDisplayStillNeeded(job) {
   if (!job.im.id && !(job.im.blob instanceof Blob && job.im.blob.size)) return false;
   const it = findImageDecodeItem(job.im, job.itemId);
   if (!it) return false;
-  return isItemVisible(it, currentLodViewport());
+  return isItemVisible(it, currentLodViewport())
+    && imageTargetForItem(it) === IMAGE_FULL_TIER
+    && allowedImageFullDemand.has(imageFullDemandKey(it.imgId));
 }
 
 function upgradeImageDecodeJob(im, priority, display, itemId) {
@@ -3829,32 +4001,12 @@ function requestImageDecode(im, it) {
 
 let historyApplySeq = 0;
 
-function imageLodDims(im, bucket) {
+function imageLodDims(im, tier) {
+  const scale = Math.min(1, Math.max(1, Number(tier) || IMAGE_PROXY_TIER) / Math.max(1, im.w, im.h));
   return {
-    w: Math.max(1, Math.round(im.w * bucket)),
-    h: Math.max(1, Math.round(im.h * bucket)),
+    w: Math.max(1, Math.round(im.w * scale)),
+    h: Math.max(1, Math.round(im.h * scale)),
   };
-}
-
-function imageLodBucketValid(im, bucket) {
-  const d = imageLodDims(im, bucket);
-  return d.w >= IMAGE_LOD_MIN_DIM && d.h >= IMAGE_LOD_MIN_DIM;
-}
-
-function chooseImageLodBucket(im, displayScale) {
-  if (!Number.isFinite(displayScale) || displayScale >= IMAGE_LOD_FULL_RES_CUTOVER) return null;
-
-  let best = null;
-  let smallestValid = null;
-
-  for (const bucket of IMAGE_LOD_BUCKETS) {
-    if (!imageLodBucketValid(im, bucket)) break;
-    smallestValid = bucket;
-    if (bucket >= displayScale) best = bucket;
-    else break;
-  }
-
-  return best || smallestValid || null;
 }
 
 function imageDisplayScale(it, im, cr) {
@@ -3875,8 +4027,8 @@ function isImageLodJobStillNeeded(job) {
   if (ensureImageVersion(job.im) !== job.version) return false;
   const it = state.items.find(x => x.id === job.itemId && isImageItem(x) && images.get(x.imgId) === job.im);
   if (!it || !isItemVisible(it, currentLodViewport())) return false;
-  const bucket = chooseImageLodBucket(job.im, imageDisplayScale(it, job.im, cropOf(it)));
-  return bucket === job.bucket;
+  return imageTargetForItem(it) === job.bucket
+    && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, job.bucket));
 }
 
 function scheduleImageLodPump() {
@@ -4015,7 +4167,7 @@ async function runImageLodJob(job) {
     const entry = { bitmap, w: d.w, h: d.h, pixels: d.w * d.h, lastUsed: ++imageLodClock };
     lod.entries.set(bucket, entry);
     imageLodTotalPixels += entry.pixels;
-    evictImageLods();
+    evictImageLods(im, bucket);
     invalidate();
   } catch (err) {
     console.error('[lod] failed:', err);
@@ -4025,13 +4177,15 @@ async function runImageLodJob(job) {
   }
 }
 
-function evictImageLods() {
+function evictImageLods(protectIm = null, protectBucket = null) {
   while (imageLodTotalPixels > IMAGE_LOD_MAX_PIXELS) {
     let oldest = null;
     for (const im of images.values()) {
       const lod = im.lod;
       if (!lod) continue;
       for (const [bucket, entry] of lod.entries) {
+        if (im === protectIm && bucket === protectBucket) continue;
+        if (activeImageLodDemand.has(imageLodDemandKey(im.id, bucket))) continue;
         if (!oldest || entry.lastUsed < oldest.entry.lastUsed) oldest = { im, bucket, entry };
       }
     }
@@ -4042,41 +4196,53 @@ function evictImageLods() {
 
 function getImageLodForDraw(im, it, cr) {
   if (!im) return null;
-  const bucket = chooseImageLodBucket(im, imageDisplayScale(it, im, cr));
+  const target = imageTargetForItem(it);
   const lod = ensureImageLodState(im);
   const nearestLod = target => {
-    let best = null, bestDistance = Infinity;
+    let best = null, bestBucket = null, bestDistance = Infinity;
     for (const [entryBucket, entry] of lod.entries) {
-      const distance = Math.abs(Math.log((entryBucket || 1) / (target || 1)));
-      if (distance < bestDistance) { best = entry; bestDistance = distance; }
+      const distance = Math.abs(Math.log(Math.max(1, entryBucket) / Math.max(1, target)));
+      if (distance < bestDistance) { best = entry; bestBucket = entryBucket; bestDistance = distance; }
     }
-    if (best) best.lastUsed = ++imageLodClock;
+    if (best) {
+      best.lastUsed = ++imageLodClock;
+      activeImageLodDemand.add(imageLodDemandKey(it.imgId, bestBucket));
+    }
     return best;
   };
-  if (!bucket) {
-    if (!im.bitmap) requestImageDecode(im, it);
-    else touchFullBitmap(im);
-    return im.bitmap ? null : nearestLod(1);
+  if (target === IMAGE_PROXY_TIER) return null;
+  if (target === IMAGE_FULL_TIER) {
+    if (allowedImageFullDemand.has(imageFullDemandKey(it.imgId))) {
+      if (!im.bitmap) requestImageDecode(im, it);
+      else touchFullBitmap(im);
+    }
+    return im.bitmap ? null : nearestLod(Math.max(im.w, im.h));
   }
-  const entry = lod.entries.get(bucket);
+  const entry = lod.entries.get(target);
   if (entry) {
     entry.lastUsed = ++imageLodClock;
+    activeImageLodDemand.add(imageLodDemandKey(it.imgId, target));
     return entry;
   }
-  queueImageLod(im, it, bucket);
-  if (im.bitmap) touchFullBitmap(im);
-  return nearestLod(bucket);
+  if (allowedImageLodDemand.has(imageLodDemandKey(it.imgId, target))) queueImageLod(im, it, target);
+  return nearestLod(target);
 }
 
 async function warmVisibleImageProxies() {
   const viewport = currentLodViewport();
-  for (const it of state.items) {
-    if (!isImageItem(it) || !isItemVisible(it, viewport)) continue;
+  const visible = state.items.filter(it => isImageItem(it) && isItemVisible(it, viewport));
+  updateImageRenderDemandPlan(visible);
+  for (const it of visible) {
     const im = images.get(it.imgId);
     if (!im) continue;
-    const bucket = chooseImageLodBucket(im, imageDisplayScale(it, im, cropOf(it)));
-    if (bucket) await queueImageLod(im, it, bucket);
-    else await withFullBitmap(im, () => null, { priority: 'display', itemId: it.id });
+    await ensureStableImageProxy(im);
+    const target = imageTargetForItem(it);
+    if (target !== IMAGE_PROXY_TIER && target !== IMAGE_FULL_TIER
+        && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, target))) {
+      await queueImageLod(im, it, target);
+    } else if (target === IMAGE_FULL_TIER && allowedImageFullDemand.has(imageFullDemandKey(it.imgId))) {
+      await withFullBitmap(im, () => null, { priority: 'display', itemId: it.id });
+    }
   }
   imageResidency.evict();
   invalidate();
@@ -4132,6 +4298,9 @@ function closeImageRecordBitmaps(records) {
     im.decodeFailed = false;
     try { im.bitmap?.close?.(); } catch (e) {}
     im.bitmap = null;
+    try { im.proxy?.close?.(); } catch (e) {}
+    im.proxy = null;
+    im.proxyPromise = null;
   }
 }
 
@@ -4158,6 +4327,8 @@ function releaseAllImages() {
   releaseDrawSessionCanvases();
   closeImageRecordBitmaps(images);
   images.clear();
+  imageDisplayTargets.clear();
+  activeImageLodDemand = new Set();
 }
 
 async function restoreSessionImages(imgIds, imageNames, savedImageMeta = []) {
@@ -4186,21 +4357,20 @@ async function restoreSessionImages(imgIds, imageNames, savedImageMeta = []) {
           try { bitmap?.close?.(); } catch (e) {}
           bitmap = null;
         }
-        return {
-          imgId,
-          image: prepareImageRecord({
-            id: imgId,
-            bitmap: null,
-            pristineBlob: null,
-            version: 0,
-            w, h,
-            blob: null,
-            blobSize: blob.size,
-            diskStored: true,
-            type: saved?.type || blob.type || 'image/png',
-            name: saved?.name || imageNames.get(imgId) || '',
-          }, imgId),
-        };
+        const image = prepareImageRecord({
+          id: imgId,
+          bitmap: null,
+          pristineBlob: null,
+          version: 0,
+          w, h,
+          blob: null,
+          blobSize: blob.size,
+          diskStored: true,
+          type: saved?.type || blob.type || 'image/png',
+          name: saved?.name || imageNames.get(imgId) || '',
+        }, imgId);
+        await ensureStableImageProxy(image, blob);
+        return { imgId, image };
       } catch {
         try { bitmap?.close?.(); } catch (e) {}
         return null;
@@ -4431,7 +4601,7 @@ async function runAutosaveTick() {
 }
 
 function isNavigatingView() {
-  return !!(spaceDown || altDown || mode?.type === 'pan' || Date.now() < wheelNavUntil);
+  return !!(spaceDown || altDown || mode?.type === 'pan' || viewAnimRaf || Date.now() < wheelNavUntil);
 }
 
 function scheduleSave(markDirty = true) {
@@ -4555,6 +4725,7 @@ async function restoreBitmapSnap(bitmapSnap) {
   im.bitmap = bitmap;
   touchFullBitmap(im);
   invalidateImageLods(im, { bumpVersion: true });
+  await replaceStableImageProxy(im, blob);
   await persistImageBlob(im, blob);
 }
 async function applyUndoEntry(entry) {
@@ -4661,6 +4832,7 @@ async function registerBlob(blob, name) {
   }, imgId);
   images.set(imgId, im);
   touchFullBitmap(im);
+  await ensureStableImageProxy(im, blob);
   await persistImageBlob(im, blob);
   imageResidency.evict({ protect: im });
   scheduleFullBitmapEviction();
@@ -4906,6 +5078,7 @@ async function commitDrawSession() {
     nextBitmap = null;
     touchFullBitmap(im);
     invalidateImageLods(im, { bumpVersion: true });
+    await replaceStableImageProxy(im, blob);
     await persistImageBlob(im, blob);
     scheduleFullBitmapEviction();
   } finally {
@@ -9943,6 +10116,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
           type: blob.type || 'image/png',
           name: rec.name || '',
         }, imgId);
+        await ensureStableImageProxy(im, blob);
         await persistImageBlob(im, blob);
         nextImages.set(imgId, im);
       } catch (e) {
@@ -10765,6 +10939,12 @@ function drawBoardItem(g, it, opts = {}) {
   const cr = cropOf(it);
   const sx = cr.l * im.w, sy = cr.t * im.h;
   const sw = Math.max(1, (cr.r - cr.l) * im.w), sh = Math.max(1, (cr.b - cr.t) * im.h);
+  const displayTarget = opts.noLod ? IMAGE_FULL_TIER : imageTargetForItem(it);
+  const highQualityDemandAllowed = opts.noLod
+    || (displayTarget === IMAGE_FULL_TIER
+      ? allowedImageFullDemand.has(imageFullDemandKey(it.imgId))
+      : displayTarget > IMAGE_PROXY_TIER
+        && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, displayTarget)));
   let bitmap = null;
   let sourceScaleX = 1;
   let sourceScaleY = 1;
@@ -10778,11 +10958,17 @@ function drawBoardItem(g, it, opts = {}) {
       sourceScaleY = lod.h / im.h;
     }
   }
-  if (!bitmap) {
+  if (!bitmap && highQualityDemandAllowed) {
     bitmap = im.bitmap;
     if (bitmap) touchFullBitmap(im);
   }
+  if (!bitmap && im.proxy) {
+    bitmap = im.proxy;
+    sourceScaleX = (im.proxyW || im.proxy.width || 1) / im.w;
+    sourceScaleY = (im.proxyH || im.proxy.height || 1) / im.h;
+  }
   if (!bitmap) {
+    void ensureStableImageProxy(im);
     if (opts.noLod) requestImageDecode(im, it);
     g.restore();
     return;
@@ -10989,6 +11175,8 @@ function draw() {
   ctx.imageSmoothingEnabled = renderQuality !== 'fast';
   ctx.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
   collectVisibleItems(viewport);
+  updateImageRenderDemandPlan(drawVisibleItems);
+  activeImageLodDemand = new Set();
   for (const it of drawVisibleItems) {
     if (isGroupItem(it)) {
       drawGroupFrame(it, { pulse: it.id === dropTargetGroupId });
@@ -11041,6 +11229,10 @@ function draw() {
     ctx.setLineDash([]);
   }
 
+  // Replacement surfaces are installed atomically during drawing. Once the
+  // frame has declared what it actually used, stale tiers can be reclaimed.
+  evictImageLods();
+
   const bits = [`${state.items.length} item${state.items.length === 1 ? '' : 's'}`, `${Math.round(s * 100)}%`];
   if (state.boardGray) bits.push('grayscale');
   if (state.snapEnabled) bits.push('snap');
@@ -11058,7 +11250,8 @@ function tick() {
   if (navigating) wasNavigatingView = true;
   else if (wasNavigatingView) {
     wasNavigatingView = false;
-    if (state.sel.size > 1) invalidate();
+    // Recompute screen-sized image targets only after navigation settles.
+    invalidate();
   }
   if (dropTargetGroupId) invalidate();
   if (!(pauseWhenHidden && document.hidden)) {
