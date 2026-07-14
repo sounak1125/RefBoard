@@ -1,12 +1,7 @@
 {
   "highlights": [
-    "Crop an image, then export just the cropped area at full source resolution.",
-    "The export dialog now shows the exact pixel size a cropped image will produce.",
-    "New drawing shortcuts: press E for the eraser, and use [ and ] to make the pen thinner or thicker.",
-    "Normalize selected images by width or height, not just by scale.",
-    "Batch exports can now be numbered in order, with new naming options for padded numbers and original file names.",
-    "Cleaner landing-page thumbnails - fixed stray black blocks in board previews.",
-    "Faster loading and lower memory use on large boards through disk-backed image streaming.",
-    "Fixed note cursor behavior and group rendering at extreme zoom levels."
+    "Bug fixes:",
+    "Image sharpness no longer wavers when zooming in and out.",
+    "Images no longer pop abruptly when switching quality."
   ]
 }
