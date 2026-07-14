@@ -32,6 +32,56 @@ export function selectImageRenderDemand(candidates, maxPixels) {
 export const IMAGE_PROXY_TIER = 256;
 export const IMAGE_DYNAMIC_TIERS = Object.freeze([512, 1024, 2048]);
 export const IMAGE_FULL_TIER = 'full';
+export const IMAGE_NAV_PREWARM_DELAY_MS = 48;
+export const IMAGE_FOCUS_UPGRADE_MS = 96;
+export const IMAGE_FOCUS_DOWNGRADE_MS = 56;
+
+export function imageTierPixelExtent(tier, sourcePixels) {
+  const source = Math.max(1, Number(sourcePixels) || 1);
+  return tier === IMAGE_FULL_TIER
+    ? source
+    : Math.min(source, Math.max(1, Number(tier) || IMAGE_PROXY_TIER));
+}
+
+/** Keep rapidly changing zoom targets from filling the decode queue with stale work. */
+export function updateImagePrewarmState({
+  previousTier = null,
+  previousSince = 0,
+  nextTier,
+  now = 0,
+  delayMs = IMAGE_NAV_PREWARM_DELAY_MS,
+} = {}) {
+  const time = Math.max(0, Number(now) || 0);
+  if (nextTier !== previousTier) return { tier: nextTier, since: time, ready: false };
+  const since = Math.max(0, Number(previousSince) || 0);
+  return { tier: nextTier, since, ready: time - since >= Math.max(0, Number(delayMs) || 0) };
+}
+
+/**
+ * Animate a resolution handoff as a short focus pull. Upgrades draw the ready
+ * surface with a diminishing blur; downgrades soften the old surface before
+ * switching. This avoids alpha/halo artifacts on transparent images.
+ */
+export function imageFocusTransition({ fromPixels, toPixels, elapsedMs } = {}) {
+  const from = Math.max(1, Number(fromPixels) || 1);
+  const to = Math.max(1, Number(toPixels) || 1);
+  const upgrade = to > from;
+  const durationMs = upgrade ? IMAGE_FOCUS_UPGRADE_MS : IMAGE_FOCUS_DOWNGRADE_MS;
+  const progress = Math.max(0, Math.min(1, (Number(elapsedMs) || 0) / durationMs));
+  if (progress >= 1 || from === to) {
+    return { done: true, draw: 'to', blurPx: 0, progress: 1, durationMs };
+  }
+  const eased = progress * progress * (3 - 2 * progress);
+  const ratio = Math.max(from, to) / Math.min(from, to);
+  const maxBlurPx = Math.min(1.6, Math.max(0.45, Math.log2(ratio) * 0.55));
+  return {
+    done: false,
+    draw: upgrade ? 'to' : 'from',
+    blurPx: upgrade ? maxBlurPx * (1 - eased) : maxBlurPx * eased,
+    progress,
+    durationMs,
+  };
+}
 
 /**
  * Pick a decoded surface from the image's physical on-screen long edge.

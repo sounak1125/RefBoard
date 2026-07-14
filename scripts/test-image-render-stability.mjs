@@ -1,10 +1,15 @@
 import fs from 'node:fs';
 import {
   IMAGE_DYNAMIC_TIERS,
+  IMAGE_FOCUS_DOWNGRADE_MS,
+  IMAGE_FOCUS_UPGRADE_MS,
   IMAGE_FULL_TIER,
+  IMAGE_NAV_PREWARM_DELAY_MS,
   IMAGE_PROXY_TIER,
+  imageFocusTransition,
   selectImageRenderDemand,
   selectScreenImageTier,
+  updateImagePrewarmState,
 } from './image-render-demand.mjs';
 
 function assert(cond, msg) {
@@ -98,21 +103,89 @@ assert(fit500.every(tier => tier === IMAGE_PROXY_TIER), '500 fit-to-board images
 const worstProxyMiB = 500 * IMAGE_PROXY_TIER * IMAGE_PROXY_TIER * 4 / 1048576;
 assert(worstProxyMiB === 125, '500 square stable proxies have a deterministic 125 MiB worst case');
 
+let prewarm = updateImagePrewarmState({ nextTier: 1024, now: 10 });
+assert(prewarm.tier === 1024 && !prewarm.ready, 'a new predictive tier waits before decoding');
+prewarm = updateImagePrewarmState({
+  previousTier: prewarm.tier,
+  previousSince: prewarm.since,
+  nextTier: 1024,
+  now: 10 + IMAGE_NAV_PREWARM_DELAY_MS - 1,
+});
+assert(!prewarm.ready, 'predictive decode does not start before the quiet window');
+prewarm = updateImagePrewarmState({
+  previousTier: prewarm.tier,
+  previousSince: prewarm.since,
+  nextTier: 1024,
+  now: 10 + IMAGE_NAV_PREWARM_DELAY_MS,
+});
+assert(prewarm.ready, 'a stable rapid-zoom target is prewarmed after the quiet window');
+const redirected = updateImagePrewarmState({
+  previousTier: prewarm.tier,
+  previousSince: prewarm.since,
+  nextTier: 2048,
+  now: 100,
+});
+assert(!redirected.ready && redirected.since === 100, 'changing zoom direction resets obsolete prewarm work');
+
+const upgradeStart = imageFocusTransition({ fromPixels: 512, toPixels: 2048, elapsedMs: 0 });
+const upgradeMiddle = imageFocusTransition({
+  fromPixels: 512,
+  toPixels: 2048,
+  elapsedMs: IMAGE_FOCUS_UPGRADE_MS / 2,
+});
+const upgradeEnd = imageFocusTransition({
+  fromPixels: 512,
+  toPixels: 2048,
+  elapsedMs: IMAGE_FOCUS_UPGRADE_MS,
+});
+assert(upgradeStart.draw === 'to' && upgradeStart.blurPx > upgradeMiddle.blurPx,
+  'quality upgrades start on the ready surface and gently remove blur');
+assert(upgradeEnd.done && upgradeEnd.blurPx === 0, 'quality upgrades finish perfectly sharp');
+const downgradeStart = imageFocusTransition({ fromPixels: 2048, toPixels: 512, elapsedMs: 0 });
+const downgradeMiddle = imageFocusTransition({
+  fromPixels: 2048,
+  toPixels: 512,
+  elapsedMs: IMAGE_FOCUS_DOWNGRADE_MS / 2,
+});
+const downgradeEnd = imageFocusTransition({
+  fromPixels: 2048,
+  toPixels: 512,
+  elapsedMs: IMAGE_FOCUS_DOWNGRADE_MS,
+});
+assert(downgradeStart.draw === 'from' && downgradeMiddle.blurPx > downgradeStart.blurPx,
+  'quality downgrades soften the old surface before switching');
+assert(downgradeEnd.done && downgradeEnd.draw === 'to', 'quality downgrades finish on the lower tier');
+for (let i = 0; i < 500; i += 1) {
+  const upgrading = i % 2 === 0;
+  const duration = upgrading ? IMAGE_FOCUS_UPGRADE_MS : IMAGE_FOCUS_DOWNGRADE_MS;
+  const frame = imageFocusTransition({
+    fromPixels: upgrading ? 256 : 4096,
+    toPixels: upgrading ? 4096 : 256,
+    elapsedMs: (i % (duration + 1)),
+  });
+  assert(Number.isFinite(frame.blurPx) && frame.blurPx >= 0 && frame.blurPx <= 1.6,
+    `500-image transition ${i} keeps blur finite and bounded`);
+}
+
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 assert(html.includes('const IMAGE_STABLE_PROXY_MAX_DIM = IMAGE_PROXY_TIER;'), 'stable proxy size cap is present');
 assert(html.includes('await ensureStableImageProxy(im, blob);'), 'image intake builds the stable proxy before completing');
 assert(html.includes('await ensureStableImageProxy(image, blob);'), 'session restore builds stable proxies while opening');
-assert(html.includes('if (!bitmap && im.proxy)'), 'renderer falls back to a stable proxy');
-const fullFallback = html.indexOf('if (!bitmap && highQualityDemandAllowed)');
-const proxyFallback = html.indexOf('if (!bitmap && im.proxy)');
+assert(html.includes('if (!surface && im.proxy)'), 'renderer falls back to a stable proxy');
+const fullFallback = html.indexOf('if (!surface && highQualityDemandAllowed && im.bitmap)');
+const proxyFallback = html.indexOf('if (!surface && im.proxy)');
 assert(fullFallback >= 0 && proxyFallback > fullFallback, 'full-resolution export/render paths remain ahead of proxy fallback');
 assert(html.includes('const highQualityDemandAllowed = opts.noLod'), 'noLod export paths always retain full-resolution demand');
 assert(html.includes('updateImageRenderDemandPlan(drawVisibleItems);'), 'each frame has a bounded high-quality demand plan');
 assert(html.includes('previousTier: imageDisplayTargets.get(it.id)'), 'screen-sized targets retain hysteresis state per item');
 assert(html.includes('const navigating = isNavigatingView();'), 'quality changes pause during navigation');
-assert(html.includes('return imageTargetForItem(it) === job.bucket'), 'obsolete zoom-tier jobs are cancelled');
-assert(html.includes('&& imageTargetForItem(it) === IMAGE_FULL_TIER'), 'obsolete full-resolution display jobs are cancelled');
+assert(html.includes('imagePrewarmTargets.get(it.id) === job.bucket'), 'predictive LOD jobs survive only while still desired');
+assert(html.includes("imagePrewarmTargets.get(it.id) === IMAGE_FULL_TIER"), 'predictive full decodes remain visibility gated');
+assert(html.includes('imageSurfaceTransitions.set(it.id, transition)'), 'resolution changes use a bounded focus transition');
+assert(html.includes("filters.push(`blur(${blurPx.toFixed(3)}px)`)") , 'focus transitions animate through the canvas filter');
+assert(html.includes('if (visibleImageIds.has(itemId)) continue;'), 'offscreen transitions release protected surfaces');
+assert(html.includes('if (!liveImageIds.has(itemId)) map.delete(itemId);'), 'deleted images cannot retain render state');
 assert(html.includes('activeImageLodDemand.add'), 'the currently drawn surface is protected during atomic replacement');
 assert(html.includes('evictImageLods(im, bucket);'), 'one admitted oversized LOD is protected from immediate self-eviction');
 assert(html.includes('try { im.proxy?.close?.(); }'), 'stable proxies close when a board is released');

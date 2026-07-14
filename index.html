@@ -2391,9 +2391,13 @@ import {
 import { createImageResidencyController } from './scripts/image-residency.mjs';
 import {
   IMAGE_FULL_TIER,
+  IMAGE_NAV_PREWARM_DELAY_MS,
   IMAGE_PROXY_TIER,
+  imageFocusTransition,
+  imageTierPixelExtent,
   selectImageRenderDemand,
   selectScreenImageTier,
+  updateImagePrewarmState,
 } from './scripts/image-render-demand.mjs';
 import {
   finalizeExportFilename,
@@ -3551,6 +3555,12 @@ const imageDecodeQueue = [];
 let allowedImageLodDemand = new Set();
 let allowedImageFullDemand = new Set();
 const imageDisplayTargets = new Map();
+const imageDesiredTargets = new Map();
+const imagePrewarmStates = new Map();
+const imagePrewarmTargets = new Map();
+const imageDisplayedSurfaces = new Map();
+const imageSurfaceTransitions = new Map();
+let imagePrewarmWakeTimer = 0;
 let activeImageLodDemand = new Set();
 
 const imageLodDemandKey = (imgId, bucket) => `lod:${imgId}:${bucket}`;
@@ -3580,22 +3590,29 @@ function imageTargetForItem(it) {
  * never create an evict/redecode loop.
  */
 function updateImageRenderDemandPlan(items) {
+  const visibleImageIds = new Set((items || []).filter(isImageItem).map(it => it.id));
+  const liveImageIds = new Set(state.items.filter(isImageItem).map(it => it.id));
+  for (const [itemId, transition] of imageSurfaceTransitions) {
+    if (visibleImageIds.has(itemId)) continue;
+    releaseImageSurfaceTransition(transition);
+    imageSurfaceTransitions.delete(itemId);
+  }
+  for (const itemId of imagePrewarmTargets.keys()) {
+    if (!visibleImageIds.has(itemId)) imagePrewarmTargets.delete(itemId);
+  }
+  for (const map of [imageDisplayTargets, imageDesiredTargets, imagePrewarmStates,
+    imageDisplayedSurfaces]) {
+    for (const itemId of map.keys()) {
+      if (!liveImageIds.has(itemId)) map.delete(itemId);
+    }
+  }
   const lodCandidates = [];
   const fullCandidates = [];
+  const prewarmRequests = [];
   const navigating = isNavigatingView();
-  for (const it of items || []) {
-    if (!isImageItem(it)) continue;
-    const im = images.get(it.imgId);
-    if (!im) continue;
-    const cr = cropOf(it);
-    const target = selectScreenImageTier({
-      requiredPixels: imageRequiredTexturePixels(it, im, cr),
-      sourcePixels: Math.max(im.w, im.h),
-      previousTier: imageDisplayTargets.get(it.id),
-      navigating,
-    });
-    imageDisplayTargets.set(it.id, target);
-    const distance = imageItemScreenDistance2(it) - (state.sel.has(it.id) ? 1e15 : 0);
+  const now = performance.now();
+  let prewarmWakeDelay = Number.POSITIVE_INFINITY;
+  const addCandidate = (it, im, target, distance) => {
     if (target === IMAGE_FULL_TIER) {
       fullCandidates.push({
         key: imageFullDemandKey(it.imgId),
@@ -3610,9 +3627,71 @@ function updateImageRenderDemandPlan(items) {
         distance,
       });
     }
+  };
+  for (const it of items || []) {
+    if (!isImageItem(it)) continue;
+    const im = images.get(it.imgId);
+    if (!im) continue;
+    const cr = cropOf(it);
+    const requiredPixels = imageRequiredTexturePixels(it, im, cr);
+    const desiredTarget = selectScreenImageTier({
+      requiredPixels,
+      sourcePixels: Math.max(im.w, im.h),
+      previousTier: imageDesiredTargets.get(it.id) || imageDisplayTargets.get(it.id),
+      navigating: false,
+    });
+    imageDesiredTargets.set(it.id, desiredTarget);
+    const target = selectScreenImageTier({
+      requiredPixels,
+      sourcePixels: Math.max(im.w, im.h),
+      previousTier: imageDisplayTargets.get(it.id),
+      navigating,
+    });
+    imageDisplayTargets.set(it.id, target);
+    const distance = imageItemScreenDistance2(it) - (state.sel.has(it.id) ? 1e15 : 0);
+    addCandidate(it, im, target, distance);
+
+    const previousPrewarm = imagePrewarmStates.get(it.id);
+    const prewarmState = updateImagePrewarmState({
+      previousTier: previousPrewarm?.tier,
+      previousSince: previousPrewarm?.since,
+      nextTier: desiredTarget,
+      now,
+      delayMs: IMAGE_NAV_PREWARM_DELAY_MS,
+    });
+    imagePrewarmStates.set(it.id, prewarmState);
+    if (navigating && prewarmState.ready && desiredTarget !== target) {
+      imagePrewarmTargets.set(it.id, desiredTarget);
+      // Displayed surfaces retain first claim on the budget. Selected-image
+      // prewarm remains ahead of unselected background work.
+      addCandidate(it, im, desiredTarget, distance + 1e14);
+      prewarmRequests.push({ it, im, target: desiredTarget });
+    } else {
+      imagePrewarmTargets.delete(it.id);
+      if (navigating && desiredTarget !== target) {
+        prewarmWakeDelay = Math.min(prewarmWakeDelay,
+          Math.max(0, prewarmState.since + IMAGE_NAV_PREWARM_DELAY_MS - now));
+      }
+    }
+  }
+  clearTimeout(imagePrewarmWakeTimer);
+  imagePrewarmWakeTimer = 0;
+  if (Number.isFinite(prewarmWakeDelay)) {
+    imagePrewarmWakeTimer = setTimeout(() => {
+      imagePrewarmWakeTimer = 0;
+      invalidate();
+    }, Math.max(1, Math.ceil(prewarmWakeDelay)));
   }
   allowedImageLodDemand = selectImageRenderDemand(lodCandidates, IMAGE_LOD_MAX_PIXELS).selected;
   allowedImageFullDemand = selectImageRenderDemand(fullCandidates, FULL_BITMAP_MAX_PIXELS).selected;
+  for (const { it, im, target } of prewarmRequests) {
+    if (target === IMAGE_FULL_TIER) {
+      if (allowedImageFullDemand.has(imageFullDemandKey(it.imgId))) requestImageDecode(im, it);
+    } else if (target > IMAGE_PROXY_TIER
+        && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, target))) {
+      void queueImageLod(im, it, target);
+    }
+  }
 }
 
 function stableProxyDims(w, h) {
@@ -3777,7 +3856,8 @@ function isImageDecodeDisplayStillNeeded(job) {
   const it = findImageDecodeItem(job.im, job.itemId);
   if (!it) return false;
   return isItemVisible(it, currentLodViewport())
-    && imageTargetForItem(it) === IMAGE_FULL_TIER
+    && (imageTargetForItem(it) === IMAGE_FULL_TIER
+      || imagePrewarmTargets.get(it.id) === IMAGE_FULL_TIER)
     && allowedImageFullDemand.has(imageFullDemandKey(it.imgId));
 }
 
@@ -4027,7 +4107,7 @@ function isImageLodJobStillNeeded(job) {
   if (ensureImageVersion(job.im) !== job.version) return false;
   const it = state.items.find(x => x.id === job.itemId && isImageItem(x) && images.get(x.imgId) === job.im);
   if (!it || !isItemVisible(it, currentLodViewport())) return false;
-  return imageTargetForItem(it) === job.bucket
+  return (imageTargetForItem(it) === job.bucket || imagePrewarmTargets.get(it.id) === job.bucket)
     && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, job.bucket));
 }
 
@@ -4164,7 +4244,7 @@ async function runImageLodJob(job) {
       return;
     }
     lod.pending.delete(bucket);
-    const entry = { bitmap, w: d.w, h: d.h, pixels: d.w * d.h, lastUsed: ++imageLodClock };
+    const entry = { bitmap, w: d.w, h: d.h, bucket, pixels: d.w * d.h, lastUsed: ++imageLodClock };
     lod.entries.set(bucket, entry);
     imageLodTotalPixels += entry.pixels;
     evictImageLods(im, bucket);
@@ -4325,9 +4405,16 @@ function releaseDrawSessionCanvases(session = drawSession) {
 
 function releaseAllImages() {
   releaseDrawSessionCanvases();
+  clearTimeout(imagePrewarmWakeTimer);
+  imagePrewarmWakeTimer = 0;
+  clearImageSurfaceTransitions();
   closeImageRecordBitmaps(images);
   images.clear();
   imageDisplayTargets.clear();
+  imageDesiredTargets.clear();
+  imagePrewarmStates.clear();
+  imagePrewarmTargets.clear();
+  imageDisplayedSurfaces.clear();
   activeImageLodDemand = new Set();
 }
 
@@ -10876,6 +10963,95 @@ function clampNoteBoxToHug(it) {
   if (it.h < hug.h) it.h = hug.h;
 }
 
+function protectImageSurface(surface, it) {
+  if (!surface) return;
+  if (surface.kind === 'lod') {
+    activeImageLodDemand.add(imageLodDemandKey(it.imgId, surface.bucket));
+  } else if (surface.kind === 'full') {
+    touchFullBitmap(surface.im);
+  }
+}
+
+function releaseImageSurfaceTransition(transition) {
+  if (transition?.pinnedFull) imageResidency.unpin(transition.from?.im);
+}
+
+function clearImageSurfaceTransitions() {
+  for (const transition of imageSurfaceTransitions.values()) releaseImageSurfaceTransition(transition);
+  imageSurfaceTransitions.clear();
+}
+
+function isImageSurfaceCurrent(surface) {
+  if (!surface?.bitmap || !surface.im) return false;
+  if (surface.kind === 'proxy') return surface.im.proxy === surface.bitmap;
+  if (surface.kind === 'full') return surface.im.bitmap === surface.bitmap;
+  if (surface.kind === 'lod') return surface.im.lod?.entries?.get(surface.bucket)?.bitmap === surface.bitmap;
+  return surface.kind === 'draw';
+}
+
+function transitionImageSurface(it, candidate) {
+  const previous = imageDisplayedSurfaces.get(it.id);
+  if (!previous || previous.im !== candidate.im || !isImageSurfaceCurrent(previous)) {
+    const stale = imageSurfaceTransitions.get(it.id);
+    releaseImageSurfaceTransition(stale);
+    imageSurfaceTransitions.delete(it.id);
+    imageDisplayedSurfaces.set(it.id, candidate);
+    return { surface: candidate, blurPx: 0 };
+  }
+
+  let transition = imageSurfaceTransitions.get(it.id);
+  if (transition && transition.to.key !== candidate.key) {
+    releaseImageSurfaceTransition(transition);
+    imageSurfaceTransitions.delete(it.id);
+    transition = null;
+  }
+
+  if (!transition && previous.key !== candidate.key) {
+    const fromPixels = previous.extent;
+    const toPixels = candidate.extent;
+    const ratio = Math.max(fromPixels, toPixels) / Math.max(1, Math.min(fromPixels, toPixels));
+    if (ratio < 1.15) {
+      imageDisplayedSurfaces.set(it.id, candidate);
+      return { surface: candidate, blurPx: 0 };
+    }
+    transition = {
+      from: previous,
+      to: candidate,
+      startedAt: performance.now(),
+      pinnedFull: false,
+    };
+    // A downgrade draws the previous surface for a few more frames. Pin a
+    // full-resolution source so the residency timer cannot close it mid-pull.
+    if (toPixels < fromPixels && previous.kind === 'full') {
+      imageResidency.pin(previous.im);
+      transition.pinnedFull = true;
+    }
+    imageSurfaceTransitions.set(it.id, transition);
+  }
+
+  if (!transition) return { surface: candidate, blurPx: 0 };
+  if (!isImageSurfaceCurrent(transition.from) || !isImageSurfaceCurrent(transition.to)) {
+    releaseImageSurfaceTransition(transition);
+    imageSurfaceTransitions.delete(it.id);
+    imageDisplayedSurfaces.set(it.id, candidate);
+    return { surface: candidate, blurPx: 0 };
+  }
+  const focus = imageFocusTransition({
+    fromPixels: transition.from.extent,
+    toPixels: transition.to.extent,
+    elapsedMs: performance.now() - transition.startedAt,
+  });
+  if (focus.done) {
+    releaseImageSurfaceTransition(transition);
+    imageSurfaceTransitions.delete(it.id);
+    imageDisplayedSurfaces.set(it.id, transition.to);
+    return { surface: transition.to, blurPx: 0 };
+  }
+  const surface = focus.draw === 'from' ? transition.from : transition.to;
+  protectImageSurface(surface, it);
+  return { surface, blurPx: focus.blurPx };
+}
+
 function drawBoardItem(g, it, opts = {}) {
   if (isGroupItem(it)) return;
   // Toolbar-only selection keeps the note canvas-rendered (only the format
@@ -10945,42 +11121,81 @@ function drawBoardItem(g, it, opts = {}) {
       ? allowedImageFullDemand.has(imageFullDemandKey(it.imgId))
       : displayTarget > IMAGE_PROXY_TIER
         && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, displayTarget)));
-  let bitmap = null;
-  let sourceScaleX = 1;
-  let sourceScaleY = 1;
+  let surface = null;
   if (drawSession?.itemId === it.id) {
-    bitmap = drawSession.canvas;
+    surface = {
+      key: `draw:${it.id}`,
+      kind: 'draw',
+      bitmap: drawSession.canvas,
+      sourceScaleX: 1,
+      sourceScaleY: 1,
+      extent: Math.max(im.w, im.h),
+      im,
+    };
   } else if (!opts.noLod) {
     const lod = getImageLodForDraw(im, it, cr);
     if (lod) {
-      bitmap = lod.bitmap;
-      sourceScaleX = lod.w / im.w;
-      sourceScaleY = lod.h / im.h;
+      surface = {
+        key: `lod:${it.imgId}:${lod.bucket}`,
+        kind: 'lod',
+        bucket: lod.bucket,
+        bitmap: lod.bitmap,
+        sourceScaleX: lod.w / im.w,
+        sourceScaleY: lod.h / im.h,
+        extent: imageTierPixelExtent(lod.bucket, Math.max(im.w, im.h)),
+        im,
+      };
     }
   }
-  if (!bitmap && highQualityDemandAllowed) {
-    bitmap = im.bitmap;
-    if (bitmap) touchFullBitmap(im);
+  if (!surface && highQualityDemandAllowed && im.bitmap) {
+    touchFullBitmap(im);
+    surface = {
+      key: `full:${it.imgId}:${ensureImageVersion(im)}`,
+      kind: 'full',
+      bitmap: im.bitmap,
+      sourceScaleX: 1,
+      sourceScaleY: 1,
+      extent: Math.max(im.w, im.h),
+      im,
+    };
   }
-  if (!bitmap && im.proxy) {
-    bitmap = im.proxy;
-    sourceScaleX = (im.proxyW || im.proxy.width || 1) / im.w;
-    sourceScaleY = (im.proxyH || im.proxy.height || 1) / im.h;
+  if (!surface && im.proxy) {
+    const proxyW = im.proxyW || im.proxy.width || 1;
+    const proxyH = im.proxyH || im.proxy.height || 1;
+    surface = {
+      key: `proxy:${it.imgId}:${ensureImageVersion(im)}`,
+      kind: 'proxy',
+      bitmap: im.proxy,
+      sourceScaleX: proxyW / im.w,
+      sourceScaleY: proxyH / im.h,
+      extent: Math.max(proxyW, proxyH),
+      im,
+    };
   }
-  if (!bitmap) {
+  if (!surface) {
     void ensureStableImageProxy(im);
     if (opts.noLod) requestImageDecode(im, it);
     g.restore();
     return;
   }
-  if (state.boardGray || it.gray) g.filter = 'grayscale(1)';
+  let blurPx = 0;
+  if (!opts.noLod && surface.kind !== 'draw') {
+    const transitioned = transitionImageSurface(it, surface);
+    surface = transitioned.surface;
+    blurPx = transitioned.blurPx;
+  }
+  protectImageSurface(surface, it);
+  const filters = [];
+  if (state.boardGray || it.gray) filters.push('grayscale(1)');
+  if (blurPx > 0.01) filters.push(`blur(${blurPx.toFixed(3)}px)`);
+  if (filters.length) g.filter = filters.join(' ');
   g.scale(it.flipX ? -1 : 1, it.flipY ? -1 : 1);
   g.drawImage(
-    bitmap,
-    sx * sourceScaleX,
-    sy * sourceScaleY,
-    Math.max(1, sw * sourceScaleX),
-    Math.max(1, sh * sourceScaleY),
+    surface.bitmap,
+    sx * surface.sourceScaleX,
+    sy * surface.sourceScaleY,
+    Math.max(1, sw * surface.sourceScaleX),
+    Math.max(1, sh * surface.sourceScaleY),
     -it.w / 2,
     -it.h / 2,
     it.w,
@@ -11246,6 +11461,7 @@ function draw() {
 }
 
 function tick() {
+  if (imageSurfaceTransitions.size) invalidate();
   const navigating = isNavigatingView();
   if (navigating) wasNavigatingView = true;
   else if (wasNavigatingView) {
