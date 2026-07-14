@@ -50,6 +50,20 @@ body{
   display:block; touch-action:none;
   transition:top .32s cubic-bezier(.22,1,.36,1), height .32s cubic-bezier(.22,1,.36,1);
 }
+.draw-size-preview{
+  position:fixed; z-index:89; left:0; top:0;
+  width:8px; height:8px; border:1px solid rgba(255,255,255,.96); border-radius:50%;
+  box-shadow:0 0 0 1px rgba(7,9,13,.9), 0 2px 10px rgba(0,0,0,.32);
+  pointer-events:none; opacity:0;
+  transform:translate(-50%,-50%) scale(.88);
+  transition:width .085s cubic-bezier(.22,1,.36,1), height .085s cubic-bezier(.22,1,.36,1),
+    opacity .12s ease, transform .12s cubic-bezier(.22,1,.36,1);
+  will-change:left,top,width,height,opacity,transform;
+}
+.draw-size-preview.show{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+@media (prefers-reduced-motion:reduce){
+  .draw-size-preview{ transition:opacity .08s ease; }
+}
 body.board-active:not(.titlebar-revealed) #board{
   top:0; height:100vh;
 }
@@ -1685,6 +1699,7 @@ body.board-active #whatsNewNotice{ display:none; }
 </div>
 
 <canvas id="board"></canvas>
+<div id="drawSizePreview" class="draw-size-preview" aria-hidden="true"></div>
 
 <div id="empty">
   <div class="frame">
@@ -1768,7 +1783,7 @@ body.board-active #whatsNewNotice{ display:none; }
   <button class="tb on" id="drawPen" data-tip-title="Pen" aria-expanded="false" aria-controls="drawBrushDrawer">
     <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
   </button>
-  <button class="tb" id="drawEraser" data-tip-title="Eraser">
+  <button class="tb" id="drawEraser" data-tip-title="Eraser" data-tip-sub="E">
     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><g transform="rotate(45 12 12)"><path d="M6.1 9Q4.5 9 4.5 10.6v2.8Q4.5 15 6.1 15h11.8Q19.5 15 19.5 13.4v-2.8Q19.5 9 17.9 9H6.1z" fill="#f5f6fa" stroke="#2a2e38" stroke-width="1.35" stroke-linejoin="round"/><path d="M9.75 9h8.15Q19.5 9 19.5 10.6v2.8Q19.5 15 17.9 15H9.75V9z" fill="#5aa2ff" stroke="none"/><line x1="9.75" y1="9" x2="9.75" y2="15" stroke="#2a2e38" stroke-width="1.15" stroke-linecap="round"/><path d="M18.2 9h1.3v6H18.2z" fill="#3a7fd4" opacity=".35" stroke="none"/><path d="M4.5 13.6h5.25v1.4H4.5z" fill="#bcc1cb" opacity=".4" stroke="none"/></g></svg>
   </button>
   <div class="draw-color-wrap">
@@ -1776,13 +1791,9 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="draw-color-swatch" id="drawColorSwatch"></span>
     </button>
   </div>
-  <button class="tb draw-wbtn" id="drawWidthDown" data-tip-title="Thinner">−</button>
+  <button class="tb draw-wbtn" id="drawWidthDown" data-tip-title="Thinner" data-tip-sub="[">−</button>
   <span class="draw-width-val" id="drawWidthVal">2</span>
-  <button class="tb draw-wbtn" id="drawWidthUp" data-tip-title="Thicker">+</button>
-  <span class="draw-sep"></span>
-  <button class="tb" id="drawBlankBtn" data-tip-title="Blank canvas">
-    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>
-  </button>
+  <button class="tb draw-wbtn" id="drawWidthUp" data-tip-title="Thicker" data-tip-sub="]">+</button>
   <span class="draw-sep"></span>
   <div class="draw-annotate-group" id="drawAnnotateGroup">
     <button type="button" class="tb draw-annotate-head" id="annotateHeadBtn"
@@ -2136,6 +2147,8 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Add a text note — drag corners or edges to scale</span>
       <span class="ks"><kbd>I</kbd></span><span class="d">Eyedropper: copy pixel color as hex and RGB</span>
       <span class="ks"><kbd>D</kbd></span><span class="d">Toggle draw mode — pen, brushes, eraser, color, stroke width on images</span>
+      <span class="ks"><kbd>E</kbd></span><span class="d">Select the eraser while drawing</span>
+      <span class="ks"><kbd>[</kbd> / <kbd>]</kbd></span><span class="d">Decrease / increase brush or eraser size; hold to resize continuously</span>
       <span class="ks">Draw panel → Annotate</span><span class="d">Solid or dotted arrow — drag to place; drag endpoints to adjust</span>
       <span class="ks">Drag image</span><span class="d">Selection rises to the front as soon as you start dragging</span>
       <span class="ks"><kbd>Arrows</kbd></span><span class="d">Nudge selection (Shift = faster)</span>
@@ -2491,7 +2504,11 @@ let addFeaturesOpen = false;
 let boardTool = 'select';       // 'select' | 'hand'
 let arrowTool = null;           // null | 'solid' | 'dotted'
 let drawColor = '#000000';
-let drawWidth = 2;
+const DRAW_WIDTH_MIN = 1;
+const DRAW_WIDTH_MAX = 48;
+const drawToolWidths = { pen: 2, eraser: 15 };
+let drawWidth = drawToolWidths.pen;
+let drawSizePreviewTimer = 0;
 const DRAW_BRUSHES = {
   pen:    { widthMul: 1,    alpha: 1,    shadowMul: 0,    cap: 'round' },
   soft:   { widthMul: 1.25, alpha: 0.88, shadowMul: 0.75, cap: 'round' },
@@ -4824,9 +4841,50 @@ async function addBlankCanvas(ratio, atBoardPos) {
   toast(`Blank canvas ${ratio} (${size.w}×${size.h})`);
 }
 
+function hideDrawSizePreview() {
+  clearTimeout(drawSizePreviewTimer);
+  drawSizePreviewTimer = 0;
+  $('#drawSizePreview')?.classList.remove('show');
+}
+
+function positionDrawSizePreview() {
+  const preview = $('#drawSizePreview');
+  if (!preview) return;
+  const brushMul = drawTool === 'pen' ? (DRAW_BRUSHES[drawBrushType]?.widthMul || 1) : 1;
+  const diameter = clamp(drawWidth * brushMul * state.view.s, 6, 240);
+  const [clientX, clientY] = canvasToClient(mouse.x, mouse.y);
+  preview.style.left = `${clientX}px`;
+  preview.style.top = `${clientY}px`;
+  preview.style.width = `${diameter}px`;
+  preview.style.height = `${diameter}px`;
+  preview.dataset.tool = drawTool;
+  preview.dataset.size = String(drawWidth);
+}
+
+function showDrawSizePreview() {
+  const preview = $('#drawSizePreview');
+  if (!preview || !drawActive || !mouseOnCanvas()) return;
+  positionDrawSizePreview();
+  preview.classList.add('show');
+  clearTimeout(drawSizePreviewTimer);
+  drawSizePreviewTimer = setTimeout(hideDrawSizePreview, 620);
+}
+
+function setDrawWidth(nextWidth, showPreview = false) {
+  drawWidth = clamp(Math.round(nextWidth), DRAW_WIDTH_MIN, DRAW_WIDTH_MAX);
+  drawToolWidths[drawTool] = drawWidth;
+  syncDrawUi();
+  if (showPreview) showDrawSizePreview();
+}
+
+function adjustDrawWidth(delta, showPreview = false) {
+  setDrawWidth(drawWidth + delta, showPreview);
+}
+
 function setDrawTool(tool) {
+  if (!(tool in drawToolWidths)) return;
   drawTool = tool;
-  drawWidth = tool === 'eraser' ? 15 : 2;
+  drawWidth = drawToolWidths[tool];
   syncDrawUi();
 }
 
@@ -4835,7 +4893,7 @@ function setDrawBrush(type) {
   drawBrushType = type;
   if (drawTool === 'eraser') {
     drawTool = 'pen';
-    drawWidth = 2;
+    drawWidth = drawToolWidths.pen;
   }
   syncDrawUi();
 }
@@ -5122,6 +5180,7 @@ function setDrawActive(on) {
     exitCropMode();
     finishNoteEdit();
   } else {
+    hideDrawSizePreview();
     closeBrushDrawer();
     if (drawSession) {
       commitDrawSession().then(() => { scheduleSave(); invalidate(); });
@@ -11552,6 +11611,10 @@ canvas.addEventListener('pointerdown', async e => {
 window.addEventListener('pointermove', e => {
   const [sx, sy] = clientToCanvas(e.clientX, e.clientY);
   mouse = { x: sx, y: sy };
+  if ($('#drawSizePreview')?.classList.contains('show')) {
+    if (drawActive && e.target === canvas) positionDrawSizePreview();
+    else hideDrawSizePreview();
+  }
   if (!mode) {
     updateNoteLinkHover(sx, sy);
     updateCursor(sx, sy);
@@ -11800,6 +11863,7 @@ window.addEventListener('pointerup', e => {
 
 window.addEventListener('blur', () => {
   spaceDown = false; altDown = false;
+  hideDrawSizePreview();
   hideNoteLinkPop();
   finishNoteEdit();
   if (drawSession) commitDrawSession();
@@ -12215,6 +12279,9 @@ const SHORTCUTS = [
   { cat:'Tools', label:'Add text note', keys:['Shift','T'] },
   { cat:'Tools', label:'Eyedropper', keys:['I'] },
   { cat:'Tools', label:'Draw mode', keys:['D'] },
+  { cat:'Tools', label:'Eraser while drawing', keys:['E'] },
+  { cat:'Tools', label:'Decrease draw size', keys:['['] },
+  { cat:'Tools', label:'Increase draw size', keys:[']'] },
   { cat:'Tools', label:'Rotate', keys:['R'] },
   { cat:'Tools', label:'Flip horizontal', keys:['Ctrl','Shift','H'] },
   { cat:'Tools', label:'Flip vertical', keys:['Ctrl','Shift','V'] },
@@ -12361,12 +12428,12 @@ function closeSettings() {
 window.addEventListener('pointerdown', e => {
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
   if (e.target.closest('#drawColorBtn')) return;
-  if (!e.target.closest('#drawBlankBtn') && !e.target.closest('#drawCanvasPop')) closeDrawCanvasPop();
+  if (!e.target.closest('#drawCanvasPop')) closeDrawCanvasPop();
   if (!e.target.closest('#drawPen') && !e.target.closest('#drawBrushDrawer')) closeBrushDrawer();
   if (!e.target.closest('#drawColorBtn') && !e.target.closest('#drawColorPop')) closeDrawColorPop();
   if (!e.target.closest('#sGroupColor') && !e.target.closest('#groupColorPop')) closeGroupColorPop();
   if (!e.target.closest('#btnDraw') && !e.target.closest('#drawPanelWrap')
-      && !e.target.closest('#drawBlankBtn') && !e.target.closest('#drawColorBtn')
+      && !e.target.closest('#drawColorBtn')
       && !e.target.closest('#drawCanvasPop') && !e.target.closest('#drawColorPop')) closeDrawFeatures();
   if (!e.target.closest('#btnAdd') && !e.target.closest('#addPanelWrap')
       && !e.target.closest('#addCanvasBtn') && !e.target.closest('#drawCanvasPop')) closeAddFeatures();
@@ -12473,6 +12540,18 @@ window.addEventListener('keydown', e => {
     }
     else if (k === 'i') startEyedropper();
     else if (k === 'd') { e.preventDefault(); toggleDrawActive(); }
+    else if (drawActive && k === 'e') {
+      e.preventDefault();
+      if (drawTool !== 'eraser') {
+        closeBrushDrawer();
+        setDrawTool('eraser');
+      }
+      if (!e.repeat) toast('Eraser');
+    }
+    else if (drawActive && (e.key === '[' || e.key === ']')) {
+      e.preventDefault();
+      adjustDrawWidth(e.key === '[' ? -1 : 1, true);
+    }
     else if (k === 'r') rotateSelection(e.shiftKey ? -15 : 15);
     else if (k === 'v') activateSelectMode();
     else if (k === 'g') e.shiftKey ? toggleBoardGray() : toggleImageGray();
@@ -12885,12 +12964,10 @@ $('#drawBrushDrawer')?.addEventListener('click', e => {
   setDrawBrush(btn.dataset.brush);
 });
 $('#drawWidthDown').addEventListener('click', () => {
-  drawWidth = clamp(drawWidth - 1, 1, 48);
-  syncDrawUi();
+  adjustDrawWidth(-1);
 });
 $('#drawWidthUp').addEventListener('click', () => {
-  drawWidth = clamp(drawWidth + 1, 1, 48);
-  syncDrawUi();
+  adjustDrawWidth(1);
 });
 $('#annotateHeadBtn')?.addEventListener('click', () => {
   const g = $('#drawAnnotateGroup');
@@ -12906,12 +12983,6 @@ $('#annotateHeadBtn')?.addEventListener('click', () => {
 });
 $('#arrowSolidBtn').addEventListener('click', () => setArrowTool('solid'));
 $('#arrowDottedBtn').addEventListener('click', () => setArrowTool('dotted'));
-$('#drawBlankBtn').addEventListener('click', e => {
-  e.stopPropagation();
-  const pop = $('#drawCanvasPop');
-  if (pop?.classList.contains('show') && $('#drawPanelWrap')?.classList.contains('canvas-pop-open')) closeDrawCanvasPop();
-  else openDrawCanvasPop($('#drawBlankBtn'));
-});
 for (const btn of document.querySelectorAll('#drawCanvasPop .draw-ratio-btn')) {
   btn.addEventListener('click', () => {
     const ratio = btn.dataset.ratio;
