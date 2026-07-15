@@ -16,7 +16,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "test": "node scripts/test-group-model.mjs && node scripts/test-group-marquee-selection.mjs && node scripts/test-export-order.mjs && node scripts/test-shell-integration.mjs && node scripts/test-thumbnail-preview.mjs && node scripts/test-draw-panel-contract.mjs && node scripts/test-selection-tools-contract.mjs && node scripts/test-note-roundtrip.mjs && node scripts/test-note-parsers.mjs && node scripts/test-image-decode-queue.mjs && node scripts/test-image-residency.mjs && node scripts/test-image-render-stability.mjs && node scripts/test-cropped-export.mjs && node scripts/test-clipboard-copy-order.mjs && node scripts/test-board-save-format.mjs && node scripts/test-board-open-stream.mjs && node scripts/test-navigation-guards.mjs",
+    "test": "node scripts/test-group-model.mjs && node scripts/test-group-marquee-selection.mjs && node scripts/test-export-order.mjs && node scripts/test-shell-integration.mjs && node scripts/test-thumbnail-preview.mjs && node scripts/test-draw-panel-contract.mjs && node scripts/test-selection-tools-contract.mjs && node scripts/test-note-roundtrip.mjs && node scripts/test-note-parsers.mjs && node scripts/test-image-decode-queue.mjs && node scripts/test-image-residency.mjs && node scripts/test-image-render-stability.mjs && node scripts/test-cropped-export.mjs && node scripts/test-clipboard-copy-order.mjs && node scripts/test-board-save-format.mjs && node scripts/test-board-save-as-contract.mjs && node scripts/test-board-open-stream.mjs && node scripts/test-navigation-guards.mjs && node scripts/test-animatics-timeline-model.mjs && node scripts/test-animatics-premiere-export.mjs && node scripts/test-animatics-contract.mjs",
     "predist": "npm test && node scripts/sync-changelog.mjs",
     "dist": "electron-builder --win",
     "dist:publish": "electron-builder --win --publish always",
@@ -27,7 +27,8 @@
     "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0"
   },
   "dependencies": {
-    "electron-updater": "^6.6.2"
+    "electron-updater": "^6.6.2",
+    "ffmpeg-static": "^5.2.0"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
@@ -51,6 +52,9 @@
       "scripts/clipboard-copy-order.mjs",
       "scripts/export-order.mjs",
       "scripts/navigation-guards.mjs",
+      "scripts/animatics-timeline-model.mjs",
+      "scripts/animatics-premiere-export.mjs",
+      "scripts/animatics.mjs",
       "scripts/image-residency.mjs",
       "scripts/image-render-demand.mjs",
       "scripts/shell-integration.js",
@@ -59,6 +63,9 @@
       "changelog.json",
       "package.json",
       "assets/icons/sel/**"
+    ],
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
     ],
     "extraResources": [
       {

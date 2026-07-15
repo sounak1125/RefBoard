@@ -7,6 +7,8 @@ const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+const os = require('os');
+const ffmpegStaticPath = require('ffmpeg-static');
 const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-format');
 const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 
@@ -166,6 +168,53 @@ function setupAutoUpdate() {
 function setupIpc() {
   const boardSaveSessions = new Map();
   const boardOpenSessions = new Map();
+  const animaticExportSessions = new Map();
+  const premiereExportSessions = new Map();
+
+  function ffmpegPath() {
+    return String(ffmpegStaticPath || '').replace('app.asar', 'app.asar.unpacked');
+  }
+
+  async function discardAnimaticExportSession(session) {
+    if (!session) return;
+    clearTimeout(session.timer);
+    await fs.rm(session.dir, { recursive: true, force: true }).catch(() => {});
+  }
+
+  async function discardPremiereExportSession(session) {
+    if (!session) return;
+    clearTimeout(session.timer);
+    if (!session.finished && session.mediaDir) await fs.rm(session.mediaDir, { recursive: true, force: true }).catch(() => {});
+    if (session.tempPath) await fs.rm(session.tempPath, { force: true }).catch(() => {});
+    if (session.finished && session.backupPath) await fs.rm(session.backupPath, { force: true }).catch(() => {});
+  }
+
+  async function createUniquePremiereMediaDir(output) {
+    const parent = path.dirname(output);
+    const stem = path.basename(output, path.extname(output));
+    for (let index = 1; index < 1000; index++) {
+      const suffix = index === 1 ? '_Media' : `_Media_${index}`;
+      const candidate = path.join(parent, `${stem}${suffix}`);
+      try {
+        await fs.mkdir(candidate, { recursive: false });
+        return candidate;
+      } catch (err) {
+        if (err?.code !== 'EEXIST') throw err;
+      }
+    }
+    throw new Error('Could not create a unique Premiere media folder');
+  }
+
+  function runFfmpeg(args, cwd) {
+    return new Promise((resolve, reject) => {
+      execFile(ffmpegPath(), args, { cwd, windowsHide: true }, (err, stdout, stderr) => {
+        if (err) {
+          err.message = `${err.message}\n${String(stderr || '').slice(-4000)}`;
+          reject(err);
+        } else resolve({ stdout, stderr });
+      });
+    });
+  }
 
   async function discardBoardSaveSession(session) {
     if (!session) return;
@@ -194,6 +243,199 @@ function setupIpc() {
     }));
   });
 
+  ipcMain.handle('begin-animatic-export', async (event, settings = {}) => {
+    const fps = [24, 30, 60].includes(Number(settings.fps)) ? Number(settings.fps) : 30;
+    const requestedWidth = Number(settings.width);
+    const requestedHeight = Number(settings.height);
+    const width = Math.max(2, Math.min(4096, Math.round((Number.isFinite(requestedWidth) ? requestedWidth : 1920) / 2) * 2));
+    const height = Math.max(2, Math.min(4096, Math.round((Number.isFinite(requestedHeight) ? requestedHeight : 1080) / 2) * 2));
+    const defaultName = path.basename(String(settings.defaultName || 'refboard-animatic.mp4')).replace(/[^\w. -]/g, '_');
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export RefBoard animatic',
+      defaultPath: path.join(app.getPath('videos'), defaultName),
+      filters: [{ name: 'H.264 video', extensions: ['mp4'] }],
+    });
+    if (picked.canceled || !picked.filePath) return { started: false };
+    const token = crypto.randomUUID();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'refboard-animatic-'));
+    animaticExportSessions.set(token, {
+      token, ownerId: event.sender.id, dir, output: picked.filePath, fps, width, height,
+      frames: [], audio: [],
+      timer: setTimeout(() => {
+        const stale = animaticExportSessions.get(token);
+        animaticExportSessions.delete(token);
+        discardAnimaticExportSession(stale);
+      }, 30 * 60 * 1000),
+    });
+    return { started: true, token };
+  });
+
+  ipcMain.handle('append-animatic-frame', async (event, { token, frame } = {}) => {
+    const session = animaticExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown animatic export session');
+    const index = session.frames.length;
+    const name = `frame-${String(index).padStart(5, '0')}.png`;
+    const duration = Math.max(1 / session.fps, Math.min(3600, Number(frame?.duration) || 1 / session.fps));
+    await fs.writeFile(path.join(session.dir, name), Buffer.from(frame?.data || []));
+    session.frames.push({ name, duration });
+    return { appended: true, index };
+  });
+
+  ipcMain.handle('append-animatic-audio', async (event, { token, audio } = {}) => {
+    const session = animaticExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown animatic export session');
+    if (session.audio.length >= 5) return { appended: false };
+    const suppliedExt = path.extname(String(audio?.name || '')).toLowerCase();
+    const ext = /^\.(wav|mp3|m4a|aac|ogg|flac|opus)$/i.test(suppliedExt) ? suppliedExt : '.audio';
+    const name = `audio-${session.audio.length}${ext}`;
+    await fs.writeFile(path.join(session.dir, name), Buffer.from(audio?.data || []));
+    session.audio.push({
+      name,
+      start: Math.max(0, Number(audio?.start) || 0),
+      sourceIn: Math.max(0, Number(audio?.sourceIn) || 0),
+      duration: Math.max(1 / session.fps, Math.min(3600, Number(audio?.duration) || 1 / session.fps)),
+      volume: Number.isFinite(Number(audio?.volume)) ? Math.max(0, Math.min(2, Number(audio.volume))) : 1,
+    });
+    return { appended: true };
+  });
+
+  ipcMain.handle('finish-animatic-export', async (event, token) => {
+    const session = animaticExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown animatic export session');
+    animaticExportSessions.delete(token);
+    clearTimeout(session.timer);
+    try {
+      if (!session.frames.length) throw new Error('The animatic has no visible frames');
+      const concatLines = [];
+      let totalDuration = 0;
+      for (const frame of session.frames) {
+        concatLines.push(`file '${frame.name}'`, `duration ${frame.duration.toFixed(8)}`);
+        totalDuration += frame.duration;
+      }
+      concatLines.push(`file '${session.frames.at(-1).name}'`);
+      await fs.writeFile(path.join(session.dir, 'frames.txt'), concatLines.join('\n'), 'utf8');
+      const args = ['-y', '-f', 'concat', '-safe', '0', '-i', 'frames.txt'];
+      for (const audio of session.audio) args.push('-ss', audio.sourceIn.toFixed(6), '-t', audio.duration.toFixed(6), '-i', audio.name);
+      if (session.audio.length) {
+        const filters = session.audio.map((audio, index) => {
+          const delay = Math.round(audio.start * 1000);
+          return `[${index + 1}:a]adelay=${delay}|${delay},volume=${audio.volume}[a${index}]`;
+        });
+        filters.push(`${session.audio.map((_, i) => `[a${i}]`).join('')}amix=inputs=${session.audio.length}:duration=longest:dropout_transition=0[aout]`);
+        args.push('-filter_complex', filters.join(';'), '-map', '0:v:0', '-map', '[aout]');
+      } else {
+        args.push('-map', '0:v:0');
+      }
+      args.push(
+        '-r', String(session.fps), '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+        '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-t', totalDuration.toFixed(6),
+      );
+      if (session.audio.length) args.push('-c:a', 'aac', '-b:a', '192k');
+      args.push(session.output);
+      await runFfmpeg(args, session.dir);
+      return { saved: true, filePath: session.output };
+    } finally {
+      await discardAnimaticExportSession(session);
+    }
+  });
+
+  ipcMain.handle('abort-animatic-export', async (event, token) => {
+    const session = animaticExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) return { aborted: false };
+    animaticExportSessions.delete(token);
+    await discardAnimaticExportSession(session);
+    return { aborted: true };
+  });
+
+  ipcMain.handle('begin-premiere-export', async (event, settings = {}) => {
+    const defaultName = path.basename(String(settings.defaultName || 'refboard-animatic.xml')).replace(/[^\w. -]/g, '_');
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export Premiere Pro timeline',
+      defaultPath: path.join(app.getPath('videos'), defaultName),
+      filters: [{ name: 'Premiere Pro XML timeline', extensions: ['xml'] }],
+    });
+    if (picked.canceled || !picked.filePath) return { started: false };
+    const output = /\.xml$/i.test(picked.filePath) ? picked.filePath : `${picked.filePath}.xml`;
+    const mediaDir = await createUniquePremiereMediaDir(output);
+    const token = crypto.randomUUID();
+    const session = {
+      token,
+      ownerId: event.sender.id,
+      output,
+      mediaDir,
+      usedNames: new Set(),
+      assetCount: 0,
+      finished: false,
+      tempPath: `${output}.refboard-${token}.tmp`,
+      backupPath: `${output}.refboard-${token}.backup`,
+      timer: null,
+    };
+    session.timer = setTimeout(() => {
+      const stale = premiereExportSessions.get(token);
+      premiereExportSessions.delete(token);
+      discardPremiereExportSession(stale);
+    }, 30 * 60 * 1000);
+    premiereExportSessions.set(token, session);
+    return { started: true, token, filePath: output, mediaDir };
+  });
+
+  ipcMain.handle('append-premiere-export-asset', async (event, { token, asset } = {}) => {
+    const session = premiereExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown Premiere export session');
+    if (session.assetCount >= 2000) throw new Error('Premiere export contains too many assets');
+    let name = path.basename(String(asset?.name || 'media.bin')).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '');
+    if (!name || name === '.' || name === '..') name = 'media.bin';
+    const ext = path.extname(name), stem = path.basename(name, ext);
+    let final = name;
+    for (let index = 2; session.usedNames.has(final.toLowerCase()); index++) final = `${stem}_${index}${ext}`;
+    session.usedNames.add(final.toLowerCase());
+    const target = path.resolve(session.mediaDir, final);
+    const root = path.resolve(session.mediaDir);
+    if (target === root || !target.startsWith(root + path.sep)) throw new Error('Unsafe Premiere media path');
+    await fs.writeFile(target, Buffer.from(asset?.data || []));
+    session.assetCount++;
+    return { appended: true, name: final, filePath: target };
+  });
+
+  ipcMain.handle('finish-premiere-export', async (event, { token, xml } = {}) => {
+    const session = premiereExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown Premiere export session');
+    const document = String(xml || '');
+    if (!document.startsWith('<?xml') || !document.includes('<xmeml')) throw new Error('Invalid Premiere XML document');
+    if (Buffer.byteLength(document, 'utf8') > 20 * 1024 * 1024) throw new Error('Premiere XML document is too large');
+    premiereExportSessions.delete(token);
+    clearTimeout(session.timer);
+    try {
+      await fs.writeFile(session.tempPath, document, 'utf8');
+      let backedUp = false;
+      try {
+        await fs.rename(session.output, session.backupPath);
+        backedUp = true;
+      } catch (err) {
+        if (err?.code !== 'ENOENT') throw err;
+      }
+      try {
+        await fs.rename(session.tempPath, session.output);
+      } catch (err) {
+        if (backedUp) await fs.rename(session.backupPath, session.output).catch(() => {});
+        throw err;
+      }
+      if (backedUp) await fs.rm(session.backupPath, { force: true });
+      session.finished = true;
+      return { saved: true, filePath: session.output, mediaDir: session.mediaDir, assetCount: session.assetCount };
+    } finally {
+      await discardPremiereExportSession(session);
+    }
+  });
+
+  ipcMain.handle('abort-premiere-export', async (event, token) => {
+    const session = premiereExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) return { aborted: false };
+    premiereExportSessions.delete(token);
+    await discardPremiereExportSession(session);
+    return { aborted: true };
+  });
+
   ipcMain.handle('write-export-files', async (_, { dir, files }) => {
     await fs.mkdir(dir, { recursive: true });
     const used = new Set();
@@ -220,12 +462,12 @@ function setupIpc() {
     return { count, dir };
   });
 
-  ipcMain.handle('save-board-file', async (_, { defaultName, data, filePath }) => {
-    let target = filePath;
+  ipcMain.handle('save-board-file', async (_, { defaultName, data, filePath, forceDialog = false }) => {
+    let target = forceDialog ? null : filePath;
     if (!target) {
       const r = await dialog.showSaveDialog(win, {
         title: 'Save RefBoard board',
-        defaultPath: path.join(app.getPath('documents'), defaultName),
+        defaultPath: filePath || path.join(app.getPath('documents'), defaultName),
         filters: [{ name: 'RefBoard board', extensions: ['refboard'] }],
       });
       if (r.canceled || !r.filePath) return { saved: false };
@@ -236,12 +478,12 @@ function setupIpc() {
     return { saved: true, filePath: target };
   });
 
-  ipcMain.handle('begin-board-save', async (event, { defaultName, filePath, core, preview }) => {
-    let target = filePath;
+  ipcMain.handle('begin-board-save', async (event, { defaultName, filePath, forceDialog = false, core, preview }) => {
+    let target = forceDialog ? null : filePath;
     if (!target) {
       const r = await dialog.showSaveDialog(win, {
         title: 'Save RefBoard board',
-        defaultPath: path.join(app.getPath('documents'), defaultName),
+        defaultPath: filePath || path.join(app.getPath('documents'), defaultName),
         filters: [{ name: 'RefBoard board', extensions: ['refboard'] }],
       });
       if (r.canceled || !r.filePath) return { started: false };

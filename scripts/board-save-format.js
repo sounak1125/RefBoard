@@ -8,7 +8,7 @@ function boardHeaderPrefix(core, preview) {
 }
 
 function boardImageParts(image, data) {
-  const type = /^image\/[a-z0-9.+-]+$/i.test(String(image?.type || ''))
+  const type = /^(?:image|audio|video)\/[a-z0-9.+-]+$/i.test(String(image?.type || ''))
     ? String(image.type)
     : 'application/octet-stream';
   const bytes = Buffer.isBuffer(data)

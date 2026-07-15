@@ -293,6 +293,9 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 #selbar .sel-images-multi-only{ display:none; }
 #selbar.images-multi .sel-images-multi-only.tb{ display:flex; }
 #selbar.images-multi .sel-images-multi-only.sep{ display:block; }
+#selbar .sel-images-only{ display:none; }
+#selbar.has-images .sel-images-only.tb{ display:flex; }
+#selbar.has-images .sel-images-only.sep{ display:block; }
 #selbar .sel-group-only{ display:none; }
 #selbar.group-sel .sel-group-only.tb{ display:flex; }
 #selbar.group-sel .sel-group-only.sep{ display:block; }
@@ -1745,6 +1748,9 @@ body.board-active #whatsNewNotice{ display:none; }
   <button class="tb" id="btnFit" data-tip-title="Fit view" data-tip-sub="F">
     <svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>
   </button>
+  <button class="tb" id="btnAnimatics" data-tip-title="Animatics" data-tip-sub="Open timeline">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/><path d="M7 3v2M12 3v2M17 3v2M7 19v2M12 19v2M17 19v2"/></svg>
+  </button>
   <span class="sep"></span>
   <button class="tb" id="btnExport" data-tip-title="Export" data-tip-sub="Ctrl+E">
     <svg viewBox="0 0 24 24"><path d="M12 3v11M8 10l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
@@ -1870,6 +1876,10 @@ body.board-active #whatsNewNotice{ display:none; }
   </button>
   <button class="tb" id="sOrig" data-tip="Export images…  (Ctrl+Shift+I)">
     <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6M12 11v6M9 14.5l3 3 3-3"/></svg>
+  </button>
+  <span class="sep sel-images-only"></span>
+  <button class="tb sel-images-only" id="sAnimatics" data-tip="Add to Animatics">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/><path d="M7 3v2M12 3v2M17 3v2M7 19v2M12 19v2M17 19v2"/></svg>
   </button>
   <span class="sep sel-multi-only"></span>
   <button class="tb sel-multi-only" id="sAlignH" data-tip="Align in a row">
@@ -2406,6 +2416,7 @@ import {
   resolveExportItems,
   sortItemsForExport,
 } from './scripts/export-order.mjs';
+import { createAnimaticsEditor } from './scripts/animatics.mjs';
 
 'use strict';
 
@@ -2459,6 +2470,13 @@ const imageResidency = createImageResidencyController({
 });
 let fullBitmapEvictTimer = 0;
 let lastBoardOpenError = null;
+let lastBoardRenderError = null;
+let animaticsEditor = null;
+let animaticsReturnView = null;
+
+function isAnimaticsInputActive() {
+  return document.body.classList.contains('animatics-open');
+}
 
 function prepareImageRecord(im, imgId) {
   if (!im) return im;
@@ -2515,7 +2533,7 @@ async function memoryDiagnostics() {
   const processes = window.RefBoardAPI?.getProcessMemoryInfo
     ? await window.RefBoardAPI.getProcessMemoryInfo().catch(() => [])
     : [];
-  return { images: imageMemoryStats(), processes, lastBoardOpenError };
+  return { images: imageMemoryStats(), processes, lastBoardOpenError, lastBoardRenderError };
 }
 
 async function getImageBlob(im) {
@@ -3419,12 +3437,13 @@ let db = null;
 function openDB() {
   return new Promise(res => {
     try {
-      const rq = indexedDB.open('refboard', 2);
+      const rq = indexedDB.open('refboard', 3);
       rq.onupgradeneeded = () => {
         const d = rq.result;
         if (!d.objectStoreNames.contains('blobs')) d.createObjectStore('blobs');
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
         if (!d.objectStoreNames.contains('historyBlobs')) d.createObjectStore('historyBlobs');
+        if (!d.objectStoreNames.contains('mediaBlobs')) d.createObjectStore('mediaBlobs');
       };
       rq.onsuccess = () => res(rq.result);
       rq.onerror = () => res(null);
@@ -4516,6 +4535,7 @@ function reconcileNoteBoxesInItems(items) {
 }
 
 function resetLiveSessionToBlank() {
+  animaticsEditor?.clear?.();
   closeImageRecordBitmaps(images);
   images.clear();
   state.items = [];
@@ -4600,6 +4620,14 @@ async function restoreSession() {
     state.boardGray = !!meta.boardGray;
     state.snapEnabled = !!meta.snapEnabled;
     state.gridAppearance = normalizeGridAppearance(meta.gridAppearance) || 'dots';
+    const restoredAnimaticMedia = new Map();
+    const animaticMedia = [...(meta.animatics?.audio || []), ...(meta.animatics?.clips || []).filter(clip => clip?.mediaId)];
+    for (const media of animaticMedia) {
+      if (!media?.mediaId || restoredAnimaticMedia.has(media.mediaId)) continue;
+      const blob = await dbGet('mediaBlobs', media.mediaId);
+      if (blob instanceof Blob && blob.size) restoredAnimaticMedia.set(media.mediaId, blob);
+    }
+    animaticsEditor?.load?.(meta.animatics, restoredAnimaticMedia);
     if (savedView) {
       state.view.tx = savedView.tx;
       state.view.ty = savedView.ty;
@@ -4652,13 +4680,25 @@ function markBoardDirty() {
   }
 }
 
-function persistBoardNow() {
+async function persistBoardNow() {
+  const mediaRefs = animaticsEditor?.mediaRefs?.() || [];
+  const keepMedia = new Set();
+  for (const ref of mediaRefs) {
+    const blob = animaticsEditor?.getMediaBlob?.(ref.id);
+    if (!(blob instanceof Blob) || !blob.size) continue;
+    keepMedia.add(ref.id);
+    await dbPut('mediaBlobs', ref.id, blob);
+  }
+  for (const key of await dbKeys('mediaBlobs')) {
+    if (!keepMedia.has(key)) await dbDel('mediaBlobs', key);
+  }
   return dbPut('meta', 'board', {
     items: state.items.map(i => ({ ...i })),
     view: { ...state.view },
     boardGray: state.boardGray,
     snapEnabled: state.snapEnabled,
     gridAppearance: state.gridAppearance,
+    animatics: animaticsEditor?.serialize?.() || null,
     imageMeta: [...images.entries()].map(([id, im]) => ({
       id, w: im.w, h: im.h, type: im.type, name: im.name || '', blobSize: im.blobSize || 0,
     })),
@@ -6324,7 +6364,7 @@ async function menuPaste(pos) {
 }
 
 window.addEventListener('paste', async e => {
-  if (onLanding) return;
+  if (onLanding || isAnimaticsInputActive()) return;
   if (e.target.closest('#noteEditor')) return;
   if (e.target.matches('input,textarea') && e.target.id !== 'noteEditor') return;
 
@@ -6377,7 +6417,7 @@ function mouseOnCanvas() {
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', async e => {
   e.preventDefault();
-  if (onLanding) return;
+  if (onLanding || isAnimaticsInputActive()) return;
   const pos = clientToBoard(e.clientX, e.clientY);
   const files = [...(e.dataTransfer.files || [])].filter(f =>
     f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(f.name));
@@ -9187,6 +9227,9 @@ async function transitionToBoard(opts = {}) {
   board.classList.remove('board-preparing');
   document.body.classList.add('board-active');
   document.body.classList.remove('titlebar-revealed');
+  // Returning from Home reuses the in-memory board. Always replace and redraw
+  // its backing surface so a previously discarded canvas cannot stay blank.
+  forceBoardCanvasRepaint();
   updateEmpty();
   startAutosaveTimer();
   restoredSessionPendingOpen = false;
@@ -9597,6 +9640,7 @@ function boardSaveSnapshot() {
       blobSize: im.blobSize || 0,
     } : null;
   }).filter(Boolean);
+  const mediaRefs = animaticsEditor?.mediaRefs?.() || [];
   return {
     core: {
       app: 'refboard', version: 3,
@@ -9604,9 +9648,11 @@ function boardSaveSnapshot() {
       boardGray: state.boardGray,
       snapEnabled: state.snapEnabled,
       gridAppearance: state.gridAppearance,
+      animatics: animaticsEditor?.serialize?.() || null,
       items,
     },
     imageRefs,
+    mediaRefs,
     changeVersion: boardChangeVersion,
   };
 }
@@ -9618,6 +9664,11 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
     const blob = await getImageBlob(im);
     if (!blob) continue;
     imgs.push({ ...ref, data: await blobToDataURL(blob) });
+  }
+  for (const ref of snapshot.mediaRefs || []) {
+    const blob = animaticsEditor?.getMediaBlob?.(ref.id);
+    if (!blob) continue;
+    imgs.push({ ...ref, w: 0, h: 0, data: await blobToDataURL(blob) });
   }
   let preview = null;
   if (snapshot.core.items.length) {
@@ -9631,6 +9682,7 @@ let activeBoardSave = null;
 
 async function performBoardSave(opts = {}) {
   const silent = !!opts.silent;
+  const saveAs = !!opts.saveAs;
   if (!state.items.length) { if (!silent) toast('Board is empty'); return false; }
   const snapshot = boardSaveSnapshot();
   const defaultName = currentBoardTitle
@@ -9643,7 +9695,7 @@ async function performBoardSave(opts = {}) {
     try {
       preview = await captureBoardPreviewStrip(640);
       const begin = await window.RefBoardAPI.beginBoardSave(
-        defaultName, currentBoardPath || undefined, snapshot.core, preview,
+        defaultName, currentBoardPath || undefined, snapshot.core, preview, saveAs,
       );
       if (!begin?.started) return false;
       token = begin.token;
@@ -9656,6 +9708,14 @@ async function performBoardSave(opts = {}) {
           id: ref.id, type: ref.type, name: ref.name,
           w: ref.w, h: ref.h, size: blob.size,
         }, data);
+      }
+      for (const ref of snapshot.mediaRefs || []) {
+        const blob = animaticsEditor?.getMediaBlob?.(ref.id);
+        if (!blob) continue;
+        await window.RefBoardAPI.appendBoardSaveImage(token, {
+          id: ref.id, type: ref.type, name: ref.name,
+          w: 0, h: 0, size: blob.size,
+        }, await blob.arrayBuffer());
       }
       const result = await window.RefBoardAPI.finishBoardSave(token);
       token = null;
@@ -9672,7 +9732,7 @@ async function performBoardSave(opts = {}) {
     const payload = await buildBoardPayload(snapshot);
     const json = JSON.stringify(payload);
     if (window.RefBoardAPI?.saveBoardFile) {
-      const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, currentBoardPath || undefined);
+      const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, currentBoardPath || undefined, saveAs);
       if (!result?.saved) return false;
       currentBoardPath = result.filePath;
       currentBoardTitle = boardTitleFromPath(result.filePath);
@@ -9683,7 +9743,7 @@ async function performBoardSave(opts = {}) {
 
   if (boardChangeVersion === snapshot.changeVersion) boardFileDirty = false;
   scheduleSavedRecentWork(snapshot, currentBoardPath, currentBoardTitle);
-  if (!silent) toast('Board file saved (originals embedded)');
+  if (!silent) toast(saveAs ? 'Board saved as a new file (originals embedded)' : 'Board file saved (originals embedded)');
   else toast('Autosaved');
   return true;
 }
@@ -9983,10 +10043,9 @@ async function renderRecentWorks() {
     date.textContent = (boardFileDirty ? 'Unsaved' : 'In progress') + ' · ' + state.items.length + ' item' + (state.items.length === 1 ? '' : 's');
     meta.append(title, date);
     card.append(thumb, meta);
-    card.addEventListener('click', () => {
-      const opts = restoredSessionPendingOpen ? {} : { animateFit: true };
-      void enterBoard(opts);
-    });
+    // This card returns to the in-memory board, so keep the exact camera the
+    // user left instead of treating it like a newly opened board and fitting it.
+    card.addEventListener('click', () => { void enterBoard(); });
     grid.appendChild(card);
   }
 
@@ -10113,6 +10172,7 @@ async function openNewBoardImpl() {
     if (result !== 'proceed') return;
   }
   suppressBoardDirty = true;
+  animaticsEditor?.clear?.();
   releaseAllImages();
   state.items = [];
   invalidateWorkspaceBBox();
@@ -10134,10 +10194,12 @@ async function openNewBoardImpl() {
     boardGray: false,
     snapEnabled: false,
     gridAppearance: state.gridAppearance,
+    animatics: animaticsEditor?.serialize?.() || null,
     savedAt: Date.now(),
   });
   const keys = await dbKeys('blobs');
   for (const k of keys) await dbDel('blobs', k);
+  await dbClear('mediaBlobs');
   suppressBoardDirty = false;
   boardFileDirty = false;
   clearUndoHistory();
@@ -10166,6 +10228,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
   // complete bitmap sets in memory at once.
   for (const im of images.values()) demoteImageDecodedMemory(im);
   let nextImages = new Map();
+  const nextAnimaticMedia = new Map();
   let droppedImageItems = false;
   let firstImageLoadError = null;
   lastBoardOpenError = null;
@@ -10184,6 +10247,10 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
         const blob = loaded instanceof Blob
           ? (loaded.type ? loaded : new Blob([loaded], { type: rec.type || 'image/png' }))
           : new Blob([loaded], { type: rec.type || 'image/png' });
+        if (/^(audio|video)\//.test(String(rec.type || blob.type))) {
+          nextAnimaticMedia.set(imgId, blob);
+          continue;
+        }
         let w = Number(rec.w) || 0;
         let h = Number(rec.h) || 0;
         if (!(w > 0 && h > 0)) {
@@ -10249,6 +10316,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
     state.snapEnabled = !!j.snapEnabled;
     const ga = normalizeGridAppearance(j.gridAppearance);
     if (ga) state.gridAppearance = ga;
+    animaticsEditor?.load?.(j.animatics, nextAnimaticMedia);
     state.sel.clear();
     resetSelectionOrder();
     cropItemId = null;
@@ -10380,6 +10448,80 @@ function resize() {
   invalidate();
 }
 window.addEventListener('resize', resize);
+
+function forceBoardCanvasRepaint() {
+  const dpr = devicePixelRatio || 1;
+  const { w, h } = boardLayoutSize();
+  // Assign even when the dimensions match. This replaces a backing surface
+  // Chromium may have discarded while the canvas was hidden behind Animatics.
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  clearImageSurfaceTransitions();
+  imageDisplayedSurfaces.clear();
+  invalidate();
+}
+
+function recoverBoardAfterHeavyOverlay() {
+  forceBoardCanvasRepaint();
+  if (state.items.length) {
+    void warmVisibleImageProxies().catch(err => {
+      lastBoardRenderError = err?.stack || err?.message || String(err);
+      console.error('[board] image warmup after Animatics failed:', err);
+      invalidate();
+    });
+  }
+  requestAnimationFrame(() => {
+    forceBoardCanvasRepaint();
+    updateEmpty();
+  });
+}
+
+function beginAnimaticsBoardSession() {
+  if (!animaticsReturnView) {
+    const { tx, ty, s } = state.view;
+    animaticsReturnView = { tx, ty, s };
+  }
+  // Animatics owns pointer and modifier input until it closes. Do not leave a
+  // partially started board gesture alive underneath the full-screen editor.
+  mode = null;
+  marquee = null;
+  dropTargetGroupId = null;
+  spaceDown = false;
+  altDown = false;
+  hideDrawSizePreview();
+  invalidate();
+}
+
+function finishAnimaticsBoardSession() {
+  const savedView = animaticsReturnView;
+  animaticsReturnView = null;
+  if (savedView && Number.isFinite(savedView.tx) && Number.isFinite(savedView.ty)
+      && Number.isFinite(savedView.s) && savedView.s > 0) {
+    applyTargetView(savedView);
+    // Replace any autosave queued by a leaked/legacy navigation event with the
+    // restored camera so session recovery also returns to the same position.
+    scheduleSave(false);
+  }
+  recoverBoardAfterHeavyOverlay();
+}
+
+canvas.addEventListener('contextlost', e => {
+  e.preventDefault();
+  lastBoardRenderError = 'Board canvas context lost';
+  console.warn('[board] canvas context lost; waiting for restoration');
+  dirty = true;
+});
+
+canvas.addEventListener('contextrestored', () => {
+  // ImageBitmaps backed by the previous GPU context may no longer be drawable.
+  // Keep board/item records and their disk-backed Blobs, but rebuild surfaces.
+  closeImageRecordBitmaps(images);
+  clearImageSurfaceTransitions();
+  imageDisplayedSurfaces.clear();
+  recoverBoardAfterHeavyOverlay();
+});
 
 const GRID_DOT_SCREEN = 10;
 
@@ -11052,6 +11194,27 @@ function transitionImageSurface(it, candidate) {
   return { surface, blurPx: focus.blurPx };
 }
 
+function discardInvalidImageSurface(it, im, surface, err) {
+  lastBoardRenderError = err?.stack || err?.message || String(err);
+  console.warn('[board] discarded an invalid image surface:', it?.id, surface?.kind, err);
+  const bitmap = surface?.bitmap;
+  if (surface?.kind === 'full' && im.bitmap === bitmap) {
+    try { bitmap?.close?.(); } catch (e) {}
+    im.bitmap = null;
+  } else if (surface?.kind === 'proxy' && im.proxy === bitmap) {
+    try { bitmap?.close?.(); } catch (e) {}
+    im.proxy = null;
+    im.proxyPromise = null;
+  } else if (surface?.kind === 'lod') {
+    invalidateImageLods(im, { bumpVersion: true });
+  }
+  const transition = imageSurfaceTransitions.get(it.id);
+  releaseImageSurfaceTransition(transition);
+  imageSurfaceTransitions.delete(it.id);
+  imageDisplayedSurfaces.delete(it.id);
+  void ensureStableImageProxy(im).finally(() => invalidate());
+}
+
 function drawBoardItem(g, it, opts = {}) {
   if (isGroupItem(it)) return;
   // Toolbar-only selection keeps the note canvas-rendered (only the format
@@ -11190,17 +11353,21 @@ function drawBoardItem(g, it, opts = {}) {
   if (blurPx > 0.01) filters.push(`blur(${blurPx.toFixed(3)}px)`);
   if (filters.length) g.filter = filters.join(' ');
   g.scale(it.flipX ? -1 : 1, it.flipY ? -1 : 1);
-  g.drawImage(
-    surface.bitmap,
-    sx * surface.sourceScaleX,
-    sy * surface.sourceScaleY,
-    Math.max(1, sw * surface.sourceScaleX),
-    Math.max(1, sh * surface.sourceScaleY),
-    -it.w / 2,
-    -it.h / 2,
-    it.w,
-    it.h
-  );
+  try {
+    g.drawImage(
+      surface.bitmap,
+      sx * surface.sourceScaleX,
+      sy * surface.sourceScaleY,
+      Math.max(1, sw * surface.sourceScaleX),
+      Math.max(1, sh * surface.sourceScaleY),
+      -it.w / 2,
+      -it.h / 2,
+      it.w,
+      it.h
+    );
+  } catch (err) {
+    discardInvalidImageSurface(it, im, surface, err);
+  }
   g.restore();
 }
 
@@ -11460,21 +11627,41 @@ function draw() {
   statusEl.textContent = bits.join('  ·  ');
 }
 
+let boardFrameRecoveryScheduled = false;
+
+function scheduleBoardFrameRecovery() {
+  if (boardFrameRecoveryScheduled || ctx.isContextLost?.()) return;
+  boardFrameRecoveryScheduled = true;
+  setTimeout(() => {
+    boardFrameRecoveryScheduled = false;
+    recoverBoardAfterHeavyOverlay();
+  }, 0);
+}
+
 function tick() {
-  if (imageSurfaceTransitions.size) invalidate();
-  const navigating = isNavigatingView();
-  if (navigating) wasNavigatingView = true;
-  else if (wasNavigatingView) {
-    wasNavigatingView = false;
-    // Recompute screen-sized image targets only after navigation settles.
-    invalidate();
+  try {
+    if (imageSurfaceTransitions.size) invalidate();
+    const navigating = isNavigatingView();
+    if (navigating) wasNavigatingView = true;
+    else if (wasNavigatingView) {
+      wasNavigatingView = false;
+      // Recompute screen-sized image targets only after navigation settles.
+      invalidate();
+    }
+    if (dropTargetGroupId) invalidate();
+    if (!(pauseWhenHidden && document.hidden)) {
+      if (dirty) { dirty = false; draw(); }
+      if (noteEditId) positionNoteEditor();
+    }
+  } catch (err) {
+    lastBoardRenderError = err?.stack || err?.message || String(err);
+    console.error('[board] render frame failed; scheduling recovery:', err);
+    dirty = true;
+    scheduleBoardFrameRecovery();
+  } finally {
+    // Never let one damaged image/canvas frame permanently stop board drawing.
+    requestAnimationFrame(tick);
   }
-  if (dropTargetGroupId) invalidate();
-  if (!(pauseWhenHidden && document.hidden)) {
-    if (dirty) { dirty = false; draw(); }
-    if (noteEditId) positionNoteEditor();
-  }
-  requestAnimationFrame(tick);
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -12184,6 +12371,7 @@ canvas.addEventListener('pointerdown', async e => {
 });
 
 window.addEventListener('pointermove', e => {
+  if (isAnimaticsInputActive()) return;
   const [sx, sy] = clientToCanvas(e.clientX, e.clientY);
   mouse = { x: sx, y: sy };
   if ($('#drawSizePreview')?.classList.contains('show')) {
@@ -12516,7 +12704,7 @@ async function pickColorAt(sx, sy) {
 }
 
 window.addEventListener('wheel', e => {
-  if (onLanding || e.target.closest('#recentWorks')) return;
+  if (onLanding || isAnimaticsInputActive() || e.target.closest('#recentWorks')) return;
   if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop')) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
@@ -12526,6 +12714,7 @@ window.addEventListener('wheel', e => {
 }, { passive: false });
 
 $('#noteOverlay').addEventListener('wheel', e => {
+  if (isAnimaticsInputActive()) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
   e.stopPropagation();
@@ -12619,6 +12808,7 @@ function openAppearMenu(anchorEl, x, y) {
 }
 
 window.addEventListener('contextmenu', e => {
+  if (isAnimaticsInputActive()) return;
   e.preventDefault();
   if (e.target.closest('#toolbar, .pill, .modal, #ctxmenu, #ctxAppear, #ctxSub, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop, #groupColorPop')) return;
   if (lastRightDrag > 5) { lastRightDrag = 0; return; }
@@ -12690,6 +12880,7 @@ function showMenu(x, y, hitItem) {
     { cat: 'Files' },
     { l: 'Export board PNG', k: 'Ctrl+E', f: openExport },
     { l: 'Save board file', k: 'Ctrl+S', f: saveBoardFile },
+    { l: 'Save board as…', k: 'Ctrl+Shift+S', f: () => saveBoardFile({ saveAs: true }) },
     { l: 'Open board file', k: 'Ctrl+O', f: () => openBoardFromDialog() },
     { sep: true },
     { cat: 'Settings' },
@@ -12877,6 +13068,7 @@ const SHORTCUTS = [
   { cat:'View', label:'Always on top', keys:['Ctrl','T'] },
   { cat:'View', label:'Shortcuts help', keys:['?'] },
   { cat:'Files', label:'Save board', keys:['Ctrl','S'] },
+  { cat:'Files', label:'Save board as', keys:['Ctrl','Shift','S'] },
   { cat:'Files', label:'Open board', keys:['Ctrl','O'] },
   { cat:'Files', label:'Export PNG', keys:['Ctrl','E'] },
   { cat:'Files', label:'Export images', keys:['Ctrl','Shift','I'] },
@@ -13010,6 +13202,7 @@ function closeSettings() {
 }
 
 window.addEventListener('pointerdown', e => {
+  if (isAnimaticsInputActive()) return;
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
   if (e.target.closest('#drawColorBtn')) return;
   if (!e.target.closest('#drawCanvasPop')) closeDrawCanvasPop();
@@ -13025,6 +13218,7 @@ window.addEventListener('pointerdown', e => {
 
 /* ================= keyboard ================= */
 window.addEventListener('keydown', e => {
+  if (isAnimaticsInputActive()) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   const formControl = e.target.matches('input,textarea,select');
@@ -13098,7 +13292,7 @@ window.addEventListener('keydown', e => {
   else if (mod && k === 'a') { e.preventDefault(); selectAll(); }
   else if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (mod && k === 'y') { e.preventDefault(); redo(); }
-  else if (mod && k === 's') { e.preventDefault(); saveBoardFile(); }
+  else if (mod && k === 's') { e.preventDefault(); saveBoardFile({ saveAs: e.shiftKey }); }
   else if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
   else if (mod && k === 'e') { e.preventDefault(); openExport(); }
   else if (mod && e.shiftKey && k === 'i') { e.preventDefault(); exportOriginals(); }
@@ -13162,6 +13356,7 @@ window.addEventListener('keydown', e => {
   }
 });
 window.addEventListener('keyup', e => {
+  if (isAnimaticsInputActive()) return;
   if (e.code === 'Space') { spaceDown = false; if (!mode) { canvas.style.cursor = 'default'; updateCursor(mouse.x, mouse.y); } }
   if (e.code === 'AltLeft' || e.code === 'AltRight') { altDown = false; if (!mode) { canvas.style.cursor = 'default'; updateCursor(mouse.x, mouse.y); } }
 });
@@ -13493,6 +13688,7 @@ function updateSelBar() {
   bar.classList.toggle('show', n > 0);
   bar.classList.toggle('multi', n > 1);
   bar.classList.toggle('images-multi', selectedImages().length >= 2);
+  bar.classList.toggle('has-images', selectedImages().length > 0);
   bar.classList.toggle('group-sel', !!grp);
   if (n) $('#selcount').textContent = n === 1 ? '1 selected' : `${n} selected`;
   if (grp) {
@@ -13526,6 +13722,7 @@ $('#btnPaste').addEventListener('click', () => menuPaste(null));
 $('#btnNote').addEventListener('click', () => createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null));
 $('#btnArrange').addEventListener('click', arrangeAll);
 $('#btnFit').addEventListener('click', () => fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i))));
+$('#btnAnimatics').addEventListener('click', () => animaticsEditor.open());
 $('#btnExport').addEventListener('click', openExport);
 $('#btnSave').addEventListener('click', saveBoardFile);
 $('#btnOpen').addEventListener('click', () => openBoardFromDialog());
@@ -13604,6 +13801,11 @@ $('#unsavedClose').addEventListener('click', () => hideUnsavedModal('cancel'));
 $('#sCopy').addEventListener('click', copySelection);
 $('#sDup').addEventListener('click', duplicateSelection);
 $('#sOrig').addEventListener('click', exportOriginals);
+$('#sAnimatics').addEventListener('click', () => {
+  const items = selectedImages();
+  if (!items.length) { toast('Select one or more images first'); return; }
+  animaticsEditor.open(items);
+});
 $('#sAlignH').addEventListener('click', alignSelectionHorizontal);
 $('#sAlignV').addEventListener('click', alignSelectionVertical);
 $('#sNormScale').addEventListener('click', normalizeImagesByScale);
@@ -13974,7 +14176,31 @@ async function init() {
   if (info) await window.RefBoardAPI?.updaterInit?.({ checkOnStartup: !!appSettings.checkUpdatesOnStartup });
 }
 
-window.RefBoard = { state, images, addImages, fitAll, memoryStats: memoryDiagnostics };
+animaticsEditor = createAnimaticsEditor({
+  getImage(itemId) {
+    const item = byId(itemId);
+    return item ? images.get(item.imgId) || null : null;
+  },
+  async getBitmap(itemId, opts) {
+    const item = byId(itemId);
+    const image = item ? images.get(item.imgId) : null;
+    return image ? await ensureFullBitmap(image, { ...opts, itemId }) : null;
+  },
+  async getBlob(itemId) {
+    const item = byId(itemId);
+    return item ? await getImageBlob(images.get(item.imgId)) : null;
+  },
+  onDirty() { scheduleSave(); },
+  onOpen() { beginAnimaticsBoardSession(); },
+  onClose() { finishAnimaticsBoardSession(); },
+  onRequestImages() {
+    animaticsEditor.close();
+    toast('Select more board images, then click Animatics');
+  },
+  toast,
+});
+
+window.RefBoard = { state, images, addImages, fitAll, animatics: animaticsEditor, memoryStats: memoryDiagnostics };
 
 init();
 </script>

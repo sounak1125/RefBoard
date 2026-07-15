@@ -14,6 +14,8 @@ const bytesA = Buffer.from([0, 1, 2, 250, 255]);
 const bytesB = new Uint8Array([9, 8, 7]);
 const a = boardImageParts({ id: 'image-1', type: 'image/png', name: 'A "quoted".png' }, bytesA);
 const b = boardImageParts({ id: 'image-2', type: 'not-safe', name: '雪.jpg' }, bytesB);
+const audio = boardImageParts({ id: 'audio-1', type: 'audio/mpeg', name: 'score.mp3' }, bytesB);
+const video = boardImageParts({ id: 'video-1', type: 'video/mp4', name: 'shot.mp4' }, bytesB);
 const json = boardHeaderPrefix(core, 'preview-base64')
   + a.prefix + a.base64 + a.suffix
   + ',' + b.prefix + b.base64 + b.suffix
@@ -26,6 +28,8 @@ assert.equal(parsed.images.length, 2);
 assert.equal(parsed.images[0].data, `data:image/png;base64,${bytesA.toString('base64')}`);
 assert.equal(parsed.images[1].type, 'application/octet-stream');
 assert.equal(parsed.images[1].data, `data:application/octet-stream;base64,${Buffer.from(bytesB).toString('base64')}`);
+assert.equal(audio.prefix.includes('data:audio/mpeg;base64,'), true);
+assert.equal(video.prefix.includes('data:video/mp4;base64,'), true);
 assert.throws(() => boardImageParts({}, 'invalid'), /Invalid streamed board image data/);
 
 console.log('board-save-format: streamed JSON round-trip passed');
