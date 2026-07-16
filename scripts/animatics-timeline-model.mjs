@@ -77,6 +77,154 @@ export function splitTimelineItem(item, time, { minDuration = 1 / 60, makeId = (
   return [left, right];
 }
 
+export function timelineTrackGaps(collection, track, { minDuration = 1 / 60 } = {}) {
+  const clips = (collection || [])
+    .filter(item => finite(item?.track) === finite(track) && finite(item?.duration) > 0)
+    .sort((a, b) => finite(a.start) - finite(b.start) || timelineEnd(a) - timelineEnd(b));
+  if (clips.length < 2) return [];
+  const gaps = [];
+  let occupiedEnd = timelineEnd(clips[0]);
+  let leftId = clips[0].id;
+  for (const clip of clips.slice(1)) {
+    const start = finite(clip.start);
+    if (start - occupiedEnd >= minDuration) {
+      gaps.push({ track: finite(track), start: occupiedEnd, end: start, duration: start - occupiedEnd, leftId, rightId: clip.id });
+    }
+    if (timelineEnd(clip) > occupiedEnd) {
+      occupiedEnd = timelineEnd(clip);
+      leftId = clip.id;
+    }
+  }
+  return gaps;
+}
+
+export function closeTimelineTrackGap(collection, gap) {
+  const track = finite(gap?.track);
+  const start = finite(gap?.start);
+  const end = finite(gap?.end);
+  const duration = Math.max(0, end - start);
+  if (!duration) return [...(collection || [])];
+  return (collection || []).map(item => (
+    finite(item?.track) === track && finite(item?.start) >= end - 1e-8
+      ? { ...item, start: Math.max(0, finite(item.start) - duration) }
+      : item
+  )).sort((a, b) => finite(a.track) - finite(b.track) || finite(a.start) - finite(b.start));
+}
+
+export function linkedTimelineIds(items, ids) {
+  const selected = new Set(ids || []);
+  const groups = new Set((items || []).filter(item => selected.has(item.id) && item.linkGroupId).map(item => item.linkGroupId));
+  if (!groups.size) return selected;
+  for (const item of items || []) if (groups.has(item.linkGroupId)) selected.add(item.id);
+  return selected;
+}
+
+export function normalizeTimelineLinks(items) {
+  const counts = new Map();
+  for (const item of items || []) if (item.linkGroupId) counts.set(item.linkGroupId, (counts.get(item.linkGroupId) || 0) + 1);
+  return (items || []).map(item => {
+    if (!item.linkGroupId || counts.get(item.linkGroupId) >= 2) return item;
+    const next = { ...item };
+    delete next.linkGroupId;
+    return next;
+  });
+}
+
+export function linkTimelineItems(items, ids, linkGroupId) {
+  const selected = new Set(ids || []);
+  const linked = (items || []).map(item => selected.has(item.id) ? { ...item, linkGroupId } : item);
+  return normalizeTimelineLinks(linked);
+}
+
+export function unlinkTimelineItems(items, ids) {
+  const selected = new Set(ids || []);
+  const unlinked = (items || []).map(item => {
+    if (!selected.has(item.id) || !item.linkGroupId) return item;
+    const next = { ...item };
+    delete next.linkGroupId;
+    return next;
+  });
+  return normalizeTimelineLinks(unlinked);
+}
+
+export function applyBatchTimelineDuration(items, ids, requestedDuration, {
+  minDuration = 1 / 60,
+  sequenceEnd = null,
+  maxDuration = () => Infinity,
+} = {}) {
+  const selected = new Set(ids || []);
+  const changedIds = [];
+  const clampedIds = [];
+  const wanted = Math.max(minDuration, finite(requestedDuration, minDuration));
+  const output = (items || []).map(item => {
+    if (!selected.has(item.id)) return item;
+    const sourceMax = Math.max(minDuration, finite(maxDuration(item), Infinity));
+    const sequenceMax = Number.isFinite(sequenceEnd) ? Math.max(minDuration, sequenceEnd - finite(item.start)) : Infinity;
+    const duration = Math.max(minDuration, Math.min(wanted, sourceMax, sequenceMax));
+    if (Math.abs(duration - wanted) > 1e-8) clampedIds.push(item.id);
+    if (Math.abs(duration - finite(item.duration)) <= 1e-8) return item;
+    const next = { ...item, duration };
+    if (Number.isFinite(Number(item.sourceIn)) && Number.isFinite(Number(item.originalDuration))) next.sourceOut = finite(item.sourceIn) + duration;
+    changedIds.push(item.id);
+    return next;
+  });
+  return { items: output, changedIds, clampedIds };
+}
+
+export function splitLinkedTimelineItems(items, targetId, time, {
+  minDuration = 1 / 60,
+  makeId = () => crypto.randomUUID(),
+  makeLinkId = () => crypto.randomUUID(),
+} = {}) {
+  const source = items || [];
+  const target = source.find(item => item.id === targetId);
+  if (!target) return null;
+  const targetPieces = splitTimelineItem(target, time, { minDuration, makeId });
+  if (!targetPieces) return null;
+  const groupId = target.linkGroupId || null;
+  const members = groupId ? source.filter(item => item.linkGroupId === groupId) : [target];
+  const memberIds = new Set(members.map(item => item.id));
+  const left = [];
+  const right = [];
+  const replacements = new Map();
+  const rightIds = [];
+  const splitIds = [];
+
+  for (const member of members) {
+    const pieces = member.id === target.id
+      ? targetPieces
+      : splitTimelineItem(member, time, { minDuration, makeId });
+    if (pieces) {
+      if (Array.isArray(pieces[1].strokes)) pieces[1].strokes = structuredClone(pieces[1].strokes);
+      left.push(pieces[0]);
+      right.push(pieces[1]);
+      replacements.set(member.id, pieces);
+      rightIds.push(pieces[1].id);
+      splitIds.push(member.id);
+    } else if (timelineEnd(member) <= finite(time) || (finite(member.start) < finite(time) && finite(member.start) + finite(member.duration) / 2 <= finite(time))) {
+      left.push({ ...member });
+      replacements.set(member.id, [left.at(-1)]);
+    } else {
+      right.push({ ...member });
+      replacements.set(member.id, [right.at(-1)]);
+    }
+  }
+
+  if (groupId) {
+    const leftGroupId = left.length >= 2 ? makeLinkId() : null;
+    const rightGroupId = right.length >= 2 ? makeLinkId() : null;
+    for (const item of left) leftGroupId ? item.linkGroupId = leftGroupId : delete item.linkGroupId;
+    for (const item of right) rightGroupId ? item.linkGroupId = rightGroupId : delete item.linkGroupId;
+  }
+
+  const output = [];
+  for (const item of source) {
+    if (!memberIds.has(item.id)) output.push(item);
+    else output.push(...replacements.get(item.id));
+  }
+  return { items: normalizeTimelineLinks(output), rightIds, splitIds, targetRightId: targetPieces[1].id };
+}
+
 function subtractIntervals(duration, intervals, minDuration) {
   let segments = [[0, duration]];
   for (const interval of intervals) {
@@ -117,7 +265,9 @@ export function resolveOverwrite(collection, movedIds, {
     }
     const segments = subtractIntervals(finite(item.duration), intervals, minDuration);
     segments.forEach(([a, b], index) => {
-      output.push(segmentFrom(item, a, b, index === 0 ? item.id : makeId(), segments.length > 1 ? String.fromCharCode(65 + index) : ''));
+      const segment=segmentFrom(item, a, b, index === 0 ? item.id : makeId(), segments.length > 1 ? String.fromCharCode(65 + index) : '');
+      if(segments.length>1)delete segment.linkGroupId;
+      output.push(segment);
     });
   }
   return output.sort((a, b) => finite(a.track) - finite(b.track) || finite(a.start) - finite(b.start));
