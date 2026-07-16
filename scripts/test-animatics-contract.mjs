@@ -7,6 +7,7 @@ const editor = fs.readFileSync(new URL('./animatics.mjs', import.meta.url), 'utf
 const preload = fs.readFileSync(new URL('../preload.js', import.meta.url), 'utf8');
 const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const premiere = fs.readFileSync(new URL('./animatics-premiere-export.mjs', import.meta.url), 'utf8');
+const afterEffects = fs.readFileSync(new URL('./animatics-after-effects-export.mjs', import.meta.url), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 assert.match(html, /id="sAnimatics"/, 'selection toolbar must expose Animatics');
@@ -56,16 +57,30 @@ assert.match(editor, /id="anSetIn"/, 'timeline must expose a sequence In marker'
 assert.match(editor, /id="anSetOut"/, 'timeline must expose a sequence Out marker');
 assert.match(editor, /id="anExportRange"/, 'export dialog must offer an In-to-Out range');
 assert.match(editor, /id="anExportFormat"[\s\S]*?value="premiere"/, 'export dialog must offer a Premiere Pro timeline file');
+assert.match(editor, /id="anExportFormat"[\s\S]*?value="after-effects"/, 'export dialog must offer an After Effects project builder');
 assert.match(editor, /exportStart=useRange\?project\.inPoint:0/, 'range export must begin at the sequence In point');
 assert.match(editor, /function exportPremiereProject/, 'Animatics must implement Premiere timeline export separately from MP4');
+assert.match(editor, /function exportAfterEffectsProject/, 'Animatics must implement After Effects export separately from MP4 and Premiere');
 assert.match(editor, /await getBlob\(job\.entry\.itemId\)/, 'Premiere export must collect original board image blobs');
 assert.match(editor, /appendPremiereExportAsset/, 'Premiere assets must be streamed to the desktop process');
+assert.match(editor, /appendAfterEffectsExportAsset/, 'After Effects assets must be streamed to the desktop process');
 assert.match(premiere, /<xmeml version=\"5\">/, 'Premiere export must generate an XMEML interchange document');
 assert.match(premiere, /function buildPremiereTimeline/, 'Premiere timing must use a dedicated export model');
+assert.match(premiere, /<bin><name>\$\{category\}<\/name><children>/, 'Premiere media must import into categorized project bins');
+assert.match(premiere, /masterclipid/, 'Premiere timeline media must link to organized master clips');
 assert.match(premiere, /Basic Motion/, 'Premiere XML must preserve clip framing through Basic Motion');
 assert.match(premiere, /generatoritem/, 'Premiere XML must preserve text as editable title generators');
 assert.match(premiere, /parameterid>str/, 'Premiere editable titles must carry their source text');
 assert.match(premiere, /Audio Levels/, 'Premiere XML must preserve clip volume');
+assert.match(afterEffects, /function buildAfterEffectsProject/, 'After Effects timing must use a dedicated export model');
+assert.match(editor, /AFTER_EFFECTS_MAX_SECONDS/, 'After Effects export must guard Adobe’s three-hour composition limit');
+assert.match(afterEffects, /#target aftereffects/, 'After Effects export must generate an executable JSX builder');
+assert.match(afterEffects, /items\.addComp/, 'After Effects builder must create an editable composition');
+assert.match(afterEffects, /addFolder\(\"RefBoard Animatic\"\)/, 'After Effects project items must have a managed root folder');
+assert.match(afterEffects, /categoryNames = \{ image:\"Images\", video:\"Videos\", audio:\"Audio\", drawing:\"Drawings\" \}/, 'After Effects media must have categorized project folders');
+assert.match(afterEffects, /layers\.addText/, 'After Effects text must remain editable');
+assert.match(afterEffects, /ADBE Audio Levels/, 'After Effects export must preserve clip volume');
+assert.match(afterEffects, /app\.project\.save\(projectFile\)/, 'After Effects builder must save a native AEP project');
 assert.match(editor, /id="anVideoPick"/, 'Animatics must accept video files');
 assert.match(editor, /addVideoFiles\(files,\{track,start\}\)/, 'video drops must be placed on their target timeline lane');
 assert.match(editor, /mediaKind:'video'/, 'imported videos must use persisted media clips');
@@ -237,10 +252,17 @@ assert.match(html, /finally\s*\{[\s\S]*?requestAnimationFrame\(tick\)/, 'one ren
 assert.match(preload, /beginAnimaticExport/, 'renderer bridge must expose animatic export');
 assert.match(preload, /beginPremiereExport/, 'renderer bridge must expose Premiere export');
 assert.match(preload, /appendPremiereExportAsset/, 'renderer bridge must stream Premiere media');
+assert.match(preload, /beginAfterEffectsExport/, 'renderer bridge must expose After Effects export');
+assert.match(preload, /appendAfterEffectsExportAsset/, 'renderer bridge must stream After Effects media');
 assert.match(main, /begin-animatic-export/, 'main process must own animatic export sessions');
 assert.match(main, /begin-premiere-export/, 'main process must own Premiere export sessions');
+assert.match(main, /begin-after-effects-export/, 'main process must own After Effects export sessions');
 assert.match(main, /createUniquePremiereMediaDir/, 'Premiere export must never overwrite an existing media folder');
+assert.match(main, /createUniqueAfterEffectsMediaDir/, 'After Effects export must never overwrite an existing media folder');
+assert.match(main, /appendCollectedExportAsset/, 'Premiere and After Effects must share safe categorized media collection');
+for (const folder of ['Images','Videos','Audio','Drawings']) assert.match(main, new RegExp(`${folder}`), `${folder} export folder must be supported`);
 assert.match(main, /Invalid Premiere XML document/, 'main process must validate Premiere XML before saving');
+assert.match(main, /Invalid After Effects project builder/, 'main process must validate After Effects JSX before saving');
 assert.match(main, /libx264/, 'export must encode H.264');
 assert.match(main, /audio\.sourceIn\.toFixed/, 'MP4 export must honor the audio source In point');
 assert.match(main, /audio\.duration\.toFixed/, 'MP4 export must honor the trimmed audio duration');
@@ -248,5 +270,6 @@ assert.match(main, /Number\.isFinite\(Number\(audio\?\.volume\)\)/, 'MP4 export 
 assert.equal(pkg.dependencies['ffmpeg-static'], '^5.2.0');
 assert.ok(pkg.build.asarUnpack.includes('node_modules/ffmpeg-static/**'));
 assert.ok(pkg.build.files.includes('scripts/animatics-premiere-export.mjs'));
+assert.ok(pkg.build.files.includes('scripts/animatics-after-effects-export.mjs'));
 
 console.log('animatics contract tests passed');

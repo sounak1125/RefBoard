@@ -22,6 +22,11 @@ import {
   premiereFrame,
   safePremiereAssetName,
 } from './animatics-premiere-export.mjs';
+import {
+  AFTER_EFFECTS_MAX_SECONDS,
+  buildAfterEffectsProject,
+  createAfterEffectsScript,
+} from './animatics-after-effects-export.mjs';
 
 const MAX_VIDEO_TRACKS = 8;
 const MAX_AUDIO_TRACKS = 5;
@@ -336,7 +341,7 @@ function markup() {
     <input id="anVideoPick" type="file" accept="video/*" multiple hidden>
     <div class="an-toast" id="anToast"></div>
     <div class="an-export-modal" id="anSequenceModal"><div class="an-export-card"><h2>Sequence settings</h2><p>Choose a fixed timeline length or let the sequence follow its content.</p><div class="an-split"><label class="an-field">Length mode<select id="anSequenceMode"><option value="auto">Auto — fit content</option><option value="fixed">Fixed duration</option></select></label><label class="an-field">Timeline display<select id="anTimelineDisplay"><option value="timecode">Timecode</option><option value="frames">Frames</option></select></label></div><label class="an-field">Duration<input id="anSequenceDuration" type="text" inputmode="numeric" spellcheck="false" placeholder="00:03:00:00"></label><div class="an-sequence-hint"><span>HH:MM:SS:FF</span><span id="anSequenceMinimum"></span></div><div class="an-sequence-presets"><button data-sequence-seconds="180">3 min</button><button data-sequence-seconds="3600">1 hour</button><button data-sequence-seconds="14400">4 hours</button><button data-sequence-seconds="18000">5 hours</button></div><div class="an-export-actions"><button class="an-btn" id="anSequenceCancel">Cancel</button><button class="an-btn primary" id="anSequenceApply">Apply</button></div></div></div>
-    <div class="an-export-modal" id="anExportModal"><div class="an-export-card"><h2>Export animatic</h2><p id="anExportDescription">MP4 · H.264 · stereo audio · <span id="anExportAspect">16:9</span></p><label class="an-field">Format<select id="anExportFormat"><option value="mp4">MP4 video</option><option value="premiere">Premiere Pro 2025–2026 timeline (.xml)</option></select></label><div class="an-split"><label class="an-field">Resolution<select id="anExportRes"><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label><label class="an-field">Frame rate<select id="anExportFps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></label></div><label class="an-field">Export range<select id="anExportRange"><option value="full">Full sequence</option><option value="inout">Sequence In to Out</option></select></label><label class="an-field" id="anExportCounterField">Counter overlay<select id="anExportTc"><option value="project">Use viewer setting</option><option value="on">Burn selected counter</option><option value="off">No counter</option></select></label><div class="an-progress" id="anExportProgress"><i></i></div><div class="an-export-actions"><button class="an-btn" id="anExportCancel">Cancel</button><button class="an-btn primary" id="anExportGo">Export MP4</button></div></div></div>
+    <div class="an-export-modal" id="anExportModal"><div class="an-export-card"><h2>Export animatic</h2><p id="anExportDescription">MP4 · H.264 · stereo audio · <span id="anExportAspect">16:9</span></p><label class="an-field">Format<select id="anExportFormat"><option value="mp4">MP4 video</option><option value="premiere">Premiere Pro 2025–2026 timeline (.xml)</option><option value="after-effects">After Effects project builder (.jsx → .aep)</option></select></label><div class="an-split"><label class="an-field">Resolution<select id="anExportRes"><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label><label class="an-field">Frame rate<select id="anExportFps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></label></div><label class="an-field">Export range<select id="anExportRange"><option value="full">Full sequence</option><option value="inout">Sequence In to Out</option></select></label><label class="an-field" id="anExportCounterField">Counter overlay<select id="anExportTc"><option value="project">Use viewer setting</option><option value="on">Burn selected counter</option><option value="off">No counter</option></select></label><div class="an-progress" id="anExportProgress"><i></i></div><div class="an-export-actions"><button class="an-btn" id="anExportCancel">Cancel</button><button class="an-btn primary" id="anExportGo">Export MP4</button></div></div></div>
     <div class="an-audio-trim-modal" id="anAudioTrimModal"><div class="an-audio-trim-card"><h2>Trim audio</h2><p class="an-audio-trim-name" id="anTrimName">Audio</p><div class="an-wave-shell" id="anTrimWaveShell"><canvas id="anTrimWave" width="1200" height="260"></canvas><span class="an-trim-readout" id="anTrimReadout">00:00:00:00</span></div><audio id="anTrimPlayer" controls preload="metadata"></audio><div class="an-trim-points"><div class="an-trim-point"><h4>In point</h4><label class="an-field">Frame<input id="anTrimInFrames" type="number" min="0" step="1"></label><button class="an-tool-btn" id="anTrimSetIn">Set In at playhead</button></div><div class="an-trim-point"><h4>Out point</h4><label class="an-field">Frame<input id="anTrimOutFrames" type="number" min="1" step="1"></label><button class="an-tool-btn" id="anTrimSetOut">Set Out at playhead</button></div></div><div class="an-trim-summary"><span>Selected range</span><b id="anTrimSummary">0 frames · 0.00s</b></div><div class="an-trim-actions"><button class="an-btn" id="anTrimPlaySelection">Play selection</button><button class="an-btn" id="anTrimCancel">Cancel</button><button class="an-btn primary" id="anTrimUse">Use audio</button></div></div></div>
   </section>`;
 }
@@ -1741,11 +1746,16 @@ export function createAnimaticsEditor(options) {
   root.querySelectorAll('.an-tab').forEach(tab=>tab.onclick=()=>{root.querySelectorAll('.an-tab,.an-panel').forEach(el=>el.classList.remove('on'));tab.classList.add('on');root.querySelector(`[data-panel-body="${tab.dataset.panel}"]`).classList.add('on');syncInspector();});
   root.querySelectorAll('[data-an-tool]').forEach(button=>button.onclick=()=>setActiveTool(button.dataset.anTool));
   $('#anSnap').onclick=()=>{project.timelineSnap=!project.timelineSnap;markDirty();renderTimeline();notify(project.timelineSnap?'Timeline snapping on':'Timeline snapping off');};
-  function syncExportFormatUi(){const premiere=$('#anExportFormat').value==='premiere';$('#anExportDescription').textContent=premiere?`Premiere timeline · collected original media · ${project.aspect}`:`MP4 · H.264 · stereo audio · ${project.aspect}`;$('#anExportCounterField').style.display=premiere?'none':'';$('#anExportGo').textContent=premiere?'Export Premiere XML':'Export MP4';}
+  function syncExportFormatUi(){
+    const format=$('#anExportFormat').value,premiere=format==='premiere',afterEffects=format==='after-effects';
+    $('#anExportDescription').textContent=premiere?`Premiere timeline · collected original media · ${project.aspect}`:afterEffects?`After Effects editable project · collected original media · ${project.aspect}`:`MP4 · H.264 · stereo audio · ${project.aspect}`;
+    $('#anExportCounterField').style.display=format==='mp4'?'':'none';
+    $('#anExportGo').textContent=premiere?'Export Premiere XML':afterEffects?'Export After Effects':'Export MP4';
+  }
   $('#anExport').onclick=()=>{const rangeOption=$('#anExportRange').querySelector('[value="inout"]');rangeOption.disabled=!hasSequenceRange();if(!hasSequenceRange())$('#anExportRange').value='full';$('#anExportRes').value=project.resolution;$('#anExportFps').value=project.fps;syncExportFormatUi();$('#anExportModal').classList.add('open');};
   $('#anExportCancel').onclick=()=>$('#anExportModal').classList.remove('open');
   $('#anExportFormat').onchange=syncExportFormatUi;
-  $('#anExportGo').onclick=()=>$('#anExportFormat').value==='premiere'?exportPremiereProject():exportProject();
+  $('#anExportGo').onclick=()=>{const format=$('#anExportFormat').value;if(format==='premiere')exportPremiereProject();else if(format==='after-effects')exportAfterEffectsProject();else exportProject();};
 
   window.addEventListener('resize',()=>{if(open)resizeViewer();});
   window.addEventListener('keydown',e=>{
@@ -1799,6 +1809,34 @@ export function createAnimaticsEditor(options) {
     const target=document.createElement('canvas');target.width=width;target.height=height;draw(target.getContext('2d'));const blob=await new Promise(resolve=>target.toBlob(resolve,'image/png'));target.width=target.height=0;if(!blob)throw new Error('Could not render Premiere overlay');return blob;
   }
 
+  async function collectTimelineExportAssets({fps,width,height,append,onProgress=()=>{}}){
+    const assets=new Map(),jobs=[];
+    const seenImages=new Set(),seenVideos=new Set(),seenAudio=new Set();
+    for(const clip of project.clips){
+      if(isVideoClip(clip)){if(!seenVideos.has(clip.mediaId)){seenVideos.add(clip.mediaId);jobs.push({key:`video:${clip.mediaId}`,kind:'video',entry:clip});}}
+      else if(!seenImages.has(clip.itemId)){seenImages.add(clip.itemId);jobs.push({key:`image:${clip.itemId}`,kind:'image',entry:clip});}
+      if(clip.strokes?.length)jobs.push({key:`stroke:${clip.id}`,kind:'stroke',entry:clip});
+    }
+    for(const audio of project.audio)if(!seenAudio.has(audio.mediaId)){seenAudio.add(audio.mediaId);jobs.push({key:`audio:${audio.mediaId}`,kind:'audio',entry:audio});}
+    let assetIndex=0;
+    for(const job of jobs){
+      let blob,name,meta;
+      if(job.kind==='image'){
+        const image=getImage(job.entry.itemId);blob=await getBlob(job.entry.itemId);if(!blob?.size)throw new Error(`Missing original image: ${job.entry.name}`);name=job.entry.name||image?.name||`Image ${assetIndex+1}`;meta={kind:'image',width:image?.w||0,height:image?.h||0,durationFrames:Math.max(1,...project.clips.filter(c=>c.itemId===job.entry.itemId).map(c=>premiereFrame(c.duration,fps)))};
+      }else if(job.kind==='video'){
+        blob=job.entry.blob||mediaResources.get(job.entry.mediaId)?.blob;if(!blob?.size)throw new Error(`Missing video: ${job.entry.name}`);name=job.entry.name||`Video ${assetIndex+1}`;meta={kind:'video',width:job.entry.videoWidth||0,height:job.entry.videoHeight||0,durationFrames:premiereFrame(job.entry.originalDuration||job.entry.sourceOut||job.entry.duration,fps)};
+      }else if(job.kind==='audio'){
+        blob=job.entry.blob||mediaResources.get(job.entry.mediaId)?.blob;if(!blob?.size)throw new Error(`Missing audio: ${job.entry.name}`);name=job.entry.name||`Audio ${assetIndex+1}`;meta={kind:'audio',channels:2,durationFrames:premiereFrame(job.entry.originalDuration||job.entry.sourceOut||job.entry.duration,fps)};
+      }else if(job.kind==='stroke'){
+        blob=await premiereOverlayBlob(g=>{g.lineCap='round';g.lineJoin='round';for(const stroke of job.entry.strokes||[]){if(!stroke.points?.length)continue;g.beginPath();g.strokeStyle=stroke.color||'#ff5c5c';g.lineWidth=(stroke.width||6)*(width/1280);stroke.points.forEach((point,index)=>index?g.lineTo(point.x*width,point.y*height):g.moveTo(point.x*width,point.y*height));g.stroke();}},width,height);name=`${String(job.entry.name||'Clip').replace(/\.[^.]+$/,'')} Drawings.png`;meta={kind:'image',width,height,durationFrames:premiereFrame(job.entry.duration,fps)};
+      }
+      const ext=premiereAssetExtension(name,blob,meta.kind),base=safePremiereAssetName(name,`Media ${assetIndex+1}${ext}`),fileName=/\.[A-Za-z0-9]{1,8}$/.test(base)?base:`${base}${ext}`;
+      const category=job.kind==='stroke'?'drawing':job.kind;
+      const written=await append({name:fileName,category,data:await blob.arrayBuffer()});assets.set(job.key,{id:`asset-${++assetIndex}`,name:written.name,filePath:written.filePath,relativePath:written.relativePath||written.name,category:written.category||category,...meta});onProgress(assetIndex,Math.max(1,jobs.length));
+    }
+    return assets;
+  }
+
   async function exportPremiereProject(){
     if(!project.clips.length){notify('Add at least one clip');return;}
     const api=window.RefBoardAPI;if(!api?.beginPremiereExport){notify('Premiere export is available in the desktop build');return;}
@@ -1807,31 +1845,26 @@ export function createAnimaticsEditor(options) {
     project.fps=fps;project.resolution=res;const progress=$('#anExportProgress'),bar=progress.querySelector('i'),go=$('#anExportGo');progress.classList.add('show');go.disabled=true;let token=null;
     try{
       const stamp=new Date().toISOString().replace(/[:.]/g,'-'),begun=await api.beginPremiereExport({defaultName:`refboard-animatic-${stamp}.xml`});if(!begun?.started)return;token=begun.token;
-      const assets=new Map(),jobs=[];
-      const seenImages=new Set(),seenVideos=new Set(),seenAudio=new Set();
-      for(const clip of project.clips){
-        if(isVideoClip(clip)){if(!seenVideos.has(clip.mediaId)){seenVideos.add(clip.mediaId);jobs.push({key:`video:${clip.mediaId}`,kind:'video',entry:clip});}}
-        else if(!seenImages.has(clip.itemId)){seenImages.add(clip.itemId);jobs.push({key:`image:${clip.itemId}`,kind:'image',entry:clip});}
-        if(clip.strokes?.length)jobs.push({key:`stroke:${clip.id}`,kind:'stroke',entry:clip});
-      }
-      for(const audio of project.audio)if(!seenAudio.has(audio.mediaId)){seenAudio.add(audio.mediaId);jobs.push({key:`audio:${audio.mediaId}`,kind:'audio',entry:audio});}
-      let assetIndex=0;
-      for(const job of jobs){
-        let blob,name,meta;
-        if(job.kind==='image'){
-          const image=getImage(job.entry.itemId);blob=await getBlob(job.entry.itemId);if(!blob?.size)throw new Error(`Missing original image: ${job.entry.name}`);name=job.entry.name||image?.name||`Image ${assetIndex+1}`;meta={kind:'image',width:image?.w||0,height:image?.h||0,durationFrames:Math.max(1,...project.clips.filter(c=>c.itemId===job.entry.itemId).map(c=>premiereFrame(c.duration,fps)))};
-        }else if(job.kind==='video'){
-          blob=job.entry.blob||mediaResources.get(job.entry.mediaId)?.blob;if(!blob?.size)throw new Error(`Missing video: ${job.entry.name}`);name=job.entry.name||`Video ${assetIndex+1}`;meta={kind:'video',width:job.entry.videoWidth||0,height:job.entry.videoHeight||0,durationFrames:premiereFrame(job.entry.originalDuration||job.entry.sourceOut||job.entry.duration,fps)};
-        }else if(job.kind==='audio'){
-          blob=job.entry.blob||mediaResources.get(job.entry.mediaId)?.blob;if(!blob?.size)throw new Error(`Missing audio: ${job.entry.name}`);name=job.entry.name||`Audio ${assetIndex+1}`;meta={kind:'audio',channels:2,durationFrames:premiereFrame(job.entry.originalDuration||job.entry.sourceOut||job.entry.duration,fps)};
-        }else if(job.kind==='stroke'){
-          blob=await premiereOverlayBlob(g=>{g.lineCap='round';g.lineJoin='round';for(const stroke of job.entry.strokes||[]){if(!stroke.points?.length)continue;g.beginPath();g.strokeStyle=stroke.color||'#ff5c5c';g.lineWidth=(stroke.width||6)*(width/1280);stroke.points.forEach((point,index)=>index?g.lineTo(point.x*width,point.y*height):g.moveTo(point.x*width,point.y*height));g.stroke();}},width,height);name=`${String(job.entry.name||'Clip').replace(/\.[^.]+$/,'')} Drawings.png`;meta={kind:'image',width,height,durationFrames:premiereFrame(job.entry.duration,fps)};
-        }
-        const ext=premiereAssetExtension(name,blob,meta.kind),base=safePremiereAssetName(name,`Media ${assetIndex+1}${ext}`),fileName=/\.[A-Za-z0-9]{1,8}$/.test(base)?base:`${base}${ext}`;
-        const written=await api.appendPremiereExportAsset(token,{name:fileName,data:await blob.arrayBuffer()});assets.set(job.key,{id:`asset-${++assetIndex}`,name:written.name,filePath:written.filePath,...meta});bar.style.width=`${Math.round(assetIndex/Math.max(1,jobs.length)*82)}%`;
-      }
+      const assets=await collectTimelineExportAssets({fps,width,height,append:asset=>api.appendPremiereExportAsset(token,asset),onProgress:(done,total)=>bar.style.width=`${Math.round(done/total*82)}%`});
       const sequence=buildPremiereTimeline({project,name:'RefBoard Animatic',fps,width,height,exportStart,exportEnd,assets}),xml=createPremiereXml(sequence);bar.style.width='92%';const result=await api.finishPremiereExport(token,xml);token=null;bar.style.width='100%';$('#anExportModal').classList.remove('open');notify(result?.saved?'Premiere timeline and media exported':'Export canceled');
     }catch(err){console.error('[animatics] Premiere export failed',err);if(token)await api.abortPremiereExport?.(token).catch(()=>{});notify(`Premiere export failed${err?.message?` — ${err.message}`:''}`);}
+    finally{go.disabled=false;setTimeout(()=>{progress.classList.remove('show');bar.style.width='0';},500);}
+  }
+
+  async function exportAfterEffectsProject(){
+    if(!project.clips.length){notify('Add at least one clip');return;}
+    const api=window.RefBoardAPI;if(!api?.beginAfterEffectsExport){notify('After Effects export is available in the desktop build');return;}
+    const fps=Number($('#anExportFps').value),res=Number($('#anExportRes').value),{width,height}=sequenceDimensions(res,project.aspect),useRange=$('#anExportRange').value==='inout'&&hasSequenceRange(),exportStart=useRange?project.inPoint:0,exportEnd=useRange?Math.min(duration(),project.outPoint):duration();
+    if(exportEnd<=exportStart+MIN_SHOT_SECONDS){notify('The selected export range is empty');return;}
+    if(exportEnd-exportStart>AFTER_EFFECTS_MAX_SECONDS){notify('After Effects compositions are limited to 3 hours — set a shorter In to Out range');return;}
+    project.fps=fps;project.resolution=res;const progress=$('#anExportProgress'),bar=progress.querySelector('i'),go=$('#anExportGo');progress.classList.add('show');go.disabled=true;let token=null;
+    try{
+      const stamp=new Date().toISOString().replace(/[:.]/g,'-'),begun=await api.beginAfterEffectsExport({defaultName:`refboard-animatic-${stamp}-after-effects.jsx`});if(!begun?.started)return;token=begun.token;
+      const assets=await collectTimelineExportAssets({fps,width,height,append:asset=>api.appendAfterEffectsExportAsset(token,asset),onProgress:(done,total)=>bar.style.width=`${Math.round(done/total*82)}%`});
+      const aeProject=buildAfterEffectsProject({project,name:'RefBoard Animatic',fps,width,height,exportStart,exportEnd,assets});
+      const script=createAfterEffectsScript(aeProject,{mediaFolderName:begun.mediaFolderName,projectFileName:begun.projectFileName});bar.style.width='92%';
+      const result=await api.finishAfterEffectsExport(token,script);token=null;bar.style.width='100%';$('#anExportModal').classList.remove('open');notify(result?.saved?'After Effects builder exported — run it in After Effects to create the .aep':'Export canceled');
+    }catch(err){console.error('[animatics] After Effects export failed',err);if(token)await api.abortAfterEffectsExport?.(token).catch(()=>{});notify(`After Effects export failed${err?.message?` — ${err.message}`:''}`);}
     finally{go.disabled=false;setTimeout(()=>{progress.classList.remove('show');bar.style.width='0';},500);}
   }
 

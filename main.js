@@ -170,6 +170,7 @@ function setupIpc() {
   const boardOpenSessions = new Map();
   const animaticExportSessions = new Map();
   const premiereExportSessions = new Map();
+  const afterEffectsExportSessions = new Map();
 
   function ffmpegPath() {
     return String(ffmpegStaticPath || '').replace('app.asar', 'app.asar.unpacked');
@@ -182,6 +183,14 @@ function setupIpc() {
   }
 
   async function discardPremiereExportSession(session) {
+    if (!session) return;
+    clearTimeout(session.timer);
+    if (!session.finished && session.mediaDir) await fs.rm(session.mediaDir, { recursive: true, force: true }).catch(() => {});
+    if (session.tempPath) await fs.rm(session.tempPath, { force: true }).catch(() => {});
+    if (session.finished && session.backupPath) await fs.rm(session.backupPath, { force: true }).catch(() => {});
+  }
+
+  async function discardAfterEffectsExportSession(session) {
     if (!session) return;
     clearTimeout(session.timer);
     if (!session.finished && session.mediaDir) await fs.rm(session.mediaDir, { recursive: true, force: true }).catch(() => {});
@@ -203,6 +212,36 @@ function setupIpc() {
       }
     }
     throw new Error('Could not create a unique Premiere media folder');
+  }
+
+  async function createUniqueAfterEffectsMediaDir(output) {
+    return createUniquePremiereMediaDir(output);
+  }
+
+  async function appendCollectedExportAsset(session, asset, productName) {
+    if (session.assetCount >= 2000) throw new Error(`${productName} export contains too many assets`);
+    const requestedCategory = String(asset?.category || '').toLowerCase();
+    const category = requestedCategory === 'image' ? 'image'
+      : requestedCategory === 'video' ? 'video'
+      : requestedCategory === 'audio' ? 'audio'
+      : requestedCategory === 'drawing' || requestedCategory === 'stroke' ? 'drawing'
+      : 'other';
+    const folder = { image:'Images', video:'Videos', audio:'Audio', drawing:'Drawings', other:'Other' }[category];
+    let name = path.basename(String(asset?.name || 'media.bin')).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '');
+    if (!name || name === '.' || name === '..') name = 'media.bin';
+    const ext = path.extname(name), stem = path.basename(name, ext);
+    let final = name;
+    for (let index = 2; session.usedNames.has(`${folder}/${final}`.toLowerCase()); index++) final = `${stem}_${index}${ext}`;
+    session.usedNames.add(`${folder}/${final}`.toLowerCase());
+    const root = path.resolve(session.mediaDir);
+    const categoryDir = path.resolve(root, folder);
+    if (!categoryDir.startsWith(root + path.sep)) throw new Error(`Unsafe ${productName} media folder`);
+    await fs.mkdir(categoryDir, { recursive: true });
+    const target = path.resolve(categoryDir, final);
+    if (target === categoryDir || !target.startsWith(categoryDir + path.sep)) throw new Error(`Unsafe ${productName} media path`);
+    await fs.writeFile(target, Buffer.from(asset?.data || []));
+    session.assetCount++;
+    return { appended: true, name: final, filePath: target, category, relativePath: `${folder}/${final}` };
   }
 
   function runFfmpeg(args, cwd) {
@@ -382,19 +421,7 @@ function setupIpc() {
   ipcMain.handle('append-premiere-export-asset', async (event, { token, asset } = {}) => {
     const session = premiereExportSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown Premiere export session');
-    if (session.assetCount >= 2000) throw new Error('Premiere export contains too many assets');
-    let name = path.basename(String(asset?.name || 'media.bin')).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '');
-    if (!name || name === '.' || name === '..') name = 'media.bin';
-    const ext = path.extname(name), stem = path.basename(name, ext);
-    let final = name;
-    for (let index = 2; session.usedNames.has(final.toLowerCase()); index++) final = `${stem}_${index}${ext}`;
-    session.usedNames.add(final.toLowerCase());
-    const target = path.resolve(session.mediaDir, final);
-    const root = path.resolve(session.mediaDir);
-    if (target === root || !target.startsWith(root + path.sep)) throw new Error('Unsafe Premiere media path');
-    await fs.writeFile(target, Buffer.from(asset?.data || []));
-    session.assetCount++;
-    return { appended: true, name: final, filePath: target };
+    return appendCollectedExportAsset(session, asset, 'Premiere');
   });
 
   ipcMain.handle('finish-premiere-export', async (event, { token, xml } = {}) => {
@@ -433,6 +460,90 @@ function setupIpc() {
     if (!session || session.ownerId !== event.sender.id) return { aborted: false };
     premiereExportSessions.delete(token);
     await discardPremiereExportSession(session);
+    return { aborted: true };
+  });
+
+  ipcMain.handle('begin-after-effects-export', async (event, settings = {}) => {
+    const defaultName = path.basename(String(settings.defaultName || 'refboard-animatic-after-effects.jsx')).replace(/[^\w. -]/g, '_');
+    const picked = await dialog.showSaveDialog(win, {
+      title: 'Export After Effects project builder',
+      defaultPath: path.join(app.getPath('videos'), defaultName),
+      filters: [{ name: 'After Effects project builder', extensions: ['jsx'] }],
+    });
+    if (picked.canceled || !picked.filePath) return { started: false };
+    const output = /\.jsx$/i.test(picked.filePath) ? picked.filePath : `${picked.filePath}.jsx`;
+    const mediaDir = await createUniqueAfterEffectsMediaDir(output);
+    const token = crypto.randomUUID();
+    const session = {
+      token,
+      ownerId: event.sender.id,
+      output,
+      mediaDir,
+      usedNames: new Set(),
+      assetCount: 0,
+      finished: false,
+      tempPath: `${output}.refboard-${token}.tmp`,
+      backupPath: `${output}.refboard-${token}.backup`,
+      timer: null,
+    };
+    session.timer = setTimeout(() => {
+      const stale = afterEffectsExportSessions.get(token);
+      afterEffectsExportSessions.delete(token);
+      discardAfterEffectsExportSession(stale);
+    }, 30 * 60 * 1000);
+    afterEffectsExportSessions.set(token, session);
+    return {
+      started: true,
+      token,
+      filePath: output,
+      mediaDir,
+      mediaFolderName: path.basename(mediaDir),
+      projectFileName: `${path.basename(output, path.extname(output))}.aep`,
+    };
+  });
+
+  ipcMain.handle('append-after-effects-export-asset', async (event, { token, asset } = {}) => {
+    const session = afterEffectsExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown After Effects export session');
+    return appendCollectedExportAsset(session, asset, 'After Effects');
+  });
+
+  ipcMain.handle('finish-after-effects-export', async (event, { token, script } = {}) => {
+    const session = afterEffectsExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown After Effects export session');
+    const document = String(script || '');
+    if (!document.startsWith('#target aftereffects') || !document.includes('RefBoard After Effects Project Builder')) throw new Error('Invalid After Effects project builder');
+    if (Buffer.byteLength(document, 'utf8') > 20 * 1024 * 1024) throw new Error('After Effects project builder is too large');
+    afterEffectsExportSessions.delete(token);
+    clearTimeout(session.timer);
+    try {
+      await fs.writeFile(session.tempPath, document, 'utf8');
+      let backedUp = false;
+      try {
+        await fs.rename(session.output, session.backupPath);
+        backedUp = true;
+      } catch (err) {
+        if (err?.code !== 'ENOENT') throw err;
+      }
+      try {
+        await fs.rename(session.tempPath, session.output);
+      } catch (err) {
+        if (backedUp) await fs.rename(session.backupPath, session.output).catch(() => {});
+        throw err;
+      }
+      if (backedUp) await fs.rm(session.backupPath, { force: true });
+      session.finished = true;
+      return { saved: true, filePath: session.output, mediaDir: session.mediaDir, assetCount: session.assetCount };
+    } finally {
+      await discardAfterEffectsExportSession(session);
+    }
+  });
+
+  ipcMain.handle('abort-after-effects-export', async (event, token) => {
+    const session = afterEffectsExportSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) return { aborted: false };
+    afterEffectsExportSessions.delete(token);
+    await discardAfterEffectsExportSession(session);
     return { aborted: true };
   });
 

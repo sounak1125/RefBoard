@@ -26,10 +26,10 @@ const project = {
 };
 
 const assets = new Map([
-  ['image:image-1', { id:'image-1', kind:'image', name:'Board & Shot.png', filePath:'C:\\Export\\Media\\Board & Shot.png', durationFrames:144, width:4000, height:3000 }],
-  ['video:video-1', { id:'video-1', kind:'video', name:'Take <1>.mp4', filePath:'C:\\Export\\Media\\Take 1.mp4', durationFrames:480, width:3840, height:2160 }],
-  ['audio:audio-1', { id:'audio-1', kind:'audio', name:'Music.wav', filePath:'C:\\Export\\Media\\Music.wav', durationFrames:240, channels:2 }],
-  ['stroke:still', { id:'stroke-still', kind:'image', name:'Board Shot Drawings.png', filePath:'C:\\Export\\Media\\Board Shot Drawings.png', durationFrames:144, width:1920, height:1080 }],
+  ['image:image-1', { id:'image-1', kind:'image', category:'image', name:'Board & Shot.png', filePath:'C:\\Export\\Media\\Images\\Board & Shot.png', durationFrames:144, width:4000, height:3000 }],
+  ['video:video-1', { id:'video-1', kind:'video', category:'video', name:'Take <1>.mp4', filePath:'C:\\Export\\Media\\Videos\\Take 1.mp4', durationFrames:480, width:3840, height:2160 }],
+  ['audio:audio-1', { id:'audio-1', kind:'audio', category:'audio', name:'Music.wav', filePath:'C:\\Export\\Media\\Audio\\Music.wav', durationFrames:240, channels:2 }],
+  ['stroke:still', { id:'stroke-still', kind:'image', category:'drawing', name:'Board Shot Drawings.png', filePath:'C:\\Export\\Media\\Drawings\\Board Shot Drawings.png', durationFrames:144, width:1920, height:1080 }],
 ]);
 
 const timeline = buildPremiereTimeline({ project, name:'Animatic & Cut', fps:24, width:1920, height:1080, exportStart:1, exportEnd:5, assets });
@@ -47,6 +47,9 @@ const output = createPremiereXml(timeline);
 assert.match(output, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
 assert.match(output, /<xmeml version="5">/);
 assert.match(output, /<name>Animatic &amp; Cut<\/name>/);
+for (const bin of ['Images','Videos','Audio','Drawings','Sequences']) assert.match(output, new RegExp(`<bin><name>${bin}<\\/name><children>`), `${bin} must import into its own Premiere bin`);
+assert.match(output, /<clip id="masterclip-image-1">[\s\S]*?<ismasterclip>TRUE<\/ismasterclip>/, 'collected media must be represented as organized master clips');
+assert.match(output, /<masterclipid>masterclip-video-1<\/masterclipid>/, 'timeline clips must link back to their organized master clips');
 assert.match(output, /<width>1920<\/width><height>1080<\/height>/);
 assert.match(output, /<timebase>24<\/timebase><ntsc>FALSE<\/ntsc>/);
 assert.match(output, /Board%20%26%20Shot\.png/);

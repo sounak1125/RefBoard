@@ -1,0 +1,92 @@
+import assert from 'node:assert/strict';
+import {
+  AFTER_EFFECTS_MAX_SECONDS,
+  afterEffectsTime,
+  buildAfterEffectsProject,
+  createAfterEffectsScript,
+} from './animatics-after-effects-export.mjs';
+
+assert.equal(afterEffectsTime(1.5, 24), 1.5);
+assert.equal(afterEffectsTime(1 / 60, 60), 1 / 60);
+assert.equal(afterEffectsTime(1.02, 24), 1, 'timeline values must snap to the selected composition frame rate');
+assert.equal(AFTER_EFFECTS_MAX_SECONDS, 10800);
+
+const project = {
+  fps: 24,
+  background: '#102030',
+  videoTracks: 2,
+  audioTracks: 1,
+  clips: [
+    { id:'still', itemId:'image-1', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
+    { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1}, linkGroupId:'linked-1' },
+  ],
+  texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', scale:1.25, rotation:12, x:.25, y:.8 }],
+  audio:[{ id:'music', mediaId:'audio-1', track:0, start:.5, duration:5, sourceIn:2, sourceOut:7, volume:.5, name:'Music.wav', linkGroupId:'linked-1' }],
+};
+
+const assets = new Map([
+  ['image:image-1', { id:'image-1', kind:'image', category:'image', name:'Board & Shot.png', relativePath:'Images/Board & Shot.png', filePath:'C:\\Export\\Media\\Images\\Board & Shot.png', durationFrames:144, width:4000, height:3000 }],
+  ['video:video-1', { id:'video-1', kind:'video', category:'video', name:'Take _1_.mp4', relativePath:'Videos/Take _1_.mp4', filePath:'C:\\Export\\Media\\Videos\\Take _1_.mp4', durationFrames:480, width:3840, height:2160 }],
+  ['audio:audio-1', { id:'audio-1', kind:'audio', category:'audio', name:'Music.wav', relativePath:'Audio/Music.wav', filePath:'C:\\Export\\Media\\Audio\\Music.wav', durationFrames:240, channels:2 }],
+  ['stroke:still', { id:'stroke-still', kind:'image', category:'drawing', name:'Board Shot Drawings.png', relativePath:'Drawings/Board Shot Drawings.png', filePath:'C:\\Export\\Media\\Drawings\\Board Shot Drawings.png', durationFrames:144, width:1920, height:1080 }],
+]);
+
+const output = buildAfterEffectsProject({ project, name:'Animatic & Cut', fps:24, width:1920, height:1080, exportStart:1, exportEnd:5, assets });
+assert.throws(
+  () => buildAfterEffectsProject({ project, name:'Too Long', fps:24, width:1920, height:1080, exportStart:0, exportEnd:AFTER_EFFECTS_MAX_SECONDS + 1, assets }),
+  /limited to three hours/,
+);
+assert.equal(output.duration, 4);
+assert.deepEqual(output.background, [0.062745, 0.12549, 0.188235]);
+assert.equal(output.assets.length, 4, 'reused footage must be imported only once');
+assert.deepEqual(output.assets.map(asset => asset.category).sort(), ['audio','drawing','image','video']);
+assert.ok(output.assets.some(asset => asset.relativePath === 'Drawings/Board Shot Drawings.png'));
+assert.equal(output.layers.length, 5, 'audio, two visuals, drawing overlay, and editable text must all be emitted');
+
+const still = output.layers.find(layer => layer.id === 'still');
+const video = output.layers.find(layer => layer.id === 'video');
+const music = output.layers.find(layer => layer.id === 'music');
+const text = output.layers.find(layer => layer.id === 'title');
+assert.equal(still.start, 0);
+assert.equal(still.end, 2);
+assert.deepEqual(still.transform.scale, [36, 36], 'Fit framing must become an After Effects layer scale');
+assert.equal(video.start, 1);
+assert.equal(video.sourceIn, 10, 'source In must remain non-destructive when exporting a range');
+assert.deepEqual(video.transform.position, [1056, 486]);
+assert.deepEqual(video.transform.scale, [60, 60], 'Fill framing and user scale must be combined accurately');
+assert.equal(music.start, 0);
+assert.equal(music.sourceIn, 2.5, 'range trimming must advance the audio source In point');
+assert.equal(music.audioDb, -6.0206, 'linear RefBoard audio gain must be converted to After Effects decibels');
+assert.equal(text.text.content, 'Title &\nSubtitle');
+assert.equal(text.text.fontSize, 72);
+assert.deepEqual(text.transform.scale, [125, 125]);
+assert.deepEqual(text.transform.position, [480, 864]);
+
+const script = createAfterEffectsScript(output, {
+  mediaFolderName: 'Animatic & Cut_Media',
+  projectFileName: 'Animatic & Cut.aep',
+});
+assert.match(script, /^#target aftereffects/);
+assert.match(script, /RefBoard After Effects Project Builder/);
+assert.match(script, /app\.project\.items\.addComp/);
+assert.match(script, /app\.project\.importFile\(new ImportOptions\(sourceFile\)\)/);
+assert.match(script, /addFolder\("RefBoard Animatic"\)/, 'After Effects project items must live under a RefBoard root folder');
+assert.match(script, /categoryNames = \{ image:"Images", video:"Videos", audio:"Audio", drawing:"Drawings" \}/, 'After Effects media must be sorted into project-panel folders');
+assert.match(script, /asset\.relativePath/, 'the builder must import from categorized on-disk media folders');
+assert.match(script, /"relativePath":"Images\/Board & Shot\.png"/);
+assert.match(script, /sourceRectAtTime/, 'text must stay editable and receive a centered anchor point');
+assert.match(script, /ADBE Audio Levels/, 'audio gain must be applied in After Effects');
+assert.match(script, /spec\.start - spec\.sourceIn/, 'video and audio source trims must be preserved');
+assert.ok(script.indexOf('layer.startTime =') < script.indexOf('layer.inPoint ='), 'source timing must be set before comp In and Out points');
+assert.match(script, /app\.project\.save\(projectFile\)/, 'running the builder must save a native AEP file');
+assert.match(script, /"projectFileName":"Animatic & Cut\.aep"/);
+assert.match(script, /"mediaFolderName":"Animatic & Cut_Media"/);
+assert.match(script, /"content":"Title &\\nSubtitle"/, 'multiline text must be safely embedded in JSX');
+assert.ok(script.includes('project created:\\n" + projectFile.fsName'), 'success alerts must keep their newline escaped inside the JSX string');
+assert.ok(script.includes('export failed:\\n" + error.toString()'), 'error alerts must keep their newline escaped inside the JSX string');
+assert.ok(!script.includes('project created:\n" + projectFile.fsName'), 'generated JSX must not contain a literal newline inside the success string');
+assert.ok(!script.includes('export failed:\n" + error.toString()'), 'generated JSX must not contain a literal newline inside the error string');
+assert.doesNotThrow(() => new Function(script.replace(/^#target aftereffects\s*/, '')), 'the emitted JSX body must be syntactically valid JavaScript');
+assert.doesNotMatch(script, /<xmeml/, 'After Effects output must not reuse Premiere XML');
+
+console.log('animatics After Effects export tests passed');
