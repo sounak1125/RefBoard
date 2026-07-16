@@ -6,6 +6,7 @@ import {
   linkTimelineItems,
   marqueeSelection,
   normalizeTimelineLinks,
+  reorderTimelineTracks,
   resolveOverwrite,
   snappedMoveDelta,
   splitLinkedTimelineItems,
@@ -29,6 +30,9 @@ const MIN_SHOT_SECONDS = 1 / 60;
 const MAX_SEQUENCE_SECONDS = 24 * 60 * 60;
 const SAFE_INITIAL_TIMELINE_PIXELS = 60000;
 const HISTORY_LIMIT = 100;
+const DEFAULT_TRACK_HEIGHT = 44;
+const MIN_TRACK_HEIGHT = 24;
+const MAX_TRACK_HEIGHT = 180;
 const ASPECT_RATIOS = {
   '16:9': [16, 9],
   '4:3': [4, 3],
@@ -152,7 +156,9 @@ function css() {
   .an-view-settings { justify-self:end; display:flex; align-items:center; gap:5px; }
   .an-view-settings select { height:28px; border:1px solid #30343e; border-radius:7px; background-color:#17191f; color:#aeb5c2; padding:0 25px 0 8px; outline:none; font:11px "Segoe UI",sans-serif; cursor:pointer; }
   .an-view-settings select:hover,.an-view-settings select:focus { border-color:#4e5666; color:#fff; }
-  #anShotLabel { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  #anShotLabel { min-width:0; display:flex; align-items:center; overflow:hidden; white-space:nowrap; }
+  .an-shot-name { min-width:0; max-width:min(42vw,320px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .an-shot-meta { flex:0 0 auto; color:#9299a7; white-space:nowrap; }
   .an-frame-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
   .an-frame-actions .an-tool-btn { margin:0; }
   .an-scale-row { display:grid; grid-template-columns:1fr 46px; align-items:center; gap:8px; margin-bottom:13px; }
@@ -170,7 +176,8 @@ function css() {
   .an-edit-tool .text-glyph { color:#e5eaf2; font-size:16px; font-weight:600; line-height:1; }
   .an-edit-tool:hover,.an-edit-tool.on { color:#f3f7ff; background:#2a4565; }
   .an-edit-tool:disabled { opacity:.34; cursor:not-allowed; background:transparent; }
-  .an-edit-tool.link-active { color:#f0e3ff; background:#54366d; box-shadow:inset 0 0 0 1px #9669bb; }
+  .an-edit-tool.link-active { color:#e7f3ff; background:#2a4565; box-shadow:inset 0 0 0 1px #5a9de7; }
+  .an-edit-divider { width:1px; height:17px; margin:0 2px; background:#343946; }
   .an-snap-btn { display:flex!important; align-items:center; gap:4px; width:auto!important; padding:0 8px; }
   .an-snap-btn.on { color:#cce5ff; background:#28496d; box-shadow:inset 0 0 0 1px #5a9de7; }
   #anTlSummary { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#9299a7; }
@@ -180,14 +187,20 @@ function css() {
   .an-panel,.an-tl-scroll { scrollbar-color:#414754 #15181e; scrollbar-width:thin; }
   .an-panel::-webkit-scrollbar,.an-tl-scroll::-webkit-scrollbar { width:10px; height:10px; }
   .an-panel::-webkit-scrollbar-track,.an-tl-scroll::-webkit-scrollbar-track { background:#15181e; }
+  .an-tl-scroll::-webkit-scrollbar-track:horizontal { margin-left:124px; }
   .an-panel::-webkit-scrollbar-thumb,.an-tl-scroll::-webkit-scrollbar-thumb { border:2px solid #15181e; border-radius:99px; background:#414754; }
   .an-panel::-webkit-scrollbar-thumb:hover,.an-tl-scroll::-webkit-scrollbar-thumb:hover { background:#566070; }
   .an-tl-grid { min-width:100%; min-height:100%; position:relative; padding-bottom:12px; box-sizing:border-box; }
-  .an-ruler-row,.an-track-row { display:grid; grid-template-columns:124px minmax(900px,1fr); min-height:44px; }
+  .an-ruler-row,.an-track-row { display:grid; grid-template-columns:124px minmax(900px,1fr); }
   .an-ruler-row { height:32px; min-height:32px; position:sticky; top:0; z-index:8; background:#14161b; }
-  .an-track-label { position:sticky; left:0; z-index:7; display:flex; align-items:center; gap:7px; padding:0 8px 0 10px; color:#9ca3b0; background:#17191f; border-right:1px solid #2b2e37; border-bottom:1px solid #242730; }
+  .an-track-row { position:relative; height:var(--an-track-height,44px); min-height:24px; }
+  .an-track-label { position:sticky; left:0; z-index:7; display:flex; align-items:center; gap:6px; min-height:0; padding:0 8px 0 6px; color:#9ca3b0; background:#17191f; border-right:1px solid #2b2e37; border-bottom:1px solid #242730; }
   .an-track-label b { color:#dfe2e8; font-size:11px; }
   .an-track-label span { margin-left:auto; color:#636a77; font-size:10px; }
+  .an-track-grip { width:20px; height:24px; padding:0; border:0; display:grid; place-items:center; border-radius:5px; color:#717987; background:transparent; cursor:grab; touch-action:none; }
+  .an-track-grip:hover,.an-track-grip:focus-visible { color:#d8e8fb; background:#293547; outline:none; }
+  .an-track-grip:active { cursor:grabbing; }
+  .an-track-grip svg { width:12px; height:14px; fill:currentColor; }
   .an-time-mode { height:24px; padding:0 6px; border:0; border-radius:5px; color:#8f98a8; background:transparent; font:700 9px ui-monospace,Consolas,monospace; letter-spacing:.04em; cursor:pointer; }
   .an-time-mode:hover,.an-time-mode:focus-visible { color:#dcecff; background:#293547; outline:none; }
   .an-track-remove { width:21px; height:21px; margin-left:0; padding:0; border:1px solid transparent; border-radius:5px; display:grid; place-items:center; opacity:0; color:#8f98a8; background:transparent; cursor:pointer; transition:.12s; }
@@ -195,17 +208,24 @@ function css() {
   .an-track-remove:hover { border-color:#71434b; color:#ffd9df; background:#45272d; }
   .an-track-remove svg { width:11px; height:11px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
   .an-track-lane { position:relative; border-bottom:1px solid #242730; background-image:linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px); background-size:var(--an-second-px,90px) 100%; touch-action:none; }
+  .an-track-resize { position:absolute; z-index:12; left:0; right:0; bottom:-3px; height:7px; padding:0; border:0; background:transparent; cursor:row-resize; touch-action:none; }
+  .an-track-resize::after { content:""; position:absolute; left:124px; right:0; top:3px; height:1px; background:transparent; }
+  .an-track-resize:hover::after,.an-track-resize.dragging::after { background:#6aaaff; box-shadow:0 0 7px rgba(106,170,255,.55); }
+  .an-track-row.reorder-source { opacity:.58; }
+  .an-track-row.reorder-target::after { content:""; position:absolute; z-index:11; inset:1px 0; border:1px solid #70aff5; background:rgba(77,145,222,.09); pointer-events:none; }
   .an-ruler { position:relative; border-bottom:1px solid #30333c; cursor:pointer; touch-action:none; }
   .an-tick { position:absolute; inset-block:0 auto; padding:7px 0 0 5px; color:#6f7683; font:10px ui-monospace,Consolas,monospace; border-left:1px solid #343741; }
-  .an-clip { position:absolute; z-index:2; top:4px; height:35px; min-width:16px; border:1px solid #4d77aa; border-radius:6px; overflow:hidden; cursor:pointer; background:#243a55; color:#e7effb; box-shadow:0 2px 8px rgba(0,0,0,.25); transition:opacity .15s ease,transform .15s ease,box-shadow .15s ease; }
+  .an-clip { position:absolute; z-index:2; top:3px; bottom:4px; min-width:16px; min-height:14px; border:1px solid #4d77aa; border-radius:6px; overflow:hidden; cursor:pointer; background:#243a55; color:#e7effb; box-shadow:0 2px 8px rgba(0,0,0,.25); transition:opacity .15s ease,transform .15s ease,box-shadow .15s ease; }
   .an-clip:hover,.an-clip.on { border-color:#79b6ff; box-shadow:0 0 0 1px rgba(90,162,255,.3),0 4px 12px rgba(0,0,0,.4); }
   .an-clip.primary { box-shadow:0 0 0 2px rgba(118,190,255,.72),0 4px 14px rgba(0,0,0,.48); }
   .an-clip.dragging-source { opacity:.28; transform:scale(.975); box-shadow:none; }
-  .an-drag-ghost { position:fixed!important; z-index:70; pointer-events:none; opacity:.8; transform:scale(1.015); box-shadow:0 12px 28px rgba(0,0,0,.48),0 0 0 1px rgba(114,180,255,.5)!important; transition:top .13s ease,left .05s linear,opacity .13s ease,transform .13s ease; }
+  .an-drag-ghost { position:fixed!important; z-index:70; bottom:auto; pointer-events:none; opacity:.8; transform:scale(1.015); box-shadow:0 12px 28px rgba(0,0,0,.48),0 0 0 1px rgba(114,180,255,.5)!important; transition:top .13s ease,left .05s linear,opacity .13s ease,transform .13s ease; }
   .an-track-lane.an-lane-hover { background-color:rgba(89,156,239,.11); box-shadow:inset 0 0 0 1px rgba(103,170,255,.38); }
-  .an-clip img { width:43px; height:100%; object-fit:cover; float:left; margin-right:7px; background:#0d0f13; pointer-events:none; }
-  .an-clip-name { position:relative; z-index:2; display:block; margin-top:4px; font-size:10px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-shadow:0 1px 3px rgba(0,0,0,.9); }
+  .an-clip img { width:clamp(24px,calc(var(--an-track-height,44px) - 2px),150px); height:100%; object-fit:cover; float:left; margin-right:7px; background:#0d0f13; pointer-events:none; }
+  .an-clip-name { position:relative; z-index:2; display:block; max-width:calc(100% - 14px); margin-top:4px; padding-right:15px; box-sizing:border-box; font-size:10px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-shadow:0 1px 3px rgba(0,0,0,.9); }
   .an-clip-dur { position:relative; z-index:2; display:block; color:#a9bed7; font-size:9px; text-shadow:0 1px 3px rgba(0,0,0,.9); }
+  .an-track-row.compact .an-clip-name { margin-top:2px; font-size:9px; }
+  .an-track-row.compact .an-clip-dur,.an-track-row.compact .an-link-badge { display:none; }
   .an-trim { position:absolute; top:0; right:0; bottom:0; width:8px; cursor:ew-resize; background:linear-gradient(90deg,transparent,rgba(255,255,255,.3)); z-index:3; }
   .an-trim-left { left:0; right:auto; background:linear-gradient(90deg,rgba(255,255,255,.3),transparent); }
   .an-audio { border-color:#497f68; background:#1f493b; color:#e3f8ee; }
@@ -234,8 +254,11 @@ function css() {
   #animaticsWorkspace.tool-text #anViewer { cursor:text; }
   #animaticsWorkspace.tool-razor .an-track-lane,#animaticsWorkspace.tool-razor .an-clip { cursor:default; }
   #animaticsWorkspace.tool-razor .an-clip.razor-hover,#animaticsWorkspace.tool-razor .an-clip.razor-hover * { cursor:crosshair; }
+  #animaticsWorkspace.tool-hand .an-tl-grid,#animaticsWorkspace.tool-hand .an-track-lane,#animaticsWorkspace.tool-hand .an-clip { cursor:grab; }
+  #animaticsWorkspace.hand-panning .an-tl-grid,#animaticsWorkspace.hand-panning .an-track-lane,#animaticsWorkspace.hand-panning .an-clip { cursor:grabbing!important; }
   .an-track-add { height:32px; padding:0 10px; margin:6px 0 2px 132px; border-radius:8px; border-color:#30343e; font-size:11px; }
   .an-playhead { position:absolute; z-index:20; top:0; bottom:0; left:124px; width:1px; background:#ff6b6b; pointer-events:none; transform:translateX(var(--an-playhead-x,0px)); }
+  .an-playhead.out-of-view { display:none; }
   .an-playhead::before { content:""; position:absolute; top:0; left:-5px; width:11px; height:8px; border-radius:2px 2px 5px 5px; background:#ff6b6b; }
   .an-sequence-range { position:absolute; z-index:1; top:0; bottom:0; left:124px; pointer-events:none; background:rgba(94,165,255,.07); border-inline:1px solid rgba(94,165,255,.35); transform:translateX(var(--an-in-x,0)); width:var(--an-range-w,0); }
   .an-sequence-marker { position:absolute; z-index:22; top:0; bottom:0; left:120px; width:9px; cursor:ew-resize; touch-action:none; background:transparent; transform:translateX(var(--an-marker-x,0)); }
@@ -286,8 +309,9 @@ function icon(path, fill = false) {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"${fill ? ' style="fill:currentColor;stroke:none"' : ''}>${path}</svg>`;
 }
 
-function selectionToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 2.45c-.72-.31-1.48.34-1.32 1.11l3.33 16.08c.17.84 1.26 1.09 1.78.4l3.46-4.61 5.12 4.06a1 1 0 0 0 1.4-.16l1.35-1.7a1 1 0 0 0-.16-1.41l-5.03-3.99 5.48-2.2c.8-.32.82-1.45.03-1.79Z" fill="#090c11" stroke="#f7f9fc" stroke-width="1.35" stroke-linejoin="round"/><path d="m11.15 15.43 1.18-1.57" fill="none" stroke="#72b7ff" stroke-width="1.15" stroke-linecap="round"/></svg>';}
+function selectionToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 2.45c-.72-.31-1.48.34-1.32 1.11l3.33 16.08c.17.84 1.26 1.09 1.78.4l3.46-4.61 5.12 4.06a1 1 0 0 0 1.4-.16l1.35-1.7a1 1 0 0 0-.16-1.41l-5.03-3.99 5.48-2.2c.8-.32.82-1.45.03-1.79Z" fill="#f7f9fc" stroke="#080b10" stroke-width="1.35" stroke-linejoin="round"/><path d="m11.15 15.43 1.18-1.57" fill="none" stroke="#4b94df" stroke-width="1.15" stroke-linecap="round"/></svg>';}
 function razorToolIcon(){return '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-28 16 16)" stroke-linejoin="round"><path d="M5 6h22v13l-8 7H5Z" fill="#080a0e" stroke="currentColor" stroke-width="1.8"/><path d="M5 20h13l9-8v7l-8 7H5Z" fill="#70b5ff" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="13" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/></g></svg>';}
+function handToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.1 11.2V7.6a1.45 1.45 0 0 1 2.9 0v2.1-4a1.5 1.5 0 0 1 3 0v3.7-2.8a1.45 1.45 0 0 1 2.9 0v3.3-1.7a1.4 1.4 0 0 1 2.8 0v5.3c0 4.5-2.7 7.1-6.8 7.1-2.6 0-4.2-1.2-5.5-3.1l-2.3-3.4a1.55 1.55 0 0 1 2.4-1.9Z" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/></svg>';}
 function linkToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.4 14.6 5.2-5.2M7.8 16.2l-1.1 1.1a3.2 3.2 0 0 1-4.5-4.5l3.1-3.1a3.2 3.2 0 0 1 4.5 0M16.2 7.8l1.1-1.1a3.2 3.2 0 0 1 4.5 4.5l-3.1 3.1a3.2 3.2 0 0 1-4.5 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';}
 
 function markup() {
@@ -326,7 +350,7 @@ export function createAnimaticsEditor(options) {
   document.body.insertAdjacentHTML('beforeend', markup());
 
   const root = document.querySelector('#animaticsWorkspace');
-  root.querySelector('.an-edit-tools')?.insertAdjacentHTML('beforeend',`<button class="an-edit-tool" id="anLink" title="Link selected clips (Ctrl+L)" aria-label="Link selected clips" aria-pressed="false">${linkToolIcon()}</button>`);
+  root.querySelector('.an-edit-tools')?.insertAdjacentHTML('beforeend',`<button class="an-edit-tool" data-an-tool="hand" title="Hand tool (H)" aria-label="Hand tool">${handToolIcon()}</button><span class="an-edit-divider" aria-hidden="true"></span><button class="an-edit-tool" id="anLink" title="Link selected clips (Ctrl+L)" aria-label="Link selected clips" aria-pressed="false">${linkToolIcon()}</button>`);
   const canonicalBrandMark=document.querySelector('#landingBrandIcon')?.currentSrc||document.querySelector('#landingBrandIcon')?.src||document.querySelector('#titlebarIcon')?.currentSrc||document.querySelector('#titlebarIcon')?.src||'';
   if(canonicalBrandMark)root.querySelector('#anBrandMark').src=canonicalBrandMark;
   const canvas = root.querySelector('#anViewer');
@@ -353,6 +377,8 @@ export function createAnimaticsEditor(options) {
   let thumbUrls = new Map();
   let toastTimer = 0;
   let dragging = null;
+  let handPan = null;
+  let spaceHand = null;
   let marqueeDrag = null;
   let gapPress = null;
   let audioPlayers = [];
@@ -377,6 +403,8 @@ export function createAnimaticsEditor(options) {
   let trimWavePeaks = [];
   let trimHandleDrag = null;
   let timelineResize = null;
+  let trackResize = null;
+  let trackReorder = null;
   let textDrag = null;
   let inlineTextId = null;
   let inlineTextOriginal = '';
@@ -386,7 +414,7 @@ export function createAnimaticsEditor(options) {
   const videoElements = new Map();
 
   function freshProject() {
-    return { version:5, fps:30, resolution:1080, aspect:'16:9', playhead:0, inPoint:null, outPoint:null, sequenceDuration:null, timelineDisplay:'timecode', timelineZoom:90, timelineHeight:286, timelineSnap:true, timecode:false, counterMode:'timecode', previewQuality:'full', background:'#000000', videoTracks:1, audioTracks:0, clips:[], texts:[], audio:[] };
+    return { version:6, fps:30, resolution:1080, aspect:'16:9', playhead:0, inPoint:null, outPoint:null, sequenceDuration:null, timelineDisplay:'timecode', timelineZoom:90, timelineHeight:286, timelineSnap:true, timecode:false, counterMode:'timecode', previewQuality:'full', background:'#000000', videoTracks:1, audioTracks:0, videoTrackHeights:[DEFAULT_TRACK_HEIGHT], audioTrackHeights:[], clips:[], texts:[], audio:[] };
   }
 
   function notify(message) {
@@ -400,6 +428,8 @@ export function createAnimaticsEditor(options) {
   function cloneProjectForHistory(source=project) {
     return {
       ...source,
+      videoTrackHeights:[...(source.videoTrackHeights||[])],
+      audioTrackHeights:[...(source.audioTrackHeights||[])],
       clips:source.clips.map(clip=>({...clip,framing:{...(clip.framing||{})},strokes:structuredClone(clip.strokes||[])})),
       texts:source.texts.map(text=>({...text})),
       audio:source.audio.map(audio=>({...audio})),
@@ -488,10 +518,6 @@ export function createAnimaticsEditor(options) {
     return project.texts.find(c => c.id === selectedTextId) || null;
   }
 
-  function selectedAudio() {
-    return project.audio.find(c => c.id === selectedAudioId) || null;
-  }
-
   function entryById(id) {
     let item=project.clips.find(c=>c.id===id);if(item)return {item,kind:'video',collection:project.clips};
     item=project.texts.find(c=>c.id===id);if(item)return {item,kind:'text',collection:project.texts};
@@ -528,6 +554,18 @@ export function createAnimaticsEditor(options) {
   function selectedAudioClips(){return selectedEntries('audio').map(entry=>entry.item);}
   function selectedDurationItems(){return selectedEntries().filter(entry=>entry.kind==='video'||entry.kind==='audio').map(entry=>entry.item);}
   function timelineMediaItems(){return [...project.clips,...project.audio];}
+
+  function normalizedTrackHeights(values,count){return Array.from({length:count},(_,index)=>clamp(Number(values?.[index])||DEFAULT_TRACK_HEIGHT,MIN_TRACK_HEIGHT,MAX_TRACK_HEIGHT));}
+  function ensureTrackHeightCounts(){project.videoTrackHeights=normalizedTrackHeights(project.videoTrackHeights,project.videoTracks);project.audioTrackHeights=normalizedTrackHeights(project.audioTrackHeights,project.audioTracks);}
+  function trackHeights(kind){return kind==='audio'?project.audioTrackHeights:project.videoTrackHeights;}
+  function trackHeight(kind,track){return clamp(Number(trackHeights(kind)?.[track])||DEFAULT_TRACK_HEIGHT,MIN_TRACK_HEIGHT,MAX_TRACK_HEIGHT);}
+  function setTrackHeight(kind,track,height){ensureTrackHeightCounts();trackHeights(kind)[track]=clamp(height,MIN_TRACK_HEIGHT,MAX_TRACK_HEIGHT);}
+
+  function moveTimelineTrack(kind,from,to){
+    const video=kind==='video',count=video?project.videoTracks:project.audioTracks;if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||to<0||from>=count||to>=count||from===to)return false;
+    if(video)project.clips=reorderTimelineTracks(project.clips,from,to);else project.audio=reorderTimelineTracks(project.audio,from,to);
+    ensureTrackHeightCounts();const heights=trackHeights(kind),[height]=heights.splice(from,1);heights.splice(to,0,height);return true;
+  }
 
   function replaceTimelineMediaItems(items){
     const byId=new Map((items||[]).map(item=>[item.id,item]));
@@ -643,6 +681,7 @@ export function createAnimaticsEditor(options) {
     base.clips=base.clips.map(item=>linkedById.get(item.id)||item);base.audio=base.audio.map(item=>linkedById.get(item.id)||item);
     base.videoTracks=clamp(Math.max(base.videoTracks,1+Math.max(-1,...base.clips.map(c=>c.track))),1,MAX_VIDEO_TRACKS);
     base.audioTracks=clamp(Math.max(base.audioTracks,1+Math.max(-1,...base.audio.map(c=>c.track))),0,MAX_AUDIO_TRACKS);
+    base.videoTrackHeights=normalizedTrackHeights(raw.videoTrackHeights,base.videoTracks);base.audioTrackHeights=normalizedTrackHeights(raw.audioTrackHeights,base.audioTracks);
     if(Number.isFinite(base.sequenceDuration))base.sequenceDuration=Math.max(base.sequenceDuration,contentDuration(base));
     return base;
   }
@@ -732,7 +771,7 @@ export function createAnimaticsEditor(options) {
     const list=[...files].filter(isVideoFile);
     if(!list.length){notify('Drop one or more video files');return 0;}
     const targetTrack=clamp(Number(track)||0,0,MAX_VIDEO_TRACKS-1);let cursor=Math.max(0,Number(start)||0),added=0;
-    project.videoTracks=Math.max(project.videoTracks,targetTrack+1);
+    project.videoTracks=Math.max(project.videoTracks,targetTrack+1);ensureTrackHeightCounts();
     for(const file of list){
       const url=URL.createObjectURL(file),probe=document.createElement('video');probe.preload='metadata';probe.src=url;
       const meta=await new Promise(resolve=>{const done=value=>{probe.onloadedmetadata=null;probe.onerror=null;resolve(value);};probe.onloadedmetadata=()=>done({duration:probe.duration,width:probe.videoWidth,height:probe.videoHeight});probe.onerror=()=>done(null);setTimeout(()=>done(null),5000);});
@@ -763,6 +802,7 @@ export function createAnimaticsEditor(options) {
 
   function renderTimeline() {
     clearRazorGuide();
+    ensureTrackHeightCounts();
     const fixed=fixedSequenceEnd(),total=fixed??Math.max(10,Math.ceil(contentDuration()+3));
     const zoom=$('#anZoom');zoom.value=String(clamp(Number(project.timelineZoom)||90,Number(zoom.min)||.1,Number(zoom.max)||320));
     const px = Number(zoom.value) || 90;
@@ -782,23 +822,28 @@ export function createAnimaticsEditor(options) {
     for(const text of project.texts)html+=clipMarkup(text,px,'text');
     html+='</div></div>';
     for(let track=0;track<project.videoTracks;track++){
+      const height=trackHeight('video',track),rowClass=height<34?' compact':'';
+      const grip=`<button class="an-track-grip" data-track-move="video" data-track="${track}" title="Drag to reorder V${track+1}" aria-label="Drag to reorder video track V${track+1}"><svg viewBox="0 0 12 16"><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg></button>`;
       const remove=project.videoTracks>1?`<button class="an-track-remove" data-remove-track="video" data-track="${track}" title="Remove empty V${track+1}" aria-label="Remove video track V${track+1}"><svg viewBox="0 0 12 12"><path d="m2 2 8 8M10 2 2 10"/></svg></button>`:'';
-      html+=`<div class="an-track-row"><div class="an-track-label"><b>V${track+1}</b><span>VIDEO</span>${remove}</div><div class="an-track-lane" data-kind="video" data-track="${track}" style="width:${laneWidth}px">`;
+      html+=`<div class="an-track-row${rowClass}" data-track-kind="video" data-track-index="${track}" style="--an-track-height:${height}px"><div class="an-track-label">${grip}<b>V${track+1}</b><span>VIDEO</span>${remove}</div><div class="an-track-lane" data-kind="video" data-track="${track}" style="width:${laneWidth}px">`;
       for(const gap of timelineTrackGaps(project.clips,track,{minDuration:1/project.fps-1e-8}))html+=gapMarkup(gap,px,'video');
       for(const clip of project.clips.filter(c=>c.track===track)) html+=clipMarkup(clip,px,'video');
-      html+='</div></div>';
+      html+=`</div><button class="an-track-resize" data-track-resize="video" data-track="${track}" role="separator" aria-orientation="horizontal" aria-label="Resize video track V${track+1}" title="Drag to resize V${track+1} · double-click to reset"></button></div>`;
     }
     if(project.videoTracks<MAX_VIDEO_TRACKS) html+=`<button class="an-track-add" data-add-track="video">+ Add video track <span>(${project.videoTracks}/${MAX_VIDEO_TRACKS})</span></button>`;
     for(let track=0;track<project.audioTracks;track++){
+      const height=trackHeight('audio',track),rowClass=height<34?' compact':'';
+      const grip=`<button class="an-track-grip" data-track-move="audio" data-track="${track}" title="Drag to reorder A${track+1}" aria-label="Drag to reorder audio track A${track+1}"><svg viewBox="0 0 12 16"><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg></button>`;
       const remove=`<button class="an-track-remove" data-remove-track="audio" data-track="${track}" title="Remove empty A${track+1}" aria-label="Remove audio track A${track+1}"><svg viewBox="0 0 12 12"><path d="m2 2 8 8M10 2 2 10"/></svg></button>`;
-      html+=`<div class="an-track-row"><div class="an-track-label"><b>A${track+1}</b><span>AUDIO</span>${remove}</div><div class="an-track-lane" data-kind="audio" data-track="${track}" style="width:${laneWidth}px">`;
+      html+=`<div class="an-track-row${rowClass}" data-track-kind="audio" data-track-index="${track}" style="--an-track-height:${height}px"><div class="an-track-label">${grip}<b>A${track+1}</b><span>AUDIO</span>${remove}</div><div class="an-track-lane" data-kind="audio" data-track="${track}" style="width:${laneWidth}px">`;
       for(const gap of timelineTrackGaps(project.audio,track,{minDuration:1/project.fps-1e-8}))html+=gapMarkup(gap,px,'audio');
       for(const clip of project.audio.filter(c=>c.track===track)) html+=clipMarkup(clip,px,'audio');
-      html+='</div></div>';
+      html+=`</div><button class="an-track-resize" data-track-resize="audio" data-track="${track}" role="separator" aria-orientation="horizontal" aria-label="Resize audio track A${track+1}" title="Drag to resize A${track+1} · double-click to reset"></button></div>`;
     }
     if(project.audioTracks<MAX_AUDIO_TRACKS) html+=`<button class="an-track-add" data-add-track="audio">+ Add audio track <span>(${project.audioTracks}/${MAX_AUDIO_TRACKS})</span></button>`;
     grid.innerHTML=html;
     grid.style.setProperty('--an-playhead-x',`${project.playhead*px}px`);
+    syncPlayheadVisibility();
     const range=hasSequenceRange()?` · IN ${timecode(project.inPoint,project.fps)} → OUT ${timecode(project.outPoint,project.fps)}`:'';
     $('#anTlSummary').textContent=`${project.clips.length} media · ${project.texts.length} text · ${formatDuration(duration())}${fixed===null?'':' fixed'}${range}`;
     $('#anSetIn').classList.toggle('on',Number.isFinite(project.inPoint));$('#anSetOut').classList.toggle('on',Number.isFinite(project.outPoint));
@@ -993,13 +1038,12 @@ export function createAnimaticsEditor(options) {
     targetCtx.restore();
     if(!mainViewer)return;
     $('#anEmpty')?.classList.toggle('hide',active.length>0||activeTexts.length>0);
-    const top=active.at(-1); $('#anShotLabel').innerHTML=top?`<b>${esc(top.name)}</b> · ${Math.max(1,Math.round(top.duration*project.fps))} frames · V${top.track+1}`:activeTexts.length?`<b>Text overlay</b> · T1`:'No shot at playhead';
+    const top=active.at(-1);$('#anShotLabel').innerHTML=top?`<b class="an-shot-name" title="${esc(top.name)}">${esc(top.name)}</b><span class="an-shot-meta">&nbsp;· ${Math.max(1,Math.round(top.duration*project.fps))} frames · V${top.track+1}</span>`:activeTexts.length?'<b class="an-shot-name">Text overlay</b><span class="an-shot-meta">&nbsp;· T1</span>':'No shot at playhead';
   }
 
   function syncInspector(){
     const clip=selectedClip();
     const text=selectedText();
-    const audio=selectedAudio();
     const visuals=selectedVisualClips(),audios=selectedAudioClips(),durationItems=selectedDurationItems(),frameDuration=uniformValue(durationItems,item=>Math.max(1,Math.round(item.duration*project.fps)),0);
     for(const selector of ['#anDuration','#anAudioDuration']){const input=$(selector);input.value=frameDuration===null?'':String(Number((frameDuration/project.fps).toFixed(3)));input.disabled=!durationItems.length;}
     for(const selector of ['#anDurationFrames','#anAudioDurationFrames']){const input=$(selector);input.value=frameDuration===null?'':String(frameDuration??'');input.disabled=!durationItems.length;}
@@ -1045,7 +1089,16 @@ export function createAnimaticsEditor(options) {
       play.innerHTML=playing?icon('<path d="M7 5h4v14H7zM14 5h4v14h-4z"/>',true):icon('<path d="m8 5 11 7-11 7z"/>',true);
     }
     $('#anTime').textContent=`${counterLabel(project.playhead)} / ${counterLabel(duration(),false)}`;
-    const px=Number($('#anZoom').value)||90; grid.style.setProperty('--an-playhead-x',`${project.playhead*px}px`);
+    const px=Number($('#anZoom').value)||90; grid.style.setProperty('--an-playhead-x',`${project.playhead*px}px`);syncPlayheadVisibility();
+  }
+
+  function syncPlayheadVisibility(){
+    const playhead=grid.querySelector('.an-playhead');if(!playhead)return;const px=Number($('#anZoom').value)||90,x=124+project.playhead*px-scroll.scrollLeft;playhead.classList.toggle('out-of-view',x<124||x>scroll.clientWidth);
+  }
+
+  function applyTimelineZoom(nextZoom){
+    const slider=$('#anZoom'),oldPx=Number(project.timelineZoom)||Number(slider.value)||90,next=clamp(Number(nextZoom)||oldPx,Number(slider.min)||.1,Number(slider.max)||320),rect=scroll.getBoundingClientRect(),playheadX=124+project.playhead*oldPx-scroll.scrollLeft,anchorX=playheadX>=124&&playheadX<=rect.width?playheadX:Math.max(124,rect.width/2);
+    project.timelineZoom=next;slider.value=String(next);renderTimeline();scroll.scrollLeft=Math.max(0,project.playhead*next+124-anchorX);syncPlayheadVisibility();
   }
 
   function applyPreviewQuality(){
@@ -1139,7 +1192,7 @@ export function createAnimaticsEditor(options) {
     if(!open)return;
     if(audioTrimState)finishAudioTrimmer(false);if(inlineTextId)finishInlineTextEdit(false);flushDeferredHistory();open=false;setPlaying(false);
     cancelAnimationFrame(scrubPreviewRaf);scrubPreviewRaf=0;scrubPreviewQueued=false;viewerDrawToken++;
-    drawMode=false;framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
+    drawMode=false;framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;handPan=null;spaceHand=null;root.classList.remove('hand-panning');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
     // Pausing alone leaves Chromium decoder buffers and GPU textures resident.
     // Keep the source Blob URLs/project intact, but recreate decoders and the
     // preview backing store next time Animatics opens.
@@ -1160,9 +1213,9 @@ export function createAnimaticsEditor(options) {
 
   function setActiveTool(tool){
     clearRazorGuide();
-    activeTool=['select','text','razor'].includes(tool)?tool:'select';
+    activeTool=['select','text','razor','hand'].includes(tool)?tool:'select';
     if(activeTool!=='select'&&selectedGap){selectedGap=null;renderTimeline();}
-    root.classList.toggle('tool-select',activeTool==='select');root.classList.toggle('tool-text',activeTool==='text');root.classList.toggle('tool-razor',activeTool==='razor');
+    root.classList.toggle('tool-select',activeTool==='select');root.classList.toggle('tool-text',activeTool==='text');root.classList.toggle('tool-razor',activeTool==='razor');root.classList.toggle('tool-hand',activeTool==='hand');
     root.querySelectorAll('[data-an-tool]').forEach(button=>{
       const current=button.dataset.anTool===activeTool;
       button.classList.toggle('on',current);button.setAttribute('aria-pressed',String(current));
@@ -1250,7 +1303,7 @@ export function createAnimaticsEditor(options) {
     if(video&&count<=1){notify('V1 is the required primary video track');return false;}
     const occupied=collection.filter(item=>item.track===track);if(occupied.length){notify(`${label} contains ${occupied.length} layer${occupied.length===1?'':'s'} — move or delete them first`);return false;}
     for(const item of collection)if(item.track>track)item.track--;
-    if(video)project.videoTracks--;else project.audioTracks--;markDirty();renderTimeline();notify(`${label} removed`);return true;
+    ensureTrackHeightCounts();trackHeights(kind).splice(track,1);if(video)project.videoTracks--;else project.audioTracks--;markDirty();renderTimeline();notify(`${label} removed`);return true;
   }
 
   function upsertTextLayer(){
@@ -1340,7 +1393,7 @@ export function createAnimaticsEditor(options) {
     let added=0;
     for(const file of list){
       const trimmed=await openAudioTrimmer(file);if(!trimmed)continue;
-      const requested=trimmed.sourceOut-trimmed.sourceIn,duration=durationWithinSequence(project.playhead,requested,requested);if(!duration){URL.revokeObjectURL(trimmed.url);notify('The fixed sequence has no room for audio here');continue;}const track=project.audioTracks++,clip={id:uid(),mediaId:uid(),track,start:project.playhead,duration,sourceIn:trimmed.sourceIn,sourceOut:trimmed.sourceIn+duration,originalDuration:trimmed.duration,name:file.name,blob:file,url:trimmed.url,volume:1,type:file.type||'audio/mpeg',needsRelink:false};
+      const requested=trimmed.sourceOut-trimmed.sourceIn,duration=durationWithinSequence(project.playhead,requested,requested);if(!duration){URL.revokeObjectURL(trimmed.url);notify('The fixed sequence has no room for audio here');continue;}const track=project.audioTracks++,clip={id:uid(),mediaId:uid(),track,start:project.playhead,duration,sourceIn:trimmed.sourceIn,sourceOut:trimmed.sourceIn+duration,originalDuration:trimmed.duration,name:file.name,blob:file,url:trimmed.url,volume:1,type:file.type||'audio/mpeg',needsRelink:false};ensureTrackHeightCounts();
       project.audio.push(clip);if(trimmed.waveform)audioWaveformCache.set(clip.mediaId,trimmed.waveform);setTimelineSelection([clip.id],clip.id);
       added++;
     }
@@ -1440,6 +1493,12 @@ export function createAnimaticsEditor(options) {
   }
 
   grid.addEventListener('pointerdown',e=>{
+    const temporaryHand=e.button===1,persistentHand=activeTool==='hand'&&e.button===0;
+    if(temporaryHand||persistentHand){if(temporaryHand)setActiveTool('hand');handPan={startX:e.clientX,startY:e.clientY,startScrollLeft:scroll.scrollLeft,startScrollTop:scroll.scrollTop,temporary:temporaryHand,pointerId:e.pointerId};root.classList.add('hand-panning');grid.setPointerCapture?.(e.pointerId);e.preventDefault();return;}
+    const trackResizeHandle=e.target.closest('.an-track-resize');
+    if(trackResizeHandle){const kind=trackResizeHandle.dataset.trackResize,track=Number(trackResizeHandle.dataset.track);trackResize={kind,track,startY:e.clientY,startHeight:trackHeight(kind,track),pointerId:e.pointerId};trackResizeHandle.classList.add('dragging');grid.setPointerCapture?.(e.pointerId);e.preventDefault();return;}
+    const trackGrip=e.target.closest('.an-track-grip');
+    if(trackGrip){const kind=trackGrip.dataset.trackMove,from=Number(trackGrip.dataset.track);trackReorder={kind,from,to:from,pointerId:e.pointerId};grid.setPointerCapture?.(e.pointerId);grid.querySelector(`.an-track-row[data-track-kind="${kind}"][data-track-index="${from}"]`)?.classList.add('reorder-source');e.preventDefault();return;}
     const sequenceMarker=e.target.closest('.an-sequence-marker');
     if(sequenceMarker){if(playing)setPlaying(false);sequenceMarkerDrag={kind:sequenceMarker.dataset.sequenceMarker,el:sequenceMarker,pointerId:e.pointerId};sequenceMarker.setPointerCapture?.(e.pointerId);e.preventDefault();return;}
     const gapEl=e.target.closest('.an-gap');const clipEl=e.target.closest('.an-clip'); const lane=e.target.closest('.an-track-lane');
@@ -1479,6 +1538,9 @@ export function createAnimaticsEditor(options) {
     clipEl.setPointerCapture(e.pointerId); e.preventDefault();
   });
   grid.addEventListener('pointermove',e=>{
+    if(handPan){if(spaceHand&&Math.hypot(e.clientX-handPan.startX,e.clientY-handPan.startY)>2)spaceHand.used=true;scroll.scrollLeft=handPan.startScrollLeft-(e.clientX-handPan.startX)*1.35;scroll.scrollTop=handPan.startScrollTop-(e.clientY-handPan.startY)*1.35;syncPlayheadVisibility();return;}
+    if(trackResize){const height=clamp(trackResize.startHeight+e.clientY-trackResize.startY,MIN_TRACK_HEIGHT,MAX_TRACK_HEIGHT);setTrackHeight(trackResize.kind,trackResize.track,height);const row=grid.querySelector(`.an-track-row[data-track-kind="${trackResize.kind}"][data-track-index="${trackResize.track}"]`);if(row){row.style.setProperty('--an-track-height',`${height}px`);row.classList.toggle('compact',height<34);row.querySelector('.an-track-resize')?.classList.add('dragging');}return;}
+    if(trackReorder){const hit=document.elementFromPoint(e.clientX,e.clientY)?.closest?.(`.an-track-row[data-track-kind="${trackReorder.kind}"]`);if(hit)trackReorder.to=Number(hit.dataset.trackIndex);for(const row of grid.querySelectorAll(`.an-track-row[data-track-kind="${trackReorder.kind}"]`)){const index=Number(row.dataset.trackIndex);row.classList.toggle('reorder-source',index===trackReorder.from);row.classList.toggle('reorder-target',index===trackReorder.to&&index!==trackReorder.from);}return;}
     if(activeTool==='razor'&&!sequenceMarkerDrag&&!scrubbing&&!marqueeDrag&&!dragging)updateRazorGuide(e);
     if(gapPress){if(Math.hypot(e.clientX-gapPress.startX,e.clientY-gapPress.startY)<=3)return;const state=gapPress;gapPress=null;beginMarquee(e,state.lane,state.bounds,grid,{x:state.startX,y:state.startY});updateMarquee(e);return;}
     if(sequenceMarkerDrag){setSequenceMarkerValue(sequenceMarkerDrag.kind,pointerTime(e,grid.querySelector('.an-ruler')));return;}
@@ -1508,15 +1570,17 @@ export function createAnimaticsEditor(options) {
     if(dragging.trimEdge){const el=grid.querySelector(`[data-clip="${CSS.escape(dragging.clip.id)}"]`);if(el){el.style.left=`${dragging.clip.start*px}px`;el.style.width=`${Math.max(16,dragging.clip.duration*px)}px`;const dur=el.querySelector('.an-clip-dur');if(dur)dur.textContent=clipDurationLabel(dragging.clip);}}
     if(dragging.trimEdge)drawViewer();
   });
-  grid.addEventListener('pointerup',()=>{if(gapPress){const state=gapPress;gapPress=null;setTimelineSelection([]);selectedGap={key:state.key,kind:state.kind,track:state.track,start:state.start,end:state.end};renderTimeline();syncInspector();return;}if(sequenceMarkerDrag){sequenceMarkerDrag=null;markDirty();renderTimeline();}if(scrubbing)scrubbing=null;if(marqueeDrag)finishMarquee();if(dragging){const changed=dragging.moved,movedIds=dragging.movedIds;if(changed)commitTimelineOverwrite(movedIds);clearTimelineDrag(false);if(changed)markDirty();renderAll();}});
-  grid.addEventListener('pointercancel',()=>{gapPress=null;if(sequenceMarkerDrag){sequenceMarkerDrag=null;renderTimeline();}scrubbing=null;if(marqueeDrag){$('#anMarquee').classList.remove('show');marqueeDrag=null;renderTimeline();}if(dragging){clearTimelineDrag(true);renderAll();}});
+  grid.addEventListener('pointerup',()=>{if(handPan){const temporary=handPan.temporary;handPan=null;root.classList.remove('hand-panning');if(temporary)setActiveTool('select');return;}if(trackResize){const state=trackResize,changed=Math.abs(trackHeight(state.kind,state.track)-state.startHeight)>1e-8;trackResize=null;if(changed){markDirty();renderTimeline();}else grid.querySelector(`[data-track-resize="${state.kind}"][data-track="${state.track}"]`)?.classList.remove('dragging');return;}if(trackReorder){const state=trackReorder;trackReorder=null;if(moveTimelineTrack(state.kind,state.from,state.to)){markDirty();renderTimeline();notify(`Moved ${state.kind==='video'?'video':'audio'} track to ${state.kind==='video'?'V':'A'}${state.to+1}`);}else for(const row of grid.querySelectorAll('.an-track-row'))row.classList.remove('reorder-source','reorder-target');return;}if(gapPress){const state=gapPress;gapPress=null;setTimelineSelection([]);selectedGap={key:state.key,kind:state.kind,track:state.track,start:state.start,end:state.end};renderTimeline();syncInspector();return;}if(sequenceMarkerDrag){sequenceMarkerDrag=null;markDirty();renderTimeline();}if(scrubbing)scrubbing=null;if(marqueeDrag)finishMarquee();if(dragging){const changed=dragging.moved,movedIds=dragging.movedIds;if(changed)commitTimelineOverwrite(movedIds);clearTimelineDrag(false);if(changed)markDirty();renderAll();}});
+  grid.addEventListener('pointercancel',()=>{if(handPan){const temporary=handPan.temporary;handPan=null;root.classList.remove('hand-panning');if(temporary)setActiveTool('select');}if(trackResize){setTrackHeight(trackResize.kind,trackResize.track,trackResize.startHeight);trackResize=null;renderTimeline();}if(trackReorder){trackReorder=null;for(const row of grid.querySelectorAll('.an-track-row'))row.classList.remove('reorder-source','reorder-target');}gapPress=null;if(sequenceMarkerDrag){sequenceMarkerDrag=null;renderTimeline();}scrubbing=null;if(marqueeDrag){$('#anMarquee').classList.remove('show');marqueeDrag=null;renderTimeline();}if(dragging){clearTimelineDrag(true);renderAll();}});
   grid.addEventListener('pointerleave',clearRazorGuide);
-  grid.addEventListener('keydown',e=>{const marker=e.target.closest?.('[data-sequence-marker]');if(!marker||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const kind=marker.dataset.sequenceMarker,current=kind==='in'?project.inPoint:project.outPoint,next=e.key==='Home'?0:e.key==='End'?duration():current+(e.key==='ArrowRight'?1:-1)/project.fps;setSequenceMarkerValue(kind,next);markDirty();renderTimeline();grid.querySelector(`[data-sequence-marker="${kind}"]`)?.focus();e.preventDefault();});
+  grid.addEventListener('keydown',e=>{const resize=e.target.closest?.('[data-track-resize]');if(resize&&['ArrowUp','ArrowDown','Home'].includes(e.key)){const kind=resize.dataset.trackResize,track=Number(resize.dataset.track),next=e.key==='Home'?DEFAULT_TRACK_HEIGHT:trackHeight(kind,track)+(e.key==='ArrowUp'?8:-8);setTrackHeight(kind,track,next);markDirty();renderTimeline();grid.querySelector(`[data-track-resize="${kind}"][data-track="${track}"]`)?.focus();e.preventDefault();return;}const grip=e.target.closest?.('[data-track-move]');if(grip&&['ArrowUp','ArrowDown'].includes(e.key)){const kind=grip.dataset.trackMove,from=Number(grip.dataset.track),count=kind==='video'?project.videoTracks:project.audioTracks,to=clamp(from+(e.key==='ArrowUp'?-1:1),0,count-1);if(moveTimelineTrack(kind,from,to)){markDirty();renderTimeline();grid.querySelector(`[data-track-move="${kind}"][data-track="${to}"]`)?.focus();}e.preventDefault();return;}const marker=e.target.closest?.('[data-sequence-marker]');if(!marker||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;const kind=marker.dataset.sequenceMarker,current=kind==='in'?project.inPoint:project.outPoint,next=e.key==='Home'?0:e.key==='End'?duration():current+(e.key==='ArrowRight'?1:-1)/project.fps;setSequenceMarkerValue(kind,next);markDirty();renderTimeline();grid.querySelector(`[data-sequence-marker="${kind}"]`)?.focus();e.preventDefault();});
+  grid.addEventListener('dblclick',e=>{const resize=e.target.closest?.('[data-track-resize]');if(!resize)return;setTrackHeight(resize.dataset.trackResize,Number(resize.dataset.track),DEFAULT_TRACK_HEIGHT);markDirty();renderTimeline();e.preventDefault();});
+  grid.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault();});
   grid.addEventListener('click',e=>{
     const gap=e.target.closest('.an-gap');if(gap){setTimelineSelection([]);selectedGap={key:gap.dataset.gap,kind:gap.dataset.kind,track:Number(gap.dataset.track),start:Number(gap.dataset.start),end:Number(gap.dataset.end)};renderTimeline();syncInspector();return;}
     if(e.target.closest('[data-time-display]')){toggleTimelineDisplay();return;}
     const remove=e.target.closest('[data-remove-track]');if(remove){removeTimelineTrack(remove.dataset.removeTrack,Number(remove.dataset.track));return;}
-    const add=e.target.closest('[data-add-track]');if(!add)return;if(add.dataset.addTrack==='video')project.videoTracks=clamp(project.videoTracks+1,1,MAX_VIDEO_TRACKS);else project.audioTracks=clamp(project.audioTracks+1,0,MAX_AUDIO_TRACKS);markDirty();renderTimeline();
+    const add=e.target.closest('[data-add-track]');if(!add)return;if(add.dataset.addTrack==='video')project.videoTracks=clamp(project.videoTracks+1,1,MAX_VIDEO_TRACKS);else project.audioTracks=clamp(project.audioTracks+1,0,MAX_AUDIO_TRACKS);ensureTrackHeightCounts();markDirty();renderTimeline();
   });
 
   let dropLane=null;
@@ -1598,7 +1662,7 @@ export function createAnimaticsEditor(options) {
   $('#anPrev').onclick=()=>setPlayhead(project.playhead-1/project.fps);
   $('#anNext').onclick=()=>setPlayhead(project.playhead+1/project.fps);
   $('#anInspector').onclick=()=>root.classList.toggle('panel-open');
-  $('#anZoom').oninput=e=>{project.timelineZoom=clamp(Number(e.target.value)||90,.1,320);renderTimeline();};$('#anZoom').onchange=()=>deferMarkDirty(0);
+  $('#anZoom').oninput=e=>applyTimelineZoom(e.target.value);$('#anZoom').onchange=()=>deferMarkDirty(0);
   $('#anSequenceSettings').onclick=openSequenceSettings;$('#anSequenceMode').onchange=syncSequenceModeUi;$('#anSequenceCancel').onclick=()=>$('#anSequenceModal').classList.remove('open');$('#anSequenceApply').onclick=applySequenceSettings;
   root.querySelectorAll('[data-sequence-seconds]').forEach(button=>button.onclick=()=>{$('#anSequenceMode').value='fixed';syncSequenceModeUi();$('#anSequenceDuration').value=timecode(Number(button.dataset.sequenceSeconds),project.fps);});
   $('#anSetIn').onclick=setSequenceIn;$('#anSetOut').onclick=setSequenceOut;$('#anClearRange').onclick=clearSequenceRange;
@@ -1609,15 +1673,13 @@ export function createAnimaticsEditor(options) {
   timelineResizer.addEventListener('pointercancel',()=>{timelineResize=null;timelineResizer.classList.remove('dragging');applyTimelineHeight();});
   timelineResizer.addEventListener('dblclick',()=>{project.timelineHeight=286;applyTimelineHeight();resizeViewer();markDirty();});
   timelineResizer.addEventListener('keydown',e=>{if(!['ArrowUp','ArrowDown','Home'].includes(e.key))return;project.timelineHeight=e.key==='Home'?286:clamp(project.timelineHeight+(e.key==='ArrowUp'?24:-24),180,Math.max(180,window.innerHeight-220));applyTimelineHeight();resizeViewer();markDirty();e.preventDefault();});
+  scroll.addEventListener('scroll',syncPlayheadVisibility,{passive:true});
   scroll.addEventListener('wheel',e=>{
-    if(!e.ctrlKey)return;
+    if(!e.altKey)return;
     e.preventDefault();
     const slider=$('#anZoom'),oldPx=Number(slider.value)||90;
     const next=clamp(oldPx*Math.exp(-e.deltaY*.0025),Number(slider.min),Number(slider.max));
-    const rect=scroll.getBoundingClientRect(),cursorX=e.clientX-rect.left;
-    const anchorTime=Math.max(0,(scroll.scrollLeft+cursorX-124)/oldPx);
-    project.timelineZoom=next;slider.value=String(next);renderTimeline();deferMarkDirty();
-    scroll.scrollLeft=Math.max(0,anchorTime*next+124-cursorX);
+    applyTimelineZoom(next);deferMarkDirty();
   },{passive:false});
   for(const id of ['anDuration','anAudioDuration'])$('#'+id).onchange=e=>{if(e.target.value===''){syncInspector();return;}applySelectedDuration(Math.max(1,Math.round(Number(e.target.value)*project.fps))/project.fps);};
   for(const id of ['anDurationFrames','anAudioDurationFrames'])$('#'+id).onchange=e=>{if(e.target.value===''){syncInspector();return;}applySelectedDuration(clamp(Math.round(Number(e.target.value)||1),1,36000)/project.fps);};
@@ -1691,15 +1753,16 @@ export function createAnimaticsEditor(options) {
     const form=e.target.matches('input,textarea,select'),key=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
     if(mod&&(key==='z'||key==='y')){if(form&&!inlineTextId)e.target.blur();const wantsRedo=key==='y'||e.shiftKey;wantsRedo?redoAnimatics():undoAnimatics();e.preventDefault();e.stopImmediatePropagation();}
     else if(e.key==='Escape'){if(inlineTextId)finishInlineTextEdit(true);else if($('#anAudioTrimModal').classList.contains('open'))finishAudioTrimmer(false);else if($('#anSequenceModal').classList.contains('open'))$('#anSequenceModal').classList.remove('open');else if($('#anExportModal').classList.contains('open'))$('#anExportModal').classList.remove('open');else if(selectedGap){selectedGap=null;renderTimeline();}else if(activeTool!=='select')setActiveTool('select');else closeEditor();e.preventDefault();e.stopImmediatePropagation();}
-    else if(e.code==='Space'&&!e.target.matches('input,textarea,select')){setPlaying(!playing);e.preventDefault();e.stopImmediatePropagation();}
+    else if(e.code==='Space'&&!form){if(!spaceHand){spaceHand={startedAt:Date.now(),used:false};setActiveTool('hand');}e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='a'){setTimelineSelection([...project.clips,...project.texts,...project.audio].map(item=>item.id),primarySelectionId());renderTimeline();syncInspector();e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='l'){toggleLinkSelection();e.preventDefault();e.stopImmediatePropagation();}
-    else if(!form&&['v','t','c'].includes(key)){setActiveTool(key==='v'?'select':key==='t'?'text':'razor');e.preventDefault();e.stopImmediatePropagation();}
+    else if(!form&&['v','t','c','h'].includes(key)){setActiveTool(key==='v'?'select':key==='t'?'text':key==='c'?'razor':'hand');e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&!mod&&key==='s'){project.timelineSnap=!project.timelineSnap;markDirty();renderTimeline();e.preventDefault();e.stopImmediatePropagation();}
     else if(key==='i'&&!form){setSequenceIn();e.preventDefault();e.stopImmediatePropagation();}
     else if(key==='o'&&!form){setSequenceOut();e.preventDefault();e.stopImmediatePropagation();}
     else if((e.key==='Delete'||e.key==='Backspace')&&!e.target.matches('input,textarea')){deleteSelected();e.preventDefault();e.stopImmediatePropagation();}
   },true);
+  window.addEventListener('keyup',e=>{if(!open||e.code!=='Space'||!spaceHand)return;const state=spaceHand;spaceHand=null;if(handPan){grid.releasePointerCapture?.(handPan.pointerId);handPan=null;root.classList.remove('hand-panning');state.used=true;}setActiveTool('select');if(!state.used&&Date.now()-state.startedAt<260)setPlaying(!playing);e.preventDefault();e.stopImmediatePropagation();},true);
 
   async function exportProject(){
     if(!project.clips.length){notify('Add at least one clip');return;}

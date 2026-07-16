@@ -111,6 +111,20 @@ export function closeTimelineTrackGap(collection, gap) {
   )).sort((a, b) => finite(a.track) - finite(b.track) || finite(a.start) - finite(b.start));
 }
 
+export function reorderTimelineTracks(collection, fromTrack, toTrack) {
+  const from = Math.max(0, Math.round(finite(fromTrack)));
+  const to = Math.max(0, Math.round(finite(toTrack)));
+  if (from === to) return [...(collection || [])];
+  return (collection || []).map(item => {
+    const track = Math.max(0, Math.round(finite(item?.track)));
+    let nextTrack = track;
+    if (track === from) nextTrack = to;
+    else if (from < to && track > from && track <= to) nextTrack = track - 1;
+    else if (from > to && track >= to && track < from) nextTrack = track + 1;
+    return nextTrack === track ? item : { ...item, track: nextTrack };
+  });
+}
+
 export function linkedTimelineIds(items, ids) {
   const selected = new Set(ids || []);
   const groups = new Set((items || []).filter(item => selected.has(item.id) && item.linkGroupId).map(item => item.linkGroupId));

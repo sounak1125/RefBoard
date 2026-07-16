@@ -7,6 +7,7 @@ import {
   linkTimelineItems,
   marqueeSelection,
   normalizeTimelineLinks,
+  reorderTimelineTracks,
   resolveOverwrite,
   snappedMoveDelta,
   splitLinkedTimelineItems,
@@ -49,6 +50,9 @@ const trackItems = [
 ];
 assert.deepEqual(timelineTrackGaps(trackItems, 0).map(gap => [gap.start, gap.end, gap.leftId, gap.rightId]), [[2, 4, 'v1', 'v2']]);
 assert.deepEqual(closeTimelineTrackGap(trackItems, timelineTrackGaps(trackItems, 0)[0]).map(item => [item.id, item.start]), [['v1', 0], ['v2', 2], ['v3', 5]], 'gap ripple must affect only its exact track');
+assert.deepEqual(reorderTimelineTracks([
+  { id: 'top', track: 0 }, { id: 'middle', track: 1 }, { id: 'bottom', track: 2 },
+], 0, 2).map(item => [item.id, item.track]), [['top', 2], ['middle', 0], ['bottom', 1]], 'moving a track must shift intervening tracks without losing their contents');
 assert.deepEqual(timelineTrackGaps([
   { id: 'a', track: 0, start: 0, duration: 5 },
   { id: 'b', track: 0, start: 3, duration: 4 },
