@@ -90,7 +90,8 @@ const smokeExpression = String.raw`(async()=>{
     rulerOverlaps.push(rects.some((rect,index)=>index>0&&rect.left<rects[index-1].right-.5));
   }
   const zoom=document.querySelector('#anZoom');zoom.value='.1';zoom.dispatchEvent(new Event('input',{bubbles:true}));
-  const finiteSurface={laneWidth:getComputedStyle(document.querySelector('#anTlGrid')).getPropertyValue('--an-lane-width').trim(),rowWidth:document.querySelector('.an-ruler-row').getBoundingClientRect().width,endVisible:!!document.querySelector('.an-timeline-end')};
+  const fittedLaneWidth=parseFloat(getComputedStyle(document.querySelector('#anTlGrid')).getPropertyValue('--an-lane-width')),fittedAvailable=scroll.clientWidth-124,fittedRowWidth=document.querySelector('.an-ruler-row').getBoundingClientRect().width;
+  const finiteSurface={laneFills:Math.abs(fittedLaneWidth-fittedAvailable)<1,rowFills:Math.abs(fittedRowWidth-scroll.clientWidth)<1,endVisible:!!document.querySelector('.an-timeline-end'),atMinimum:Math.abs(Number(zoom.value)-Number(zoom.min))<.002};
   document.querySelector('#anSequenceSettings').click();
   const reopened={mode:mode.value,value:field.value};
   mode.value='auto';mode.dispatchEvent(new Event('change',{bubbles:true}));
@@ -102,12 +103,17 @@ const smokeExpression = String.raw`(async()=>{
   window.RefBoard.animatics.load({fps:30,sequenceDuration:null,timelineZoom:90,videoTracks:1,clips:[{id:'extended-clip',itemId:'missing-image',track:0,start:29,duration:4,name:'Auto extension',framing:{fit:'contain',scale:1,x:0,y:0}}]},new Map());await wait(80);
   const autoExtended={time:document.querySelector('#anTime').textContent,laneWidth:getComputedStyle(document.querySelector('#anTlGrid')).getPropertyValue('--an-lane-width').trim()};
 
+  window.RefBoard.animatics.load({fps:30,sequenceDuration:37,timelineZoom:1,videoTracks:1,clips:[{id:'full-clip',itemId:'existing-image',track:0,start:34,duration:3,name:'At sequence end',framing:{fit:'contain',scale:1,x:0,y:0}}]},new Map());await wait(80);
+  window.RefBoard.animatics.close();window.RefBoard.animatics.open([{id:'board-imported',kind:'image',name:'Imported from board'}]);await wait(120);
+  const appendedProject=window.RefBoard.animatics.serialize(),appendedClip=appendedProject.clips.find(clip=>clip.itemId==='board-imported'),appendedLaneWidth=parseFloat(getComputedStyle(document.querySelector('#anTlGrid')).getPropertyValue('--an-lane-width'));
+  const fixedAppend={sequenceDuration:appendedProject.sequenceDuration,clipCount:appendedProject.clips.length,start:appendedClip?.start,duration:appendedClip?.duration,time:document.querySelector('#anTime').textContent,stillFitted:Math.abs(appendedLaneWidth-(scroll.clientWidth-124))<1};
+
   window.RefBoard.animatics.load({fps:30,sequenceDuration:5,timelineZoom:90,videoTracks:1,clips:[{id:'snap-clip',itemId:'missing-image',track:0,start:0,duration:3,name:'Snap smoke',framing:{fit:'contain',scale:1,x:0,y:0}}]},new Map());await wait(80);
-  const trim=document.querySelector('[data-clip="snap-clip"] [data-trim="right"]'),lane=trim.closest('.an-track-lane'),trimRect=trim.getBoundingClientRect(),laneRect=lane.getBoundingClientRect();
+  const trim=document.querySelector('[data-clip="snap-clip"] [data-trim="right"]'),lane=trim.closest('.an-track-lane'),trimRect=trim.getBoundingClientRect(),laneRect=lane.getBoundingClientRect(),snapPx=Number(document.querySelector('#anZoom').value);
   trim.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:42,clientX:trimRect.left+trimRect.width/2,clientY:trimRect.top+5,button:0}));
-  trim.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:42,clientX:laneRect.left+5*90-2,clientY:trimRect.top+5,buttons:1}));
+  trim.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:42,clientX:laneRect.left+5*snapPx-2,clientY:trimRect.top+5,buttons:1}));
   const snapGuide={visible:document.querySelector('.an-snap-guide').classList.contains('show'),label:document.querySelector('.an-snap-guide span').textContent};
-  trim.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:42,clientX:laneRect.left+5*90-2,clientY:trimRect.top+5,button:0}));
+  trim.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:42,clientX:laneRect.left+5*snapPx-2,clientY:trimRect.top+5,button:0}));
   const snappedDuration=window.RefBoard.animatics.serialize().clips[0].duration;
 
   window.RefBoard.animatics.load({fps:30,sequenceDuration:5,texts:[{id:'rotate-text',track:0,start:0,duration:3,content:'Rotate',size:42,color:'#ffffff',scale:1,rotation:0,x:.5,y:.5}]},new Map());await wait(80);
@@ -120,7 +126,7 @@ const smokeExpression = String.raw`(async()=>{
   canvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:43,clientX:freeTarget.x,clientY:freeTarget.y,buttons:1}));
   const freeRotation=window.RefBoard.animatics.serialize().texts[0].rotation;
   canvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:43,clientX:freeTarget.x,clientY:freeTarget.y,button:0}));
-  return {initial,modeAfterTyping,fixed,playheadFollow,rulerOverlaps,finiteSurface,reopened,autoFieldValue,autoDuration:autoProject.sequenceDuration,autoTime,autoExtended,snapGuide,snappedDuration,shiftRotation,freeRotation};
+  return {initial,modeAfterTyping,fixed,playheadFollow,rulerOverlaps,finiteSurface,reopened,autoFieldValue,autoDuration:autoProject.sequenceDuration,autoTime,autoExtended,fixedAppend,snapGuide,snappedDuration,shiftRotation,freeRotation};
 })()`;
 
 try {
@@ -133,12 +139,13 @@ try {
   assert.ok(result.playheadFollow.scrollLeft>100, 'dragging the playhead beyond the viewport edge must scroll the timeline');
   assert.equal(result.playheadFollow.hidden, false, 'the followed playhead must remain visible');
   assert.deepEqual(result.rulerOverlaps, [false,false,false,false,false], 'timecode labels must never overlap across representative zoom levels');
-  assert.deepEqual(result.finiteSurface, {laneWidth:'18px',rowWidth:142,endVisible:true}, 'zoomed-out rows must stop exactly at the finite custom endpoint');
+  assert.deepEqual(result.finiteSurface, {laneFills:true,rowFills:true,endVisible:true,atMinimum:true}, 'furthest zoom-out must fit the complete sequence without a blank area');
   assert.deepEqual(result.reopened, { mode:'fixed', value:'00:03:00:00' }, 'custom duration must round-trip through the modal');
   assert.equal(result.autoFieldValue, '', 'switching to Auto must clear the fixed-duration field');
   assert.equal(result.autoDuration, null, 'Auto must restore content-following duration');
   assert.match(result.autoTime, /00:00:30:00$/, 'empty Auto sequence must return to its thirty-second endpoint');
   assert.deepEqual(result.autoExtended, {time:'00:00:00:00 / 00:00:33:00',laneWidth:'2970px'}, 'Auto timeline must extend when content passes thirty seconds');
+  assert.deepEqual(result.fixedAppend, {sequenceDuration:40,clipCount:2,start:37,duration:3,time:'00:00:37:00 / 00:00:40:00',stillFitted:true}, 'board import at a fixed endpoint must add the image, extend the sequence, and stay fitted');
   assert.deepEqual(result.snapGuide, {visible:true,label:'00:00:05:00'}, 'right-edge trimming must show a labelled guide at the snapped sequence endpoint');
   assert.equal(result.snappedDuration, 5, 'right-edge trimming must commit the snapped duration');
   assert.equal(result.shiftRotation, 15, 'holding Shift must snap preview rotation to fifteen degrees');

@@ -54,8 +54,13 @@ assert.match(editor, /clip\.sourceAssetKey\|\|clip\.itemId/, 'different transfor
 assert.match(editor, /if\(!e\.altKey\)return/, 'Alt+wheel must control timeline zoom like Premiere Pro and After Effects');
 assert.doesNotMatch(editor, /if\(!e\.ctrlKey\)return/, 'Ctrl+wheel must no longer own timeline zoom');
 assert.match(editor, /function applyTimelineZoom\(nextZoom\)/, 'slider and wheel zoom must share one playhead-anchored implementation');
+assert.match(editor, /function fittedTimelineZoom\(total=duration\(\)\)/, 'timeline zoom must calculate an After Effects-style fitted view');
+assert.match(editor, /const available=scroll\.clientWidth-124/, 'fitted zoom must exclude the fixed track-label gutter');
+assert.match(editor, /zoom\.min=String\(fitZoom\?\?MIN_TIMELINE_ZOOM\)/, 'the furthest zoom-out position must fit the complete sequence');
+assert.match(editor, /if\(wasFitted\)project\.timelineZoom=fitZoom/, 'duration changes must remain fitted when the user was already at fitted view');
+assert.match(editor, /window\.addEventListener\('resize',\(\)=>\{if\(open\)\{resizeViewer\(\);renderTimeline\(\);\}\}\)/, 'window resizing must recalculate fitted timeline zoom');
 assert.match(editor, /project\.playhead\*oldPx-scroll\.scrollLeft/, 'timeline zoom must preserve the red playhead position in the viewport');
-assert.match(editor, /project\.playhead\*next\+124-anchorX/, 'zoomed timeline scrolling must remain anchored to the playhead');
+assert.match(editor, /project\.playhead\*project\.timelineZoom\+124-anchorX/, 'zoomed timeline scrolling must remain anchored to the fitted or requested playhead scale');
 assert.match(editor, /id="anAudioTrimModal"/, 'audio import must open a source trimmer');
 assert.match(editor, /id="anTrimSetIn"/, 'audio trimmer must support a frame-based In point');
 assert.match(editor, /id="anTrimSetOut"/, 'audio trimmer must support a frame-based Out point');
@@ -278,6 +283,9 @@ assert.match(editor, /fixed===null\?'':timecode\(fixed,project\.fps\)/, 'Auto mo
 assert.match(editor, /\$\('#anSequenceDuration'\)\.oninput=.*?\$\('#anSequenceMode'\)\.value='fixed'/, 'typing a custom duration must activate fixed mode');
 assert.match(editor, /sequenceDuration:null/, 'new projects must preserve backward-compatible auto duration until fixed by the user');
 assert.match(editor, /DEFAULT_SEQUENCE_SECONDS\s*=\s*30/, 'Auto timelines must begin with a finite thirty-second duration');
+assert.match(editor, /requiredEnd=cursor\+list\.length\*DEFAULT_SHOT_SECONDS/, 'board image imports must reserve their complete appended duration');
+assert.match(editor, /if\(extendedEnd!==null&&extendedEnd>fixedBefore\)project\.sequenceDuration=extendedEnd/, 'board images appended at a fixed endpoint must extend that sequence');
+assert.match(editor, /sequence extended to \$\{timecode\(extendedEnd,project\.fps\)\}/, 'fixed-sequence extension must be reported to the user');
 assert.match(editor, /function automaticSequenceEnd\(\)\{return automaticTimelineDuration\(contentDuration\(\)\);\}/, 'Auto timelines must extend when their content passes thirty seconds');
 assert.match(editor, /function duration\(\) \{ return fixedSequenceEnd\(\) \?\? automaticSequenceEnd\(\); \}/, 'playback and export must share fixed and Auto sequence bounds');
 assert.match(editor, /function durationWithinSequence/, 'new and edited layers must respect the fixed sequence end');

@@ -44,6 +44,8 @@ const DEFAULT_SEQUENCE_SECONDS = 30;
 const MIN_SHOT_SECONDS = 1 / 60;
 const MAX_SEQUENCE_SECONDS = 24 * 60 * 60;
 const SAFE_INITIAL_TIMELINE_PIXELS = 60000;
+const MIN_TIMELINE_ZOOM = .001;
+const MAX_TIMELINE_ZOOM = 320;
 const HISTORY_LIMIT = 100;
 const DEFAULT_TRACK_HEIGHT = 44;
 const MIN_TRACK_HEIGHT = 24;
@@ -378,7 +380,7 @@ function markup() {
       </div></aside>
       <main class="an-stage"><div class="an-viewer-wrap"><div class="an-viewer-shell"><canvas id="anViewer" width="1920" height="1080"></canvas><div class="an-empty-stage" id="anEmpty"><div>No clips at the playhead<br><small>Add or move images in the timeline</small></div></div></div><div class="an-stage-foot"><span id="anShotLabel">No shot selected</span><div class="an-transport"><button class="an-icon" id="anPrev" title="Previous frame">${icon('<path d="M7 5v14M18 6l-8 6 8 6z"/>')}</button><button class="an-play" id="anPlay" title="Play / pause">${icon('<path d="m8 5 11 7-11 7z"/>',true)}</button><button class="an-icon" id="anNext" title="Next frame">${icon('<path d="M17 5v14M6 6l8 6-8 6z"/>')}</button><span class="an-time" id="anTime">00:00:00:00 / 00:00:00:00</span></div><div class="an-view-settings"><select id="anFooterAspect" aria-label="Sequence aspect"><option value="16:9">16:9</option><option value="4:3">4:3</option><option value="5:4">5:4</option><option value="9:16">9:16</option><option value="21:9">21:9</option></select><select id="anFooterQuality" aria-label="Preview quality"><option value="full">Full 1080p</option><option value="half">Half 540p</option><option value="low">Low 270p</option></select></div></div></div></main><aside></aside>
     </div>
-    <section class="an-timeline"><div class="an-timeline-resizer" id="anTimelineResizer" role="separator" aria-label="Resize timeline" aria-orientation="horizontal" tabindex="0" title="Drag to resize timeline · double-click to reset"></div><div class="an-tl-head"><div class="an-edit-tools" role="toolbar" aria-label="Timeline tools"><button class="an-edit-tool on" data-an-tool="select" title="Selection tool (V)" aria-label="Selection tool">${selectionToolIcon()}</button><button class="an-edit-tool" data-an-tool="text" title="Text tool (T)" aria-label="Text tool"><span class="text-glyph">T</span></button><button class="an-edit-tool" data-an-tool="razor" title="Razor tool (C)" aria-label="Razor tool">${razorToolIcon()}</button></div><button class="an-icon an-snap-btn on" id="anSnap" title="Timeline snapping (S)" aria-pressed="true">⌁ Snap</button><button class="an-icon" id="anAddImages" title="Add selected board images">${icon('<path d="M12 5v14M5 12h14"/>')}</button><button class="an-icon" id="anAddVideo" title="Add video">${icon('<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>')}</button><button class="an-icon" id="anAddAudio" title="Add audio">${icon('<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>')}</button><button class="an-mark-btn" id="anSequenceSettings" title="Sequence duration and timeline display">Sequence</button><button class="an-mark-btn" id="anSetIn" title="Set sequence In point (I)">Set In</button><button class="an-mark-btn" id="anSetOut" title="Set sequence Out point (O)">Set Out</button><button class="an-mark-btn" id="anClearRange" title="Clear sequence In/Out">Clear</button><span id="anTlSummary">0 clips · 0:00</span><label class="an-zoom">Timeline <input id="anZoom" type="range" min="0.1" max="320" step="0.1" value="90"></label></div><div class="an-tl-scroll" id="anTlScroll"><div class="an-tl-grid" id="anTlGrid"><div class="an-playhead"></div></div></div><div class="an-marquee" id="anMarquee"></div><div class="an-razor-guide" id="anRazorGuide"><span></span></div></section>
+    <section class="an-timeline"><div class="an-timeline-resizer" id="anTimelineResizer" role="separator" aria-label="Resize timeline" aria-orientation="horizontal" tabindex="0" title="Drag to resize timeline · double-click to reset"></div><div class="an-tl-head"><div class="an-edit-tools" role="toolbar" aria-label="Timeline tools"><button class="an-edit-tool on" data-an-tool="select" title="Selection tool (V)" aria-label="Selection tool">${selectionToolIcon()}</button><button class="an-edit-tool" data-an-tool="text" title="Text tool (T)" aria-label="Text tool"><span class="text-glyph">T</span></button><button class="an-edit-tool" data-an-tool="razor" title="Razor tool (C)" aria-label="Razor tool">${razorToolIcon()}</button></div><button class="an-icon an-snap-btn on" id="anSnap" title="Timeline snapping (S)" aria-pressed="true">⌁ Snap</button><button class="an-icon" id="anAddImages" title="Add selected board images">${icon('<path d="M12 5v14M5 12h14"/>')}</button><button class="an-icon" id="anAddVideo" title="Add video">${icon('<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>')}</button><button class="an-icon" id="anAddAudio" title="Add audio">${icon('<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>')}</button><button class="an-mark-btn" id="anSequenceSettings" title="Sequence duration and timeline display">Sequence</button><button class="an-mark-btn" id="anSetIn" title="Set sequence In point (I)">Set In</button><button class="an-mark-btn" id="anSetOut" title="Set sequence Out point (O)">Set Out</button><button class="an-mark-btn" id="anClearRange" title="Clear sequence In/Out">Clear</button><span id="anTlSummary">0 clips · 0:00</span><label class="an-zoom">Timeline <input id="anZoom" type="range" min="0.001" max="320" step="0.001" value="90"></label></div><div class="an-tl-scroll" id="anTlScroll"><div class="an-tl-grid" id="anTlGrid"><div class="an-playhead"></div></div></div><div class="an-marquee" id="anMarquee"></div><div class="an-razor-guide" id="anRazorGuide"><span></span></div></section>
     <input id="anAudioPick" type="file" accept="audio/*" multiple hidden>
     <input id="anVideoPick" type="file" accept="video/*" multiple hidden>
     <div class="an-toast" id="anToast"></div>
@@ -460,6 +462,7 @@ export function createAnimaticsEditor(options) {
   let inlineTextOriginal = '';
   let sequenceMarkerDrag = null;
   let razorHoverClip = null;
+  let timelineFitZoom = null;
   let deferredHistoryTimer = 0;
   const videoElements = new Map();
 
@@ -715,7 +718,7 @@ export function createAnimaticsEditor(options) {
     base.timelineSnap = raw.timelineSnap !== false;
     base.sequenceDuration = Number.isFinite(Number(raw.sequenceDuration))&&Number(raw.sequenceDuration)>0 ? clamp(Number(raw.sequenceDuration),MIN_SHOT_SECONDS,MAX_SEQUENCE_SECONDS) : null;
     base.timelineDisplay = raw.timelineDisplay==='frames'?'frames':'timecode';
-    base.timelineZoom = Number.isFinite(Number(raw.timelineZoom))&&Number(raw.timelineZoom)>0 ? clamp(Number(raw.timelineZoom),.1,320) : Number.isFinite(base.sequenceDuration)?clamp(SAFE_INITIAL_TIMELINE_PIXELS/base.sequenceDuration,.1,90):90;
+    base.timelineZoom = Number.isFinite(Number(raw.timelineZoom))&&Number(raw.timelineZoom)>0 ? clamp(Number(raw.timelineZoom),MIN_TIMELINE_ZOOM,MAX_TIMELINE_ZOOM) : Number.isFinite(base.sequenceDuration)?clamp(SAFE_INITIAL_TIMELINE_PIXELS/base.sequenceDuration,MIN_TIMELINE_ZOOM,90):90;
     base.timecode = !!raw.timecode;
     base.counterMode = ['timecode','frames','seconds'].includes(raw.counterMode) ? raw.counterMode : 'timecode';
     base.previewQuality = ['full','half','low'].includes(raw.previewQuality) ? raw.previewQuality : 'full';
@@ -781,6 +784,8 @@ export function createAnimaticsEditor(options) {
     const list = (items || []).filter(it => (it.kind || 'image') === 'image');
     if (!list.length) { notify('Select one or more images on the board first'); return false; }
     let cursor = append ? Math.max(0, ...project.clips.filter(c => c.track === 0).map(c => c.start + c.duration)) : 0;
+    const fixedBefore=fixedSequenceEnd(),requiredEnd=cursor+list.length*DEFAULT_SHOT_SECONDS,extendedEnd=fixedBefore!==null&&requiredEnd>fixedBefore?Math.min(MAX_SEQUENCE_SECONDS,Math.ceil(requiredEnd*project.fps)/project.fps):fixedBefore;
+    if(extendedEnd!==null&&extendedEnd>fixedBefore)project.sequenceDuration=extendedEnd;
     const addedIds=[];
     for (const item of list) {
       const shotDuration=durationWithinSequence(cursor,DEFAULT_SHOT_SECONDS,DEFAULT_SHOT_SECONDS);if(!shotDuration)break;
@@ -790,11 +795,12 @@ export function createAnimaticsEditor(options) {
       cursor += shotDuration;
     }
     if(!addedIds.length){notify('The fixed sequence has no room for another shot');return false;}
-    if(addedIds.length<list.length)notify(`Added ${addedIds.length}; the fixed sequence is now full`);
     setTimelineSelection(addedIds,addedIds[0]);
     project.playhead = project.clips.find(c => c.id === selectedClipId)?.start || project.playhead;
     markDirty();
     renderAll();
+    if(addedIds.length<list.length)notify(`Added ${addedIds.length}; the sequence reached its 24-hour limit`);
+    else if(extendedEnd!==null&&extendedEnd>fixedBefore)notify(`Added ${addedIds.length} image${addedIds.length===1?'':'s'} · sequence extended to ${timecode(extendedEnd,project.fps)}`);
     return true;
   }
 
@@ -917,13 +923,20 @@ export function createAnimaticsEditor(options) {
     thumbUrls.set(key,url); return url;
   }
 
+  function fittedTimelineZoom(total=duration()){
+    const available=scroll.clientWidth-124;
+    if(!(available>0)||!(total>0))return null;
+    return clamp(available/total,MIN_TIMELINE_ZOOM,MAX_TIMELINE_ZOOM);
+  }
+
   function renderTimeline() {
     clearRazorGuide();
     ensureTrackHeightCounts();
     syncActiveTrackTargets();
-    const fixed=fixedSequenceEnd(),total=duration();
-    const zoom=$('#anZoom');zoom.value=String(clamp(Number(project.timelineZoom)||90,Number(zoom.min)||.1,Number(zoom.max)||320));
-    const px = Number(zoom.value) || 90;
+    const fixed=fixedSequenceEnd(),total=duration(),zoom=$('#anZoom'),fitZoom=fittedTimelineZoom(total),previousFit=timelineFitZoom,wasFitted=Number.isFinite(fitZoom)&&Number.isFinite(previousFit)&&Math.abs((Number(project.timelineZoom)||0)-previousFit)<=Math.max(.002,previousFit*.002);
+    zoom.min=String(fitZoom??MIN_TIMELINE_ZOOM);zoom.max=String(MAX_TIMELINE_ZOOM);
+    if(Number.isFinite(fitZoom)){if(wasFitted)project.timelineZoom=fitZoom;timelineFitZoom=fitZoom;}
+    const px=clamp(Number(project.timelineZoom)||90,Number(zoom.min)||MIN_TIMELINE_ZOOM,Number(zoom.max)||MAX_TIMELINE_ZOOM);project.timelineZoom=px;zoom.value=String(px);
     const laneWidth = Math.max(1,total*px),ticks=timelineRulerTicks(total,px);
     grid.style.setProperty('--an-second-px',`${px}px`);
     grid.style.setProperty('--an-lane-width',`${laneWidth}px`);
@@ -1254,8 +1267,8 @@ export function createAnimaticsEditor(options) {
   }
 
   function applyTimelineZoom(nextZoom){
-    const slider=$('#anZoom'),oldPx=Number(project.timelineZoom)||Number(slider.value)||90,next=clamp(Number(nextZoom)||oldPx,Number(slider.min)||.1,Number(slider.max)||320),rect=scroll.getBoundingClientRect(),playheadX=124+project.playhead*oldPx-scroll.scrollLeft,anchorX=playheadX>=124&&playheadX<=rect.width?playheadX:Math.max(124,rect.width/2);
-    project.timelineZoom=next;slider.value=String(next);renderTimeline();scroll.scrollLeft=Math.max(0,project.playhead*next+124-anchorX);syncPlayheadVisibility();
+    const slider=$('#anZoom'),oldPx=Number(project.timelineZoom)||Number(slider.value)||90,next=clamp(Number(nextZoom)||oldPx,Number(slider.min)||MIN_TIMELINE_ZOOM,Number(slider.max)||MAX_TIMELINE_ZOOM),rect=scroll.getBoundingClientRect(),playheadX=124+project.playhead*oldPx-scroll.scrollLeft,anchorX=playheadX>=124&&playheadX<=rect.width?playheadX:Math.max(124,rect.width/2);
+    project.timelineZoom=next;slider.value=String(next);renderTimeline();scroll.scrollLeft=Math.max(0,project.playhead*project.timelineZoom+124-anchorX);syncPlayheadVisibility();
   }
 
   function applyPreviewQuality(){
@@ -1487,7 +1500,7 @@ export function createAnimaticsEditor(options) {
   function applySequenceSettings(){
     const fixed=$('#anSequenceMode').value==='fixed',used=contentDuration();let next=null;
     if(fixed){next=parseSequenceTimecode($('#anSequenceDuration').value,project.fps);if(!Number.isFinite(next)||next<MIN_SHOT_SECONDS||next>MAX_SEQUENCE_SECONDS){notify('Enter a duration from one frame up to 24 hours');return;}next=Math.round(next*project.fps)/project.fps;if(next+1e-8<used){notify(`Sequence must be at least ${timecode(used,project.fps)} to preserve existing layers`);return;}}
-    project.sequenceDuration=next;project.timelineDisplay=$('#anTimelineDisplay').value==='frames'?'frames':'timecode';if(next!==null&&project.timelineZoom*next>SAFE_INITIAL_TIMELINE_PIXELS)project.timelineZoom=clamp(SAFE_INITIAL_TIMELINE_PIXELS/next,.1,320);project.playhead=clamp(project.playhead,0,duration());if(Number.isFinite(project.inPoint)&&project.inPoint>duration())project.inPoint=null;if(Number.isFinite(project.outPoint)&&project.outPoint>duration())project.outPoint=duration();if(Number.isFinite(project.inPoint)&&Number.isFinite(project.outPoint)&&project.outPoint<=project.inPoint+MIN_SHOT_SECONDS)project.outPoint=null;markDirty();renderAll();$('#anSequenceModal').classList.remove('open');notify(next===null?'Sequence follows content':`Sequence fixed at ${timecode(next,project.fps)}`);
+    project.sequenceDuration=next;project.timelineDisplay=$('#anTimelineDisplay').value==='frames'?'frames':'timecode';if(next!==null&&project.timelineZoom*next>SAFE_INITIAL_TIMELINE_PIXELS)project.timelineZoom=clamp(SAFE_INITIAL_TIMELINE_PIXELS/next,MIN_TIMELINE_ZOOM,MAX_TIMELINE_ZOOM);project.playhead=clamp(project.playhead,0,duration());if(Number.isFinite(project.inPoint)&&project.inPoint>duration())project.inPoint=null;if(Number.isFinite(project.outPoint)&&project.outPoint>duration())project.outPoint=duration();if(Number.isFinite(project.inPoint)&&Number.isFinite(project.outPoint)&&project.outPoint<=project.inPoint+MIN_SHOT_SECONDS)project.outPoint=null;markDirty();renderAll();$('#anSequenceModal').classList.remove('open');notify(next===null?'Sequence follows content':`Sequence fixed at ${timecode(next,project.fps)}`);
   }
 
   function toggleTimelineDisplay(){project.timelineDisplay=project.timelineDisplay==='frames'?'timecode':'frames';markDirty();renderTimeline();}
@@ -1957,7 +1970,7 @@ export function createAnimaticsEditor(options) {
   $('#anExportFormat').onchange=syncExportFormatUi;
   $('#anExportGo').onclick=()=>{const format=$('#anExportFormat').value;if(format==='premiere')exportPremiereProject();else if(format==='after-effects')exportAfterEffectsProject();else exportProject();};
 
-  window.addEventListener('resize',()=>{if(open)resizeViewer();});
+  window.addEventListener('resize',()=>{if(open){resizeViewer();renderTimeline();}});
   window.addEventListener('keydown',e=>{
     if(!open)return;
     const form=e.target.matches('input,textarea,select'),key=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
@@ -2116,7 +2129,7 @@ export function createAnimaticsEditor(options) {
     serialize:()=>({ ...structuredClone({...project,audio:[],clips:[]}), playhead:0, clips:project.clips.map(({blob,url,...c})=>({...c,needsRelink:isVideoClip(c)&&!blob})), audio:project.audio.map(({blob,url,...a})=>({...a,needsRelink:!blob})) }),
     mediaRefs:()=>mediaEntries().map(entry=>({id:entry.mediaId,type:entry.type||entry.blob.type||'application/octet-stream',name:entry.name,size:entry.blob.size})),
     getMediaBlob:mediaId=>mediaEntries().find(entry=>entry.mediaId===mediaId)?.blob||null,
-    load:(raw,mediaBlobs)=>{releaseImportedMedia();timelineClipboard=null;activeVideoTrack=0;activeAudioTrack=0;project=normalizeProject(raw,mediaBlobs);rememberProjectMedia();const first=project.clips[0]?.id||project.texts[0]?.id||project.audio[0]?.id||null;setTimelineSelection(first?[first]:[],first);resetAnimaticsHistory();renderAll();},
-    clear:()=>{releaseImportedMedia();timelineClipboard=null;activeVideoTrack=0;activeAudioTrack=0;project=freshProject();setTimelineSelection([]);resetAnimaticsHistory();renderAll();},
+    load:(raw,mediaBlobs)=>{releaseImportedMedia();timelineClipboard=null;timelineFitZoom=null;activeVideoTrack=0;activeAudioTrack=0;project=normalizeProject(raw,mediaBlobs);rememberProjectMedia();const first=project.clips[0]?.id||project.texts[0]?.id||project.audio[0]?.id||null;setTimelineSelection(first?[first]:[],first);resetAnimaticsHistory();renderAll();},
+    clear:()=>{releaseImportedMedia();timelineClipboard=null;timelineFitZoom=null;activeVideoTrack=0;activeAudioTrack=0;project=freshProject();setTimelineSelection([]);resetAnimaticsHistory();renderAll();},
   };
 }
