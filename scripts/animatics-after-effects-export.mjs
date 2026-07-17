@@ -43,6 +43,7 @@ function clippedItem(item, kind, fps, exportStart, exportEnd, asset) {
     end,
     sourceIn,
     asset,
+    enabled: item.enabled !== false,
     linkGroupId: typeof item.linkGroupId === 'string' ? item.linkGroupId : '',
     source: item,
   };
@@ -135,6 +136,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       start: entry.start,
       end: entry.end,
       sourceIn: entry.sourceIn,
+      enabled: entry.enabled && project.videoTrackEnabled?.[entry.track] !== false,
       assetId: registerAsset(entry.asset),
       transform: visualTransform(item, entry.asset, compWidth, compHeight),
       linkGroupId: entry.linkGroupId,
@@ -148,6 +150,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       start: overlay.start,
       end: overlay.end,
       sourceIn: 0,
+      enabled: overlay.enabled && project.videoTrackEnabled?.[overlay.track] !== false,
       assetId: registerAsset(overlay.asset),
       transform: { position:[compWidth / 2, compHeight / 2], scale:[100, 100], rotation:0 },
       linkGroupId: overlay.linkGroupId,
@@ -280,6 +283,7 @@ export function createAfterEffectsScript(project, { mediaFolderName, projectFile
       var spec = data.layers[index];
       var layer = spec.kind === "text" ? makeTextLayer(comp, spec) : comp.layers.add(imported[spec.assetId]);
       layer.name = spec.name;
+      layer.enabled = spec.enabled !== false;
       layer.startTime = spec.kind === "video" || spec.kind === "audio" ? spec.start - spec.sourceIn : spec.start;
       layer.inPoint = spec.start;
       layer.outPoint = spec.end;

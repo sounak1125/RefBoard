@@ -15,9 +15,10 @@ const project = {
   fps: 24,
   background: '#102030',
   videoTracks: 2,
+  videoTrackEnabled: [true, false],
   audioTracks: 1,
   clips: [
-    { id:'still', itemId:'image-1', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
+    { id:'still', itemId:'image-1', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', enabled:false, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1}, linkGroupId:'linked-1' },
   ],
   texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', scale:1.25, rotation:12, x:.25, y:.8 }],
@@ -49,8 +50,10 @@ const music = output.layers.find(layer => layer.id === 'music');
 const text = output.layers.find(layer => layer.id === 'title');
 assert.equal(still.start, 0);
 assert.equal(still.end, 2);
+assert.equal(still.enabled, false, 'individual clip visibility must survive After Effects export');
 assert.deepEqual(still.transform.scale, [36, 36], 'Fit framing must become an After Effects layer scale');
 assert.equal(video.start, 1);
+assert.equal(video.enabled, false, 'disabled video tracks must disable their After Effects layers');
 assert.equal(video.sourceIn, 10, 'source In must remain non-destructive when exporting a range');
 assert.deepEqual(video.transform.position, [1056, 486]);
 assert.deepEqual(video.transform.scale, [60, 60], 'Fill framing and user scale must be combined accurately');
@@ -76,6 +79,7 @@ assert.match(script, /asset\.relativePath/, 'the builder must import from catego
 assert.match(script, /"relativePath":"Images\/Board & Shot\.png"/);
 assert.match(script, /sourceRectAtTime/, 'text must stay editable and receive a centered anchor point');
 assert.match(script, /ADBE Audio Levels/, 'audio gain must be applied in After Effects');
+assert.match(script, /layer\.enabled = spec\.enabled !== false;/, 'After Effects layers must preserve RefBoard visibility');
 assert.match(script, /spec\.start - spec\.sourceIn/, 'video and audio source trims must be preserved');
 assert.ok(script.indexOf('layer.startTime =') < script.indexOf('layer.inPoint ='), 'source timing must be set before comp In and Out points');
 assert.match(script, /app\.project\.save\(projectFile\)/, 'running the builder must save a native AEP file');

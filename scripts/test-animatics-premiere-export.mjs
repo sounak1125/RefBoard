@@ -16,9 +16,10 @@ assert.equal(safePremiereAssetName('bad<>:"/\\|?*.mov'), 'bad_________.mov');
 const project = {
   fps: 24,
   videoTracks: 2,
+  videoTrackEnabled: [true, false],
   audioTracks: 1,
   clips: [
-    { id:'still', itemId:'image-1', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
+    { id:'still', itemId:'image-1', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', enabled:false, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1} },
   ],
   texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', scale:1.25, rotation:12, x:.25, y:.8 }],
@@ -35,9 +36,11 @@ const assets = new Map([
 const timeline = buildPremiereTimeline({ project, name:'Animatic & Cut', fps:24, width:1920, height:1080, exportStart:1, exportEnd:5, assets });
 assert.equal(timeline.durationFrames, 96);
 assert.equal(timeline.videoTracks.length, 4, 'two source tracks plus drawing and text overlay tracks');
+assert.deepEqual(timeline.videoTrackEnabled, [true,false,true,true], 'source track visibility must follow derived overlay tracks');
 assert.equal(timeline.audioTracks.length, 1);
 assert.equal(timeline.videoTracks[0][0].start, 0);
 assert.equal(timeline.videoTracks[0][0].end, 48);
+assert.equal(timeline.videoTracks[0][0].enabled, false, 'disabled visual clips must remain disabled in Premiere');
 assert.equal(timeline.videoTracks[1][0].start, 24);
 assert.equal(timeline.videoTracks[1][0].in, 240, 'video source In point is preserved when its clip starts inside the range');
 assert.equal(timeline.audioTracks[0][0].start, 0);
@@ -50,6 +53,8 @@ assert.match(output, /<name>Animatic &amp; Cut<\/name>/);
 for (const bin of ['Images','Videos','Audio','Drawings','Sequences']) assert.match(output, new RegExp(`<bin><name>${bin}<\\/name><children>`), `${bin} must import into its own Premiere bin`);
 assert.match(output, /<clip id="masterclip-image-1">[\s\S]*?<ismasterclip>TRUE<\/ismasterclip>/, 'collected media must be represented as organized master clips');
 assert.match(output, /<masterclipid>masterclip-video-1<\/masterclipid>/, 'timeline clips must link back to their organized master clips');
+assert.match(output, /<clipitem id="clipitem-still-[^"]+">[\s\S]*?<enabled>FALSE<\/enabled>/, 'Premiere clipitems must preserve individual visibility');
+assert.match(output, /<track>[\s\S]*?Take &lt;1&gt;\.mp4[\s\S]*?<enabled>FALSE<\/enabled><locked>FALSE<\/locked><\/track>/, 'Premiere video tracks must preserve track visibility');
 assert.match(output, /<width>1920<\/width><height>1080<\/height>/);
 assert.match(output, /<timebase>24<\/timebase><ntsc>FALSE<\/ntsc>/);
 assert.match(output, /Board%20%26%20Shot\.png/);

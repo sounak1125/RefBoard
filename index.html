@@ -8887,19 +8887,33 @@ function bringItemsToFront(ids) {
 
 const ALIGN_GAP = 5;
 
+function translateAlignedItem(it, dx, dy) {
+  if (isArrowItem(it)) {
+    it.x1 += dx; it.y1 += dy;
+    it.x2 += dx; it.y2 += dy;
+    return;
+  }
+  if (isGroupItem(it)) {
+    for (const child of childrenOfGroup(it.id)) translateAlignedItem(child, dx, dy);
+  }
+  it.x += dx;
+  it.y += dy;
+}
+
 function alignSelectionHorizontal() {
   const items = selectedItems();
   if (items.length < 2) return;
   pushUndo();
   let anchor = (state.anchorId && state.sel.has(state.anchorId)) ? byId(state.anchorId) : null;
-  if (!anchor) anchor = items.reduce((a, b) => (b.x < a.x ? b : a));
-  const rest = items.filter(it => it !== anchor).sort((a, b) => a.x - b.x);
+  if (!anchor) anchor = items.reduce((a, b) => (boundsOf(b).x < boundsOf(a).x ? b : a));
+  const rest = items.filter(it => it !== anchor).sort((a, b) => boundsOf(a).x - boundsOf(b).x);
   const gap = ALIGN_GAP;
-  let x = anchor.x + anchor.w + gap;
+  const anchorBounds = boundsOf(anchor);
+  let x = anchorBounds.x + anchorBounds.w + gap;
   for (const it of rest) {
-    it.y = anchor.y;
-    it.x = x;
-    x += it.w + gap;
+    const itemBounds = boundsOf(it);
+    translateAlignedItem(it, x - itemBounds.x, anchorBounds.y - itemBounds.y);
+    x += itemBounds.w + gap;
   }
   syncGroupFramesForItems(items);
   invalidateWorkspaceBBox();
@@ -8912,14 +8926,15 @@ function alignSelectionVertical() {
   if (items.length < 2) return;
   pushUndo();
   let anchor = (state.anchorId && state.sel.has(state.anchorId)) ? byId(state.anchorId) : null;
-  if (!anchor) anchor = items.reduce((a, b) => (b.y < a.y ? b : a));
-  const rest = items.filter(it => it !== anchor).sort((a, b) => a.y - b.y);
+  if (!anchor) anchor = items.reduce((a, b) => (boundsOf(b).y < boundsOf(a).y ? b : a));
+  const rest = items.filter(it => it !== anchor).sort((a, b) => boundsOf(a).y - boundsOf(b).y);
   const gap = ALIGN_GAP;
-  let y = anchor.y + anchor.h + gap;
+  const anchorBounds = boundsOf(anchor);
+  let y = anchorBounds.y + anchorBounds.h + gap;
   for (const it of rest) {
-    it.x = anchor.x;
-    it.y = y;
-    y += it.h + gap;
+    const itemBounds = boundsOf(it);
+    translateAlignedItem(it, anchorBounds.x - itemBounds.x, y - itemBounds.y);
+    y += itemBounds.h + gap;
   }
   syncGroupFramesForItems(items);
   invalidateWorkspaceBBox();
@@ -12635,6 +12650,18 @@ function panView(dx, dy) {
   invalidate();
 }
 
+function resizeCursorForAngle(angle) {
+  const normalized = ((Number(angle) || 0) % 180 + 180) % 180;
+  return ['ew-resize', 'nwse-resize', 'ns-resize', 'nesw-resize'][Math.round(normalized / 45) % 4];
+}
+
+function resizeCursorForHandle(handle, rotation = 0) {
+  let baseAngle = 0;
+  if (handle.edge) baseAngle = (handle.edge === 'left' || handle.edge === 'right') ? 0 : 90;
+  else if (handle.corner) baseAngle = (handle.corner === 'nw' || handle.corner === 'se') ? 45 : 135;
+  return resizeCursorForAngle(baseAngle + rotation);
+}
+
 function updateCursor(sx, sy) {
   if (drawActive) { canvas.style.cursor = drawModeCursor(); return; }
   if (arrowTool) { canvas.style.cursor = 'crosshair'; return; }
@@ -12646,17 +12673,13 @@ function updateCursor(sx, sy) {
   if (spaceDown || altDown) { canvas.style.cursor = 'grab'; return; }
   const ch = cropEdgeAt(sx, sy);
   if (ch) {
-    canvas.style.cursor = (ch.edge === 'left' || ch.edge === 'right') ? 'ew-resize' : 'ns-resize';
+    canvas.style.cursor = resizeCursorForHandle(ch, ch.it?.rot || 0);
     return;
   }
   const h = handleAt(sx, sy);
   if (h) {
     if (h.arrowEndpoint) { canvas.style.cursor = 'crosshair'; return; }
-    if (h.edge) {
-      canvas.style.cursor = (h.edge === 'left' || h.edge === 'right') ? 'ew-resize' : 'ns-resize';
-    } else if (h.corner) {
-      canvas.style.cursor = (h.corner === 'nw' || h.corner === 'se') ? 'nwse-resize' : 'nesw-resize';
-    }
+    canvas.style.cursor = resizeCursorForHandle(h, h.group ? 0 : (h.it?.rot || 0));
     return;
   }
   {
