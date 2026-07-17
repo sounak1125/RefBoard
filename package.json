@@ -22,7 +22,7 @@
     "dist:publish": "electron-builder --win --publish always",
     "gen:icon": "node scripts/gen-icon.js",
     "build:thumb-handler": "node scripts/build-thumb-handler.js",
-    "test:animatics-smoke": "node scripts/smoke-animatics-transform.mjs",
+    "test:animatics-smoke": "node scripts/smoke-animatics-transform.mjs && node scripts/smoke-animatics-sequence.mjs",
     "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-local-dist.ps1 -ReplaceAssets",
     "release:ship": "powershell -ExecutionPolicy Bypass -File scripts/ship-release.ps1 -DistDir dist-release -Draft",
     "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0"

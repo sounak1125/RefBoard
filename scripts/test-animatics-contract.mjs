@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { parseSequenceTimecode, timelineRulerStep } from './animatics.mjs';
+import { automaticTimelineDuration, parseSequenceTimecode, snappedTextRotation, timelineRulerStep, timelineRulerTicks } from './animatics.mjs';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const editor = fs.readFileSync(new URL('./animatics.mjs', import.meta.url), 'utf8');
@@ -34,6 +34,9 @@ assert.match(editor, /id="anDurationFrames"/, 'clip duration must be editable in
 assert.match(editor, /id="anCounterMode"/, 'viewer counter must support frame display');
 assert.match(editor, /id="anProjectFps"/, 'viewer must expose the project frame rate');
 assert.match(editor, /scrubbing=\{target:ruler,pointerId:e\.pointerId\}/, 'timeline ruler must support continuous pointer scrubbing');
+assert.match(editor, /function followPlayhead\(margin=56\)/, 'playhead movement must have one protected timeline-follow path');
+assert.match(editor, /function scrubTo\(value\)[^\n]+followPlayhead\(\)/, 'dragging the playhead must scroll the timeline to keep it visible');
+assert.match(editor, /project\.playhead=clamp\(next,0,duration\(\)\);renderTransport\(\);followPlayhead\(\)/, 'playback must keep following the playhead through long timelines');
 assert.match(editor, /scrubPreviewBusy/, 'rapid video scrubs must be coalesced instead of stacking decoder seeks');
 assert.match(editor, /image\?\.proxy\s*\|\|\s*image\?\.bitmap/, 'viewer must use the always-resident image proxy');
 assert.match(editor, /previewQuality:'full'/, 'new Animatics projects must default to a full-resolution preview');
@@ -128,7 +131,7 @@ assert.match(editor, /drawTextOverlay/, 'text layers must render in preview and 
 assert.match(editor, /anTextRotation/, 'text layers must expose rotation controls');
 assert.match(editor, /anTextScale/, 'text layers must expose scale controls');
 assert.match(editor, /id="anTextRotation"[^>]*step="1"/, 'text rotation must use whole-degree input steps');
-assert.match(editor, /text\.rotation=Math\.round\(rotation\)/, 'on-canvas rotation must snap to whole degrees');
+assert.match(editor, /text\.rotation=snappedTextRotation\(rotation,e\.shiftKey\)/, 'on-canvas rotation must retain whole-degree control and support Shift snapping');
 assert.doesNotMatch(editor, /anTextX|anTextY/, 'text position must be controlled directly in the preview instead of redundant X/Y fields');
 assert.match(editor, /function hitTextControl/, 'text overlays must be directly selectable in the viewer');
 assert.match(editor, /mode:'rotate'/, 'text overlays must expose an on-canvas rotation handle');
@@ -234,6 +237,8 @@ assert.match(editor, /closeTimelineTrackGap\(project\.audio,current\)/, 'audio g
 assert.match(editor, /closeTimelineTrackGap\(project\.clips,current\)/, 'video gap deletion must ripple only its video collection');
 assert.match(editor, /if\(gapPress\).*beginMarquee/, 'dragging from a gap must still start marquee selection');
 assert.match(editor, /\.an-tl-grid \{ min-width:100%; min-height:100%/, 'the timeline event surface must fill the expanded scroll viewport');
+assert.match(editor, /grid-template-columns:124px var\(--an-lane-width,900px\)/, 'timeline rows must end at the finite sequence surface');
+assert.match(editor, /class="an-timeline-end"/, 'the sequence endpoint must have a visible boundary');
 assert.match(editor, /scrollbar-track:horizontal \{ margin-left:124px/, 'the horizontal scrollbar must not enter the fixed track-label gutter');
 assert.match(editor, /\.an-playhead\.out-of-view \{ display:none/, 'an offscreen playhead must not overlap fixed track labels');
 assert.match(editor, /x<124\|\|x>scroll\.clientWidth/, 'playhead visibility must follow the scrollable content viewport');
@@ -267,11 +272,18 @@ assert.match(editor, /grid\.addEventListener\('pointerleave',clearRazorGuide\)/,
 assert.match(editor, /selectionToolIcon/, 'Selection toolbar control must use the approved pointer silhouette');
 assert.match(editor, /id="anSequenceSettings"/, 'timeline must expose sequence settings');
 assert.match(editor, /id="anSequenceDuration"/, 'sequence settings must accept an explicit timecode duration');
-for(const seconds of [180,3600,14400,18000])assert.match(editor,new RegExp(`data-sequence-seconds="${seconds}"`),`sequence settings must include the ${seconds}-second preset`);
+assert.match(editor, /<option value="fixed">Custom duration<\/option><option value="auto">Auto — fit content<\/option>/, 'custom duration must be the primary sequence-length choice');
+assert.doesNotMatch(editor, /data-sequence-seconds=/, 'sequence settings must not crowd the custom field with duration presets');
+assert.match(editor, /fixed===null\?'':timecode\(fixed,project\.fps\)/, 'Auto mode must not display a fake fixed duration');
+assert.match(editor, /\$\('#anSequenceDuration'\)\.oninput=.*?\$\('#anSequenceMode'\)\.value='fixed'/, 'typing a custom duration must activate fixed mode');
 assert.match(editor, /sequenceDuration:null/, 'new projects must preserve backward-compatible auto duration until fixed by the user');
-assert.match(editor, /function duration\(\) \{ return fixedSequenceEnd\(\) \?\? contentDuration\(\); \}/, 'playback and export must honor a fixed sequence duration');
+assert.match(editor, /DEFAULT_SEQUENCE_SECONDS\s*=\s*30/, 'Auto timelines must begin with a finite thirty-second duration');
+assert.match(editor, /function automaticSequenceEnd\(\)\{return automaticTimelineDuration\(contentDuration\(\)\);\}/, 'Auto timelines must extend when their content passes thirty seconds');
+assert.match(editor, /function duration\(\) \{ return fixedSequenceEnd\(\) \?\? automaticSequenceEnd\(\); \}/, 'playback and export must share fixed and Auto sequence bounds');
 assert.match(editor, /function durationWithinSequence/, 'new and edited layers must respect the fixed sequence end');
-assert.match(editor, /timelineRulerStep\(total,px\)/, 'long timelines must use an adaptive ruler interval');
+assert.match(editor, /timelineRulerTicks\(total,px\)/, 'timeline rendering must use collision-safe adaptive ruler ticks');
+assert.match(editor, /minimumLabelPixels\/Math\.max\(\.001,pixelsPerSecond\)/, 'ruler spacing must remain label-safe below one pixel per second');
+assert.doesNotMatch(editor, /total-tickCount\*tickStep/, 'the final ruler label must not be inserted without collision checking');
 assert.match(editor, /SAFE_INITIAL_TIMELINE_PIXELS\s*=\s*60000/, 'multi-hour sequences must start with a compositor-safe surface width');
 assert.match(editor, /project\.timelineZoom\*next>SAFE_INITIAL_TIMELINE_PIXELS/, 'setting a long sequence must reduce only its initial zoom when needed');
 assert.match(editor, /timelineZoom:90/, 'new projects must retain the detailed default timeline zoom');
@@ -281,6 +293,10 @@ assert.match(editor, /data-remove-track="video"/, 'video track labels must expos
 assert.match(editor, /data-remove-track="audio"/, 'audio track labels must expose removal controls');
 assert.match(editor, /class="an-shot-name"[\s\S]*?class="an-shot-meta"/, 'long viewer filenames must truncate separately from frame metadata');
 assert.match(editor, /\.an-shot-name[^\n]+text-overflow:ellipsis/, 'only the filename portion of the viewer footer may ellipsize');
+assert.doesNotMatch(editor, /class="an-help"/, 'compact Clip, Text, Audio, Draw, and View panels must not include helper paragraphs');
+assert.match(editor, /snappedTextRotation\(rotation,e\.shiftKey\)/, 'holding Shift while rotating text must activate angular snapping');
+assert.match(editor, /dragging=\{clip,kind,trimEdge,movedIds[^\n]+sequenceEnd:duration\(\)/, 'clip drags must capture a stable sequence endpoint for snapping');
+assert.match(editor, /guide\.querySelector\('span'\)\.textContent=timecode\(time,project\.fps\)/, 'trim snapping must show the snapped time beside its guide');
 assert.match(editor, /if\(occupied\.length\)/, 'track removal must refuse to destroy occupied layers');
 assert.match(editor, /if\(item\.track>track\)item\.track--/, 'track removal must close numbering gaps safely');
 assert.match(editor, /document\.addEventListener\('pointerdown',[\s\S]*?!inlineTextId\|\|inlineTextEditor\.contains\(e\.target\)[\s\S]*?finishInlineTextEdit\(false\);[\s\S]*?true\);/, 'a left click outside the inline text editor must commit and exit editing');
@@ -295,8 +311,16 @@ assert.equal(parseSequenceTimecode('00:03:00:00',30),180,'sequence timecode must
 assert.equal(parseSequenceTimecode('5h',30),18000,'sequence timecode must parse hour shorthand');
 assert.equal(parseSequenceTimecode('00:00:01:15',30),1.5,'sequence timecode must parse frame fields');
 assert.ok(Number.isNaN(parseSequenceTimecode('00:61:00:00',30)),'invalid timecode fields must be rejected');
+assert.equal(automaticTimelineDuration(0),30,'an empty Auto sequence must last thirty seconds');
+assert.equal(automaticTimelineDuration(47.5),47.5,'Auto duration must extend to its content endpoint');
+assert.equal(snappedTextRotation(22.4,true),15,'Shift rotation must snap to fifteen-degree increments');
+assert.equal(snappedTextRotation(22.4,false),22,'rotation without Shift must retain one-degree control');
 assert.equal(timelineRulerStep(18000,90),30,'a five-hour sequence must cap ruler density with thirty-second ticks');
 assert.equal(timelineRulerStep(180,90),1,'a three-minute sequence must retain one-second ruler precision');
+for(const [total,px] of [[30,.1],[179,.5],[181,3],[367,10],[18000,.1]]){
+  const ticks=timelineRulerTicks(total,px);
+  for(let index=1;index<ticks.length;index++)assert.ok((ticks[index]-ticks[index-1])*px>=84-1e-8,`ruler labels must not overlap for ${total}s at ${px}px/s`);
+}
 
 assert.match(html, /function forceBoardCanvasRepaint\(\)/, 'board return must replace a potentially discarded canvas backing surface');
 assert.match(html, /function beginAnimaticsBoardSession\(\)[\s\S]*?animaticsReturnView\s*=\s*\{\s*tx,\s*ty,\s*s\s*\}/, 'Animatics entry must snapshot the exact board camera');

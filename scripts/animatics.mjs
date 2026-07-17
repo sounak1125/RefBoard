@@ -40,6 +40,7 @@ import {
 const MAX_VIDEO_TRACKS = 8;
 const MAX_AUDIO_TRACKS = 5;
 const DEFAULT_SHOT_SECONDS = 3;
+const DEFAULT_SEQUENCE_SECONDS = 30;
 const MIN_SHOT_SECONDS = 1 / 60;
 const MAX_SEQUENCE_SECONDS = 24 * 60 * 60;
 const SAFE_INITIAL_TIMELINE_PIXELS = 60000;
@@ -86,10 +87,32 @@ export function parseSequenceTimecode(value, fps = 30) {
   return hours*3600+minutes*60+seconds+frames/fps;
 }
 
-export function timelineRulerStep(totalSeconds, pixelsPerSecond, maxTicks = 900) {
-  const minimum = Math.max(72/Math.max(1,pixelsPerSecond),Math.max(0,totalSeconds)/maxTicks);
+export function automaticTimelineDuration(contentEnd, minimumSeconds = DEFAULT_SEQUENCE_SECONDS) {
+  return Math.max(Math.max(0,Number(minimumSeconds)||0),Math.max(0,Number(contentEnd)||0));
+}
+
+export function snappedTextRotation(value, shiftKey = false) {
+  const rotation=Number.isFinite(Number(value))?Number(value):0;
+  return Math.max(-180,Math.min(180,shiftKey?Math.round(rotation/15)*15:Math.round(rotation)));
+}
+
+export function timelineRulerStep(totalSeconds, pixelsPerSecond, maxTicks = 900, minimumLabelPixels = 84) {
+  const minimum = Math.max(minimumLabelPixels/Math.max(.001,pixelsPerSecond),Math.max(0,totalSeconds)/maxTicks);
   const steps = [1/60,1/30,1/24,.1,.25,.5,1,2,5,10,15,30,60,120,300,600,900,1800,3600,7200,14400];
   return steps.find(step => step >= minimum) || Math.ceil(minimum/3600)*3600;
+}
+
+export function timelineRulerTicks(totalSeconds, pixelsPerSecond, maxTicks = 900, minimumLabelPixels = 84) {
+  const total=Math.max(0,Number(totalSeconds)||0),px=Math.max(.001,Number(pixelsPerSecond)||0);
+  if(total<=0)return [0];
+  const step=timelineRulerStep(total,px,maxTicks,minimumLabelPixels),count=Math.floor(total/step+1e-8),ticks=[];
+  for(let index=0;index<=count;index++)ticks.push(index*step);
+  const last=ticks.at(-1)??0;
+  if(total-last>1e-8){
+    if((total-last)*px>=minimumLabelPixels)ticks.push(total);
+    else if(ticks.length>1&&(total-ticks.at(-2))*px>=minimumLabelPixels)ticks[ticks.length-1]=total;
+  }
+  return ticks;
 }
 
 function sequenceDimensions(shortEdge, aspect = '16:9') {
@@ -152,7 +175,6 @@ function css() {
   .an-field textarea { min-height:78px; resize:vertical; }
   .an-field input:focus,.an-field textarea:focus,.an-field select:focus { border-color:#5aa2ff; }
   .an-split { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
-  .an-help { color:#7d8492; font-size:11px; line-height:1.5; }
   .an-tool-btn { width:100%; height:35px; margin-bottom:8px; border:1px solid #333743; border-radius:9px; background:#20232b; color:#d9dde6; cursor:pointer; }
   .an-tool-btn:hover,.an-tool-btn.on { border-color:#5aa2ff; color:#fff; background:#26384f; }
   .an-stage { min-width:0; min-height:0; position:relative; display:grid; place-items:center; padding:18px 38px 12px; overflow:hidden; }
@@ -205,7 +227,7 @@ function css() {
   .an-panel::-webkit-scrollbar-thumb,.an-tl-scroll::-webkit-scrollbar-thumb { border:2px solid #15181e; border-radius:99px; background:#414754; }
   .an-panel::-webkit-scrollbar-thumb:hover,.an-tl-scroll::-webkit-scrollbar-thumb:hover { background:#566070; }
   .an-tl-grid { min-width:100%; min-height:100%; position:relative; padding-bottom:12px; box-sizing:border-box; }
-  .an-ruler-row,.an-track-row { display:grid; grid-template-columns:124px minmax(900px,1fr); }
+  .an-ruler-row,.an-track-row { display:grid; grid-template-columns:124px var(--an-lane-width,900px); width:calc(124px + var(--an-lane-width,900px)); }
   .an-ruler-row { height:32px; min-height:32px; position:sticky; top:0; z-index:8; background:#14161b; }
   .an-track-row { position:relative; height:var(--an-track-height,44px); min-height:24px; }
   .an-track-label { position:sticky; left:0; z-index:7; display:flex; align-items:center; gap:6px; min-height:0; padding:0 8px 0 6px; color:#9ca3b0; background:#17191f; border-right:1px solid #2b2e37; border-bottom:1px solid #242730; }
@@ -234,8 +256,8 @@ function css() {
   .an-track-resize:hover::after,.an-track-resize.dragging::after { background:#6aaaff; box-shadow:0 0 7px rgba(106,170,255,.55); }
   .an-track-row.reorder-source { opacity:.58; }
   .an-track-row.reorder-target::after { content:""; position:absolute; z-index:11; inset:1px 0; border:1px solid #70aff5; background:rgba(77,145,222,.09); pointer-events:none; }
-  .an-ruler { position:relative; border-bottom:1px solid #30333c; cursor:pointer; touch-action:none; }
-  .an-tick { position:absolute; inset-block:0 auto; padding:7px 0 0 5px; color:#6f7683; font:10px ui-monospace,Consolas,monospace; border-left:1px solid #343741; }
+  .an-ruler { position:relative; overflow:hidden; border-bottom:1px solid #30333c; cursor:pointer; touch-action:none; }
+  .an-tick { position:absolute; inset-block:0 auto; width:max-content; padding:7px 0 0 5px; color:#6f7683; font:10px ui-monospace,Consolas,monospace; white-space:nowrap; border-left:1px solid #343741; pointer-events:none; }
   .an-clip { position:absolute; z-index:2; top:3px; bottom:4px; min-width:16px; min-height:14px; border:1px solid #4d77aa; border-radius:6px; overflow:hidden; cursor:pointer; background:#243a55; color:#e7effb; box-shadow:0 2px 8px rgba(0,0,0,.25); transition:opacity .15s ease,transform .15s ease,box-shadow .15s ease; }
   .an-clip:hover,.an-clip.on { border-color:#79b6ff; box-shadow:0 0 0 1px rgba(90,162,255,.3),0 4px 12px rgba(0,0,0,.4); }
   .an-clip.primary { box-shadow:0 0 0 2px rgba(118,190,255,.72),0 4px 14px rgba(0,0,0,.48); }
@@ -266,8 +288,10 @@ function css() {
   .an-wave { position:absolute; inset:3px 7px; width:calc(100% - 14px); height:calc(100% - 6px); opacity:.78; pointer-events:none; }
   .an-marquee { position:fixed; z-index:45; display:none; border:1px solid #69aeff; background:rgba(70,148,235,.16); box-shadow:0 0 0 1px rgba(0,0,0,.24); pointer-events:none; }
   .an-marquee.show { display:block; }
-  .an-snap-guide { position:absolute; z-index:25; top:0; bottom:0; left:124px; display:none; width:1px; background:#69aeff; box-shadow:0 0 8px rgba(105,174,255,.7); pointer-events:none; }
+  .an-snap-guide { position:absolute; z-index:25; top:0; bottom:0; left:124px; display:none; width:1px; background:repeating-linear-gradient(to bottom,#8bc5ff 0 4px,transparent 4px 7px); filter:drop-shadow(0 0 3px rgba(105,174,255,.8)); pointer-events:none; }
   .an-snap-guide.show { display:block; }
+  .an-snap-guide span { position:absolute; left:7px; top:8px; padding:2px 5px; border:1px solid #3e638d; border-radius:4px; color:#dceeff; background:rgba(11,17,25,.94); font:9px/1.2 ui-monospace,Consolas,monospace; white-space:nowrap; }
+  .an-timeline-end { position:absolute; z-index:19; top:0; bottom:0; left:124px; width:1px; background:#596170; box-shadow:2px 0 0 rgba(0,0,0,.4); pointer-events:none; transform:translateX(var(--an-timeline-end-x,0)); }
   .an-razor-guide { position:absolute; z-index:48; display:none; width:1px; pointer-events:none; }
   .an-razor-guide.show { display:block; }
   .an-razor-guide::before { content:""; position:absolute; inset:0 -1px; background:repeating-linear-gradient(to bottom,#8bc5ff 0 3px,transparent 3px 6px); filter:drop-shadow(0 0 3px rgba(105,174,255,.85)); }
@@ -302,9 +326,6 @@ function css() {
   .an-export-card h2 { margin:0 0 5px; font-size:17px; }
   .an-export-card p { margin:0 0 17px; color:#8f96a4; }
   .an-export-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:17px; }
-  .an-sequence-presets { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin:4px 0 14px; }
-  .an-sequence-presets button { height:30px; border:1px solid #343946; border-radius:7px; color:#aeb7c6; background:#151820; cursor:pointer; }
-  .an-sequence-presets button:hover { border-color:#5b9eea; color:#eff7ff; background:#24364c; }
   .an-sequence-hint { display:flex; justify-content:space-between; margin:-7px 0 13px; color:#747d8c; font-size:10px; }
   .an-progress { height:5px; margin-top:14px; border-radius:99px; overflow:hidden; background:#292c35; display:none; }
   .an-progress.show { display:block; }
@@ -349,11 +370,11 @@ function markup() {
     <div class="an-stage-row">
       <aside class="an-side"><div class="an-side-inner">
         <nav class="an-tabs"><button class="an-tab on" data-panel="clip">Clip</button><button class="an-tab" data-panel="text">Text</button><button class="an-tab" data-panel="audio">Audio</button><button class="an-tab" data-panel="draw">Draw</button><button class="an-tab" data-panel="view">View</button></nav>
-        <div class="an-panel on" data-panel-body="clip"><h3 class="an-section-title" id="anClipSelectionTitle">Selected clip</h3><div class="an-split"><label class="an-field">Seconds<input id="anDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><h3 class="an-section-title" id="anFramingTitle">16:9 framing</h3><div class="an-frame-actions"><button class="an-tool-btn" id="anFrameFit">Fit</button><button class="an-tool-btn" id="anFrameFill">Fill</button><button class="an-tool-btn" id="anFrameReset">Reset</button></div><label class="an-field">Scale<div class="an-scale-row"><input id="anFrameScale" type="range" min="25" max="800" value="100"><output id="anFrameScaleVal">100%</output></div></label><button class="an-tool-btn" id="anToggleClipVisibility" title="Enable or disable selected visual clips (Ctrl+H)" aria-pressed="false">Disable selected</button><div class="an-split"><button class="an-tool-btn" id="anSplit">Split at playhead</button><button class="an-tool-btn" id="anDeleteClip">Delete selected</button></div><p class="an-help">Framing and visibility apply to every selected image or video. Duration applies to selected visual and audio clips.</p></div>
-        <div class="an-panel" data-panel-body="text"><h3 class="an-section-title">Text overlay layer</h3><label class="an-field">Content<textarea id="anText" placeholder="Add a title or annotation…"></textarea></label><div class="an-split"><label class="an-field">Font size<input id="anTextSize" type="number" min="8" max="300" value="42"></label><label class="an-field">Color<input id="anTextColor" type="color" value="#ffffff"></label></div><label class="an-field">Scale<div class="an-scale-row"><input id="anTextScale" type="range" min="25" max="400" value="100"><output id="anTextScaleVal">100%</output></div></label><div class="an-split"><label class="an-field">Rotation<input id="anTextRotation" type="number" min="-180" max="180" step="1" value="0"></label><label class="an-field">Duration (sec)<input id="anTextDuration" type="number" min="0.017" max="600" step="0.1" value="3"></label></div><button class="an-tool-btn" id="anAddText">Add text layer</button><button class="an-tool-btn" id="anClearText">Delete selected text</button><p class="an-help">Press T, then click directly in the preview to place and type text. Drag selected text in the preview to position it.</p></div>
-        <div class="an-panel" data-panel-body="audio"><h3 class="an-section-title" id="anAudioSelectionTitle">Selected audio</h3><div class="an-split"><label class="an-field">Seconds<input id="anAudioDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anAudioDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><label class="an-field">Volume<div class="an-scale-row"><input id="anAudioVolume" type="range" min="0" max="200" step="1" value="100"><output id="anAudioVolumeVal">100%</output></div></label><button class="an-tool-btn" id="anAudioMute">Mute selected</button><div class="an-split"><button class="an-tool-btn" id="anAudioSplit">Split at playhead</button><button class="an-tool-btn" id="anAudioDelete">Delete selected</button></div><p class="an-help">Duration applies to selected visual and audio clips. Volume applies to every selected audio clip.</p></div>
-        <div class="an-panel" data-panel-body="draw"><h3 class="an-section-title">Draw on shot</h3><div class="an-split"><label class="an-field">Color<input id="anDrawColor" type="color" value="#ff5c5c"></label><label class="an-field">Width<input id="anDrawWidth" type="number" min="1" max="40" value="6"></label></div><button class="an-tool-btn" id="anDrawToggle">Start drawing</button><button class="an-tool-btn" id="anClearDraw">Clear drawing</button><p class="an-help">Draw directly on the viewer. Strokes are stored as lightweight normalized points, not extra image copies.</p></div>
-        <div class="an-panel" data-panel-body="view"><h3 class="an-section-title">Viewer</h3><div class="an-split"><label class="an-field">Playback counter<select id="anCounterMode"><option value="timecode">Timecode</option><option value="frames">Frames</option><option value="seconds">Seconds</option></select></label><label class="an-field">Project rate<select id="anProjectFps"><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div><button class="an-tool-btn" id="anTcToggle">Show counter in picture</button><label class="an-field">Background<select id="anBackground"><option value="#000000">Black</option><option value="#181a20">Charcoal</option><option value="#ffffff">White</option></select></label><p class="an-help">Use the compact controls below the viewer for sequence shape and playback quality. Export always uses the original full-resolution images.</p></div>
+        <div class="an-panel on" data-panel-body="clip"><h3 class="an-section-title" id="anClipSelectionTitle">Selected clip</h3><div class="an-split"><label class="an-field">Seconds<input id="anDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><h3 class="an-section-title" id="anFramingTitle">16:9 framing</h3><div class="an-frame-actions"><button class="an-tool-btn" id="anFrameFit">Fit</button><button class="an-tool-btn" id="anFrameFill">Fill</button><button class="an-tool-btn" id="anFrameReset">Reset</button></div><label class="an-field">Scale<div class="an-scale-row"><input id="anFrameScale" type="range" min="25" max="800" value="100"><output id="anFrameScaleVal">100%</output></div></label><button class="an-tool-btn" id="anToggleClipVisibility" title="Enable or disable selected visual clips (Ctrl+H)" aria-pressed="false">Disable selected</button><div class="an-split"><button class="an-tool-btn" id="anSplit">Split at playhead</button><button class="an-tool-btn" id="anDeleteClip">Delete selected</button></div></div>
+        <div class="an-panel" data-panel-body="text"><h3 class="an-section-title">Text overlay layer</h3><label class="an-field">Content<textarea id="anText" placeholder="Add a title or annotation…"></textarea></label><div class="an-split"><label class="an-field">Font size<input id="anTextSize" type="number" min="8" max="300" value="42"></label><label class="an-field">Color<input id="anTextColor" type="color" value="#ffffff"></label></div><label class="an-field">Scale<div class="an-scale-row"><input id="anTextScale" type="range" min="25" max="400" value="100"><output id="anTextScaleVal">100%</output></div></label><div class="an-split"><label class="an-field">Rotation<input id="anTextRotation" type="number" min="-180" max="180" step="1" value="0"></label><label class="an-field">Duration (sec)<input id="anTextDuration" type="number" min="0.017" max="600" step="0.1" value="3"></label></div><button class="an-tool-btn" id="anAddText">Add text layer</button><button class="an-tool-btn" id="anClearText">Delete selected text</button></div>
+        <div class="an-panel" data-panel-body="audio"><h3 class="an-section-title" id="anAudioSelectionTitle">Selected audio</h3><div class="an-split"><label class="an-field">Seconds<input id="anAudioDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anAudioDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><label class="an-field">Volume<div class="an-scale-row"><input id="anAudioVolume" type="range" min="0" max="200" step="1" value="100"><output id="anAudioVolumeVal">100%</output></div></label><button class="an-tool-btn" id="anAudioMute">Mute selected</button><div class="an-split"><button class="an-tool-btn" id="anAudioSplit">Split at playhead</button><button class="an-tool-btn" id="anAudioDelete">Delete selected</button></div></div>
+        <div class="an-panel" data-panel-body="draw"><h3 class="an-section-title">Draw on shot</h3><div class="an-split"><label class="an-field">Color<input id="anDrawColor" type="color" value="#ff5c5c"></label><label class="an-field">Width<input id="anDrawWidth" type="number" min="1" max="40" value="6"></label></div><button class="an-tool-btn" id="anDrawToggle">Start drawing</button><button class="an-tool-btn" id="anClearDraw">Clear drawing</button></div>
+        <div class="an-panel" data-panel-body="view"><h3 class="an-section-title">Viewer</h3><div class="an-split"><label class="an-field">Playback counter<select id="anCounterMode"><option value="timecode">Timecode</option><option value="frames">Frames</option><option value="seconds">Seconds</option></select></label><label class="an-field">Project rate<select id="anProjectFps"><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div><button class="an-tool-btn" id="anTcToggle">Show counter in picture</button><label class="an-field">Background<select id="anBackground"><option value="#000000">Black</option><option value="#181a20">Charcoal</option><option value="#ffffff">White</option></select></label></div>
       </div></aside>
       <main class="an-stage"><div class="an-viewer-wrap"><div class="an-viewer-shell"><canvas id="anViewer" width="1920" height="1080"></canvas><div class="an-empty-stage" id="anEmpty"><div>No clips at the playhead<br><small>Add or move images in the timeline</small></div></div></div><div class="an-stage-foot"><span id="anShotLabel">No shot selected</span><div class="an-transport"><button class="an-icon" id="anPrev" title="Previous frame">${icon('<path d="M7 5v14M18 6l-8 6 8 6z"/>')}</button><button class="an-play" id="anPlay" title="Play / pause">${icon('<path d="m8 5 11 7-11 7z"/>',true)}</button><button class="an-icon" id="anNext" title="Next frame">${icon('<path d="M17 5v14M6 6l8 6-8 6z"/>')}</button><span class="an-time" id="anTime">00:00:00:00 / 00:00:00:00</span></div><div class="an-view-settings"><select id="anFooterAspect" aria-label="Sequence aspect"><option value="16:9">16:9</option><option value="4:3">4:3</option><option value="5:4">5:4</option><option value="9:16">9:16</option><option value="21:9">21:9</option></select><select id="anFooterQuality" aria-label="Preview quality"><option value="full">Full 1080p</option><option value="half">Half 540p</option><option value="low">Low 270p</option></select></div></div></div></main><aside></aside>
     </div>
@@ -361,7 +382,7 @@ function markup() {
     <input id="anAudioPick" type="file" accept="audio/*" multiple hidden>
     <input id="anVideoPick" type="file" accept="video/*" multiple hidden>
     <div class="an-toast" id="anToast"></div>
-    <div class="an-export-modal" id="anSequenceModal"><div class="an-export-card"><h2>Sequence settings</h2><p>Choose a fixed timeline length or let the sequence follow its content.</p><div class="an-split"><label class="an-field">Length mode<select id="anSequenceMode"><option value="auto">Auto — fit content</option><option value="fixed">Fixed duration</option></select></label><label class="an-field">Timeline display<select id="anTimelineDisplay"><option value="timecode">Timecode</option><option value="frames">Frames</option></select></label></div><label class="an-field">Duration<input id="anSequenceDuration" type="text" inputmode="numeric" spellcheck="false" placeholder="00:03:00:00"></label><div class="an-sequence-hint"><span>HH:MM:SS:FF</span><span id="anSequenceMinimum"></span></div><div class="an-sequence-presets"><button data-sequence-seconds="180">3 min</button><button data-sequence-seconds="3600">1 hour</button><button data-sequence-seconds="14400">4 hours</button><button data-sequence-seconds="18000">5 hours</button></div><div class="an-export-actions"><button class="an-btn" id="anSequenceCancel">Cancel</button><button class="an-btn primary" id="anSequenceApply">Apply</button></div></div></div>
+    <div class="an-export-modal" id="anSequenceModal"><div class="an-export-card"><h2>Sequence settings</h2><p>Enter a custom timeline duration or let the sequence follow its content.</p><div class="an-split"><label class="an-field">Timeline length<select id="anSequenceMode"><option value="fixed">Custom duration</option><option value="auto">Auto — fit content</option></select></label><label class="an-field">Timeline display<select id="anTimelineDisplay"><option value="timecode">Timecode</option><option value="frames">Frames</option></select></label></div><label class="an-field">Custom duration<input id="anSequenceDuration" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="00:03:00:00" aria-describedby="anSequenceFormat anSequenceMinimum"></label><div class="an-sequence-hint"><span id="anSequenceFormat">HH:MM:SS:FF · typing switches to Custom</span><span id="anSequenceMinimum"></span></div><div class="an-export-actions"><button class="an-btn" id="anSequenceCancel">Cancel</button><button class="an-btn primary" id="anSequenceApply">Apply</button></div></div></div>
     <div class="an-export-modal" id="anExportModal"><div class="an-export-card"><h2>Export animatic</h2><p id="anExportDescription">MP4 · H.264 · stereo audio · <span id="anExportAspect">16:9</span></p><label class="an-field">Format<select id="anExportFormat"><option value="mp4">MP4 video</option><option value="premiere">Premiere Pro 2025–2026 timeline (.xml)</option><option value="after-effects">After Effects project builder (.jsx → .aep)</option></select></label><div class="an-split"><label class="an-field">Resolution<select id="anExportRes"><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label><label class="an-field">Frame rate<select id="anExportFps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></label></div><label class="an-field">Export range<select id="anExportRange"><option value="full">Full sequence</option><option value="inout">Sequence In to Out</option></select></label><label class="an-field" id="anExportCounterField">Counter overlay<select id="anExportTc"><option value="project">Use viewer setting</option><option value="on">Burn selected counter</option><option value="off">No counter</option></select></label><div class="an-progress" id="anExportProgress"><i></i></div><div class="an-export-actions"><button class="an-btn" id="anExportCancel">Cancel</button><button class="an-btn primary" id="anExportGo">Export MP4</button></div></div></div>
     <div class="an-audio-trim-modal" id="anAudioTrimModal"><div class="an-audio-trim-card"><h2>Trim audio</h2><p class="an-audio-trim-name" id="anTrimName">Audio</p><div class="an-wave-shell" id="anTrimWaveShell"><canvas id="anTrimWave" width="1200" height="260"></canvas><span class="an-trim-readout" id="anTrimReadout">00:00:00:00</span></div><audio id="anTrimPlayer" controls preload="metadata"></audio><div class="an-trim-points"><div class="an-trim-point"><h4>In point</h4><label class="an-field">Frame<input id="anTrimInFrames" type="number" min="0" step="1"></label><button class="an-tool-btn" id="anTrimSetIn">Set In at playhead</button></div><div class="an-trim-point"><h4>Out point</h4><label class="an-field">Frame<input id="anTrimOutFrames" type="number" min="1" step="1"></label><button class="an-tool-btn" id="anTrimSetOut">Set Out at playhead</button></div></div><div class="an-trim-summary"><span>Selected range</span><b id="anTrimSummary">0 frames · 0.00s</b></div><div class="an-trim-actions"><button class="an-btn" id="anTrimPlaySelection">Play selection</button><button class="an-btn" id="anTrimCancel">Cancel</button><button class="an-btn primary" id="anTrimUse">Use audio</button></div></div></div>
   </section>`;
@@ -534,7 +555,9 @@ export function createAnimaticsEditor(options) {
 
   function fixedSequenceEnd(){return Number.isFinite(project.sequenceDuration)?project.sequenceDuration:null;}
 
-  function duration() { return fixedSequenceEnd() ?? contentDuration(); }
+  function automaticSequenceEnd(){return automaticTimelineDuration(contentDuration());}
+
+  function duration() { return fixedSequenceEnd() ?? automaticSequenceEnd(); }
 
   function durationWithinSequence(start, requested, maximum=600){
     const limit=fixedSequenceEnd(),available=limit===null?maximum:Math.max(0,limit-start);
@@ -898,20 +921,21 @@ export function createAnimaticsEditor(options) {
     clearRazorGuide();
     ensureTrackHeightCounts();
     syncActiveTrackTargets();
-    const fixed=fixedSequenceEnd(),total=fixed??Math.max(10,Math.ceil(contentDuration()+3));
+    const fixed=fixedSequenceEnd(),total=duration();
     const zoom=$('#anZoom');zoom.value=String(clamp(Number(project.timelineZoom)||90,Number(zoom.min)||.1,Number(zoom.max)||320));
     const px = Number(zoom.value) || 90;
-    const laneWidth = Math.max(900,total*px),tickStep=timelineRulerStep(total,px),tickCount=Math.floor(total/tickStep+1e-8);
+    const laneWidth = Math.max(1,total*px),ticks=timelineRulerTicks(total,px);
     grid.style.setProperty('--an-second-px',`${px}px`);
+    grid.style.setProperty('--an-lane-width',`${laneWidth}px`);
+    grid.style.setProperty('--an-timeline-end-x',`${laneWidth}px`);
     grid.style.width=`${124+laneWidth}px`;
-    let html='<div class="an-playhead"></div><div class="an-snap-guide"></div>';
+    let html='<div class="an-playhead"></div><div class="an-snap-guide"><span></span></div><div class="an-timeline-end"></div>';
     if(hasSequenceRange())html+=`<div class="an-sequence-range" style="--an-in-x:${project.inPoint*px}px;--an-range-w:${(project.outPoint-project.inPoint)*px}px"></div>`;
     if(Number.isFinite(project.inPoint))html+=`<div class="an-sequence-marker in" data-sequence-marker="in" role="separator" aria-label="Sequence In point" aria-orientation="vertical" tabindex="0" style="--an-marker-x:${project.inPoint*px}px" title="Drag sequence In"></div>`;
     if(Number.isFinite(project.outPoint))html+=`<div class="an-sequence-marker out" data-sequence-marker="out" role="separator" aria-label="Sequence Out point" aria-orientation="vertical" tabindex="0" style="--an-marker-x:${project.outPoint*px}px" title="Drag sequence Out"></div>`;
     const timeMode=project.timelineDisplay==='frames'?'FRAMES':'TIMECODE';
     html+=`<div class="an-ruler-row"><div class="an-track-label"><button class="an-time-mode" data-time-display title="Toggle timeline between timecode and frames">${timeMode}</button></div><div class="an-ruler">`;
-    for(let index=0;index<=tickCount;index++){const s=index*tickStep,label=project.timelineDisplay==='frames'?`F ${Math.round(s*project.fps)}`:timecode(s,project.fps);html+=`<span class="an-tick" style="left:${s*px}px">${label}</span>`;}
-    if(total-tickCount*tickStep>MIN_SHOT_SECONDS){const label=project.timelineDisplay==='frames'?`F ${Math.round(total*project.fps)}`:timecode(total,project.fps);html+=`<span class="an-tick" style="left:${total*px}px">${label}</span>`;}
+    for(const s of ticks){const label=project.timelineDisplay==='frames'?`F ${Math.round(s*project.fps)}`:timecode(s,project.fps);html+=`<span class="an-tick" style="left:${s*px}px">${label}</span>`;}
     html+='</div></div>';
     if(project.texts.length){
       html+=`<div class="an-track-row"><div class="an-track-label"><b>T1</b><span>TEXT</span></div><div class="an-track-lane" data-kind="text" data-track="0" style="width:${laneWidth}px">`;
@@ -1219,6 +1243,16 @@ export function createAnimaticsEditor(options) {
     for(const marker of grid.querySelectorAll('[data-sequence-marker]')){const time=marker.dataset.sequenceMarker==='in'?project.inPoint:project.outPoint;marker.classList.toggle('out-of-view',!Number.isFinite(time)||isOutside(time));}
   }
 
+  function followPlayhead(margin=56){
+    if(!scroll.clientWidth)return;
+    const px=Number($('#anZoom').value)||90,screenX=124+project.playhead*px-scroll.scrollLeft,left=124+margin,right=Math.max(left,scroll.clientWidth-margin);let next=scroll.scrollLeft;
+    if(screenX<left)next=project.playhead*px-margin;
+    else if(screenX>right)next=124+project.playhead*px-right;
+    const maximum=Math.max(0,scroll.scrollWidth-scroll.clientWidth);next=clamp(next,0,maximum);
+    if(Math.abs(next-scroll.scrollLeft)>.5)scroll.scrollLeft=next;
+    syncPlayheadVisibility();
+  }
+
   function applyTimelineZoom(nextZoom){
     const slider=$('#anZoom'),oldPx=Number(project.timelineZoom)||Number(slider.value)||90,next=clamp(Number(nextZoom)||oldPx,Number(slider.min)||.1,Number(slider.max)||320),rect=scroll.getBoundingClientRect(),playheadX=124+project.playhead*oldPx-scroll.scrollLeft,anchorX=playheadX>=124&&playheadX<=rect.width?playheadX:Math.max(124,rect.width/2);
     project.timelineZoom=next;slider.value=String(next);renderTimeline();scroll.scrollLeft=Math.max(0,project.playhead*next+124-anchorX);syncPlayheadVisibility();
@@ -1238,14 +1272,14 @@ export function createAnimaticsEditor(options) {
 
   function renderAll(){ applyTimelineHeight();applyPreviewQuality(); renderTimeline(); syncInspector(); renderTransport(); drawViewer(); }
 
-  function setPlayhead(value){ project.playhead=clamp(value,0,duration()); renderTransport(); drawViewer(); }
+  function setPlayhead(value){ project.playhead=clamp(value,0,duration()); renderTransport();followPlayhead();drawViewer(); }
 
   function scheduleScrubPreview(){
     scrubPreviewQueued=true;if(scrubPreviewRaf||scrubPreviewBusy)return;
     scrubPreviewRaf=requestAnimationFrame(async()=>{scrubPreviewRaf=0;if(!open){scrubPreviewQueued=false;return;}scrubPreviewQueued=false;scrubPreviewBusy=true;try{await drawViewer();}finally{scrubPreviewBusy=false;if(scrubPreviewQueued)scheduleScrubPreview();}});
   }
 
-  function scrubTo(value){project.playhead=clamp(value,0,duration());renderTransport();scheduleScrubPreview();}
+  function scrubTo(value){project.playhead=clamp(value,0,duration());renderTransport();followPlayhead();scheduleScrubPreview();}
 
   function stopAudioPlayback(){
     for(const timer of audioTimers)clearTimeout(timer); audioTimers=[];
@@ -1300,7 +1334,7 @@ export function createAnimaticsEditor(options) {
     const next=playStartedTime+(performance.now()-playStartedAt)/1000;
     const stopAt=hasSequenceRange()?Math.min(duration(),project.outPoint):duration();
     if(next>=stopAt){setPlayhead(stopAt);setPlaying(false);return;}
-    project.playhead=clamp(next,0,duration());renderTransport();if(!clipsAt(next).some(isVideoClip))drawViewer();raf=requestAnimationFrame(tick);
+    project.playhead=clamp(next,0,duration());renderTransport();followPlayhead();if(!clipsAt(next).some(isVideoClip))drawViewer();raf=requestAnimationFrame(tick);
   }
 
   function openEditor(items=[]){
@@ -1438,11 +1472,16 @@ export function createAnimaticsEditor(options) {
   function setSequenceOut(){project.outPoint=project.playhead;if(Number.isFinite(project.inPoint)&&project.inPoint>=project.outPoint-MIN_SHOT_SECONDS)project.inPoint=null;markDirty();renderTimeline();notify(`Out set to ${timecode(project.outPoint,project.fps)}`);}
   function clearSequenceRange(){project.inPoint=null;project.outPoint=null;markDirty();renderTimeline();notify('Sequence range cleared');}
 
-  function syncSequenceModeUi(){const fixed=$('#anSequenceMode').value==='fixed';$('#anSequenceDuration').disabled=!fixed;}
+  function syncSequenceModeUi({populate=false}={}){
+    const fixed=$('#anSequenceMode').value==='fixed',field=$('#anSequenceDuration'),used=contentDuration();
+    field.setAttribute('aria-label',fixed?'Custom sequence duration':'Type a duration to switch from Auto to Custom');
+    if(fixed&&populate&&!field.value)field.value=timecode(Math.max(MIN_SHOT_SECONDS,Math.ceil(used*project.fps)/project.fps),project.fps);
+    if(!fixed&&populate)field.value='';
+  }
 
   function openSequenceSettings(){
-    const used=contentDuration(),suggested=fixedSequenceEnd()??Math.max(180,Math.ceil(used));
-    $('#anSequenceMode').value=fixedSequenceEnd()===null?'auto':'fixed';$('#anTimelineDisplay').value=project.timelineDisplay;$('#anSequenceDuration').value=timecode(suggested,project.fps);$('#anSequenceMinimum').textContent=used>0?`Content ends ${timecode(used,project.fps)}`:'No content yet';syncSequenceModeUi();$('#anSequenceModal').classList.add('open');
+    const used=contentDuration(),fixed=fixedSequenceEnd();
+    $('#anSequenceMode').value=fixed===null?'auto':'fixed';$('#anTimelineDisplay').value=project.timelineDisplay;$('#anSequenceDuration').value=fixed===null?'':timecode(fixed,project.fps);$('#anSequenceMinimum').textContent=used>0?`Content ends ${timecode(used,project.fps)}`:'No content yet';syncSequenceModeUi();$('#anSequenceModal').classList.add('open');
   }
 
   function applySequenceSettings(){
@@ -1604,7 +1643,7 @@ export function createAnimaticsEditor(options) {
 
   function showSnapGuide(time){
     const guide=grid.querySelector('.an-snap-guide');if(!guide)return;
-    guide.classList.toggle('show',Number.isFinite(time));if(Number.isFinite(time))guide.style.transform=`translateX(${time*(Number($('#anZoom').value)||90)}px)`;
+    guide.classList.toggle('show',Number.isFinite(time));if(Number.isFinite(time)){guide.style.transform=`translateX(${time*(Number($('#anZoom').value)||90)}px)`;guide.querySelector('span').textContent=timecode(time,project.fps);}
   }
 
   function commitTimelineOverwrite(movedIds=selectedTimelineIds){
@@ -1696,7 +1735,7 @@ export function createAnimaticsEditor(options) {
     panelForKind(kind);syncInspector();drawViewer();
     const movedIds=trimEdge?new Set([clip.id]):linkedTimelineIds(timelineMediaItems(),selectedTimelineIds),selectedEntries=trimEdge?[{item:clip,kind,collection}]:[...movedIds].map(entryById).filter(Boolean),sourceEls=[],ghosts=[];
     const originals=selectedEntries.map(entry=>({item:entry.item,kind:entry.kind,values:{start:entry.item.start,duration:entry.item.duration,track:entry.item.track,sourceIn:entry.item.sourceIn,sourceOut:entry.item.sourceOut}}));
-    dragging={clip,kind,trimEdge,movedIds,startX:e.clientX,startY:e.clientY,startScrollLeft:scroll.scrollLeft,startTrack:Number(clip.track)||0,originals,sourceEls,ghosts,hoverLane:lane,moved:false};
+    dragging={clip,kind,trimEdge,movedIds,startX:e.clientX,startY:e.clientY,startScrollLeft:scroll.scrollLeft,startTrack:Number(clip.track)||0,sequenceEnd:duration(),originals,sourceEls,ghosts,hoverLane:lane,moved:false};
     if(!trimEdge)for(const entry of selectedEntries){const el=grid.querySelector(`[data-clip="${CSS.escape(entry.item.id)}"]`);if(!el)continue;const rect=el.getBoundingClientRect(),ghost=el.cloneNode(true);ghost.classList.add('an-drag-ghost');ghost.classList.remove('dragging-source','on','primary');Object.assign(ghost.style,{left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`});root.append(ghost);ghosts.push(ghost);sourceEls.push(el);el.classList.add('dragging-source');}
     lane?.classList.add('an-lane-hover');
     clipEl.setPointerCapture(e.pointerId); e.preventDefault();
@@ -1716,17 +1755,17 @@ export function createAnimaticsEditor(options) {
     let delta=Math.round((((e.clientX-dragging.startX)+(scroll.scrollLeft-dragging.startScrollLeft))/px)/step)*step;
     if(dragging.trimEdge==='right'){
       const original=dragging.originals[0],sourceBounded=dragging.kind==='audio'||isVideoClip(dragging.clip),sourceMax=sourceBounded?Math.max(MIN_SHOT_SECONDS,(dragging.clip.originalDuration||original.values.sourceOut)-original.values.sourceIn):600,maxDuration=Math.min(sourceMax,fixedSequenceEnd()===null?sourceMax:Math.max(MIN_SHOT_SECONDS,fixedSequenceEnd()-original.values.start));
-      let end=original.values.start+clamp(original.values.duration+delta,MIN_SHOT_SECONDS,maxDuration);if(project.timelineSnap){const candidates=[0,fixedSequenceEnd(),project.playhead,project.inPoint,project.outPoint,...entryById(dragging.clip.id).collection.filter(c=>c.id!==dragging.clip.id&&c.track===dragging.clip.track).flatMap(c=>[c.start,c.start+c.duration])].filter(Number.isFinite);let best=null;for(const candidate of candidates)if(Math.abs(candidate-end)<=8/px&&(best===null||Math.abs(candidate-end)<Math.abs(best-end)))best=candidate;if(best!==null){end=best;showSnapGuide(best);}else showSnapGuide(null);}
+      let end=original.values.start+clamp(original.values.duration+delta,MIN_SHOT_SECONDS,maxDuration);if(project.timelineSnap){const candidates=[0,dragging.sequenceEnd,project.playhead,project.inPoint,project.outPoint,...entryById(dragging.clip.id).collection.filter(c=>c.id!==dragging.clip.id&&c.track===dragging.clip.track).flatMap(c=>[c.start,c.start+c.duration])].filter(Number.isFinite);let best=null;for(const candidate of candidates)if(Math.abs(candidate-end)<=8/px&&(best===null||Math.abs(candidate-end)<Math.abs(best-end)))best=candidate;if(best!==null){end=best;showSnapGuide(best);}else showSnapGuide(null);}
       dragging.clip.duration=clamp(end-original.values.start,MIN_SHOT_SECONDS,maxDuration);if(sourceBounded)dragging.clip.sourceOut=original.values.sourceIn+dragging.clip.duration;
     }else if(dragging.trimEdge==='left'){
       const original=dragging.originals[0],sourceBounded=dragging.kind==='audio'||isVideoClip(dragging.clip),minDelta=sourceBounded?Math.max(-original.values.sourceIn,-original.values.start):-original.values.start;delta=clamp(delta,minDelta,original.values.duration-MIN_SHOT_SECONDS);
-      let start=original.values.start+delta;if(project.timelineSnap){const candidates=[0,project.playhead,project.inPoint,project.outPoint,...entryById(dragging.clip.id).collection.filter(c=>c.id!==dragging.clip.id&&c.track===dragging.clip.track).flatMap(c=>[c.start,c.start+c.duration])].filter(Number.isFinite);let best=null;for(const candidate of candidates)if(Math.abs(candidate-start)<=8/px&&(best===null||Math.abs(candidate-start)<Math.abs(best-start)))best=candidate;if(best!==null){start=best;delta=start-original.values.start;showSnapGuide(best);}else showSnapGuide(null);}
+      let start=original.values.start+delta;if(project.timelineSnap){const candidates=[0,dragging.sequenceEnd,project.playhead,project.inPoint,project.outPoint,...entryById(dragging.clip.id).collection.filter(c=>c.id!==dragging.clip.id&&c.track===dragging.clip.track).flatMap(c=>[c.start,c.start+c.duration])].filter(Number.isFinite);let best=null;for(const candidate of candidates)if(Math.abs(candidate-start)<=8/px&&(best===null||Math.abs(candidate-start)<Math.abs(best-start)))best=candidate;if(best!==null){start=best;delta=start-original.values.start;showSnapGuide(best);}else showSnapGuide(null);}
       delta=clamp(start-original.values.start,minDelta,original.values.duration-MIN_SHOT_SECONDS);start=original.values.start+delta;dragging.clip.start=start;dragging.clip.duration=original.values.duration-delta;if(sourceBounded){dragging.clip.sourceIn=original.values.sourceIn+delta;dragging.clip.sourceOut=original.values.sourceOut;}
     }else {
       const minStart=Math.min(...dragging.originals.map(o=>o.values.start));delta=Math.max(-minStart,delta);const lane=timelineLaneAtPointer(e,dragging.kind,dragging.hoverLane);let trackDelta=0;
       if(lane){if(dragging.hoverLane!==lane){dragging.hoverLane?.classList.remove('an-lane-hover');dragging.hoverLane=lane;lane.classList.add('an-lane-hover');}trackDelta=Number(lane.dataset.track)-dragging.startTrack;}
       const primaryOriginal=dragging.originals.find(o=>o.item===dragging.clip),primaryTargetTrack=clamp((primaryOriginal?.values.track||0)+trackDelta,0,dragging.kind==='video'?project.videoTracks-1:dragging.kind==='audio'?project.audioTracks-1:0),primaryCollection=entryById(dragging.clip.id).collection;
-      if(project.timelineSnap){const moving=[{start:primaryOriginal.values.start,duration:primaryOriginal.values.duration}],stationary=primaryCollection.filter(c=>!dragging.movedIds.has(c.id)&&c.track===primaryTargetTrack),snap=snappedMoveDelta({moving,stationary,proposedDelta:delta,threshold:8/px,extraTimes:[0,fixedSequenceEnd(),project.playhead,project.inPoint,project.outPoint]});delta=snap.delta;showSnapGuide(snap.guide); }else showSnapGuide(null);
+      if(project.timelineSnap){const moving=[{start:primaryOriginal.values.start,duration:primaryOriginal.values.duration}],stationary=primaryCollection.filter(c=>!dragging.movedIds.has(c.id)&&c.track===primaryTargetTrack),snap=snappedMoveDelta({moving,stationary,proposedDelta:delta,threshold:8/px,extraTimes:[0,dragging.sequenceEnd,project.playhead,project.inPoint,project.outPoint]});delta=snap.delta;showSnapGuide(snap.guide); }else showSnapGuide(null);
       const sequenceEnd=fixedSequenceEnd();if(sequenceEnd!==null){const selectedEnd=Math.max(...dragging.originals.map(o=>o.values.start+o.values.duration));delta=Math.min(delta,sequenceEnd-selectedEnd);}
       for(const original of dragging.originals){original.item.start=Math.max(0,original.values.start+delta);if(original.kind===dragging.kind)original.item.track=clamp((original.values.track||0)+trackDelta,0,original.kind==='video'?project.videoTracks-1:original.kind==='audio'?project.audioTracks-1:0);}
       for(let i=0;i<dragging.ghosts.length;i++){const original=dragging.originals[i],ghost=dragging.ghosts[i],targetLane=grid.querySelector(`.an-track-lane[data-kind="${original.kind}"][data-track="${original.item.track||0}"]`);if(!targetLane)continue;const laneRect=targetLane.getBoundingClientRect();ghost.style.left=`${laneRect.left+original.item.start*px}px`;ghost.style.top=`${laneRect.top+4}px`;}
@@ -1793,7 +1832,7 @@ export function createAnimaticsEditor(options) {
       const text=project.texts.find(item=>item.id===textDrag.textId);if(!text)return;
       if(textDrag.mode==='move'){text.x=clamp(textDrag.x+(e.clientX-textDrag.startX)/textDrag.width,0,1);text.y=clamp(textDrag.y+(e.clientY-textDrag.startY)/textDrag.height,0,1);}
       else if(textDrag.mode==='scale'){const layout=textLayout(ctx,text,canvas.width,canvas.height),point=viewerPoint(e),distance=Math.hypot(point.x-layout.cx,point.y-layout.cy);text.scale=clamp(textDrag.startScale*distance/textDrag.startDistance,.25,4);}
-      else if(textDrag.mode==='rotate'){const layout=textLayout(ctx,text,canvas.width,canvas.height),point=viewerPoint(e),angle=Math.atan2(point.y-layout.cy,point.x-layout.cx);let rotation=textDrag.startRotation+(angle-textDrag.startAngle)*180/Math.PI;while(rotation>180)rotation-=360;while(rotation<-180)rotation+=360;text.rotation=Math.round(rotation);}
+      else if(textDrag.mode==='rotate'){const layout=textLayout(ctx,text,canvas.width,canvas.height),point=viewerPoint(e),angle=Math.atan2(point.y-layout.cy,point.x-layout.cx);let rotation=textDrag.startRotation+(angle-textDrag.startAngle)*180/Math.PI;while(rotation>180)rotation-=360;while(rotation<-180)rotation+=360;text.rotation=snappedTextRotation(rotation,e.shiftKey);}
       syncInspector();drawViewerLive();positionInlineTextEditor();return;
     }
     if(framingDrag){const c=selectedClip(),r=canvas.getBoundingClientRect();if(!c)return;c.framing.x=clamp(framingDrag.x+(e.clientX-framingDrag.startX)*2/r.width,-1,1);c.framing.y=clamp(framingDrag.y+(e.clientY-framingDrag.startY)*2/r.height,-1,1);drawViewer();return;}
@@ -1829,8 +1868,7 @@ export function createAnimaticsEditor(options) {
   $('#anNext').onclick=()=>setPlayhead(project.playhead+1/project.fps);
   $('#anInspector').onclick=()=>root.classList.toggle('panel-open');
   $('#anZoom').oninput=e=>applyTimelineZoom(e.target.value);$('#anZoom').onchange=()=>deferMarkDirty(0);
-  $('#anSequenceSettings').onclick=openSequenceSettings;$('#anSequenceMode').onchange=syncSequenceModeUi;$('#anSequenceCancel').onclick=()=>$('#anSequenceModal').classList.remove('open');$('#anSequenceApply').onclick=applySequenceSettings;
-  root.querySelectorAll('[data-sequence-seconds]').forEach(button=>button.onclick=()=>{$('#anSequenceMode').value='fixed';syncSequenceModeUi();$('#anSequenceDuration').value=timecode(Number(button.dataset.sequenceSeconds),project.fps);});
+  $('#anSequenceSettings').onclick=openSequenceSettings;$('#anSequenceMode').onchange=()=>syncSequenceModeUi({populate:true});$('#anSequenceDuration').oninput=()=>{if($('#anSequenceDuration').value.trim()){$('#anSequenceMode').value='fixed';syncSequenceModeUi();}};$('#anSequenceCancel').onclick=()=>$('#anSequenceModal').classList.remove('open');$('#anSequenceApply').onclick=applySequenceSettings;
   $('#anSetIn').onclick=setSequenceIn;$('#anSetOut').onclick=setSequenceOut;$('#anClearRange').onclick=clearSequenceRange;
   const timelineResizer=$('#anTimelineResizer');
   timelineResizer.addEventListener('pointerdown',e=>{timelineResize={startY:e.clientY,startHeight:project.timelineHeight};timelineResizer.classList.add('dragging');timelineResizer.setPointerCapture?.(e.pointerId);e.preventDefault();});
