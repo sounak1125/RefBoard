@@ -17,7 +17,12 @@ const project = {
   fps: 24,
   videoTracks: 2,
   videoTrackEnabled: [true, false],
+  videoTrackLocked: [false, true],
   audioTracks: 1,
+  audioTrackMuted: [true],
+  audioTrackSolo: [false],
+  audioTrackLocked: [true],
+  textTrackLocked: true,
   clips: [
     { id:'still', itemId:'image-1', sourceAssetKey:'image-1-transformed', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', enabled:false, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1} },
@@ -37,7 +42,10 @@ const timeline = buildPremiereTimeline({ project, name:'Animatic & Cut', fps:24,
 assert.equal(timeline.durationFrames, 96);
 assert.equal(timeline.videoTracks.length, 4, 'two source tracks plus drawing and text overlay tracks');
 assert.deepEqual(timeline.videoTrackEnabled, [true,false,true,true], 'source track visibility must follow derived overlay tracks');
+assert.deepEqual(timeline.videoTrackLocked, [false,true,false,true], 'track locks must follow derived drawing and text tracks');
 assert.equal(timeline.audioTracks.length, 1);
+assert.deepEqual(timeline.audioTrackEnabled,[false], 'muted RefBoard audio tracks must be disabled in Premiere');
+assert.deepEqual(timeline.audioTrackLocked,[true], 'audio locks must survive Premiere export');
 assert.equal(timeline.videoTracks[0][0].start, 0);
 assert.equal(timeline.videoTracks[0][0].end, 48);
 assert.equal(timeline.videoTracks[0][0].enabled, false, 'disabled visual clips must remain disabled in Premiere');
@@ -54,7 +62,8 @@ for (const bin of ['Images','Videos','Audio','Drawings','Sequences']) assert.mat
 assert.match(output, /<clip id="masterclip-image-1">[\s\S]*?<ismasterclip>TRUE<\/ismasterclip>/, 'collected media must be represented as organized master clips');
 assert.match(output, /<masterclipid>masterclip-video-1<\/masterclipid>/, 'timeline clips must link back to their organized master clips');
 assert.match(output, /<clipitem id="clipitem-still-[^"]+">[\s\S]*?<enabled>FALSE<\/enabled>/, 'Premiere clipitems must preserve individual visibility');
-assert.match(output, /<track>[\s\S]*?Take &lt;1&gt;\.mp4[\s\S]*?<enabled>FALSE<\/enabled><locked>FALSE<\/locked><\/track>/, 'Premiere video tracks must preserve track visibility');
+assert.match(output, /<track>[\s\S]*?Take &lt;1&gt;\.mp4[\s\S]*?<enabled>FALSE<\/enabled><locked>TRUE<\/locked><\/track>/, 'Premiere video tracks must preserve visibility and locks');
+assert.match(output, /<track>[\s\S]*?Music\.wav[\s\S]*?<enabled>FALSE<\/enabled><locked>TRUE<\/locked><\/track>/, 'Premiere audio tracks must preserve effective mute and locks');
 assert.match(output, /<width>1920<\/width><height>1080<\/height>/);
 assert.match(output, /<timebase>24<\/timebase><ntsc>FALSE<\/ntsc>/);
 assert.match(output, /Board%20%26%20Shot\.png/);

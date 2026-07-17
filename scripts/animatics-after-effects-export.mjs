@@ -107,6 +107,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
   };
 
   const audioItems = [...(project.audio || [])].sort((a, b) => finite(a.track) - finite(b.track) || finite(a.start) - finite(b.start));
+  const hasSoloAudio = project.audioTrackSolo?.some(Boolean) === true;
   for (const item of audioItems) {
     const entry = clippedItem(item, 'audio', rate, rangeStart, rangeEnd, lookup(mediaKey(item, 'audio')));
     if (!entry) continue;
@@ -120,6 +121,8 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       sourceIn: entry.sourceIn,
       assetId: registerAsset(entry.asset),
       audioDb: audioDecibels(item.volume),
+      enabled: project.audioTrackMuted?.[entry.track] !== true && (!hasSoloAudio || project.audioTrackSolo?.[entry.track] === true),
+      locked: project.audioTrackLocked?.[entry.track] === true,
       linkGroupId: entry.linkGroupId,
     });
   }
@@ -137,6 +140,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       end: entry.end,
       sourceIn: entry.sourceIn,
       enabled: entry.enabled && project.videoTrackEnabled?.[entry.track] !== false,
+      locked: project.videoTrackLocked?.[entry.track] === true,
       assetId: registerAsset(entry.asset),
       transform: visualTransform(item, entry.asset, compWidth, compHeight),
       linkGroupId: entry.linkGroupId,
@@ -151,6 +155,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       end: overlay.end,
       sourceIn: 0,
       enabled: overlay.enabled && project.videoTrackEnabled?.[overlay.track] !== false,
+      locked: project.videoTrackLocked?.[overlay.track] === true,
       assetId: registerAsset(overlay.asset),
       transform: { position:[compWidth / 2, compHeight / 2], scale:[100, 100], rotation:0 },
       linkGroupId: overlay.linkGroupId,
@@ -169,6 +174,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       start: entry.start,
       end: entry.end,
       sourceIn: 0,
+      locked: project.textTrackLocked === true,
       text: {
         content: String(item.content ?? ''),
         fontSize: Number((clamp(finite(item.size, 42), 8, 300) * compWidth / 1280).toFixed(6)),
@@ -284,6 +290,7 @@ export function createAfterEffectsScript(project, { mediaFolderName, projectFile
       var layer = spec.kind === "text" ? makeTextLayer(comp, spec) : comp.layers.add(imported[spec.assetId]);
       layer.name = spec.name;
       layer.enabled = spec.enabled !== false;
+      layer.locked = spec.locked === true;
       layer.startTime = spec.kind === "video" || spec.kind === "audio" ? spec.start - spec.sourceIn : spec.start;
       layer.inPoint = spec.start;
       layer.outPoint = spec.end;

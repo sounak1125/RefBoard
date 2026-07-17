@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   applyBatchTimelineDuration,
   closeTimelineTrackGap,
+  constrainedTrackDelta,
   createTimelineClipboard,
   createTimelineHistory,
   linkedTimelineIds,
@@ -38,6 +39,17 @@ assert.deepEqual(snappedMoveDelta({
   moving: [{ start: 2, duration: 3 }], stationary: [{ start: 8, duration: 2 }], proposedDelta: 2.92, threshold: .1,
 }), { delta: 3, guide: 8, snapped: true });
 assert.equal(snappedMoveDelta({ moving: [{ start: 2, duration: 3 }], stationary: [], proposedDelta: 1, threshold: .1, extraTimes: [10] }).snapped, false);
+assert.equal(constrainedTrackDelta([{ track:0 },{ track:1 }],-1,3),0,'a linked group at V1 must not collapse upward');
+assert.equal(constrainedTrackDelta([{ track:0 },{ track:1 }],1,3),1,'a linked V1/V2 group may move intact to V2/V3');
+assert.equal(constrainedTrackDelta([{ track:0 },{ track:1 }],1,2),0,'a linked group must stop when no complete destination span exists');
+const linkedSnap=snappedMoveDelta({
+  moving:[{ start:0,duration:2,track:0,kind:'video',targetTrack:0 },{ start:5,duration:2,track:1,kind:'video',targetTrack:1 }],
+  stationary:[{ start:8,duration:2,track:1,kind:'video' },{ start:7.95,duration:2,track:1,kind:'audio' }],
+  proposedDelta:.95,threshold:.1,
+});
+assert.equal(linkedSnap.snapped,true,'any linked video edge must snap against its own destination track');
+assert.equal(linkedSnap.guide,8,'linked snapping must ignore candidates of another media kind');
+assert.ok(Math.abs(linkedSnap.delta-1)<1e-9,'the linked group must receive one shared snap delta');
 
 let nextId = 0;
 const video = { id: 'v', track: 0, start: 2, duration: 6, sourceIn: 10, sourceOut: 16, name: 'Video' };

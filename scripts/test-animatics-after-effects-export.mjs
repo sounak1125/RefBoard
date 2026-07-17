@@ -16,7 +16,12 @@ const project = {
   background: '#102030',
   videoTracks: 2,
   videoTrackEnabled: [true, false],
+  videoTrackLocked: [false, true],
   audioTracks: 1,
+  audioTrackMuted: [true],
+  audioTrackSolo: [false],
+  audioTrackLocked: [true],
+  textTrackLocked: true,
   clips: [
     { id:'still', itemId:'image-1', sourceAssetKey:'image-1-transformed', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', enabled:false, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1}, linkGroupId:'linked-1' },
@@ -54,16 +59,20 @@ assert.equal(still.enabled, false, 'individual clip visibility must survive Afte
 assert.deepEqual(still.transform.scale, [36, 36], 'Fit framing must become an After Effects layer scale');
 assert.equal(video.start, 1);
 assert.equal(video.enabled, false, 'disabled video tracks must disable their After Effects layers');
+assert.equal(video.locked, true, 'video track locks must survive After Effects export');
 assert.equal(video.sourceIn, 10, 'source In must remain non-destructive when exporting a range');
 assert.deepEqual(video.transform.position, [1056, 486]);
 assert.deepEqual(video.transform.scale, [60, 60], 'Fill framing and user scale must be combined accurately');
 assert.equal(music.start, 0);
 assert.equal(music.sourceIn, 2.5, 'range trimming must advance the audio source In point');
 assert.equal(music.audioDb, -6.0206, 'linear RefBoard audio gain must be converted to After Effects decibels');
+assert.equal(music.enabled, false, 'muted RefBoard audio tracks must disable After Effects audio layers');
+assert.equal(music.locked, true, 'audio track locks must survive After Effects export');
 assert.equal(text.text.content, 'Title &\nSubtitle');
 assert.equal(text.text.fontSize, 72);
 assert.deepEqual(text.transform.scale, [125, 125]);
 assert.deepEqual(text.transform.position, [480, 864]);
+assert.equal(text.locked, true, 'text track locks must survive After Effects export');
 
 const script = createAfterEffectsScript(output, {
   mediaFolderName: 'Animatic & Cut_Media',
@@ -80,6 +89,7 @@ assert.match(script, /"relativePath":"Images\/Board & Shot\.png"/);
 assert.match(script, /sourceRectAtTime/, 'text must stay editable and receive a centered anchor point');
 assert.match(script, /ADBE Audio Levels/, 'audio gain must be applied in After Effects');
 assert.match(script, /layer\.enabled = spec\.enabled !== false;/, 'After Effects layers must preserve RefBoard visibility');
+assert.match(script, /layer\.locked = spec\.locked === true;/, 'After Effects layers must preserve RefBoard track locks');
 assert.match(script, /spec\.start - spec\.sourceIn/, 'video and audio source trims must be preserved');
 assert.ok(script.indexOf('layer.startTime =') < script.indexOf('layer.inPoint ='), 'source timing must be set before comp In and Out points');
 assert.match(script, /app\.project\.save\(projectFile\)/, 'running the builder must save a native AEP file');

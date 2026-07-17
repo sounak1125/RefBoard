@@ -27,13 +27,24 @@ export function marqueeSelection(rect, entries, baseIds = [], mode = 'replace') 
   return hits;
 }
 
-export function snappedMoveDelta({ moving = [], stationary = [], proposedDelta = 0, threshold = 0, extraTimes = [] } = {}) {
-  const candidates = [...extraTimes.filter(Number.isFinite)];
-  for (const clip of stationary) {
-    candidates.push(finite(clip.start), timelineEnd(clip));
-  }
+export function constrainedTrackDelta(items = [], requestedDelta = 0, trackCount = 1) {
+  const tracks=(items||[]).map(item=>Math.max(0,Math.round(finite(item?.track))));
+  if(!tracks.length)return 0;
+  const maximumTrack=Math.max(0,Math.round(finite(trackCount,1))-1),minimum=Math.min(...tracks),maximum=Math.max(...tracks),requested=Math.round(finite(requestedDelta));
+  const delta=Math.max(-minimum,Math.min(maximumTrack-maximum,requested));
+  return delta===0?0:delta;
+}
+
+export function snappedMoveDelta({ moving = [], stationary = [], proposedDelta = 0, threshold = 0, extraTimes = [], trackDelta = 0 } = {}) {
+  const globalCandidates = [...extraTimes.filter(Number.isFinite)];
   let best = null;
   for (const clip of moving) {
+    const hasTrack=Number.isFinite(Number(clip?.track)),destinationTrack=Number.isFinite(Number(clip?.targetTrack))?Math.round(finite(clip.targetTrack)):Math.round(finite(clip?.track))+Math.round(finite(trackDelta)),clipKind=typeof clip?.kind==='string'?clip.kind:null,candidates=[...globalCandidates];
+    for(const candidate of stationary){
+      if(clipKind&&typeof candidate?.kind==='string'&&candidate.kind!==clipKind)continue;
+      if(hasTrack&&Number.isFinite(Number(candidate?.track))&&Math.round(finite(candidate.track))!==destinationTrack)continue;
+      candidates.push(finite(candidate.start),timelineEnd(candidate));
+    }
     const proposedStart = finite(clip.start) + proposedDelta;
     const movingEdges = [proposedStart, proposedStart + Math.max(0, finite(clip.duration))];
     for (const edge of movingEdges) {

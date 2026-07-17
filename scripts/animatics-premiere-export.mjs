@@ -80,6 +80,7 @@ export function buildPremiereTimeline({ project, name, fps, width, height, expor
   const lookup = key => assets instanceof Map ? assets.get(key) : assets?.[key];
   const videoTracks = Array.from({ length: Math.max(1, Number(project.videoTracks) || 1) }, () => []);
   const videoTrackEnabled = videoTracks.map((_, index) => project.videoTrackEnabled?.[index] !== false);
+  const videoTrackLocked = videoTracks.map((_, index) => project.videoTrackLocked?.[index] === true);
   const strokeTracks = Array.from({ length: videoTracks.length }, () => []);
 
   for (const clip of project.clips) {
@@ -92,6 +93,9 @@ export function buildPremiereTimeline({ project, name, fps, width, height, expor
 
   const textTrack = project.texts.map(text => clippedTimelineItem(text, 'text', fps, exportStart, end, null)).filter(Boolean);
   const audioTracks = Array.from({ length: Math.max(0, Number(project.audioTracks) || 0) }, () => []);
+  const hasSoloAudio = project.audioTrackSolo?.some(Boolean) === true;
+  const audioTrackEnabled = audioTracks.map((_, index) => project.audioTrackMuted?.[index] !== true && (!hasSoloAudio || project.audioTrackSolo?.[index] === true));
+  const audioTrackLocked = audioTracks.map((_, index) => project.audioTrackLocked?.[index] === true);
   for (const audio of project.audio) {
     const entry = clippedTimelineItem(audio, 'audio', fps, exportStart, end, lookup(mediaKey(audio, 'audio')));
     if (entry && audioTracks.length) audioTracks[clamp(Number(audio.track) || 0, 0, audioTracks.length - 1)].push(entry);
@@ -99,10 +103,11 @@ export function buildPremiereTimeline({ project, name, fps, width, height, expor
 
   const allVideoTracks = [...videoTracks];
   const allVideoTrackEnabled = [...videoTrackEnabled];
-  for (let index = 0; index < strokeTracks.length; index++) if (strokeTracks[index].length) { allVideoTracks.push(strokeTracks[index]); allVideoTrackEnabled.push(videoTrackEnabled[index]); }
-  if (textTrack.length) { allVideoTracks.push(textTrack); allVideoTrackEnabled.push(true); }
+  const allVideoTrackLocked = [...videoTrackLocked];
+  for (let index = 0; index < strokeTracks.length; index++) if (strokeTracks[index].length) { allVideoTracks.push(strokeTracks[index]); allVideoTrackEnabled.push(videoTrackEnabled[index]); allVideoTrackLocked.push(videoTrackLocked[index]); }
+  if (textTrack.length) { allVideoTracks.push(textTrack); allVideoTrackEnabled.push(true); allVideoTrackLocked.push(project.textTrackLocked===true); }
   for (const track of [...allVideoTracks, ...audioTracks]) track.sort((a, b) => a.start - b.start || a.end - b.end);
-  return { name, fps, width, height, durationFrames, videoTracks: allVideoTracks, videoTrackEnabled: allVideoTrackEnabled, audioTracks };
+  return { name, fps, width, height, durationFrames, videoTracks: allVideoTracks, videoTrackEnabled: allVideoTrackEnabled, videoTrackLocked:allVideoTrackLocked, audioTracks, audioTrackEnabled, audioTrackLocked };
 }
 
 function transformXml(clip, width, height) {
@@ -202,8 +207,8 @@ export function createPremiereXml(sequence) {
     return entries.length ? `<bin><name>${category}</name><children>${entries.map(asset => masterClipXml(asset, fps, emitted)).join('')}</children></bin>` : '';
   }).join('');
   let clipIndex = 0;
-  const video = sequence.videoTracks.map((track, index) => `<track>${track.map(clip => clip.kind === 'text' ? textGeneratorXml(clip, ++clipIndex, fps) : clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>${sequence.videoTrackEnabled?.[index] === false ? 'FALSE' : 'TRUE'}</enabled><locked>FALSE</locked></track>`).join('');
-  const audio = sequence.audioTracks.map(track => `<track>${track.map(clip => clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>TRUE</enabled><locked>FALSE</locked></track>`).join('');
+  const video = sequence.videoTracks.map((track, index) => `<track>${track.map(clip => clip.kind === 'text' ? textGeneratorXml(clip, ++clipIndex, fps) : clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>${sequence.videoTrackEnabled?.[index] === false ? 'FALSE' : 'TRUE'}</enabled><locked>${sequence.videoTrackLocked?.[index] === true ? 'TRUE' : 'FALSE'}</locked></track>`).join('');
+  const audio = sequence.audioTracks.map((track,index) => `<track>${track.map(clip => clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>${sequence.audioTrackEnabled?.[index] === false ? 'FALSE' : 'TRUE'}</enabled><locked>${sequence.audioTrackLocked?.[index] === true ? 'TRUE' : 'FALSE'}</locked></track>`).join('');
   const sequenceXml = `<sequence id="sequence-1"><name>${xml(name)}</name><duration>${durationFrames}</duration>${rateXml(fps)}<timecode>${rateXml(fps)}<string>00:00:00:00</string><frame>0</frame><displayformat>NDF</displayformat></timecode><media><video><format><samplecharacteristics>${rateXml(fps)}<width>${width}</width><height>${height}</height><anamorphic>FALSE</anamorphic><pixelaspectratio>square</pixelaspectratio><fielddominance>none</fielddominance><colordepth>24</colordepth></samplecharacteristics></format>${video}</video><audio><format><samplecharacteristics><depth>16</depth><samplerate>48000</samplerate></samplecharacteristics></format><outputs><group><index>1</index><numchannels>2</numchannels><downmix>0</downmix><channel><index>1</index></channel><channel><index>2</index></channel></group></outputs>${audio}</audio></media></sequence>`;
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="5"><project><name>${xml(name)}</name><children>${mediaBins}<bin><name>Sequences</name><children>${sequenceXml}</children></bin></children></project></xmeml>`;
 }
