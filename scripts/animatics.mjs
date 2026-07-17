@@ -29,6 +29,13 @@ import {
   buildAfterEffectsProject,
   createAfterEffectsScript,
 } from './animatics-after-effects-export.mjs';
+import {
+  boardTransformAssetKey,
+  effectiveFramingScale,
+  framingScaleFromEffective,
+  normalizeBoardTransform,
+  visualSourceGeometry,
+} from './animatics-visual-transform.mjs';
 
 const MAX_VIDEO_TRACKS = 8;
 const MAX_AUDIO_TRACKS = 5;
@@ -327,7 +334,7 @@ function icon(path, fill = false) {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"${fill ? ' style="fill:currentColor;stroke:none"' : ''}>${path}</svg>`;
 }
 
-function selectionToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 2.45c-.72-.31-1.48.34-1.32 1.11l3.33 16.08c.17.84 1.26 1.09 1.78.4l3.46-4.61 5.12 4.06a1 1 0 0 0 1.4-.16l1.35-1.7a1 1 0 0 0-.16-1.41l-5.03-3.99 5.48-2.2c.8-.32.82-1.45.03-1.79Z" fill="#f7f9fc" stroke="#080b10" stroke-width="1.35" stroke-linejoin="round"/><path d="m11.15 15.43 1.18-1.57" fill="none" stroke="#4b94df" stroke-width="1.15" stroke-linecap="round"/></svg>';}
+function selectionToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 7.5-6 .75L9 20l-1.5-6.5L5 3z"/></svg>';}
 function razorToolIcon(){return '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-28 16 16)" stroke-linejoin="round"><path d="M5 6h22v13l-8 7H5Z" fill="#080a0e" stroke="currentColor" stroke-width="1.8"/><path d="M5 20h13l9-8v7l-8 7H5Z" fill="#70b5ff" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="13" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/></g></svg>';}
 function handToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.1 11.2V7.6a1.45 1.45 0 0 1 2.9 0v2.1-4a1.5 1.5 0 0 1 3 0v3.7-2.8a1.45 1.45 0 0 1 2.9 0v3.3-1.7a1.4 1.4 0 0 1 2.8 0v5.3c0 4.5-2.7 7.1-6.8 7.1-2.6 0-4.2-1.2-5.5-3.1l-2.3-3.4a1.55 1.55 0 0 1 2.4-1.9Z" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/></svg>';}
 function linkToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.4 14.6 5.2-5.2M7.8 16.2l-1.1 1.1a3.2 3.2 0 0 1-4.5-4.5l3.1-3.1a3.2 3.2 0 0 1 4.5 0M16.2 7.8l1.1-1.1a3.2 3.2 0 0 1 4.5 4.5l-3.1 3.1a3.2 3.2 0 0 1-4.5 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';}
@@ -342,8 +349,8 @@ function markup() {
     <div class="an-stage-row">
       <aside class="an-side"><div class="an-side-inner">
         <nav class="an-tabs"><button class="an-tab on" data-panel="clip">Clip</button><button class="an-tab" data-panel="text">Text</button><button class="an-tab" data-panel="audio">Audio</button><button class="an-tab" data-panel="draw">Draw</button><button class="an-tab" data-panel="view">View</button></nav>
-        <div class="an-panel on" data-panel-body="clip"><h3 class="an-section-title" id="anClipSelectionTitle">Selected clip</h3><div class="an-split"><label class="an-field">Seconds<input id="anDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><h3 class="an-section-title" id="anFramingTitle">16:9 framing</h3><div class="an-frame-actions"><button class="an-tool-btn" id="anFrameFit">Fit</button><button class="an-tool-btn" id="anFrameFill">Fill</button><button class="an-tool-btn" id="anFrameReset">Reset</button></div><label class="an-field">Scale<div class="an-scale-row"><input id="anFrameScale" type="range" min="25" max="400" value="100"><output id="anFrameScaleVal">100%</output></div></label><button class="an-tool-btn" id="anToggleClipVisibility" title="Enable or disable selected visual clips (Ctrl+H)" aria-pressed="false">Disable selected</button><div class="an-split"><button class="an-tool-btn" id="anSplit">Split at playhead</button><button class="an-tool-btn" id="anDeleteClip">Delete selected</button></div><p class="an-help">Framing and visibility apply to every selected image or video. Duration applies to selected visual and audio clips.</p></div>
-        <div class="an-panel" data-panel-body="text"><h3 class="an-section-title">Text overlay layer</h3><label class="an-field">Content<textarea id="anText" placeholder="Add a title or annotation…"></textarea></label><div class="an-split"><label class="an-field">Font size<input id="anTextSize" type="number" min="8" max="300" value="42"></label><label class="an-field">Color<input id="anTextColor" type="color" value="#ffffff"></label></div><label class="an-field">Scale<div class="an-scale-row"><input id="anTextScale" type="range" min="25" max="400" value="100"><output id="anTextScaleVal">100%</output></div></label><div class="an-split"><label class="an-field">Rotation<input id="anTextRotation" type="number" min="-180" max="180" value="0"></label><label class="an-field">Duration (sec)<input id="anTextDuration" type="number" min="0.017" max="600" step="0.1" value="3"></label></div><div class="an-split"><label class="an-field">X position %<input id="anTextX" type="number" min="0" max="100" value="50"></label><label class="an-field">Y position %<input id="anTextY" type="number" min="0" max="100" value="82"></label></div><button class="an-tool-btn" id="anAddText">Add text layer</button><button class="an-tool-btn" id="anClearText">Delete selected text</button><p class="an-help">Press T, then click directly in the preview to place and type text. Text remains editable on the T1 timeline layer.</p></div>
+        <div class="an-panel on" data-panel-body="clip"><h3 class="an-section-title" id="anClipSelectionTitle">Selected clip</h3><div class="an-split"><label class="an-field">Seconds<input id="anDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><h3 class="an-section-title" id="anFramingTitle">16:9 framing</h3><div class="an-frame-actions"><button class="an-tool-btn" id="anFrameFit">Fit</button><button class="an-tool-btn" id="anFrameFill">Fill</button><button class="an-tool-btn" id="anFrameReset">Reset</button></div><label class="an-field">Scale<div class="an-scale-row"><input id="anFrameScale" type="range" min="25" max="800" value="100"><output id="anFrameScaleVal">100%</output></div></label><button class="an-tool-btn" id="anToggleClipVisibility" title="Enable or disable selected visual clips (Ctrl+H)" aria-pressed="false">Disable selected</button><div class="an-split"><button class="an-tool-btn" id="anSplit">Split at playhead</button><button class="an-tool-btn" id="anDeleteClip">Delete selected</button></div><p class="an-help">Framing and visibility apply to every selected image or video. Duration applies to selected visual and audio clips.</p></div>
+        <div class="an-panel" data-panel-body="text"><h3 class="an-section-title">Text overlay layer</h3><label class="an-field">Content<textarea id="anText" placeholder="Add a title or annotation…"></textarea></label><div class="an-split"><label class="an-field">Font size<input id="anTextSize" type="number" min="8" max="300" value="42"></label><label class="an-field">Color<input id="anTextColor" type="color" value="#ffffff"></label></div><label class="an-field">Scale<div class="an-scale-row"><input id="anTextScale" type="range" min="25" max="400" value="100"><output id="anTextScaleVal">100%</output></div></label><div class="an-split"><label class="an-field">Rotation<input id="anTextRotation" type="number" min="-180" max="180" step="1" value="0"></label><label class="an-field">Duration (sec)<input id="anTextDuration" type="number" min="0.017" max="600" step="0.1" value="3"></label></div><button class="an-tool-btn" id="anAddText">Add text layer</button><button class="an-tool-btn" id="anClearText">Delete selected text</button><p class="an-help">Press T, then click directly in the preview to place and type text. Drag selected text in the preview to position it.</p></div>
         <div class="an-panel" data-panel-body="audio"><h3 class="an-section-title" id="anAudioSelectionTitle">Selected audio</h3><div class="an-split"><label class="an-field">Seconds<input id="anAudioDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anAudioDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><label class="an-field">Volume<div class="an-scale-row"><input id="anAudioVolume" type="range" min="0" max="200" step="1" value="100"><output id="anAudioVolumeVal">100%</output></div></label><button class="an-tool-btn" id="anAudioMute">Mute selected</button><div class="an-split"><button class="an-tool-btn" id="anAudioSplit">Split at playhead</button><button class="an-tool-btn" id="anAudioDelete">Delete selected</button></div><p class="an-help">Duration applies to selected visual and audio clips. Volume applies to every selected audio clip.</p></div>
         <div class="an-panel" data-panel-body="draw"><h3 class="an-section-title">Draw on shot</h3><div class="an-split"><label class="an-field">Color<input id="anDrawColor" type="color" value="#ff5c5c"></label><label class="an-field">Width<input id="anDrawWidth" type="number" min="1" max="40" value="6"></label></div><button class="an-tool-btn" id="anDrawToggle">Start drawing</button><button class="an-tool-btn" id="anClearDraw">Clear drawing</button><p class="an-help">Draw directly on the viewer. Strokes are stored as lightweight normalized points, not extra image copies.</p></div>
         <div class="an-panel" data-panel-body="view"><h3 class="an-section-title">Viewer</h3><div class="an-split"><label class="an-field">Playback counter<select id="anCounterMode"><option value="timecode">Timecode</option><option value="frames">Frames</option><option value="seconds">Seconds</option></select></label><label class="an-field">Project rate<select id="anProjectFps"><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div><button class="an-tool-btn" id="anTcToggle">Show counter in picture</button><label class="an-field">Background<select id="anBackground"><option value="#000000">Black</option><option value="#181a20">Charcoal</option><option value="#ffffff">White</option></select></label><p class="an-help">Use the compact controls below the viewer for sequence shape and playback quality. Export always uses the original full-resolution images.</p></div>
@@ -361,7 +368,7 @@ function markup() {
 }
 
 export function createAnimaticsEditor(options) {
-  const { getImage, getBitmap, getBlob, onDirty = () => {}, onOpen = () => {}, onClose = () => {}, toast: boardToast = () => {} } = options;
+  const { getImage, getBitmap, getBlob, getBoardTransform = item => item, onDirty = () => {}, onOpen = () => {}, onClose = () => {}, toast: boardToast = () => {} } = options;
   const style = document.createElement('style');
   style.id = 'animaticsStyles';
   style.textContent = css();
@@ -700,13 +707,15 @@ export function createAnimaticsEditor(options) {
       const sourceIn=mediaKind==='video'?Math.max(0,Number(c.sourceIn)||0):0;
       const originalDuration=mediaKind==='video'?Math.max(sourceIn+requestedDuration,Number(c.originalDuration)||0,Number(c.sourceOut)||0):requestedDuration;
       const sourceOut=mediaKind==='video'?clamp(Number(c.sourceOut)||sourceIn+requestedDuration,sourceIn+MIN_SHOT_SECONDS,originalDuration):requestedDuration;
+      const boardTransform=mediaKind==='image'?normalizeBoardTransform(c.boardTransform):null;
       return {
         id:String(c.id||uid()), itemId:mediaKind==='image'?String(c.itemId):null, mediaKind, mediaId,
         track:clamp(Number(c.track)||0,0,MAX_VIDEO_TRACKS-1), start:Math.max(0,Number(c.start)||0), duration:mediaKind==='video'?sourceOut-sourceIn:requestedDuration,
         sourceIn,sourceOut,originalDuration,name:String(c.name||(mediaKind==='video'?'Video':'Shot')),type:String(c.type||blob?.type||(mediaKind==='video'?'video/mp4':'image/png')),
         blob,url:blob?URL.createObjectURL(blob):null,needsRelink:mediaKind==='video'&&!blob,videoWidth:Math.max(0,Number(c.videoWidth)||0),videoHeight:Math.max(0,Number(c.videoHeight)||0),
         enabled:c.enabled!==false,
-        framing:{fit:c.framing?.fit==='cover'?'cover':'contain',scale:clamp(Number(c.framing?.scale)||1,.25,4),x:clamp(Number(c.framing?.x)||0,-1,1),y:clamp(Number(c.framing?.y)||0,-1,1)},
+        framing:{fit:c.framing?.fit==='cover'?'cover':'contain',scale:clamp(Number(c.framing?.scale)||1,.01,8),x:clamp(Number(c.framing?.x)||0,-1,1),y:clamp(Number(c.framing?.y)||0,-1,1)},
+        ...(boardTransform?{boardTransform,sourceAssetKey:String(c.sourceAssetKey||boardTransformAssetKey(c.itemId,boardTransform))}:{}),
         strokes:Array.isArray(c.strokes)?c.strokes:[],
         ...(typeof c.linkGroupId==='string'&&c.linkGroupId?{linkGroupId:c.linkGroupId}:{}),
       };
@@ -714,7 +723,7 @@ export function createAnimaticsEditor(options) {
     base.texts=(Array.isArray(raw.texts)?raw.texts:[]).map(t=>({
       id:String(t.id||uid()),track:0,start:Math.max(0,Number(t.start)||0),duration:clamp(Number(t.duration)||DEFAULT_SHOT_SECONDS,MIN_SHOT_SECONDS,600),
       content:String(t.content||''),size:clamp(Number(t.size)||42,8,300),color:/^#[0-9a-f]{6}$/i.test(t.color)?t.color:'#ffffff',
-      scale:clamp(finiteOr(t.scale,1),.25,4),rotation:clamp(finiteOr(t.rotation,0),-180,180),x:clamp(finiteOr(t.x,.5),0,1),y:clamp(finiteOr(t.y,.82),0,1),
+      scale:clamp(finiteOr(t.scale,1),.25,4),rotation:Math.round(clamp(finiteOr(t.rotation,0),-180,180)),x:clamp(finiteOr(t.x,.5),0,1),y:clamp(finiteOr(t.y,.82),0,1),
     })).filter(t=>t.content);
     for(const rawClip of Array.isArray(raw.clips)?raw.clips:[]){
       if(!rawClip?.text?.content)continue;
@@ -752,7 +761,8 @@ export function createAnimaticsEditor(options) {
     const addedIds=[];
     for (const item of list) {
       const shotDuration=durationWithinSequence(cursor,DEFAULT_SHOT_SECONDS,DEFAULT_SHOT_SECONDS);if(!shotDuration)break;
-      const clip={ id:uid(), itemId:item.id, mediaKind:'image', mediaId:null, track:0, start:cursor, duration:shotDuration, name:item.name || `Shot ${project.clips.length + 1}`, enabled:true, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[] };
+      const boardTransform=normalizeBoardTransform(getBoardTransform(item));
+      const clip={ id:uid(), itemId:item.id, mediaKind:'image', mediaId:null, track:0, start:cursor, duration:shotDuration, name:item.name || getImage(item.id)?.name || `Shot ${project.clips.length + 1}`, enabled:true, framing:{fit:'contain',scale:1,x:0,y:0}, ...(boardTransform?{boardTransform,sourceAssetKey:boardTransformAssetKey(item.id,boardTransform)}:{}), strokes:[] };
       project.clips.push(clip);addedIds.push(clip.id);
       cursor += shotDuration;
     }
@@ -844,17 +854,42 @@ export function createAnimaticsEditor(options) {
     return added;
   }
 
+  function sourcePixelSize(source){
+    return {width:source?.videoWidth||source?.naturalWidth||source?.width||0,height:source?.videoHeight||source?.naturalHeight||source?.height||0};
+  }
+
+  function clipVisualGeometry(clip,source){
+    const {width,height}=sourcePixelSize(source);
+    return width&&height?visualSourceGeometry(width,height,isVideoClip(clip)?null:clip.boardTransform):null;
+  }
+
+  function drawClipVisual(targetCtx,clip,source,cx,cy,scale){
+    const geometry=clipVisualGeometry(clip,source);if(!geometry)return null;
+    const {transform,source:src,baseWidth,baseHeight,rotationRadians}=geometry;
+    targetCtx.save();targetCtx.translate(cx,cy);targetCtx.rotate(rotationRadians);
+    if(transform){targetCtx.scale(transform.flipX?-1:1,transform.flipY?-1:1);if(transform.gray)targetCtx.filter='grayscale(1)';}
+    targetCtx.drawImage(source,src.x,src.y,src.width,src.height,-baseWidth*scale/2,-baseHeight*scale/2,baseWidth*scale,baseHeight*scale);
+    targetCtx.restore();return geometry;
+  }
+
+  function drawFramedVisual(targetCtx,clip,source,w,h,overrideFraming=null){
+    const geometry=clipVisualGeometry(clip,source);if(!geometry)return null;
+    const framing=overrideFraming||clip.framing||{fit:'contain',scale:1,x:0,y:0};
+    const baseK=framing.fit==='cover'?Math.max(w/geometry.rotatedWidth,h/geometry.rotatedHeight):Math.min(w/geometry.rotatedWidth,h/geometry.rotatedHeight);
+    const scale=baseK*clamp(Number(framing.scale)||1,.01,8);
+    const cx=w/2+clamp(Number(framing.x)||0,-1,1)*w/2,cy=h/2+clamp(Number(framing.y)||0,-1,1)*h/2;
+    drawClipVisual(targetCtx,clip,source,cx,cy,scale);return geometry;
+  }
+
   async function thumbUrl(clip) {
-    const key=clip.mediaId||clip.itemId;
+    const key=clip.mediaId||clip.sourceAssetKey||clip.itemId;
     if (thumbUrls.has(key)) return thumbUrls.get(key);
     const image = isVideoClip(clip)?null:getImage(clip.itemId);
     const source = isVideoClip(clip)?await videoSourceAt(clip,clip.start,true):(image?.proxy || await getBitmap(clip.itemId, { priority:'display' }));
     if (!source) return '';
     const c = document.createElement('canvas'); c.width=120; c.height=68;
     const g=c.getContext('2d'); g.fillStyle='#111'; g.fillRect(0,0,120,68);
-    const sw=source.videoWidth||source.naturalWidth||source.width,sh=source.videoHeight||source.naturalHeight||source.height;if(!sw||!sh)return '';
-    const k=Math.max(120/sw,68/sh); const w=sw*k,h=sh*k;
-    g.drawImage(source,(120-w)/2,(68-h)/2,w,h);
+    if(!drawFramedVisual(g,clip,source,120,68,{fit:'cover',scale:1,x:0,y:0}))return '';
     const url=c.toDataURL('image/jpeg',.7); c.width=c.height=0;
     thumbUrls.set(key,url); return url;
   }
@@ -1069,13 +1104,7 @@ export function createAnimaticsEditor(options) {
     if(mainViewer&&!playing){const activeVideoIds=new Set(active.filter(isVideoClip).map(c=>c.id));for(const [id,video] of videoElements)if(!activeVideoIds.has(id))video.pause();}
     targetCtx.save(); targetCtx.fillStyle=project.background; targetCtx.fillRect(0,0,w,h);
     for(const {clip,source} of layers){
-      const framing=clip.framing||{fit:'contain',scale:1,x:0,y:0};
-      const sw=source.videoWidth||source.naturalWidth||source.width,sh=source.videoHeight||source.naturalHeight||source.height;if(!sw||!sh)continue;
-      const baseK=framing.fit==='cover'?Math.max(w/sw,h/sh):Math.min(w/sw,h/sh);
-      const k=baseK*clamp(Number(framing.scale)||1,.25,4); const dw=sw*k,dh=sh*k;
-      const cx=w/2+clamp(Number(framing.x)||0,-1,1)*w/2;
-      const cy=h/2+clamp(Number(framing.y)||0,-1,1)*h/2;
-      targetCtx.drawImage(source,cx-dw/2,cy-dh/2,dw,dh);
+      if(!drawFramedVisual(targetCtx,clip,source,w,h))continue;
       for(const stroke of clip.strokes||[]){
         if(!stroke.points?.length) continue;
         targetCtx.beginPath(); targetCtx.strokeStyle=stroke.color||'#ff5c5c'; targetCtx.lineWidth=(stroke.width||6)*(w/1280); targetCtx.lineCap='round'; targetCtx.lineJoin='round';
@@ -1117,6 +1146,21 @@ export function createAnimaticsEditor(options) {
     viewerDrawToken++;paintViewer(ctx,w,h,t,project.timecode,true,active,activeTexts,layers);
   }
 
+  function clipIntrinsicSize(clip){
+    if(isVideoClip(clip))return {width:Math.max(1,clip.videoWidth||1),height:Math.max(1,clip.videoHeight||1)};
+    const image=getImage(clip.itemId),geometry=visualSourceGeometry(image?.w||1,image?.h||1,clip.boardTransform);
+    return {width:geometry.rotatedWidth,height:geometry.rotatedHeight};
+  }
+
+  function clipEffectiveFramingScale(clip){
+    const size=clipIntrinsicSize(clip);return effectiveFramingScale(clip.framing,canvas.width||16,canvas.height||9,size.width,size.height);
+  }
+
+  function setClipEffectiveFramingScale(clip,effective){
+    clip.framing=clip.framing||{fit:'contain',scale:1,x:0,y:0};const size=clipIntrinsicSize(clip);
+    clip.framing.scale=clamp(framingScaleFromEffective(effective,clip.framing,canvas.width||16,canvas.height||9,size.width,size.height),.01,8);
+  }
+
   function syncInspector(){
     const clip=selectedClip();
     const text=selectedText();
@@ -1125,10 +1169,10 @@ export function createAnimaticsEditor(options) {
     for(const selector of ['#anDurationFrames','#anAudioDurationFrames']){const input=$(selector);input.value=frameDuration===null?'':String(frameDuration??'');input.disabled=!durationItems.length;}
     $('#anClipSelectionTitle').textContent=visuals.length?`${visuals.length} visual clip${visuals.length===1?'':'s'} selected${audios.length?` · ${audios.length} audio`:''}`:'No visual clips selected';
     $('#anAudioSelectionTitle').textContent=audios.length?`${audios.length} audio clip${audios.length===1?'':'s'} selected${visuals.length?` · ${visuals.length} visual`:''}`:'No audio clips selected';
-    const framing=visuals[0]?.framing||{fit:'contain',scale:1,x:0,y:0},scalePercent=uniformValue(visuals,item=>Math.round((item.framing?.scale||1)*100),0),allContain=visuals.length&&visuals.every(item=>(item.framing?.fit||'contain')==='contain'),allCover=visuals.length&&visuals.every(item=>item.framing?.fit==='cover');
+    const framing=visuals[0]?.framing||{fit:'contain',scale:1,x:0,y:0},scalePercent=uniformValue(visuals,item=>Math.round(clipEffectiveFramingScale(item)*100),0),allContain=visuals.length&&visuals.every(item=>(item.framing?.fit||'contain')==='contain'),allCover=visuals.length&&visuals.every(item=>item.framing?.fit==='cover');
     $('#anFrameFit').classList.toggle('on',!!allContain);$('#anFrameFill').classList.toggle('on',!!allCover);
     for(const selector of ['#anFrameFit','#anFrameFill','#anFrameReset'])$(selector).disabled=!visuals.length;
-    $('#anFrameScale').value=String(scalePercent??Math.round(framing.scale*100));
+    $('#anFrameScale').value=String(scalePercent??Math.round((visuals[0]?clipEffectiveFramingScale(visuals[0]):framing.scale)*100));
     $('#anFrameScale').disabled=!visuals.length;
     $('#anFrameScaleVal').value=scalePercent===null?'Mixed':`${scalePercent}%`;
     $('#anFrameScaleVal').textContent=scalePercent===null?'Mixed':`${scalePercent}%`;
@@ -1137,7 +1181,7 @@ export function createAnimaticsEditor(options) {
     if(text){
       $('#anText').value=text.content;$('#anTextSize').value=String(text.size);$('#anTextColor').value=text.color;
       $('#anTextScale').value=String(Math.round(text.scale*100));$('#anTextScaleVal').value=`${Math.round(text.scale*100)}%`;$('#anTextScaleVal').textContent=`${Math.round(text.scale*100)}%`;
-      $('#anTextRotation').value=String(text.rotation);$('#anTextDuration').value=String(Number(text.duration.toFixed(3)));$('#anTextX').value=String(Math.round(text.x*100));$('#anTextY').value=String(Math.round(text.y*100));
+      $('#anTextRotation').value=String(Math.round(text.rotation));$('#anTextDuration').value=String(Number(text.duration.toFixed(3)));
     }
     $('#anAddText').textContent=text?'Update text layer':'Add text layer';$('#anClearText').disabled=!text;
     const audioPercent=uniformValue(audios,item=>Math.round((item.volume??1)*100),0),audioFallback=Math.round((audios[0]?.volume??1)*100),allMuted=audios.length&&audios.every(item=>item.volume===0);$('#anAudioVolume').value=String(audioPercent??audioFallback);$('#anAudioVolume').disabled=!audios.length;$('#anAudioVolumeVal').value=audioPercent===null?'Mixed':`${audioPercent}%`;$('#anAudioVolumeVal').textContent=audioPercent===null?'Mixed':`${audioPercent}%`;
@@ -1422,13 +1466,13 @@ export function createAnimaticsEditor(options) {
     const content=$('#anText').value.trim();if(!content){notify('Enter some text first');return;}
     let text=selectedText();
     if(!text){const clip=selectedClip(),start=clip?.start??project.playhead,requested=Number($('#anTextDuration').value)||clip?.duration||DEFAULT_SHOT_SECONDS,textDuration=durationWithinSequence(start,requested,600);if(!textDuration){notify('The fixed sequence has no room for a text layer here');return;}text={id:uid(),track:0,start,duration:textDuration,content,size:42,color:'#ffffff',scale:1,rotation:0,x:.5,y:.82};project.texts.push(text);setTimelineSelection([text.id],text.id);}
-    text.content=content;text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=clamp(Number($('#anTextRotation').value)||0,-180,180);text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;text.x=clamp(Number($('#anTextX').value)/100,0,1);text.y=clamp(Number($('#anTextY').value)/100,0,1);
+    text.content=content;text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;text.x=clamp(finiteOr(text.x,.5),0,1);text.y=clamp(finiteOr(text.y,.82),0,1);
     project.playhead=clamp(project.playhead,text.start,text.start+text.duration-MIN_SHOT_SECONDS);markDirty();renderAll();root.querySelector('[data-panel="text"]')?.click();
   }
 
   function updateSelectedTextFromControls(){
     const text=selectedText();if(!text)return;
-    text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=clamp(Number($('#anTextRotation').value)||0,-180,180);text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;text.x=clamp(Number($('#anTextX').value)/100,0,1);text.y=clamp(Number($('#anTextY').value)/100,0,1);
+    text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;
     const label=`${Math.round(text.scale*100)}%`;$('#anTextScaleVal').value=label;$('#anTextScaleVal').textContent=label;drawViewerLive();positionInlineTextEditor();
   }
 
@@ -1749,7 +1793,7 @@ export function createAnimaticsEditor(options) {
       const text=project.texts.find(item=>item.id===textDrag.textId);if(!text)return;
       if(textDrag.mode==='move'){text.x=clamp(textDrag.x+(e.clientX-textDrag.startX)/textDrag.width,0,1);text.y=clamp(textDrag.y+(e.clientY-textDrag.startY)/textDrag.height,0,1);}
       else if(textDrag.mode==='scale'){const layout=textLayout(ctx,text,canvas.width,canvas.height),point=viewerPoint(e),distance=Math.hypot(point.x-layout.cx,point.y-layout.cy);text.scale=clamp(textDrag.startScale*distance/textDrag.startDistance,.25,4);}
-      else if(textDrag.mode==='rotate'){const layout=textLayout(ctx,text,canvas.width,canvas.height),point=viewerPoint(e),angle=Math.atan2(point.y-layout.cy,point.x-layout.cx);let rotation=textDrag.startRotation+(angle-textDrag.startAngle)*180/Math.PI;while(rotation>180)rotation-=360;while(rotation<-180)rotation+=360;text.rotation=rotation;}
+      else if(textDrag.mode==='rotate'){const layout=textLayout(ctx,text,canvas.width,canvas.height),point=viewerPoint(e),angle=Math.atan2(point.y-layout.cy,point.x-layout.cx);let rotation=textDrag.startRotation+(angle-textDrag.startAngle)*180/Math.PI;while(rotation>180)rotation-=360;while(rotation<-180)rotation+=360;text.rotation=Math.round(rotation);}
       syncInspector();drawViewerLive();positionInlineTextEditor();return;
     }
     if(framingDrag){const c=selectedClip(),r=canvas.getBoundingClientRect();if(!c)return;c.framing.x=clamp(framingDrag.x+(e.clientX-framingDrag.startX)*2/r.width,-1,1);c.framing.y=clamp(framingDrag.y+(e.clientY-framingDrag.startY)*2/r.height,-1,1);drawViewer();return;}
@@ -1768,7 +1812,7 @@ export function createAnimaticsEditor(options) {
   });
   canvas.addEventListener('wheel',e=>{
     if(!framingMode||!selectedClip())return;e.preventDefault();const framing=selectedClip().framing;
-    framing.scale=clamp(framing.scale*Math.exp(-e.deltaY*.001),.25,4);deferMarkDirty();syncInspector();drawViewer();
+    framing.scale=clamp(framing.scale*Math.exp(-e.deltaY*.001),.01,8);deferMarkDirty();syncInspector();drawViewer();
   },{passive:false});
   inlineTextEditor.addEventListener('input',()=>{const text=project.texts.find(item=>item.id===inlineTextId);if(!text)return;text.content=inlineTextEditor.value;$('#anText').value=text.content;drawViewerLive();positionInlineTextEditor();});
   inlineTextEditor.addEventListener('blur',()=>finishInlineTextEdit(false));
@@ -1810,7 +1854,7 @@ export function createAnimaticsEditor(options) {
   $('#anFrameFill').onclick=()=>applyFraming('cover');
   $('#anFrameReset').onclick=()=>applyFraming('contain');
   $('#anToggleClipVisibility').onclick=toggleSelectedVisualVisibility;
-  $('#anFrameScale').oninput=e=>{const clips=selectedVisualClips();if(!clips.length)return;const scale=clamp(Number(e.target.value)/100,.25,4);for(const clip of clips){clip.framing=clip.framing||{fit:'contain',scale:1,x:0,y:0};clip.framing.scale=scale;}const label=`${Math.round(scale*100)}%`;$('#anFrameScaleVal').value=label;$('#anFrameScaleVal').textContent=label;drawViewer();};
+  $('#anFrameScale').oninput=e=>{const clips=selectedVisualClips();if(!clips.length)return;const effective=clamp(Number(e.target.value)/100,.25,8);for(const clip of clips)setClipEffectiveFramingScale(clip,effective);const label=`${Math.round(effective*100)}%`;$('#anFrameScaleVal').value=label;$('#anFrameScaleVal').textContent=label;drawViewer();};
   $('#anFrameScale').onchange=()=>{if(selectedVisualClips().length)markDirty();};
   $('#anDeleteClip').onclick=deleteSelected;
   $('#anSplit').onclick=splitSelected;
@@ -1822,11 +1866,11 @@ export function createAnimaticsEditor(options) {
   $('#anLink').onclick=toggleLinkSelection;
   $('#anAddText').onclick=upsertTextLayer;
   $('#anClearText').onclick=()=>{if(selectedText())deleteSelected();};
-  for(const id of ['anTextSize','anTextColor','anTextScale','anTextRotation','anTextDuration','anTextX','anTextY'])$('#'+id).addEventListener('input',updateSelectedTextFromControls);
+  for(const id of ['anTextSize','anTextColor','anTextScale','anTextRotation','anTextDuration'])$('#'+id).addEventListener('input',updateSelectedTextFromControls);
   $('#anTextDuration').addEventListener('input',()=>{if(selectedText())renderTimeline();});
   $('#anText').addEventListener('input',()=>{const text=selectedText();if(text){text.content=$('#anText').value;if(text.id===inlineTextId)inlineTextEditor.value=text.content;drawViewerLive();positionInlineTextEditor();}});
   $('#anText').addEventListener('change',()=>{if(selectedText()){markDirty();renderTimeline();drawViewer();}});
-  for(const id of ['anTextSize','anTextColor','anTextScale','anTextRotation','anTextDuration','anTextX','anTextY'])$('#'+id).addEventListener('change',()=>{if(selectedText()){markDirty();drawViewer();}});
+  for(const id of ['anTextSize','anTextColor','anTextScale','anTextRotation','anTextDuration'])$('#'+id).addEventListener('change',()=>{if(selectedText()){markDirty();drawViewer();}});
   $('#anDrawToggle').onclick=()=>{if(!selectedClip()){notify('Select a clip first');return;}drawMode=!drawMode;if(drawMode)framingMode=false;syncInspector();canvas.style.cursor=drawMode?'crosshair':'default';};
   $('#anClearDraw').onclick=()=>{const c=selectedClip();if(c){c.strokes=[];markDirty();drawViewer();}};
   $('#anTcToggle').onclick=()=>{project.timecode=!project.timecode;markDirty();syncInspector();drawViewer();};
@@ -1931,12 +1975,27 @@ export function createAnimaticsEditor(options) {
     const target=document.createElement('canvas');target.width=width;target.height=height;draw(target.getContext('2d'));const blob=await new Promise(resolve=>target.toBlob(resolve,'image/png'));target.width=target.height=0;if(!blob)throw new Error('Could not render Premiere overlay');return blob;
   }
 
+  function imageAssetIdentity(clip){return clip.sourceAssetKey||clip.itemId;}
+
+  async function transformedBoardImageAsset(clip,bitmap){
+    const geometry=clipVisualGeometry(clip,bitmap);if(!geometry)return null;
+    const nativeScale=Math.max(geometry.source.width/geometry.baseWidth,geometry.source.height/geometry.baseHeight);
+    const edgeScale=8192/Math.max(geometry.rotatedWidth,geometry.rotatedHeight);
+    const areaScale=Math.sqrt(32_000_000/Math.max(.001,geometry.rotatedWidth*geometry.rotatedHeight));
+    const scale=Math.max(.001,Math.min(nativeScale,edgeScale,areaScale));
+    const width=Math.max(1,Math.ceil(geometry.rotatedWidth*scale)),height=Math.max(1,Math.ceil(geometry.rotatedHeight*scale));
+    const target=document.createElement('canvas');target.width=width;target.height=height;
+    const targetCtx=target.getContext('2d');targetCtx.imageSmoothingEnabled=true;targetCtx.imageSmoothingQuality='high';drawClipVisual(targetCtx,clip,bitmap,width/2,height/2,scale);
+    const blob=await new Promise(resolve=>target.toBlob(resolve,'image/png'));target.width=target.height=0;
+    if(!blob)throw new Error(`Could not render transformed image: ${clip.name}`);return {blob,width,height};
+  }
+
   async function collectTimelineExportAssets({fps,width,height,append,onProgress=()=>{}}){
     const assets=new Map(),jobs=[];
     const seenImages=new Set(),seenVideos=new Set(),seenAudio=new Set();
     for(const clip of project.clips){
       if(isVideoClip(clip)){if(!seenVideos.has(clip.mediaId)){seenVideos.add(clip.mediaId);jobs.push({key:`video:${clip.mediaId}`,kind:'video',entry:clip});}}
-      else if(!seenImages.has(clip.itemId)){seenImages.add(clip.itemId);jobs.push({key:`image:${clip.itemId}`,kind:'image',entry:clip});}
+      else {const identity=imageAssetIdentity(clip);if(!seenImages.has(identity)){seenImages.add(identity);jobs.push({key:`image:${identity}`,kind:'image',entry:clip});}}
       if(clip.strokes?.length)jobs.push({key:`stroke:${clip.id}`,kind:'stroke',entry:clip});
     }
     for(const audio of project.audio)if(!seenAudio.has(audio.mediaId)){seenAudio.add(audio.mediaId);jobs.push({key:`audio:${audio.mediaId}`,kind:'audio',entry:audio});}
@@ -1944,7 +2003,10 @@ export function createAnimaticsEditor(options) {
     for(const job of jobs){
       let blob,name,meta;
       if(job.kind==='image'){
-        const image=getImage(job.entry.itemId);blob=await getBlob(job.entry.itemId);if(!blob?.size)throw new Error(`Missing original image: ${job.entry.name}`);name=job.entry.name||image?.name||`Image ${assetIndex+1}`;meta={kind:'image',width:image?.w||0,height:image?.h||0,durationFrames:Math.max(1,...project.clips.filter(c=>c.itemId===job.entry.itemId).map(c=>premiereFrame(c.duration,fps)))};
+        const image=getImage(job.entry.itemId),identity=imageAssetIdentity(job.entry);let assetWidth=image?.w||0,assetHeight=image?.h||0;
+        if(job.entry.boardTransform){const bitmap=await getBitmap(job.entry.itemId,{priority:'high'});if(!bitmap)throw new Error(`Missing transformed image: ${job.entry.name}`);const rendered=await transformedBoardImageAsset(job.entry,bitmap);blob=rendered.blob;assetWidth=rendered.width;assetHeight=rendered.height;name=`${String(job.entry.name||image?.name||`Image ${assetIndex+1}`).replace(/\.[^.]+$/,'')}.png`;}
+        else {blob=await getBlob(job.entry.itemId);name=job.entry.name||image?.name||`Image ${assetIndex+1}`;}
+        if(!blob?.size)throw new Error(`Missing original image: ${job.entry.name}`);meta={kind:'image',width:assetWidth,height:assetHeight,durationFrames:Math.max(1,...project.clips.filter(c=>!isVideoClip(c)&&imageAssetIdentity(c)===identity).map(c=>premiereFrame(c.duration,fps)))};
       }else if(job.kind==='video'){
         blob=job.entry.blob||mediaResources.get(job.entry.mediaId)?.blob;if(!blob?.size)throw new Error(`Missing video: ${job.entry.name}`);name=job.entry.name||`Video ${assetIndex+1}`;meta={kind:'video',width:job.entry.videoWidth||0,height:job.entry.videoHeight||0,durationFrames:premiereFrame(job.entry.originalDuration||job.entry.sourceOut||job.entry.duration,fps)};
       }else if(job.kind==='audio'){

@@ -9,10 +9,12 @@ const main = fs.readFileSync(new URL('../main.js', import.meta.url), 'utf8');
 const premiere = fs.readFileSync(new URL('./animatics-premiere-export.mjs', import.meta.url), 'utf8');
 const afterEffects = fs.readFileSync(new URL('./animatics-after-effects-export.mjs', import.meta.url), 'utf8');
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+assert.ok(pkg.build.files.includes('scripts/animatics-visual-transform.mjs'), 'packaged builds must include the shared Animatics transform module');
 
 assert.match(html, /id="sAnimatics"/, 'selection toolbar must expose Animatics');
 assert.match(html, /id="btnAnimatics"/, 'board toolbar must reopen Animatics without a selection');
 assert.match(html, /createAnimaticsEditor/, 'board must initialize the Animatics workspace');
+assert.match(html, /getBoardTransform\(item\)[\s\S]*?crop:\s*cropOf\(item\)[\s\S]*?rotation:\s*Number\(item\.rot\)/, 'board imports must snapshot crop and rotation for Animatics');
 assert.match(html, /animatics:\s*animaticsEditor\?\.serialize/, 'board saves must include Animatics state');
 assert.match(html, /animaticsEditor\?\.load\?\.\(j\.animatics,\s*nextAnimaticMedia\)/, 'board opens must restore Animatics state');
 assert.match(html, /snapshot\.mediaRefs/, 'board saves must stream linked animatic media');
@@ -43,6 +45,9 @@ for (const aspect of ['16:9','4:3','5:4','9:16','21:9']) assert.match(editor, ne
 assert.match(editor, /sequenceDimensions\(res,project\.aspect\)/, 'export dimensions must follow the selected sequence aspect');
 assert.match(editor, /id="anFrameFit"/, 'clip inspector must expose Fit framing');
 assert.match(editor, /id="anFrameFill"/, 'clip inspector must expose Fill framing');
+assert.match(editor, /normalizeBoardTransform\(getBoardTransform\(item\)\)/, 'Animatics clips must retain the imported board transformation');
+assert.match(editor, /drawFramedVisual\(targetCtx,clip,source,w,h\)/, 'viewer and MP4 rendering must share transformed still-image compositing');
+assert.match(editor, /clip\.sourceAssetKey\|\|clip\.itemId/, 'different transformations of one board image must keep distinct assets');
 assert.match(editor, /if\(!e\.altKey\)return/, 'Alt+wheel must control timeline zoom like Premiere Pro and After Effects');
 assert.doesNotMatch(editor, /if\(!e\.ctrlKey\)return/, 'Ctrl+wheel must no longer own timeline zoom');
 assert.match(editor, /function applyTimelineZoom\(nextZoom\)/, 'slider and wheel zoom must share one playhead-anchored implementation');
@@ -61,11 +66,13 @@ assert.match(editor, /id="anExportFormat"[\s\S]*?value="after-effects"/, 'export
 assert.match(editor, /exportStart=useRange\?project\.inPoint:0/, 'range export must begin at the sequence In point');
 assert.match(editor, /function exportPremiereProject/, 'Animatics must implement Premiere timeline export separately from MP4');
 assert.match(editor, /function exportAfterEffectsProject/, 'Animatics must implement After Effects export separately from MP4 and Premiere');
-assert.match(editor, /await getBlob\(job\.entry\.itemId\)/, 'Premiere export must collect original board image blobs');
+assert.match(editor, /transformedBoardImageAsset\(job\.entry,bitmap\)/, 'external editor exports must bake the imported board crop and rotation');
+assert.match(editor, /else \{blob=await getBlob\(job\.entry\.itemId\)/, 'legacy untransformed clips must continue exporting their original image blobs');
 assert.match(editor, /appendPremiereExportAsset/, 'Premiere assets must be streamed to the desktop process');
 assert.match(editor, /appendAfterEffectsExportAsset/, 'After Effects assets must be streamed to the desktop process');
 assert.match(premiere, /<xmeml version=\"5\">/, 'Premiere export must generate an XMEML interchange document');
 assert.match(premiere, /function buildPremiereTimeline/, 'Premiere timing must use a dedicated export model');
+assert.match(premiere, /item\.sourceAssetKey \|\| item\.itemId/, 'Premiere must resolve transformed board-image assets');
 assert.match(premiere, /<bin><name>\$\{category\}<\/name><children>/, 'Premiere media must import into categorized project bins');
 assert.match(premiere, /masterclipid/, 'Premiere timeline media must link to organized master clips');
 assert.match(premiere, /Basic Motion/, 'Premiere XML must preserve clip framing through Basic Motion');
@@ -75,6 +82,7 @@ assert.match(premiere, /Audio Levels/, 'Premiere XML must preserve clip volume')
 assert.match(premiere, /videoTrackEnabled/, 'Premiere XML must preserve disabled RefBoard video tracks');
 assert.match(premiere, /clip\.enabled === false \? 'FALSE' : 'TRUE'/, 'Premiere XML must preserve disabled RefBoard clips');
 assert.match(afterEffects, /function buildAfterEffectsProject/, 'After Effects timing must use a dedicated export model');
+assert.match(afterEffects, /item\.sourceAssetKey \|\| item\.itemId/, 'After Effects must resolve transformed board-image assets');
 assert.match(editor, /AFTER_EFFECTS_MAX_SECONDS/, 'After Effects export must guard Adobe’s three-hour composition limit');
 assert.match(afterEffects, /#target aftereffects/, 'After Effects export must generate an executable JSX builder');
 assert.match(afterEffects, /items\.addComp/, 'After Effects builder must create an editable composition');
@@ -119,6 +127,9 @@ assert.match(editor, /project\.texts/, 'text overlays must live on an independen
 assert.match(editor, /drawTextOverlay/, 'text layers must render in preview and export');
 assert.match(editor, /anTextRotation/, 'text layers must expose rotation controls');
 assert.match(editor, /anTextScale/, 'text layers must expose scale controls');
+assert.match(editor, /id="anTextRotation"[^>]*step="1"/, 'text rotation must use whole-degree input steps');
+assert.match(editor, /text\.rotation=Math\.round\(rotation\)/, 'on-canvas rotation must snap to whole degrees');
+assert.doesNotMatch(editor, /anTextX|anTextY/, 'text position must be controlled directly in the preview instead of redundant X/Y fields');
 assert.match(editor, /function hitTextControl/, 'text overlays must be directly selectable in the viewer');
 assert.match(editor, /mode:'rotate'/, 'text overlays must expose an on-canvas rotation handle');
 assert.match(editor, /function updateSelectedTextFromControls\(\)[\s\S]*?drawViewerLive\(\);positionInlineTextEditor\(\);/, 'text property controls must resize and rotate the active inline editor live');
@@ -148,7 +159,8 @@ assert.match(editor, /isVisualClipVisible\(c\)&&sample >= c\.start/, 'disabled c
 assert.match(editor, /sort\(\(a,b\) => b\.track - a\.track\)/, 'viewer compositing must follow the visible top-to-bottom V1, V2 timeline order');
 assert.match(editor, /applyBatchTimelineDuration\(project\.clips/, 'duration edits must apply to every selected visual clip');
 assert.match(editor, /applyBatchTimelineDuration\(project\.audio/, 'duration edits must apply to every selected audio clip');
-assert.match(editor, /for\(const clip of clips\).*clip\.framing\.scale=scale/, 'framing scale must update the complete visual selection');
+assert.match(editor, /for\(const clip of clips\)setClipEffectiveFramingScale\(clip,effective\)/, 'effective framing scale must update the complete visual selection');
+assert.match(editor, /clipEffectiveFramingScale\(item\)\*100/, 'Fill must display its effective scale relative to Fit');
 assert.match(editor, /for\(const audio of clips\).*audio\.volume=volume/, 'volume must update the complete audio selection');
 assert.match(editor, /id="anAudioDurationFrames"/, 'audio and mixed selections must expose frame-based duration editing');
 assert.match(editor, /snappedMoveDelta\(/, 'timeline dragging must use magnetic snapping');
@@ -178,8 +190,9 @@ assert.match(editor, /typeof c\.linkGroupId==='string'/, 'saved visual link meta
 assert.match(editor, /typeof a\.linkGroupId==='string'/, 'saved audio link metadata must be restored');
 assert.doesNotMatch(editor, /raw\.audio[^\n]+\.slice\(0,\s*MAX_AUDIO_TRACKS\)/, 'the audio track limit must not truncate clips created by cuts when reopening a board');
 assert.doesNotMatch(editor, /data-an-tool="select"[^>]*>[\s\S]{0,400}<span>Selection<\/span>/, 'the compact Selection control must not include a cramped text label');
-assert.match(editor, /selectionToolIcon\(\)[\s\S]{0,200}viewBox="0 0 24 24"/, 'the Selection control must use a toolbar-sized detailed vector pointer');
-assert.match(editor, /fill="#f7f9fc" stroke="#080b10"/, 'the Selection pointer must remain crisp and legible at toolbar size');
+assert.match(editor, /selectionToolIcon\(\)[\s\S]{0,200}viewBox="0 0 24 24"/, 'the Selection control must use a toolbar-sized vector pointer');
+assert.match(editor, /M5 3l14 7\.5-6 \.75L9 20l-1\.5-6\.5L5 3z/, 'Animatics must use the exact main-board Selection pointer path');
+assert.match(editor, /fill="none" stroke="currentColor" stroke-width="1\.7"/, 'the Selection pointer must match the main-board stroke treatment');
 assert.match(editor, /an-edit-divider/, 'the Link action must be visually separated from mutually exclusive editing tools');
 assert.match(editor, /id="anBrandMark"/, 'Animatics must expose the canonical RefBoard brand image in its header');
 assert.match(editor, /document\.querySelector\('#landingBrandIcon'\)\?\.currentSrc/, 'Animatics must reuse the exact RefBoard icon already embedded by the main app');

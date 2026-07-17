@@ -19,7 +19,7 @@ const project = {
   videoTrackEnabled: [true, false],
   audioTracks: 1,
   clips: [
-    { id:'still', itemId:'image-1', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', enabled:false, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
+    { id:'still', itemId:'image-1', sourceAssetKey:'image-1-transformed', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', enabled:false, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1} },
   ],
   texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', scale:1.25, rotation:12, x:.25, y:.8 }],
@@ -27,7 +27,7 @@ const project = {
 };
 
 const assets = new Map([
-  ['image:image-1', { id:'image-1', kind:'image', category:'image', name:'Board & Shot.png', filePath:'C:\\Export\\Media\\Images\\Board & Shot.png', durationFrames:144, width:4000, height:3000 }],
+  ['image:image-1-transformed', { id:'image-1', kind:'image', category:'image', name:'Board & Shot.png', filePath:'C:\\Export\\Media\\Images\\Board & Shot.png', durationFrames:144, width:4000, height:3000 }],
   ['video:video-1', { id:'video-1', kind:'video', category:'video', name:'Take <1>.mp4', filePath:'C:\\Export\\Media\\Videos\\Take 1.mp4', durationFrames:480, width:3840, height:2160 }],
   ['audio:audio-1', { id:'audio-1', kind:'audio', category:'audio', name:'Music.wav', filePath:'C:\\Export\\Media\\Audio\\Music.wav', durationFrames:240, channels:2 }],
   ['stroke:still', { id:'stroke-still', kind:'image', category:'drawing', name:'Board Shot Drawings.png', filePath:'C:\\Export\\Media\\Drawings\\Board Shot Drawings.png', durationFrames:144, width:1920, height:1080 }],

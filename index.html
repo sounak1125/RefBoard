@@ -14210,6 +14210,17 @@ animaticsEditor = createAnimaticsEditor({
     const item = byId(itemId);
     return item ? await getImageBlob(images.get(item.imgId)) : null;
   },
+  getBoardTransform(item) {
+    return {
+      crop: cropOf(item),
+      rotation: Number(item.rot) || 0,
+      flipX: !!item.flipX,
+      flipY: !!item.flipY,
+      gray: !!item.gray || state.boardGray,
+      width: Math.max(.001, Number(item.w) || 1),
+      height: Math.max(.001, Number(item.h) || 1),
+    };
+  },
   onDirty() { scheduleSave(); },
   onOpen() { beginAnimaticsBoardSession(); },
   onClose() { finishAnimaticsBoardSession(); },

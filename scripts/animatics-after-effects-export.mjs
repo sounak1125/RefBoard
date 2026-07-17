@@ -10,7 +10,7 @@ export function afterEffectsTime(seconds, fps) {
 }
 
 function mediaKey(item, kind) {
-  if (kind === 'image') return `image:${item.itemId}`;
+  if (kind === 'image') return `image:${item.sourceAssetKey || item.itemId}`;
   if (kind === 'video') return `video:${item.mediaId}`;
   if (kind === 'audio') return `audio:${item.mediaId}`;
   return `${kind}:${item.id}`;
@@ -56,7 +56,7 @@ function visualTransform(item, asset, width, height) {
   const fit = framing.fit === 'cover'
     ? Math.max(width / sourceWidth, height / sourceHeight)
     : Math.min(width / sourceWidth, height / sourceHeight);
-  const scale = fit * clamp(finite(framing.scale, 1), .25, 4) * 100;
+  const scale = fit * clamp(finite(framing.scale, 1), .01, 8) * 100;
   return {
     position: [
       Number((width / 2 + clamp(finite(framing.x), -1, 1) * width / 2).toFixed(6)),

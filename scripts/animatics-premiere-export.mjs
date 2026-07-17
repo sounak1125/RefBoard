@@ -31,7 +31,7 @@ function rateXml(fps) {
 }
 
 function mediaKey(item, kind) {
-  if (kind === 'image') return `image:${item.itemId}`;
+  if (kind === 'image') return `image:${item.sourceAssetKey || item.itemId}`;
   if (kind === 'video') return `video:${item.mediaId}`;
   if (kind === 'audio') return `audio:${item.mediaId}`;
   return `${kind}:${item.id}`;
