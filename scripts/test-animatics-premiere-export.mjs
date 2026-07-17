@@ -28,7 +28,7 @@ const project = {
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1} },
   ],
   texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', scale:1.25, rotation:12, x:.25, y:.8 }],
-  audio:[{ id:'music', mediaId:'audio-1', track:0, start:.5, duration:5, sourceIn:2, sourceOut:7, volume:.5, name:'Music.wav' }],
+  audio:[{ id:'music', mediaId:'audio-1', track:0, start:.5, duration:5, sourceIn:2, sourceOut:7, volume:.5, fadeInDuration:2, fadeOutDuration:1, fadeInCurve:'constant-power', fadeOutCurve:'exponential', name:'Music.wav' }],
 };
 
 const assets = new Map([
@@ -53,6 +53,8 @@ assert.equal(timeline.videoTracks[1][0].start, 24);
 assert.equal(timeline.videoTracks[1][0].in, 240, 'video source In point is preserved when its clip starts inside the range');
 assert.equal(timeline.audioTracks[0][0].start, 0);
 assert.equal(timeline.audioTracks[0][0].in, 60, 'range trimming advances the audio source In point');
+assert.ok(timeline.audioTracks[0][0].audioEnvelope.length > 10, 'Premiere timing model must sample RefBoard audio fades');
+assert.equal(timeline.audioTracks[0][0].audioEnvelope[0].when, 0, 'range-trimmed fade automation must begin at the exported clip boundary');
 
 const output = createPremiereXml(timeline);
 assert.match(output, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
@@ -72,6 +74,8 @@ assert.match(output, /<name>Basic Motion<\/name>/);
 assert.match(output, /<horiz>0\.100000<\/horiz><vert>-0\.100000<\/vert>/, 'framing center must use normalized offsets rather than sequence pixels');
 assert.doesNotMatch(output, /<horiz>\d{3,}\./, 'Basic Motion must never place images using large pixel coordinates');
 assert.match(output, /<name>Audio Levels<\/name>/);
+assert.match(output, /<keyframe><when>0<\/when><value>0\.191342<\/value><interp>linear<\/interp><\/keyframe>/, 'Premiere must receive timeline Audio Levels keyframes for fades');
+assert.ok((output.match(/<keyframe>/g) || []).length > 10, 'curved fades must be represented with enough Premiere keyframes');
 assert.match(output, /<generatoritem id="generatoritem-title-/, 'text layers must export as editable title generators');
 assert.match(output, /<parameterid>str<\/parameterid><name>Text<\/name><value>Title &amp;&#13;Subtitle<\/value>/);
 assert.match(output, /<parameterid>fontsize<\/parameterid>[\s\S]*?<value>60\.000000<\/value>/, 'text scale must remain editable through generator font size');

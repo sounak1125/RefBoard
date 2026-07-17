@@ -1,3 +1,5 @@
+import { MAX_AUDIO_GAIN, audioEnvelopePoints } from './animatics-audio-model.mjs';
+
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 export function premiereFrame(seconds, fps) {
@@ -46,6 +48,13 @@ function clippedTimelineItem(item, kind, fps, exportStart, exportEnd, asset) {
   const sourceOffset = visibleStart - (Number(item.start) || 0);
   const sourceInSeconds = kind === 'video' || kind === 'audio' ? (Number(item.sourceIn) || 0) + sourceOffset : sourceOffset;
   const sourceIn = premiereFrame(sourceInSeconds, fps);
+  const volume = kind === 'audio' ? clamp(Number.isFinite(Number(item.volume)) ? Number(item.volume) : 1, 0, MAX_AUDIO_GAIN) : 1;
+  const audioEnvelope = kind === 'audio'
+    ? audioEnvelopePoints(item, { start:sourceOffset, end:sourceOffset + (visibleEnd - visibleStart), samplesPerFade:24 }).map(point => ({
+        when: timelineStart + premiereFrame(point.time - sourceOffset, fps),
+        value: Number((point.gain * volume).toFixed(6)),
+      }))
+    : [];
   return {
     id: item.id,
     name: item.name || asset?.name || (kind === 'text' ? 'Text' : 'Clip'),
@@ -57,7 +66,8 @@ function clippedTimelineItem(item, kind, fps, exportStart, exportEnd, asset) {
     asset,
     enabled: item.enabled !== false,
     still: kind === 'image' || kind === 'overlay',
-    volume: kind === 'audio' ? clamp(Number.isFinite(Number(item.volume)) ? Number(item.volume) : 1, 0, 2) : 1,
+    volume,
+    audioEnvelope,
     framing: kind === 'image' || kind === 'video' ? item.framing || null : null,
     text: kind === 'text' ? {
       content: String(item.content ?? ''),
@@ -123,8 +133,12 @@ function transformXml(clip, width, height) {
 }
 
 function volumeXml(clip) {
-  if (clip.kind !== 'audio' || Math.abs(clip.volume - 1) < 1e-9) return '';
-  return `<filter><effect><name>Audio Levels</name><effectid>audiolevels</effectid><effectcategory>audiolevels</effectcategory><effecttype>audiolevels</effecttype><mediatype>audio</mediatype><parameter><parameterid>level</parameterid><name>Level</name><valuemin>0</valuemin><valuemax>3.981072</valuemax><value>${clip.volume.toFixed(6)}</value></parameter></effect></filter>`;
+  if (clip.kind !== 'audio') return '';
+  const envelope = Array.isArray(clip.audioEnvelope) ? clip.audioEnvelope : [];
+  const animated = envelope.length > 2 || envelope.some(point => Math.abs(point.value - clip.volume) > 1e-9);
+  if (!animated && Math.abs(clip.volume - 1) < 1e-9) return '';
+  const keyframes = animated ? envelope.map(point => `<keyframe><when>${point.when}</when><value>${point.value.toFixed(6)}</value><interp>linear</interp></keyframe>`).join('') : '';
+  return `<filter><effect><name>Audio Levels</name><effectid>audiolevels</effectid><effectcategory>audiolevels</effectcategory><effecttype>audiolevels</effecttype><mediatype>audio</mediatype><parameter><parameterid>level</parameterid><name>Level</name><valuemin>0</valuemin><valuemax>${MAX_AUDIO_GAIN}</valuemax><value>${clip.volume.toFixed(6)}</value>${keyframes}</parameter></effect></filter>`;
 }
 
 function fileXml(asset, fps, emitted) {

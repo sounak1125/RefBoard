@@ -27,7 +27,7 @@ const project = {
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1}, linkGroupId:'linked-1' },
   ],
   texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', scale:1.25, rotation:12, x:.25, y:.8 }],
-  audio:[{ id:'music', mediaId:'audio-1', track:0, start:.5, duration:5, sourceIn:2, sourceOut:7, volume:.5, name:'Music.wav', linkGroupId:'linked-1' }],
+  audio:[{ id:'music', mediaId:'audio-1', track:0, start:.5, duration:5, sourceIn:2, sourceOut:7, volume:.5, fadeInDuration:2, fadeOutDuration:1, fadeInCurve:'constant-power', fadeOutCurve:'exponential', name:'Music.wav', linkGroupId:'linked-1' }],
 };
 
 const assets = new Map([
@@ -66,6 +66,8 @@ assert.deepEqual(video.transform.scale, [60, 60], 'Fill framing and user scale m
 assert.equal(music.start, 0);
 assert.equal(music.sourceIn, 2.5, 'range trimming must advance the audio source In point');
 assert.equal(music.audioDb, -6.0206, 'linear RefBoard audio gain must be converted to After Effects decibels');
+assert.ok(music.audioEnvelope.length > 10, 'After Effects model must sample curved RefBoard audio fades');
+assert.deepEqual(music.audioEnvelope[0], { time:0, db:-14.363807 }, 'range-trimmed fade automation must begin at the exported layer boundary');
 assert.equal(music.enabled, false, 'muted RefBoard audio tracks must disable After Effects audio layers');
 assert.equal(music.locked, true, 'audio track locks must survive After Effects export');
 assert.equal(text.text.content, 'Title &\nSubtitle');
@@ -88,6 +90,7 @@ assert.match(script, /asset\.relativePath/, 'the builder must import from catego
 assert.match(script, /"relativePath":"Images\/Board & Shot\.png"/);
 assert.match(script, /sourceRectAtTime/, 'text must stay editable and receive a centered anchor point');
 assert.match(script, /ADBE Audio Levels/, 'audio gain must be applied in After Effects');
+assert.match(script, /audioLevels\.setValueAtTime\(audioPoint\.time, \[audioPoint\.db, audioPoint\.db\]\)/, 'audio fades must become editable After Effects Audio Levels keyframes');
 assert.match(script, /layer\.enabled = spec\.enabled !== false;/, 'After Effects layers must preserve RefBoard visibility');
 assert.match(script, /layer\.locked = spec\.locked === true;/, 'After Effects layers must preserve RefBoard track locks');
 assert.match(script, /spec\.start - spec\.sourceIn/, 'video and audio source trims must be preserved');

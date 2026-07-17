@@ -1,3 +1,5 @@
+import { audioEnvelopeDbPoints, gainToDb } from './animatics-audio-model.mjs';
+
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -67,10 +69,7 @@ function visualTransform(item, asset, width, height) {
   };
 }
 
-function audioDecibels(volume) {
-  const level = clamp(finite(volume, 1), 0, 2);
-  return level <= 0 ? -192 : Number(clamp(20 * Math.log(level) / Math.LN10, -192, 6.0206).toFixed(6));
-}
+function audioDecibels(volume) { return Number(gainToDb(volume).toFixed(6)); }
 
 export function buildAfterEffectsProject({ project, name, fps, width, height, exportStart = 0, exportEnd, assets }) {
   const rate = Math.max(1, finite(fps, 30));
@@ -111,6 +110,17 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
   for (const item of audioItems) {
     const entry = clippedItem(item, 'audio', rate, rangeStart, rangeEnd, lookup(mediaKey(item, 'audio')));
     if (!entry) continue;
+    const visibleSourceStart = Math.max(0, rangeStart - Math.max(0, finite(item.start)));
+    const visibleDuration = entry.end - entry.start;
+    const audioEnvelope = audioEnvelopeDbPoints(item, {
+      start:visibleSourceStart,
+      end:visibleSourceStart + visibleDuration,
+      baseGain:item.volume,
+      samplesPerFade:24,
+    }).map(point => ({
+      time:Number((entry.start + point.time - visibleSourceStart).toFixed(6)),
+      db:Number(point.db.toFixed(6)),
+    }));
     layers.push({
       id: entry.id,
       name: entry.name,
@@ -121,6 +131,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       sourceIn: entry.sourceIn,
       assetId: registerAsset(entry.asset),
       audioDb: audioDecibels(item.volume),
+      audioEnvelope,
       enabled: project.audioTrackMuted?.[entry.track] !== true && (!hasSoloAudio || project.audioTrackSolo?.[entry.track] === true),
       locked: project.audioTrackLocked?.[entry.track] === true,
       linkGroupId: entry.linkGroupId,
@@ -299,7 +310,16 @@ export function createAfterEffectsScript(project, { mediaFolderName, projectFile
       if (spec.kind === "audio") {
         var audioGroup = layer.property("ADBE Audio Group");
         var audioLevels = audioGroup && audioGroup.property("ADBE Audio Levels");
-        if (audioLevels) audioLevels.setValue([spec.audioDb, spec.audioDb]);
+        if (audioLevels) {
+          if (spec.audioEnvelope && spec.audioEnvelope.length > 1) {
+            for (var audioIndex = 0; audioIndex < spec.audioEnvelope.length; audioIndex++) {
+              var audioPoint = spec.audioEnvelope[audioIndex];
+              audioLevels.setValueAtTime(audioPoint.time, [audioPoint.db, audioPoint.db]);
+            }
+          } else {
+            audioLevels.setValue([spec.audioDb, spec.audioDb]);
+          }
+        }
       }
     }
     comp.openInViewer();

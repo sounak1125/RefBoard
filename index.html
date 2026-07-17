@@ -14221,6 +14221,9 @@ animaticsEditor = createAnimaticsEditor({
       height: Math.max(.001, Number(item.h) || 1),
     };
   },
+  async onImportImages(files) {
+    return await addImages(files);
+  },
   onDirty() { scheduleSave(); },
   onOpen() { beginAnimaticsBoardSession(); },
   onClose() { finishAnimaticsBoardSession(); },

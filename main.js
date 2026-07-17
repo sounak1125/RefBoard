@@ -255,6 +255,32 @@ function setupIpc() {
     });
   }
 
+  function normalizedAnimaticAudioEnvelope(value, duration) {
+    const end = Math.max(0, Number(duration) || 0);
+    const points = (Array.isArray(value) ? value : []).slice(0, 256).map(point => ({
+      time: Math.max(0, Math.min(end, Number(point?.time) || 0)),
+      gain: Math.max(0, Math.min(1, Number(point?.gain) || 0)),
+    })).filter(point => Number.isFinite(point.time) && Number.isFinite(point.gain)).sort((a, b) => a.time - b.time);
+    const unique = [];
+    for (const point of points) {
+      if (unique.length && Math.abs(unique.at(-1).time - point.time) < 1e-8) unique[unique.length - 1] = point;
+      else unique.push(point);
+    }
+    return unique;
+  }
+
+  function animaticAudioEnvelopeExpression(points) {
+    if (!Array.isArray(points) || points.length < 2) return null;
+    const number = value => Number(value).toFixed(8);
+    let expression = number(points.at(-1).gain);
+    for (let index = points.length - 2; index >= 0; index--) {
+      const from = points[index], to = points[index + 1], span = Math.max(1e-8, to.time - from.time);
+      const interpolation = `${number(from.gain)}+(${number(to.gain - from.gain)})*(t-${number(from.time)})/${number(span)}`;
+      expression = `if(lt(t,${number(to.time)}),${interpolation},${expression})`;
+    }
+    return expression;
+  }
+
   async function discardBoardSaveSession(session) {
     if (!session) return;
     try { await session.handle?.close(); } catch { /* already closed */ }
@@ -333,7 +359,8 @@ function setupIpc() {
       start: Math.max(0, Number(audio?.start) || 0),
       sourceIn: Math.max(0, Number(audio?.sourceIn) || 0),
       duration: Math.max(1 / session.fps, Math.min(3600, Number(audio?.duration) || 1 / session.fps)),
-      volume: Number.isFinite(Number(audio?.volume)) ? Math.max(0, Math.min(2, Number(audio.volume))) : 1,
+      volume: Number.isFinite(Number(audio?.volume)) ? Math.max(0, Math.min(3.981072, Number(audio.volume))) : 1,
+      envelope: normalizedAnimaticAudioEnvelope(audio?.envelope, audio?.duration),
     });
     return { appended: true };
   });
@@ -358,7 +385,10 @@ function setupIpc() {
       if (session.audio.length) {
         const filters = session.audio.map((audio, index) => {
           const delay = Math.round(audio.start * 1000);
-          return `[${index + 1}:a]adelay=${delay}|${delay},volume=${audio.volume}[a${index}]`;
+          const envelope = animaticAudioEnvelopeExpression(audio.envelope);
+          const volumeFilters = [`volume=${audio.volume}`];
+          if (envelope) volumeFilters.push(`volume='${envelope}':eval=frame`);
+          return `[${index + 1}:a]${volumeFilters.join(',')},adelay=${delay}|${delay}[a${index}]`;
         });
         filters.push(`${session.audio.map((_, i) => `[a${i}]`).join('')}amix=inputs=${session.audio.length}:duration=longest:dropout_transition=0[aout]`);
         args.push('-filter_complex', filters.join(';'), '-map', '0:v:0', '-map', '[aout]');
