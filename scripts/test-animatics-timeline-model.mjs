@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import {
   applyBatchTimelineDuration,
   closeTimelineTrackGap,
+  createTimelineClipboard,
   createTimelineHistory,
   linkedTimelineIds,
   linkTimelineItems,
   marqueeSelection,
   normalizeTimelineLinks,
+  pasteTimelineClipboard,
   reorderTimelineTracks,
   resolveOverwrite,
   snappedMoveDelta,
@@ -76,6 +78,51 @@ assert.deepEqual(ids(linkedTimelineIds(linked, ['picture'])), ['picture', 'sound
 linked = unlinkTimelineItems(linked, ['picture']);
 assert.equal(linked.some(item => item.linkGroupId), false, 'unlinking must remove orphaned link metadata');
 assert.equal(normalizeTimelineLinks([{ id: 'orphan', linkGroupId: 'x' }])[0].linkGroupId, undefined);
+
+const clipboardSource = [
+  { kind: 'video', item: { id: 'picture', track: 1, start: 2, duration: 3, linkGroupId: 'pair', framing: { fit: 'contain', scale: 1 }, strokes: [[{ x: .1, y: .2 }]] } },
+  { kind: 'audio', item: { id: 'sound', track: 2, start: 2.5, duration: 5, linkGroupId: 'pair', sourceIn: 4, sourceOut: 9, originalDuration: 12 } },
+  { kind: 'video', item: { id: 'other', track: 2, start: 6, duration: 1 } },
+];
+const linkedClipboard = createTimelineClipboard(clipboardSource, ['picture']);
+assert.deepEqual(linkedClipboard.entries.map(entry => entry.item.id), ['picture', 'sound'], 'copying a linked visual must include its linked audio peer');
+linkedClipboard.entries[0].item.framing.scale = 2;
+linkedClipboard.entries[0].item.strokes[0][0].x = .9;
+assert.equal(clipboardSource[0].item.framing.scale, 1, 'clipboard framing must not alias the live clip');
+assert.equal(clipboardSource[0].item.strokes[0][0].x, .1, 'clipboard strokes must not alias the live clip');
+linkedClipboard.entries[0].item.framing.scale = 1;
+linkedClipboard.entries[0].item.strokes[0][0].x = .1;
+
+let pastedId = 0;
+let pastedLinkId = 0;
+const linkedPaste = pasteTimelineClipboard(linkedClipboard, {
+  start: 10,
+  videoTrack: 1,
+  audioTrack: 0,
+  videoTrackCount: 2,
+  audioTrackCount: 3,
+  makeId: () => `paste-${++pastedId}`,
+  makeLinkId: () => `paste-link-${++pastedLinkId}`,
+});
+assert.equal(linkedPaste.ok, true);
+assert.deepEqual(linkedPaste.entries.map(entry => [entry.kind, entry.item.id, entry.item.track, entry.item.start]), [
+  ['video', 'paste-1', 1, 10],
+  ['audio', 'paste-2', 0, 10.5],
+]);
+assert.equal(linkedPaste.entries[0].item.linkGroupId, 'paste-link-1');
+assert.equal(linkedPaste.entries[1].item.linkGroupId, 'paste-link-1', 'pasted peers must share a newly generated link group');
+
+const multiTrackClipboard = createTimelineClipboard(clipboardSource, ['picture', 'other'], { includeLinked: false });
+const multiTrackPaste = pasteTimelineClipboard(multiTrackClipboard, {
+  start: 20,
+  videoTrack: 2,
+  videoTrackCount: 3,
+  makeId: () => `multi-${++pastedId}`,
+});
+assert.deepEqual(multiTrackPaste.entries.map(entry => [entry.item.track, entry.item.start]), [[2, 20], [3, 24]], 'multi-track paste must preserve relative track and time offsets from the active target');
+assert.equal(multiTrackPaste.requiredVideoTracks, 4);
+assert.equal(pasteTimelineClipboard(multiTrackClipboard, { start: 20, videoTrack: 7, maxVideoTracks: 8 }).reason, 'track-limit');
+assert.equal(pasteTimelineClipboard(linkedClipboard, { start: 10, sequenceEnd: 12 }).reason, 'sequence-end', 'fixed sequences must reject partial clipboard pastes');
 
 let cutId = 0;
 let cutLinkId = 0;

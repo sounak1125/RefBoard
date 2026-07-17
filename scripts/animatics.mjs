@@ -1,11 +1,13 @@
 import {
   applyBatchTimelineDuration,
   closeTimelineTrackGap,
+  createTimelineClipboard,
   createTimelineHistory,
   linkedTimelineIds,
   linkTimelineItems,
   marqueeSelection,
   normalizeTimelineLinks,
+  pasteTimelineClipboard,
   reorderTimelineTracks,
   resolveOverwrite,
   snappedMoveDelta,
@@ -201,6 +203,9 @@ function css() {
   .an-track-row { position:relative; height:var(--an-track-height,44px); min-height:24px; }
   .an-track-label { position:sticky; left:0; z-index:7; display:flex; align-items:center; gap:6px; min-height:0; padding:0 8px 0 6px; color:#9ca3b0; background:#17191f; border-right:1px solid #2b2e37; border-bottom:1px solid #242730; }
   .an-track-label b { color:#dfe2e8; font-size:11px; }
+  .an-track-target { min-width:28px; height:24px; padding:0 5px; border:1px solid transparent; border-radius:6px; color:#dfe2e8; background:transparent; font:700 11px "Segoe UI",sans-serif; cursor:pointer; }
+  .an-track-target:hover,.an-track-target:focus-visible { color:#f3f8ff; background:#293547; outline:none; }
+  .an-track-target.on { border-color:#5a9de7; color:#eaf5ff; background:#28496d; box-shadow:inset 0 0 0 1px rgba(130,190,255,.2),0 0 9px rgba(74,145,226,.2); }
   .an-track-label span { margin-left:auto; color:#636a77; font-size:10px; }
   .an-track-grip { width:20px; height:24px; padding:0; border:0; display:grid; place-items:center; border-radius:5px; color:#717987; background:transparent; cursor:grab; touch-action:none; }
   .an-track-grip:hover,.an-track-grip:focus-visible { color:#d8e8fb; background:#293547; outline:none; }
@@ -380,6 +385,9 @@ export function createAnimaticsEditor(options) {
   let selectedAudioId = null;
   let selectedTimelineIds = new Set();
   let selectedGap = null;
+  let activeVideoTrack = 0;
+  let activeAudioTrack = 0;
+  let timelineClipboard = null;
   let activeTool = 'select';
   let open = false;
   let playing = false;
@@ -473,6 +481,7 @@ export function createAnimaticsEditor(options) {
   function historyMediaIds(){
     const ids=new Set();
     for(const state of timelineHistory.states())for(const entry of [...state.project.audio,...state.project.clips.filter(isVideoClip)])if(entry.mediaId)ids.add(entry.mediaId);
+    for(const entry of timelineClipboard?.entries||[])if(entry.item?.mediaId)ids.add(entry.item.mediaId);
     return ids;
   }
 
@@ -496,6 +505,7 @@ export function createAnimaticsEditor(options) {
     if(playing)setPlaying(false);stopAudioPlayback();releaseVideoElements();
     project=cloneProjectForHistory(state.project);
     for(const entry of [...project.audio,...project.clips.filter(isVideoClip)]){const resource=mediaResources.get(entry.mediaId);if(resource){entry.blob=resource.blob;entry.url=resource.url;}}
+    syncActiveTrackTargets();
     setTimelineSelection(state.selection||[],state.primaryId);renderAll();pruneMediaResources();onDirty();notify(label);return true;
   }
 
@@ -539,6 +549,14 @@ export function createAnimaticsEditor(options) {
     item=project.audio.find(c=>c.id===id);return item?{item,kind:'audio',collection:project.audio}:null;
   }
 
+  function timelineEntries(){
+    return [
+      ...project.clips.map(item=>({item,kind:'video',collection:project.clips})),
+      ...project.texts.map(item=>({item,kind:'text',collection:project.texts})),
+      ...project.audio.map(item=>({item,kind:'audio',collection:project.audio})),
+    ];
+  }
+
   function syncPrimarySelection(primaryId=null) {
     if(primaryId&&!selectedTimelineIds.has(primaryId))primaryId=null;
     const entry=entryById(primaryId||selectedTimelineIds.values().next().value);
@@ -576,6 +594,12 @@ export function createAnimaticsEditor(options) {
   function trackHeights(kind){return kind==='audio'?project.audioTrackHeights:project.videoTrackHeights;}
   function trackHeight(kind,track){return clamp(Number(trackHeights(kind)?.[track])||DEFAULT_TRACK_HEIGHT,MIN_TRACK_HEIGHT,MAX_TRACK_HEIGHT);}
   function setTrackHeight(kind,track,height){ensureTrackHeightCounts();trackHeights(kind)[track]=clamp(height,MIN_TRACK_HEIGHT,MAX_TRACK_HEIGHT);}
+  function syncActiveTrackTargets(){activeVideoTrack=clamp(Math.round(Number(activeVideoTrack)||0),0,Math.max(0,project.videoTracks-1));activeAudioTrack=clamp(Math.round(Number(activeAudioTrack)||0),0,Math.max(0,project.audioTracks-1));}
+  function reorderedTrackTarget(active,from,to){if(active===from)return to;if(from<to&&active>from&&active<=to)return active-1;if(from>to&&active>=to&&active<from)return active+1;return active;}
+  function setActiveTimelineTrack(kind,track){
+    const count=kind==='audio'?project.audioTracks:project.videoTracks;if(!Number.isInteger(track)||track<0||track>=count)return false;
+    if(kind==='audio')activeAudioTrack=track;else activeVideoTrack=track;renderTimeline();notify(`${kind==='audio'?'A':'V'}${track+1} paste target active`);return true;
+  }
   function isVideoTrackEnabled(track){return project.videoTrackEnabled?.[track]!==false;}
   function isVisualClipEnabled(clip){return clip?.enabled!==false;}
   function isVisualClipVisible(clip){return isVisualClipEnabled(clip)&&isVideoTrackEnabled(Number(clip?.track)||0);}
@@ -583,7 +607,7 @@ export function createAnimaticsEditor(options) {
   function moveTimelineTrack(kind,from,to){
     const video=kind==='video',count=video?project.videoTracks:project.audioTracks;if(!Number.isInteger(from)||!Number.isInteger(to)||from<0||to<0||from>=count||to>=count||from===to)return false;
     if(video)project.clips=reorderTimelineTracks(project.clips,from,to);else project.audio=reorderTimelineTracks(project.audio,from,to);
-    ensureTrackHeightCounts();const heights=trackHeights(kind),[height]=heights.splice(from,1);heights.splice(to,0,height);if(video){const [enabled]=project.videoTrackEnabled.splice(from,1);project.videoTrackEnabled.splice(to,0,enabled!==false);}return true;
+    ensureTrackHeightCounts();const heights=trackHeights(kind),[height]=heights.splice(from,1);heights.splice(to,0,height);if(video){const [enabled]=project.videoTrackEnabled.splice(from,1);project.videoTrackEnabled.splice(to,0,enabled!==false);activeVideoTrack=reorderedTrackTarget(activeVideoTrack,from,to);}else activeAudioTrack=reorderedTrackTarget(activeAudioTrack,from,to);return true;
   }
 
   function replaceTimelineMediaItems(items){
@@ -805,7 +829,7 @@ export function createAnimaticsEditor(options) {
   async function addVideoFiles(files,{track=0,start=project.playhead}={}){
     const list=[...files].filter(isVideoFile);
     if(!list.length){notify('Drop one or more video files');return 0;}
-    const targetTrack=clamp(Number(track)||0,0,MAX_VIDEO_TRACKS-1);let cursor=Math.max(0,Number(start)||0),added=0;
+    const targetTrack=clamp(Number(track)||0,0,MAX_VIDEO_TRACKS-1);activeVideoTrack=targetTrack;let cursor=Math.max(0,Number(start)||0),added=0;
     project.videoTracks=Math.max(project.videoTracks,targetTrack+1);ensureTrackHeightCounts();
     for(const file of list){
       const url=URL.createObjectURL(file),probe=document.createElement('video');probe.preload='metadata';probe.src=url;
@@ -838,6 +862,7 @@ export function createAnimaticsEditor(options) {
   function renderTimeline() {
     clearRazorGuide();
     ensureTrackHeightCounts();
+    syncActiveTrackTargets();
     const fixed=fixedSequenceEnd(),total=fixed??Math.max(10,Math.ceil(contentDuration()+3));
     const zoom=$('#anZoom');zoom.value=String(clamp(Number(project.timelineZoom)||90,Number(zoom.min)||.1,Number(zoom.max)||320));
     const px = Number(zoom.value) || 90;
@@ -861,9 +886,10 @@ export function createAnimaticsEditor(options) {
     for(let track=0;track<project.videoTracks;track++){
       const height=trackHeight('video',track),rowClass=height<34?' compact':'';
       const grip=`<button class="an-track-grip" data-track-move="video" data-track="${track}" title="Drag to reorder V${track+1}" aria-label="Drag to reorder video track V${track+1}"><svg viewBox="0 0 12 16"><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg></button>`;
+      const target=`<button class="an-track-target ${track===activeVideoTrack?'on':''}" data-target-track="video" data-track="${track}" title="Paste to V${track+1}" aria-label="Target video track V${track+1}" aria-pressed="${String(track===activeVideoTrack)}">V${track+1}</button>`;
       const remove=project.videoTracks>1?`<button class="an-track-remove" data-remove-track="video" data-track="${track}" title="Remove empty V${track+1}" aria-label="Remove video track V${track+1}"><svg viewBox="0 0 12 12"><path d="m2 2 8 8M10 2 2 10"/></svg></button>`:'';
       const trackEnabled=isVideoTrackEnabled(track),visibility=`<button class="an-track-visibility ${trackEnabled?'':'off'}" data-toggle-track-visibility="${track}" title="${trackEnabled?'Disable':'Enable'} video track V${track+1}" aria-label="${trackEnabled?'Disable':'Enable'} video track V${track+1}" aria-pressed="${String(!trackEnabled)}">${visibilityIcon(trackEnabled)}</button>`;
-      html+=`<div class="an-track-row${rowClass}${trackEnabled?'':' track-disabled'}" data-track-kind="video" data-track-index="${track}" style="--an-track-height:${height}px"><div class="an-track-label">${grip}<b>V${track+1}</b><span>VIDEO</span>${visibility}${remove}</div><div class="an-track-lane" data-kind="video" data-track="${track}" style="width:${laneWidth}px">`;
+      html+=`<div class="an-track-row${rowClass}${trackEnabled?'':' track-disabled'}" data-track-kind="video" data-track-index="${track}" style="--an-track-height:${height}px"><div class="an-track-label">${grip}${target}<span>VIDEO</span>${visibility}${remove}</div><div class="an-track-lane" data-kind="video" data-track="${track}" style="width:${laneWidth}px">`;
       for(const gap of timelineTrackGaps(project.clips,track,{minDuration:1/project.fps-1e-8}))html+=gapMarkup(gap,px,'video');
       for(const clip of project.clips.filter(c=>c.track===track)) html+=clipMarkup(clip,px,'video');
       html+=`</div><button class="an-track-resize" data-track-resize="video" data-track="${track}" role="separator" aria-orientation="horizontal" aria-label="Resize video track V${track+1}" title="Drag to resize V${track+1} · double-click to reset"></button></div>`;
@@ -872,8 +898,9 @@ export function createAnimaticsEditor(options) {
     for(let track=0;track<project.audioTracks;track++){
       const height=trackHeight('audio',track),rowClass=height<34?' compact':'';
       const grip=`<button class="an-track-grip" data-track-move="audio" data-track="${track}" title="Drag to reorder A${track+1}" aria-label="Drag to reorder audio track A${track+1}"><svg viewBox="0 0 12 16"><circle cx="3" cy="3" r="1.2"/><circle cx="9" cy="3" r="1.2"/><circle cx="3" cy="8" r="1.2"/><circle cx="9" cy="8" r="1.2"/><circle cx="3" cy="13" r="1.2"/><circle cx="9" cy="13" r="1.2"/></svg></button>`;
+      const target=`<button class="an-track-target ${track===activeAudioTrack?'on':''}" data-target-track="audio" data-track="${track}" title="Paste to A${track+1}" aria-label="Target audio track A${track+1}" aria-pressed="${String(track===activeAudioTrack)}">A${track+1}</button>`;
       const remove=`<button class="an-track-remove" data-remove-track="audio" data-track="${track}" title="Remove empty A${track+1}" aria-label="Remove audio track A${track+1}"><svg viewBox="0 0 12 12"><path d="m2 2 8 8M10 2 2 10"/></svg></button>`;
-      html+=`<div class="an-track-row${rowClass}" data-track-kind="audio" data-track-index="${track}" style="--an-track-height:${height}px"><div class="an-track-label">${grip}<b>A${track+1}</b><span>AUDIO</span>${remove}</div><div class="an-track-lane" data-kind="audio" data-track="${track}" style="width:${laneWidth}px">`;
+      html+=`<div class="an-track-row${rowClass}" data-track-kind="audio" data-track-index="${track}" style="--an-track-height:${height}px"><div class="an-track-label">${grip}${target}<span>AUDIO</span>${remove}</div><div class="an-track-lane" data-kind="audio" data-track="${track}" style="width:${laneWidth}px">`;
       for(const gap of timelineTrackGaps(project.audio,track,{minDuration:1/project.fps-1e-8}))html+=gapMarkup(gap,px,'audio');
       for(const clip of project.audio.filter(c=>c.track===track)) html+=clipMarkup(clip,px,'audio');
       html+=`</div><button class="an-track-resize" data-track-resize="audio" data-track="${track}" role="separator" aria-orientation="horizontal" aria-label="Resize audio track A${track+1}" title="Drag to resize A${track+1} · double-click to reset"></button></div>`;
@@ -1235,7 +1262,7 @@ export function createAnimaticsEditor(options) {
   function openEditor(items=[]){
     if(!open){try{onOpen();}catch(err){console.error('[animatics] board view capture failed',err);}}
     open=true; document.body.classList.add('animatics-open'); root.classList.add('open','panel-open'); root.setAttribute('aria-hidden','false');
-    setActiveTool('select');
+    syncActiveTrackTargets();setActiveTool('select');
     if(items.length) addItems(items,{append:project.clips.length>0}); else renderAll();
     resizeViewer();
   }
@@ -1275,15 +1302,48 @@ export function createAnimaticsEditor(options) {
     if(!drawMode&&!framingMode)canvas.style.cursor='';
   }
 
-  function deleteSelected(){
+  function removeTimelineIds(ids){
+    const removedIds=ids instanceof Set?new Set(ids):new Set(ids||[]);if(!removedIds.size)return 0;
     if(playing)setPlaying(false);
-    if(selectedGap){closeSelectedTimelineGap();return;}
-    const ids=new Set(selectedTimelineIds);if(!ids.size&&primarySelectionId())ids.add(primarySelectionId());if(!ids.size)return;
-    const removedVideo=project.clips.filter(c=>ids.has(c.id)&&isVideoClip(c)),removedAudio=project.audio.filter(c=>ids.has(c.id));
-    project.clips=project.clips.filter(c=>!ids.has(c.id));project.texts=project.texts.filter(c=>!ids.has(c.id));project.audio=project.audio.filter(c=>!ids.has(c.id));
+    const removedVideo=project.clips.filter(c=>removedIds.has(c.id)&&isVideoClip(c)),removedAudio=project.audio.filter(c=>removedIds.has(c.id));
+    const before=project.clips.length+project.texts.length+project.audio.length;
+    project.clips=project.clips.filter(c=>!removedIds.has(c.id));project.texts=project.texts.filter(c=>!removedIds.has(c.id));project.audio=project.audio.filter(c=>!removedIds.has(c.id));
     for(const clip of removedVideo){videoElements.get(clip.id)?.pause();videoElements.delete(clip.id);}
     for(const clip of removedAudio)if(!project.audio.some(c=>c.mediaId===clip.mediaId)){audioWaveformCache.delete(clip.mediaId);audioWaveformJobs.delete(clip.mediaId);}
-    cleanupTimelineLinks();setTimelineSelection([]);markDirty();renderAll();
+    cleanupTimelineLinks();setTimelineSelection([]);
+    return before-(project.clips.length+project.texts.length+project.audio.length);
+  }
+
+  function copyTimelineSelection(cut=false){
+    const ids=new Set(selectedTimelineIds);if(!ids.size&&primarySelectionId())ids.add(primarySelectionId());
+    if(!ids.size){notify(cut?'Select one or more clips to cut':'Select one or more clips to copy');return false;}
+    const clipboard=createTimelineClipboard(timelineEntries(),ids,{includeLinked:true});if(!clipboard){notify('Nothing selected to copy');return false;}
+    for(const entry of clipboard.entries)rememberMedia(entry.item);timelineClipboard=clipboard;
+    if(cut){
+      const removed=removeTimelineIds(new Set(clipboard.entries.map(entry=>entry.item.id)));if(!removed)return false;
+      markDirty();renderAll();notify(`Cut ${removed} clip${removed===1?'':'s'}`);return true;
+    }
+    pruneMediaResources();notify(`Copied ${clipboard.entries.length} clip${clipboard.entries.length===1?'':'s'}`);return true;
+  }
+
+  function pasteTimelineSelection(){
+    if(!timelineClipboard?.entries?.length){notify('Nothing copied in Animatics');return false;}
+    if(playing)setPlaying(false);flushDeferredHistory();syncActiveTrackTargets();
+    const at=Math.round(Math.max(0,project.playhead)*project.fps)/project.fps;
+    const pasted=pasteTimelineClipboard(timelineClipboard,{start:at,videoTrack:activeVideoTrack,audioTrack:activeAudioTrack,videoTrackCount:project.videoTracks,audioTrackCount:project.audioTracks,maxVideoTracks:MAX_VIDEO_TRACKS,maxAudioTracks:MAX_AUDIO_TRACKS,sequenceEnd:fixedSequenceEnd(),makeId:uid,makeLinkId:uid});
+    if(!pasted.ok){notify(pasted.reason==='sequence-end'?'Paste would exceed the fixed sequence':pasted.reason==='track-limit'?'Not enough destination tracks to paste':'Nothing copied in Animatics');return false;}
+    project.videoTracks=pasted.requiredVideoTracks;project.audioTracks=pasted.requiredAudioTracks;ensureTrackHeightCounts();
+    for(const entry of pasted.entries){
+      if(entry.kind==='video')project.clips.push(entry.item);else if(entry.kind==='text')project.texts.push(entry.item);else project.audio.push(entry.item);
+      rememberMedia(entry.item);
+    }
+    commitTimelineOverwrite(new Set(pasted.ids));setTimelineSelection(pasted.ids,pasted.ids[0]);markDirty();renderAll();notify(`Pasted ${pasted.ids.length} clip${pasted.ids.length===1?'':'s'} at ${timecode(at,project.fps)}`);return true;
+  }
+
+  function deleteSelected(){
+    if(selectedGap){closeSelectedTimelineGap();return;}
+    const ids=new Set(selectedTimelineIds);if(!ids.size&&primarySelectionId())ids.add(primarySelectionId());if(!ids.size)return;
+    if(removeTimelineIds(ids)){markDirty();renderAll();}
   }
 
   function applySelectedDuration(requestedDuration){
@@ -1355,7 +1415,7 @@ export function createAnimaticsEditor(options) {
     if(video&&count<=1){notify('V1 is the required primary video track');return false;}
     const occupied=collection.filter(item=>item.track===track);if(occupied.length){notify(`${label} contains ${occupied.length} layer${occupied.length===1?'':'s'} — move or delete them first`);return false;}
     for(const item of collection)if(item.track>track)item.track--;
-    ensureTrackHeightCounts();trackHeights(kind).splice(track,1);if(video){project.videoTrackEnabled.splice(track,1);project.videoTracks--;}else project.audioTracks--;markDirty();renderTimeline();notify(`${label} removed`);return true;
+    ensureTrackHeightCounts();trackHeights(kind).splice(track,1);if(video){project.videoTrackEnabled.splice(track,1);project.videoTracks--;activeVideoTrack=activeVideoTrack===track?Math.min(track,project.videoTracks-1):activeVideoTrack>track?activeVideoTrack-1:activeVideoTrack;}else{project.audioTracks--;activeAudioTrack=activeAudioTrack===track?Math.min(track,Math.max(0,project.audioTracks-1)):activeAudioTrack>track?activeAudioTrack-1:activeAudioTrack;}markDirty();renderTimeline();notify(`${label} removed`);return true;
   }
 
   function upsertTextLayer(){
@@ -1445,7 +1505,7 @@ export function createAnimaticsEditor(options) {
     let added=0;
     for(const file of list){
       const trimmed=await openAudioTrimmer(file);if(!trimmed)continue;
-      const requested=trimmed.sourceOut-trimmed.sourceIn,duration=durationWithinSequence(project.playhead,requested,requested);if(!duration){URL.revokeObjectURL(trimmed.url);notify('The fixed sequence has no room for audio here');continue;}const track=project.audioTracks++,clip={id:uid(),mediaId:uid(),track,start:project.playhead,duration,sourceIn:trimmed.sourceIn,sourceOut:trimmed.sourceIn+duration,originalDuration:trimmed.duration,name:file.name,blob:file,url:trimmed.url,volume:1,type:file.type||'audio/mpeg',needsRelink:false};ensureTrackHeightCounts();
+      const requested=trimmed.sourceOut-trimmed.sourceIn,duration=durationWithinSequence(project.playhead,requested,requested);if(!duration){URL.revokeObjectURL(trimmed.url);notify('The fixed sequence has no room for audio here');continue;}const track=project.audioTracks++,clip={id:uid(),mediaId:uid(),track,start:project.playhead,duration,sourceIn:trimmed.sourceIn,sourceOut:trimmed.sourceIn+duration,originalDuration:trimmed.duration,name:file.name,blob:file,url:trimmed.url,volume:1,type:file.type||'audio/mpeg',needsRelink:false};activeAudioTrack=track;ensureTrackHeightCounts();
       project.audio.push(clip);if(trimmed.waveform)audioWaveformCache.set(clip.mediaId,trimmed.waveform);setTimelineSelection([clip.id],clip.id);
       added++;
     }
@@ -1639,9 +1699,10 @@ export function createAnimaticsEditor(options) {
   grid.addEventListener('click',e=>{
     const gap=e.target.closest('.an-gap');if(gap){setTimelineSelection([]);selectedGap={key:gap.dataset.gap,kind:gap.dataset.kind,track:Number(gap.dataset.track),start:Number(gap.dataset.start),end:Number(gap.dataset.end)};renderTimeline();syncInspector();return;}
     if(e.target.closest('[data-time-display]')){toggleTimelineDisplay();return;}
+    const target=e.target.closest('[data-target-track]');if(target){setActiveTimelineTrack(target.dataset.targetTrack,Number(target.dataset.track));return;}
     const visibility=e.target.closest('[data-toggle-track-visibility]');if(visibility){toggleVideoTrackVisibility(Number(visibility.dataset.toggleTrackVisibility));return;}
     const remove=e.target.closest('[data-remove-track]');if(remove){removeTimelineTrack(remove.dataset.removeTrack,Number(remove.dataset.track));return;}
-    const add=e.target.closest('[data-add-track]');if(!add)return;if(add.dataset.addTrack==='video')project.videoTracks=clamp(project.videoTracks+1,1,MAX_VIDEO_TRACKS);else project.audioTracks=clamp(project.audioTracks+1,0,MAX_AUDIO_TRACKS);ensureTrackHeightCounts();markDirty();renderTimeline();
+    const add=e.target.closest('[data-add-track]');if(!add)return;if(add.dataset.addTrack==='video'){project.videoTracks=clamp(project.videoTracks+1,1,MAX_VIDEO_TRACKS);activeVideoTrack=project.videoTracks-1;}else{project.audioTracks=clamp(project.audioTracks+1,0,MAX_AUDIO_TRACKS);activeAudioTrack=Math.max(0,project.audioTracks-1);}ensureTrackHeightCounts();markDirty();renderTimeline();
   });
 
   let dropLane=null;
@@ -1777,7 +1838,7 @@ export function createAnimaticsEditor(options) {
   $('#anAddImages').onclick=()=>options.onRequestImages?.();
   $('#anAddVideo').onclick=()=>$('#anVideoPick').click();
   $('#anAddAudio').onclick=()=>$('#anAudioPick').click();
-  $('#anVideoPick').onchange=e=>{addVideoFiles(e.target.files,{track:0,start:project.playhead});e.target.value='';};
+  $('#anVideoPick').onchange=e=>{addVideoFiles(e.target.files,{track:activeVideoTrack,start:project.playhead});e.target.value='';};
   $('#anAudioPick').onchange=e=>{addAudioFiles(e.target.files);e.target.value='';};
   $('#anTrimInFrames').oninput=e=>{if(!audioTrimState)return;audioTrimState.in=Number(e.target.value)/project.fps;updateAudioTrimUi();};
   $('#anTrimOutFrames').oninput=e=>{if(!audioTrimState)return;audioTrimState.out=Number(e.target.value)/project.fps;updateAudioTrimUi();};
@@ -1819,6 +1880,9 @@ export function createAnimaticsEditor(options) {
     if(!open)return;
     const form=e.target.matches('input,textarea,select'),key=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
     if(mod&&(key==='z'||key==='y')){if(form&&!inlineTextId)e.target.blur();const wantsRedo=key==='y'||e.shiftKey;wantsRedo?redoAnimatics():undoAnimatics();e.preventDefault();e.stopImmediatePropagation();}
+    else if(!form&&mod&&key==='c'){copyTimelineSelection(false);e.preventDefault();e.stopImmediatePropagation();}
+    else if(!form&&mod&&key==='x'){copyTimelineSelection(true);e.preventDefault();e.stopImmediatePropagation();}
+    else if(!form&&mod&&key==='v'){pasteTimelineSelection();e.preventDefault();e.stopImmediatePropagation();}
     else if(e.key==='Escape'){if(inlineTextId)finishInlineTextEdit(true);else if($('#anAudioTrimModal').classList.contains('open'))finishAudioTrimmer(false);else if($('#anSequenceModal').classList.contains('open'))$('#anSequenceModal').classList.remove('open');else if($('#anExportModal').classList.contains('open'))$('#anExportModal').classList.remove('open');else if(selectedGap){selectedGap=null;renderTimeline();}else if(activeTool!=='select')setActiveTool('select');else closeEditor();e.preventDefault();e.stopImmediatePropagation();}
     else if(e.code==='Space'&&!form){if(!spaceHand){spaceHand={startedAt:Date.now(),used:false};setActiveTool('hand');}e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='a'){setTimelineSelection([...project.clips,...project.texts,...project.audio].map(item=>item.id),primarySelectionId());renderTimeline();syncInspector();e.preventDefault();e.stopImmediatePropagation();}
@@ -1952,7 +2016,7 @@ export function createAnimaticsEditor(options) {
     serialize:()=>({ ...structuredClone({...project,audio:[],clips:[]}), playhead:0, clips:project.clips.map(({blob,url,...c})=>({...c,needsRelink:isVideoClip(c)&&!blob})), audio:project.audio.map(({blob,url,...a})=>({...a,needsRelink:!blob})) }),
     mediaRefs:()=>mediaEntries().map(entry=>({id:entry.mediaId,type:entry.type||entry.blob.type||'application/octet-stream',name:entry.name,size:entry.blob.size})),
     getMediaBlob:mediaId=>mediaEntries().find(entry=>entry.mediaId===mediaId)?.blob||null,
-    load:(raw,mediaBlobs)=>{releaseImportedMedia();project=normalizeProject(raw,mediaBlobs);rememberProjectMedia();const first=project.clips[0]?.id||project.texts[0]?.id||project.audio[0]?.id||null;setTimelineSelection(first?[first]:[],first);resetAnimaticsHistory();renderAll();},
-    clear:()=>{releaseImportedMedia();project=freshProject();setTimelineSelection([]);resetAnimaticsHistory();renderAll();},
+    load:(raw,mediaBlobs)=>{releaseImportedMedia();timelineClipboard=null;activeVideoTrack=0;activeAudioTrack=0;project=normalizeProject(raw,mediaBlobs);rememberProjectMedia();const first=project.clips[0]?.id||project.texts[0]?.id||project.audio[0]?.id||null;setTimelineSelection(first?[first]:[],first);resetAnimaticsHistory();renderAll();},
+    clear:()=>{releaseImportedMedia();timelineClipboard=null;activeVideoTrack=0;activeAudioTrack=0;project=freshProject();setTimelineSelection([]);resetAnimaticsHistory();renderAll();},
   };
 }

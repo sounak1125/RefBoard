@@ -12,7 +12,7 @@ const { extractPreviewBase64, compositeThumbnail } = require('./file-icon-compos
 const tempDir = await mkdtemp(path.join(os.tmpdir(), 'refboard-thumb-test-'));
 try {
   const previewBytes = await sharp({
-    create: { width: 640, height: 267, channels: 3, background: '#24324a' },
+    create: { width: 640, height: 640, channels: 3, background: '#24324a' },
   }).jpeg({ quality: 80 }).toBuffer();
   const preview = previewBytes.toString('base64');
   const filePath = path.join(tempDir, 'large-streamed.refboard');
@@ -26,12 +26,21 @@ try {
   const meta = await sharp(decoded).metadata();
   assert.equal(meta.format, 'jpeg', 'embedded board preview should be a decodable JPEG');
   assert.equal(meta.width, 640);
-  assert.equal(meta.height, 267);
+  assert.equal(meta.height, 640);
 
   const providerOutput = await compositeThumbnail(decoded, 256);
   const outputMeta = await sharp(providerOutput).metadata();
   assert.equal(outputMeta.format, 'png', 'thumbnail-provider mirror should produce a valid bitmap');
-  assert.ok(outputMeta.width <= 256 && outputMeta.height <= 256, 'provider output should respect Explorer size');
+  assert.equal(outputMeta.width, 256, 'thumbnail-provider output should match Explorer width');
+  assert.equal(outputMeta.height, 256, 'thumbnail-provider output should match Explorer height');
+
+  const legacyWidePreview = await sharp({
+    create: { width: 640, height: 267, channels: 3, background: '#4a3224' },
+  }).jpeg({ quality: 80 }).toBuffer();
+  const legacyProviderOutput = await compositeThumbnail(legacyWidePreview, 256);
+  const legacyOutputMeta = await sharp(legacyProviderOutput).metadata();
+  assert.equal(legacyOutputMeta.width, 256, 'legacy wide previews should be cropped to Explorer width');
+  assert.equal(legacyOutputMeta.height, 256, 'legacy wide previews should be cropped to Explorer height');
 
   const handlerSource = await readFile(new URL('../build/thumbnail-handler/RefBoardThumbnailHandler.cs', import.meta.url), 'utf8');
   assert.match(handlerSource, /MaxReadBytes\s*=\s*512\s*\*\s*1024/, 'native handler should scan enough header data');
@@ -55,8 +64,13 @@ try {
   );
   assert.match(
     rendererSource,
-    /captureBoardPreviewStrip[\s\S]*?boundedCompositeCanvas\(state\.items,\s*\{[\s\S]*?background:\s*THUMBNAIL_CANVAS_BACKGROUND/,
+    /captureBoardFilePreviewBase64[\s\S]*?boundedCompositeCanvas\(state\.items,\s*\{[\s\S]*?maxWidth:\s*maxPx,[\s\S]*?maxHeight:\s*maxPx,[\s\S]*?fit:\s*['"]cover['"][\s\S]*?background:\s*THUMBNAIL_CANVAS_BACKGROUND/,
     'saved board previews should use the same safe backdrop',
+  );
+  assert.match(
+    handlerSource,
+    /new Bitmap\(size, size, PixelFormat\.Format32bppArgb\)/,
+    'native thumbnail handler should always return the square bitmap Explorer requested',
   );
   assert.match(
     rendererSource,

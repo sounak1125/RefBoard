@@ -174,17 +174,20 @@ namespace RefBoard
         {
             // Explorer supplies the RefBoard file-type icon as the lower-right
             // overlay. Keep the provider bitmap content-only so the logo is not
-            // drawn twice, and preserve the preview's full aspect ratio.
-            var scale = Math.Min((float)size / source.Width, (float)size / source.Height);
+            // drawn twice. Always return the square bitmap Explorer requested;
+            // older RefBoard files contain wide previews, so center-crop those.
+            var scale = Math.Max((float)size / source.Width, (float)size / source.Height);
             var width = Math.Max(1, Round(source.Width * scale));
             var height = Math.Max(1, Round(source.Height * scale));
-            var canvas = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+            var x = Round((size - width) / 2f);
+            var y = Round((size - height) / 2f);
+            var canvas = new Bitmap(size, size, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(canvas))
             {
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.SmoothingMode = SmoothingMode.HighQuality;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                g.DrawImage(source, 0, 0, width, height);
+                g.DrawImage(source, x, y, width, height);
             }
             return canvas;
         }

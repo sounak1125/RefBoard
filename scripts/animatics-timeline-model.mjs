@@ -133,6 +133,92 @@ export function linkedTimelineIds(items, ids) {
   return selected;
 }
 
+function cloneClipboardItem(item) {
+  const copy = { ...item };
+  if (item?.framing) copy.framing = { ...item.framing };
+  if (Array.isArray(item?.strokes)) copy.strokes = structuredClone(item.strokes);
+  return copy;
+}
+
+export function createTimelineClipboard(entries, ids, { includeLinked = true } = {}) {
+  const source = (entries || []).filter(entry => entry?.item?.id && ['video', 'text', 'audio'].includes(entry.kind));
+  const requested = new Set(ids || []);
+  const selected = includeLinked ? linkedTimelineIds(source.map(entry => entry.item), requested) : requested;
+  const copied = source.filter(entry => selected.has(entry.item.id)).map(entry => ({ kind: entry.kind, item: cloneClipboardItem(entry.item) }));
+  if (!copied.length) return null;
+  const videoTracks = copied.filter(entry => entry.kind === 'video').map(entry => Math.max(0, Math.round(finite(entry.item.track))));
+  const audioTracks = copied.filter(entry => entry.kind === 'audio').map(entry => Math.max(0, Math.round(finite(entry.item.track))));
+  return {
+    version: 1,
+    entries: copied,
+    originStart: Math.min(...copied.map(entry => finite(entry.item.start))),
+    videoTrackOrigin: videoTracks.length ? Math.min(...videoTracks) : 0,
+    audioTrackOrigin: audioTracks.length ? Math.min(...audioTracks) : 0,
+  };
+}
+
+export function pasteTimelineClipboard(clipboard, {
+  start = 0,
+  videoTrack = 0,
+  audioTrack = 0,
+  videoTrackCount = 1,
+  audioTrackCount = 0,
+  maxVideoTracks = 8,
+  maxAudioTracks = 5,
+  sequenceEnd = null,
+  makeId = () => crypto.randomUUID(),
+  makeLinkId = () => crypto.randomUUID(),
+} = {}) {
+  const source = (clipboard?.entries || []).filter(entry => entry?.item?.id && ['video', 'text', 'audio'].includes(entry.kind));
+  if (!source.length) return { ok: false, reason: 'empty', entries: [], ids: [] };
+  const targetStart = Math.max(0, finite(start));
+  const originStart = finite(clipboard.originStart, Math.min(...source.map(entry => finite(entry.item.start))));
+  const targetVideoTrack = Math.max(0, Math.round(finite(videoTrack)));
+  const targetAudioTrack = Math.max(0, Math.round(finite(audioTrack)));
+  const sourceVideoTrack = Math.max(0, Math.round(finite(clipboard.videoTrackOrigin)));
+  const sourceAudioTrack = Math.max(0, Math.round(finite(clipboard.audioTrackOrigin)));
+  const linkIds = new Map();
+  const entries = source.map(entry => {
+    const item = cloneClipboardItem(entry.item);
+    item.id = makeId();
+    item.start = targetStart + Math.max(0, finite(entry.item.start) - originStart);
+    if (entry.kind === 'video') item.track = targetVideoTrack + Math.max(0, Math.round(finite(entry.item.track)) - sourceVideoTrack);
+    else if (entry.kind === 'audio') item.track = targetAudioTrack + Math.max(0, Math.round(finite(entry.item.track)) - sourceAudioTrack);
+    else item.track = 0;
+    if (entry.item.linkGroupId) {
+      if (!linkIds.has(entry.item.linkGroupId)) linkIds.set(entry.item.linkGroupId, makeLinkId());
+      item.linkGroupId = linkIds.get(entry.item.linkGroupId);
+    }
+    return { kind: entry.kind, item };
+  });
+  const requiredVideoTracks = Math.max(
+    1,
+    Math.round(finite(videoTrackCount, 1)),
+    1 + Math.max(-1, ...entries.filter(entry => entry.kind === 'video').map(entry => entry.item.track)),
+  );
+  const requiredAudioTracks = Math.max(
+    0,
+    Math.round(finite(audioTrackCount)),
+    1 + Math.max(-1, ...entries.filter(entry => entry.kind === 'audio').map(entry => entry.item.track)),
+  );
+  if (requiredVideoTracks > maxVideoTracks || requiredAudioTracks > maxAudioTracks) {
+    return { ok: false, reason: 'track-limit', entries: [], ids: [], requiredVideoTracks, requiredAudioTracks };
+  }
+  if (Number.isFinite(sequenceEnd) && entries.some(entry => timelineEnd(entry.item) > sequenceEnd + 1e-8)) {
+    return { ok: false, reason: 'sequence-end', entries: [], ids: [], requiredVideoTracks, requiredAudioTracks };
+  }
+  const normalized = normalizeTimelineLinks(entries.map(entry => entry.item));
+  const normalizedById = new Map(normalized.map(item => [item.id, item]));
+  const output = entries.map(entry => ({ kind: entry.kind, item: normalizedById.get(entry.item.id) }));
+  return {
+    ok: true,
+    entries: output,
+    ids: output.map(entry => entry.item.id),
+    requiredVideoTracks,
+    requiredAudioTracks,
+  };
+}
+
 export function normalizeTimelineLinks(items) {
   const counts = new Map();
   for (const item of items || []) if (item.linkGroupId) counts.set(item.linkGroupId, (counts.get(item.linkGroupId) || 0) + 1);

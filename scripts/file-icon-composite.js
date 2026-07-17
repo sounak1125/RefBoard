@@ -67,9 +67,10 @@ function previewShadow(layout) {
 
 async function compositeThumbnail(thumbnailBuffer, size = 256) {
   // The Explorer type overlay owns the single lower-right RefBoard logo.
-  // This mirrors the handler by returning only the complete board preview.
+  // Mirror the handler by returning a square center crop, including for the
+  // wide embedded previews stored by older RefBoard versions.
   return sharp(thumbnailBuffer)
-    .resize(size, size, { fit: 'inside', withoutEnlargement: false })
+    .resize(size, size, { fit: 'cover', position: 'centre', withoutEnlargement: false })
     .png()
     .toBuffer();
 }
