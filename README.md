@@ -31,8 +31,44 @@ Do not create releases by pushing a `v*` tag — that Actions path is unreliable
 
 1. Edit the app (`index.html`, etc.).
 2. Bump `"version"` in `package.json` (e.g. `1.0.0` → `1.1.0`).
-3. Put user-facing bullets in `release-highlights.json` (the `highlights` array).
-   `npm run dist` / `sync-changelog.mjs` copies them into `changelog.json` for in-app What's New.
+3. Replace the contents of `release-highlights.json` with the release headline, summary, and categorized changes. Use this format every time:
+
+```json
+{
+  "headline": "A short release headline",
+  "summary": "One sentence explaining the update.",
+  "sections": {
+    "new": [
+      {
+        "title": "Feature name",
+        "description": "What it lets people do."
+      }
+    ],
+    "improved": [
+      {
+        "title": "Improvement name",
+        "description": "What now feels better."
+      }
+    ],
+    "fixed": [
+      {
+        "title": "Bug that was fixed",
+        "description": "What now works correctly."
+      }
+    ]
+  }
+}
+```
+
+   Keep unused sections as empty arrays (`[]`). Do not add labels such as `"Bug fixes:"` as list items—the modal creates the New, Improved, and Fixed headings automatically. `npm run dist` / `sync-changelog.mjs` copies this release into `changelog.json` for the in-app What's New screen.
+
+   You can also collect a change from a git commit. The text before `|` becomes the title and the text after it becomes the description:
+
+```powershell
+git commit -m "[highlight:new] Feature name | What it lets people do."
+git commit -m "[highlight:improved] Improvement name | What now feels better."
+git commit -m "[highlight:fixed] Bug name | What now works correctly."
+```
 4. Build the installer into `dist-release` (not the default `dist/`):
 
 ```powershell

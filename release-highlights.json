@@ -1,7 +1,18 @@
 {
-  "highlights": [
-    "Bug fixes:",
-    "Image sharpness no longer wavers when zooming in and out.",
-    "Images no longer pop abruptly when switching quality."
-  ]
+  "headline": "Sharper at every zoom",
+  "summary": "This update focuses on image stability and smoother rendering.",
+  "sections": {
+    "new": [],
+    "improved": [],
+    "fixed": [
+      {
+        "title": "Consistent image sharpness",
+        "description": "Images remain crisp while zooming in and out."
+      },
+      {
+        "title": "Seamless quality switching",
+        "description": "References change rendering quality without visibly popping."
+      }
+    ]
+  }
 }

@@ -1,60 +1,252 @@
 {
-  "1.0.2": [
-    "Hand tool and reworked left toolbar with Add drawer",
-    "Group name labels above grouped items",
-    "What's New highlights on the landing page after updates",
-    "Align and normalize tools with updated selection bar icons"
-  ],
-  "1.0.3": [
-    "Your board now restores automatically when you reopen the app — no more lost sessions.",
-    "Much faster zoom and panning on boards with lots of images.",
-    "Significantly lower memory usage on large boards.",
-    "Fixed images from one board occasionally appearing in another.",
-    "Fixed opening a corrupted board wiping the board you already had open."
-  ],
-  "1.0.4": [
-    "Fixed copied and exported images coming out blurry."
-  ],
-  "1.0.5": [
-    "Notes now show links as clickable text instead of raw markdown while editing.",
-    "Click anywhere in a note to place your cursor there.",
-    "Checkboxes render properly, and pasting from ChatGPT or the web keeps your bullets.",
-    "Fixed text alignment, spacing, and sizing issues in notes."
-  ],
-  "1.0.6": [
-    "New app icon and a refreshed look.",
-    "RefBoard files now show a preview thumbnail in File Explorer."
-  ],
-  "1.1.0": [
-    "New app icon and a refreshed look.",
-    "RefBoard files now show a preview thumbnail in File Explorer.",
-    "Notes: click to place your cursor, cleaner lists and checkboxes, and links show as clickable text.",
-    "Copy and paste now keeps your groups and pastes images individually.",
-    "Uses less memory with large image boards.",
-    "Fixed the save prompt after exporting, wheel scrolling on the home screen, and several zoom-related glitches."
-  ],
-  "1.1.1": [
-    "Saving is faster and safer - boards write to a temporary file first, so a failed save never damages your existing board.",
-    "Big boards save quickly - a 22 MB board saves in well under a second.",
-    "Copying large selections uses far less memory.",
-    "Reopening the board you already have open is now instant - no reloading or re-decoding images.",
-    "Switching between boards frees memory sooner, lowering peak usage.",
-    "Closing and returning Home no longer hangs - saves time out safely and keep your board open.",
-    "Fixed the duplicate R logo on File Explorer thumbnails - the preview now shows once, in the bottom-right corner."
-  ],
-  "1.1.2": [
-    "Crop an image, then export just the cropped area at full source resolution.",
-    "The export dialog now shows the exact pixel size a cropped image will produce.",
-    "New drawing shortcuts: press E for the eraser, and use [ and ] to make the pen thinner or thicker.",
-    "Normalize selected images by width or height, not just by scale.",
-    "Batch exports can now be numbered in order, with new naming options for padded numbers and original file names.",
-    "Cleaner landing-page thumbnails - fixed stray black blocks in board previews.",
-    "Faster loading and lower memory use on large boards through disk-backed image streaming.",
-    "Fixed note cursor behavior and group rendering at extreme zoom levels."
-  ],
-  "1.1.3": [
-    "Bug fixes:",
-    "Image sharpness no longer wavers when zooming in and out.",
-    "Images no longer pop abruptly when switching quality."
-  ]
+  "1.0.2": {
+    "headline": "A more capable canvas",
+    "summary": "New navigation, grouping, and alignment tools make arranging references faster.",
+    "sections": {
+      "new": [
+        {
+          "title": "Hand tool and reworked toolbar",
+          "description": "Move around the canvas with a dedicated Hand tool and open creation tools from the new Add drawer."
+        },
+        {
+          "title": "Visible group names",
+          "description": "Group labels now appear above grouped items so boards stay easier to understand."
+        },
+        {
+          "title": "In-app release highlights",
+          "description": "See what changed in RefBoard directly from the landing page after an update."
+        }
+      ],
+      "improved": [
+        {
+          "title": "Faster selection alignment",
+          "description": "Align and normalize tools now use clearer icons in the selection bar."
+        }
+      ],
+      "fixed": []
+    }
+  },
+  "1.0.3": {
+    "headline": "Safer sessions, smoother boards",
+    "summary": "RefBoard restores work more reliably while using less memory on large boards.",
+    "sections": {
+      "new": [],
+      "improved": [
+        {
+          "title": "Automatic session restore",
+          "description": "Your board returns automatically when RefBoard reopens."
+        },
+        {
+          "title": "Faster canvas navigation",
+          "description": "Zooming and panning stay responsive on boards with many images."
+        },
+        {
+          "title": "Lower memory usage",
+          "description": "Large boards now consume significantly less memory."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Images stay on the correct board",
+          "description": "References from one board no longer occasionally appear in another."
+        },
+        {
+          "title": "Corrupted files open safely",
+          "description": "Opening a damaged board no longer wipes the board already open."
+        }
+      ]
+    }
+  },
+  "1.0.4": {
+    "headline": "Sharper exports",
+    "summary": "Copied and exported images now preserve their intended quality.",
+    "sections": {
+      "new": [],
+      "improved": [],
+      "fixed": [
+        {
+          "title": "Crisp copied and exported images",
+          "description": "Images no longer come out blurry after copying or exporting."
+        }
+      ]
+    }
+  },
+  "1.0.5": {
+    "headline": "Notes that feel natural",
+    "summary": "Editing notes is more direct, with cleaner links, lists, and cursor behavior.",
+    "sections": {
+      "new": [],
+      "improved": [
+        {
+          "title": "Readable links while editing",
+          "description": "Notes show clickable link text instead of raw Markdown."
+        },
+        {
+          "title": "Direct cursor placement",
+          "description": "Click anywhere in a note to place the cursor exactly there."
+        },
+        {
+          "title": "Cleaner pasted content",
+          "description": "Checkboxes render properly, and pasted content keeps bullets from ChatGPT and the web."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Consistent note layout",
+          "description": "Text alignment, spacing, and sizing issues in notes are resolved."
+        }
+      ]
+    }
+  },
+  "1.0.6": {
+    "headline": "A refreshed RefBoard",
+    "summary": "A new identity and File Explorer previews make RefBoard feel at home on Windows.",
+    "sections": {
+      "new": [
+        {
+          "title": "New app icon",
+          "description": "RefBoard has a refreshed visual identity across the app."
+        },
+        {
+          "title": "File Explorer previews",
+          "description": "Saved RefBoard files now display a board thumbnail in File Explorer."
+        }
+      ],
+      "improved": [],
+      "fixed": []
+    }
+  },
+  "1.1.0": {
+    "headline": "A stronger everyday workflow",
+    "summary": "This release brings better previews, cleaner notes, smarter pasting, and lower memory use.",
+    "sections": {
+      "new": [
+        {
+          "title": "File Explorer board thumbnails",
+          "description": "Identify saved RefBoard files from their preview before opening them."
+        }
+      ],
+      "improved": [
+        {
+          "title": "More natural note editing",
+          "description": "Place the cursor with a click, use cleaner lists and checkboxes, and read links as clickable text."
+        },
+        {
+          "title": "Smarter copy and paste",
+          "description": "Groups remain intact and pasted images arrive as individual references."
+        },
+        {
+          "title": "Lower large-board memory use",
+          "description": "Image-heavy boards now use less system memory."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Smoother everyday navigation",
+          "description": "Resolved the save prompt after export, landing-page wheel scrolling, and several zoom glitches."
+        }
+      ]
+    }
+  },
+  "1.1.1": {
+    "headline": "Faster, safer saves",
+    "summary": "Large boards now save, reopen, and switch more reliably with lower peak memory use.",
+    "sections": {
+      "new": [],
+      "improved": [
+        {
+          "title": "Atomic board saves",
+          "description": "Boards write to a temporary file first, so a failed save cannot damage the existing file."
+        },
+        {
+          "title": "Much faster large-board saves",
+          "description": "A 22 MB board can now save in well under a second."
+        },
+        {
+          "title": "Lower copy memory use",
+          "description": "Copying large selections requires far less memory."
+        },
+        {
+          "title": "Instant reopen for the active board",
+          "description": "Opening the board already in use no longer reloads or decodes its images."
+        },
+        {
+          "title": "Earlier memory release",
+          "description": "Switching boards frees old image data sooner and lowers peak usage."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Reliable close and Home actions",
+          "description": "Timed-out saves keep the board open instead of leaving RefBoard hanging."
+        },
+        {
+          "title": "Clean File Explorer thumbnails",
+          "description": "The duplicate R logo is gone; the preview badge appears once in the bottom-right corner."
+        }
+      ]
+    }
+  },
+  "1.1.2": {
+    "headline": "More control from canvas to export",
+    "summary": "High-resolution crops, drawing shortcuts, batch naming, and disk-backed loading expand the creative workflow.",
+    "sections": {
+      "new": [
+        {
+          "title": "Full-resolution cropped exports",
+          "description": "Export only the visible crop while preserving the source image resolution."
+        },
+        {
+          "title": "Drawing keyboard shortcuts",
+          "description": "Press E for the eraser, or use [ and ] to change pen thickness."
+        },
+        {
+          "title": "Normalize by width or height",
+          "description": "Match selected images by a shared dimension instead of scale alone."
+        },
+        {
+          "title": "Flexible batch export names",
+          "description": "Number exports in order with padded digits or keep original file names."
+        }
+      ],
+      "improved": [
+        {
+          "title": "Exact crop dimensions",
+          "description": "The export dialog shows the precise pixel size of the cropped result."
+        },
+        {
+          "title": "Disk-backed image streaming",
+          "description": "Large boards load faster and use less memory."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Cleaner landing-page thumbnails",
+          "description": "Stray black blocks no longer appear in board previews."
+        },
+        {
+          "title": "Stable notes and groups at extreme zoom",
+          "description": "Note cursor behavior and group rendering remain reliable far in or out."
+        }
+      ]
+    }
+  },
+  "1.1.3": {
+    "headline": "Sharper at every zoom",
+    "summary": "This update focuses on image stability and smoother rendering.",
+    "sections": {
+      "new": [],
+      "improved": [],
+      "fixed": [
+        {
+          "title": "Consistent image sharpness",
+          "description": "Images remain crisp while zooming in and out."
+        },
+        {
+          "title": "Seamless quality switching",
+          "description": "References change rendering quality without visibly popping."
+        }
+      ]
+    }
+  }
 }

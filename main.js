@@ -96,6 +96,57 @@ async function saveWhatsNewStore(data) {
 
 let changelogCache = null;
 
+const WHATS_NEW_SECTION_KEYS = ['new', 'improved', 'fixed'];
+
+function normalizeWhatsNewItem(item) {
+  if (typeof item === 'string') {
+    const title = item.trim();
+    return title ? { title, description: '' } : null;
+  }
+  if (!item || typeof item !== 'object') return null;
+  const title = String(item.title || '').trim();
+  const description = String(item.description || '').trim();
+  if (!title && !description) return null;
+  return { title: title || description, description: title ? description : '' };
+}
+
+function normalizeChangelogRelease(version, entry) {
+  const fallbackHeadline = `RefBoard ${version}`;
+  if (Array.isArray(entry)) {
+    let activeSection = 'improved';
+    const sections = { new: [], improved: [], fixed: [] };
+    for (const raw of entry) {
+      const text = String(raw || '').trim();
+      if (!text) continue;
+      if (/^(new|new features?)\s*:?$/i.test(text)) { activeSection = 'new'; continue; }
+      if (/^(improved|improvements?)\s*:?$/i.test(text)) { activeSection = 'improved'; continue; }
+      if (/^(fixed|fixes|bug fixes?)\s*:?$/i.test(text)) { activeSection = 'fixed'; continue; }
+      const item = normalizeWhatsNewItem(text);
+      if (item) sections[activeSection].push(item);
+    }
+    return { version, headline: fallbackHeadline, summary: '', sections };
+  }
+
+  const sourceSections = entry?.sections && typeof entry.sections === 'object' ? entry.sections : {};
+  const sections = { new: [], improved: [], fixed: [] };
+  for (const key of WHATS_NEW_SECTION_KEYS) {
+    const source = Array.isArray(sourceSections[key]) ? sourceSections[key] : [];
+    sections[key] = source.map(normalizeWhatsNewItem).filter(Boolean);
+  }
+  return {
+    version,
+    headline: String(entry?.headline || fallbackHeadline).trim(),
+    summary: String(entry?.summary || '').trim(),
+    sections,
+  };
+}
+
+function hasWhatsNewContent(entry) {
+  if (Array.isArray(entry)) return entry.some(value => String(value || '').trim());
+  const sections = entry?.sections;
+  return !!sections && WHATS_NEW_SECTION_KEYS.some(key => Array.isArray(sections[key]) && sections[key].length);
+}
+
 async function loadChangelog() {
   if (changelogCache) return changelogCache;
   try {
@@ -123,21 +174,41 @@ async function evaluateWhatsNew() {
 
   const changelog = await loadChangelog();
   const versions = Object.keys(changelog)
-    .filter(v => Array.isArray(changelog[v]) && changelog[v].length)
+    .filter(v => hasWhatsNewContent(changelog[v]))
     .filter(v => (v === current) || (semverGt(current, v) && (lastSeen === null ? false : semverGt(v, lastSeen))))
     .sort((a, b) => (semverGt(a, b) ? -1 : semverGt(b, a) ? 1 : 0));
+
+  const releases = versions.map(v => normalizeChangelogRelease(v, changelog[v]));
+  const sections = { new: [], improved: [], fixed: [] };
   const seen = new Set();
-  const highlights = [];
-  for (const v of versions) {
-    for (const h of changelog[v]) {
-      if (!seen.has(h)) { seen.add(h); highlights.push(h); }
+  for (const release of releases) {
+    for (const key of WHATS_NEW_SECTION_KEYS) {
+      for (const item of release.sections[key]) {
+        const identity = `${key}\n${item.title}\n${item.description}`;
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        sections[key].push({ ...item, version: release.version });
+      }
     }
   }
-  if (!Array.isArray(highlights) || !highlights.length) {
+  const totalChanges = WHATS_NEW_SECTION_KEYS.reduce((total, key) => total + sections[key].length, 0);
+  if (!totalChanges) {
     return { show: false };
   }
 
-  return { show: true, version: current, highlights };
+  const latest = releases[0];
+  const multipleReleases = releases.length > 1;
+  return {
+    show: true,
+    version: current,
+    headline: multipleReleases ? `Everything new since ${lastSeen}` : latest.headline,
+    summary: multipleReleases
+      ? `${releases.length} RefBoard updates, collected in one place.`
+      : latest.summary,
+    sections,
+    releaseCount: releases.length,
+    totalChanges,
+  };
 }
 
 function notifyRenderer(msg) {

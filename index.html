@@ -834,81 +834,194 @@ body.board-instant-open #titlebarPeek{
 /* ---------- what's new (landing) ---------- */
 #whatsNewNotice{
   position:fixed; right:24px; bottom:24px; z-index:82;
-  display:flex; align-items:center; gap:2px;
-  background:var(--panel);
-  border:1px solid var(--line);
-  border-radius:12px;
-  padding:4px 4px 4px 6px;
-  box-shadow:0 8px 30px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.04) inset;
-  backdrop-filter:blur(16px);
-  animation:wnIn .42s cubic-bezier(.22,1,.36,1) backwards;
+  display:flex; align-items:center; gap:4px;
+  min-width:188px;
+  background:linear-gradient(145deg, color-mix(in srgb, var(--panel) 92%, var(--acc) 8%), color-mix(in srgb, var(--panel) 97%, #000 3%));
+  border:1px solid color-mix(in srgb, var(--acc) 26%, var(--line));
+  border-radius:15px;
+  padding:5px;
+  box-shadow:0 14px 44px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.07) inset, 0 0 30px color-mix(in srgb, var(--acc) 8%, transparent);
+  backdrop-filter:blur(24px) saturate(1.12);
+  animation:wnIn .5s cubic-bezier(.16,1,.3,1) backwards;
 }
 #whatsNewNotice.hide{ display:none; }
 body.board-active #whatsNewNotice{ display:none; }
 @keyframes wnIn{
-  from{ opacity:0; transform:translateY(10px) scale(.96); }
+  from{ opacity:0; transform:translateY(14px) scale(.95); filter:blur(5px); }
   to{ opacity:1; transform:translateY(0) scale(1); }
 }
 .wn-notice-main{
-  display:flex; align-items:center; gap:8px;
+  flex:1; display:flex; align-items:center; gap:10px;
   border:none; background:transparent; color:var(--txt);
-  font-size:13px; font-weight:600; padding:6px 8px 6px 4px;
-  border-radius:8px; cursor:pointer;
+  padding:6px 9px 6px 5px;
+  border-radius:10px; cursor:pointer; text-align:left;
 }
-.wn-notice-main:hover{ background:rgba(255,255,255,.06); }
+.wn-notice-main:hover{ background:rgba(255,255,255,.055); }
 .wn-sparkle{
-  width:22px; height:22px; flex-shrink:0;
+  width:30px; height:30px; flex-shrink:0;
   display:flex; align-items:center; justify-content:center;
+  border-radius:9px;
+  background:color-mix(in srgb, var(--acc) 15%, transparent);
+  border:1px solid color-mix(in srgb, var(--acc) 24%, transparent);
+  box-shadow:0 0 18px color-mix(in srgb, var(--acc) 18%, transparent);
 }
 .wn-sparkle svg{
-  width:18px; height:18px; display:block;
+  width:17px; height:17px; display:block;
   animation:wnSparkle 2.4s ease-in-out infinite;
 }
 @keyframes wnSparkle{
   0%,100%{ transform:scale(1) rotate(0deg); opacity:.82; }
   50%{ transform:scale(1.12) rotate(8deg); opacity:1; }
 }
+.wn-notice-copy{ display:flex; flex-direction:column; gap:1px; min-width:0; }
+.wn-label{ font-size:12.5px; font-weight:650; letter-spacing:.01em; color:var(--txt); }
+.wn-notice-version{ font-size:10.5px; color:var(--mut); white-space:nowrap; }
 .wn-dismiss{
   width:28px; height:28px; flex-shrink:0;
-  border:none; border-radius:8px; background:transparent;
+  border:none; border-radius:9px; background:transparent;
   color:var(--dim); font-size:18px; line-height:1;
   cursor:pointer;
 }
 .wn-dismiss:hover{ background:rgba(255,255,255,.08); color:#fff; }
 
-#whatsNewModal{ z-index:86; }
-.card.wn-card{ width:400px; position:relative; display:flex; flex-direction:column; max-height:calc(100vh - var(--titlebar-h) - 40px); }
-.card.wn-card h3{ margin-bottom:6px; }
-.wn-version{
-  font-size:12px; color:var(--dim); margin-bottom:16px;
+#whatsNewModal{
+  z-index:86;
+  background:rgba(5,7,11,.66);
+  backdrop-filter:blur(13px) saturate(.9);
 }
-.wn-highlights{
-  list-style:none; margin:0 0 8px; padding:0 4px 0 0;
-  display:flex; flex-direction:column; gap:10px;
-  overflow-y:auto; flex:1 1 auto; min-height:0;
+#whatsNewModal.show .wn-card{ animation:wnCardIn .48s cubic-bezier(.16,1,.3,1) both; }
+@keyframes wnCardIn{
+  from{ opacity:0; transform:translateY(20px) scale(.965); filter:blur(7px); }
+  to{ opacity:1; transform:translateY(0) scale(1); filter:blur(0); }
+}
+.card.wn-card{
+  width:660px; max-width:calc(100vw - 40px);
+  padding:0; position:relative; display:flex; flex-direction:column;
+  max-height:min(780px, calc(100vh - var(--titlebar-h) - 40px));
+  overflow:hidden; border-radius:24px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--panel) 91%, var(--acc) 9%), color-mix(in srgb, var(--card) 96%, #000 4%));
+  border:1px solid color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.1));
+  box-shadow:0 38px 110px rgba(0,0,0,.72), 0 1px 0 rgba(255,255,255,.09) inset, 0 0 70px color-mix(in srgb, var(--acc) 7%, transparent);
+  backdrop-filter:blur(34px) saturate(1.16);
+}
+.wn-card::before{
+  content:''; position:absolute; z-index:2; pointer-events:none;
+  left:8%; right:8%; top:0; height:1px;
+  background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) 68%, #fff 32%), transparent);
+  opacity:.65;
+}
+.wn-card-head{
+  position:relative; flex:none; padding:30px 34px 24px;
+  border-bottom:1px solid rgba(255,255,255,.07);
+  background:linear-gradient(180deg, color-mix(in srgb, var(--acc) 7%, transparent), transparent);
+}
+.wn-card-head::after{
+  content:''; position:absolute; width:220px; height:130px; right:44px; top:-70px;
+  border-radius:50%; background:color-mix(in srgb, var(--acc) 17%, transparent);
+  filter:blur(46px); pointer-events:none;
+}
+.wn-kicker{
+  display:flex; align-items:center; gap:8px; margin-bottom:14px;
+  color:color-mix(in srgb, var(--acc) 84%, #fff 16%);
+  font-size:10px; font-weight:700; letter-spacing:.16em; text-transform:uppercase;
+}
+.wn-kicker::before{
+  content:''; width:22px; height:2px; border-radius:2px;
+  background:var(--acc); box-shadow:0 0 10px color-mix(in srgb, var(--acc) 60%, transparent);
+}
+.card.wn-card .wn-headline{
+  max-width:520px; margin:0 0 9px;
+  color:var(--txt); font-size:27px; line-height:1.14; font-weight:650; letter-spacing:-.025em;
+}
+.wn-summary{ max-width:540px; color:var(--mut); font-size:13.5px; line-height:1.55; }
+.wn-release-meta{ display:flex; align-items:center; gap:8px; margin-top:16px; }
+.wn-version-pill,.wn-change-count{
+  display:inline-flex; align-items:center; height:25px; padding:0 9px;
+  border-radius:8px; font-size:10.5px; font-weight:600;
+}
+.wn-version-pill{
+  color:#d7eaff; background:color-mix(in srgb, var(--acc) 14%, transparent);
+  border:1px solid color-mix(in srgb, var(--acc) 25%, transparent);
+}
+.wn-change-count{ color:var(--mut); background:rgba(255,255,255,.035); border:1px solid var(--line); }
+.wn-scroll{
+  padding:24px 28px 12px 34px; overflow-y:auto; flex:1 1 auto; min-height:0;
   scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.18) transparent;
 }
-.wn-highlights::-webkit-scrollbar{ width:8px; }
-.wn-highlights::-webkit-scrollbar-track{ background:transparent; }
-.wn-highlights::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.16); border-radius:4px; }
-.wn-highlights::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.28); }
-.wn-highlights li{
-  position:relative; padding-left:18px;
-  font-size:13.5px; line-height:1.45; color:var(--txt);
+.wn-scroll::-webkit-scrollbar{ width:8px; }
+.wn-scroll::-webkit-scrollbar-track{ background:transparent; }
+.wn-scroll::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.14); border-radius:4px; }
+.wn-scroll::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.25); }
+.wn-sections{ display:flex; flex-direction:column; gap:24px; padding-bottom:14px; }
+.wn-section{ --wn-section-color:var(--acc); }
+.wn-section[data-section="improved"]{ --wn-section-color:#9a89f5; }
+.wn-section[data-section="fixed"]{ --wn-section-color:#58c7a7; }
+.wn-section-head{ display:flex; align-items:center; gap:10px; margin:0 2px 10px; }
+.wn-section-icon{
+  width:25px; height:25px; display:grid; place-items:center; flex:none;
+  border-radius:8px; color:color-mix(in srgb, var(--wn-section-color) 82%, #fff 18%);
+  background:color-mix(in srgb, var(--wn-section-color) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--wn-section-color) 25%, transparent);
+  font-size:13px; font-weight:700;
 }
-.wn-highlights li::before{
-  content:''; position:absolute; left:0; top:.55em;
-  width:6px; height:6px; border-radius:50%;
-  background:var(--acc); box-shadow:0 0 8px color-mix(in srgb, var(--acc) 55%, transparent);
+.wn-section-title{
+  color:var(--txt); font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
 }
+.wn-section-count{
+  margin-left:auto; color:var(--dim); font-size:10.5px; font-variant-numeric:tabular-nums;
+}
+.wn-items{ display:flex; flex-direction:column; gap:8px; }
+.wn-item{
+  position:relative; padding:14px 15px 14px 17px; overflow:hidden;
+  border-radius:13px; border:1px solid rgba(255,255,255,.075);
+  background:linear-gradient(135deg, rgba(255,255,255,.052), rgba(255,255,255,.022));
+  box-shadow:0 9px 26px rgba(0,0,0,.16), 0 1px 0 rgba(255,255,255,.025) inset;
+  animation:wnItemIn .46s cubic-bezier(.16,1,.3,1) both;
+  animation-delay:calc(var(--wn-index, 0) * 45ms + 110ms);
+}
+.wn-item::before{
+  content:''; position:absolute; left:0; top:11px; bottom:11px; width:2px; border-radius:2px;
+  background:var(--wn-section-color); box-shadow:0 0 10px color-mix(in srgb, var(--wn-section-color) 46%, transparent);
+}
+@keyframes wnItemIn{
+  from{ opacity:0; transform:translateY(8px); }
+  to{ opacity:1; transform:translateY(0); }
+}
+.wn-item-top{ display:flex; align-items:baseline; gap:10px; }
+.wn-item-title{ color:var(--txt); font-size:13px; font-weight:620; line-height:1.35; }
+.wn-item-version{
+  margin-left:auto; color:var(--dim); font-size:9.5px; font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+.wn-item-description{ margin-top:4px; color:var(--mut); font-size:12px; line-height:1.5; }
+.wn-card-foot{
+  flex:none; display:flex; align-items:center; justify-content:space-between; gap:18px;
+  padding:15px 22px 16px 34px;
+  border-top:1px solid rgba(255,255,255,.07);
+  background:color-mix(in srgb, var(--card) 84%, transparent);
+  backdrop-filter:blur(22px);
+}
+.wn-foot-note{ color:var(--dim); font-size:10.5px; }
+.card.wn-card .row-btns{ margin:0; }
+.card.wn-card .btn.primary{ min-width:104px; box-shadow:0 8px 24px color-mix(in srgb, var(--acc) 20%, transparent); }
 .card.wn-card .modal-x{
-  position:absolute; top:14px; right:14px;
-  width:28px; height:28px; border:none; border-radius:8px;
-  background:transparent; color:var(--dim); font-size:18px; line-height:1;
+  position:absolute; z-index:4; top:18px; right:18px;
+  width:32px; height:32px; border:1px solid transparent; border-radius:10px;
+  background:rgba(255,255,255,.025); color:var(--dim); font-size:19px; line-height:1;
   cursor:pointer;
 }
-.card.wn-card .modal-x:hover{ background:#2a2e3a; color:#fff; }
-.card.wn-card .row-btns{ justify-content:center; }
+.card.wn-card .modal-x:hover{ border-color:var(--line); background:rgba(255,255,255,.07); color:#fff; }
+@media (max-width:620px){
+  .card.wn-card{ border-radius:20px; }
+  .wn-card-head{ padding:26px 24px 20px; }
+  .wn-scroll{ padding:20px 18px 10px 24px; }
+  .wn-card-foot{ padding:14px 18px 15px 24px; }
+  .card.wn-card .wn-headline{ font-size:23px; }
+  .wn-foot-note{ display:none; }
+}
+@media (prefers-reduced-motion:reduce){
+  #whatsNewNotice,.wn-sparkle svg,#whatsNewModal.show .wn-card,.wn-item{ animation:none !important; }
+}
 
 /* ---------- toast ---------- */
 #toast{
@@ -1696,7 +1809,10 @@ body.board-active #whatsNewNotice{ display:none; }
         <path d="M19 14l.7 2.1h2.2l-1.8 1.3.7 2.1L19 18.2l-1.8 1.3.7-2.1-1.8-1.3h2.2L19 14z" fill="var(--acc)" opacity=".55"/>
       </svg>
     </span>
-    <span class="wn-label">What's New</span>
+    <span class="wn-notice-copy">
+      <span class="wn-label">What's New</span>
+      <span class="wn-notice-version" id="whatsNewNoticeVersion"></span>
+    </span>
   </button>
   <button type="button" class="wn-dismiss" id="whatsNewDismiss" title="Dismiss" aria-label="Dismiss">×</button>
 </div>
@@ -2117,13 +2233,25 @@ body.board-active #whatsNewNotice{ display:none; }
 </div>
 
 <div id="whatsNewModal" class="modal">
-  <div class="card wn-card">
-    <button type="button" class="modal-x" id="whatsNewModalClose" title="Close">×</button>
-    <h3>What's New</h3>
-    <p class="wn-version" id="whatsNewVersion"></p>
-    <ul class="wn-highlights" id="whatsNewList"></ul>
-    <div class="row-btns">
-      <button type="button" class="btn primary" id="whatsNewGotIt">Got it</button>
+  <div class="card wn-card" role="dialog" aria-modal="true" aria-labelledby="whatsNewHeadline">
+    <button type="button" class="modal-x" id="whatsNewModalClose" title="Close" aria-label="Close">×</button>
+    <div class="wn-card-head">
+      <div class="wn-kicker">What's new in RefBoard</div>
+      <h3 class="wn-headline" id="whatsNewHeadline"></h3>
+      <p class="wn-summary" id="whatsNewSummary"></p>
+      <div class="wn-release-meta">
+        <span class="wn-version-pill" id="whatsNewVersion"></span>
+        <span class="wn-change-count" id="whatsNewChangeCount"></span>
+      </div>
+    </div>
+    <div class="wn-scroll">
+      <div class="wn-sections" id="whatsNewSections"></div>
+    </div>
+    <div class="wn-card-foot">
+      <span class="wn-foot-note">RefBoard keeps your work private and local.</span>
+      <div class="row-btns">
+        <button type="button" class="btn primary" id="whatsNewGotIt">Continue</button>
+      </div>
     </div>
   </div>
 </div>
@@ -10109,11 +10237,21 @@ async function renderRecentWorks() {
 }
 
 let whatsNewPayload = null;
+const WHATS_NEW_SECTION_META = {
+  new: { label: 'New', icon: '+' },
+  improved: { label: 'Improved', icon: '↗' },
+  fixed: { label: 'Fixed', icon: '✓' },
+};
+
+function formatWhatsNewCount(count) {
+  return `${count} ${count === 1 ? 'change' : 'changes'}`;
+}
 
 function syncWhatsNewNotice() {
   const notice = $('#whatsNewNotice');
   if (!notice) return;
-  if (onLanding && whatsNewPayload) notice.classList.remove('hide');
+  const modalOpen = $('#whatsNewModal')?.classList.contains('show');
+  if (onLanding && whatsNewPayload && !modalOpen) notice.classList.remove('hide');
   else notice.classList.add('hide');
 }
 
@@ -10121,11 +10259,19 @@ async function refreshWhatsNew() {
   if (!window.RefBoardAPI?.checkWhatsNew) return;
   const res = await window.RefBoardAPI.checkWhatsNew();
   whatsNewPayload = res?.show ? res : null;
+  const noticeVersion = $('#whatsNewNoticeVersion');
+  if (noticeVersion) {
+    noticeVersion.textContent = whatsNewPayload
+      ? `v${whatsNewPayload.version} · ${formatWhatsNewCount(whatsNewPayload.totalChanges)}`
+      : '';
+  }
   syncWhatsNewNotice();
 }
 
-function hideWhatsNewModal() {
+async function closeWhatsNewModal(markSeen = true) {
   $('#whatsNewModal')?.classList.remove('show');
+  if (markSeen) await dismissWhatsNewNotice();
+  else syncWhatsNewNotice();
 }
 
 async function dismissWhatsNewNotice() {
@@ -10136,19 +10282,85 @@ async function dismissWhatsNewNotice() {
 
 function openWhatsNewModal() {
   if (!whatsNewPayload) return;
-  const list = $('#whatsNewList');
-  const ver = $('#whatsNewVersion');
-  if (ver) ver.textContent = `Version ${whatsNewPayload.version}`;
-  if (list) {
-    list.innerHTML = '';
-    for (const item of whatsNewPayload.highlights) {
-      const li = document.createElement('li');
-      li.textContent = item;
-      list.appendChild(li);
+  const payload = whatsNewPayload;
+  const headline = $('#whatsNewHeadline');
+  const summary = $('#whatsNewSummary');
+  const version = $('#whatsNewVersion');
+  const count = $('#whatsNewChangeCount');
+  const sections = $('#whatsNewSections');
+
+  if (headline) headline.textContent = payload.headline;
+  if (summary) summary.textContent = payload.summary;
+  if (version) version.textContent = `Version ${payload.version}`;
+  if (count) count.textContent = formatWhatsNewCount(payload.totalChanges);
+
+  if (sections) {
+    sections.innerHTML = '';
+    let itemIndex = 0;
+    for (const [key, meta] of Object.entries(WHATS_NEW_SECTION_META)) {
+      const items = Array.isArray(payload.sections?.[key]) ? payload.sections[key] : [];
+      if (!items.length) continue;
+
+      const section = document.createElement('section');
+      section.className = 'wn-section';
+      section.dataset.section = key;
+
+      const sectionHead = document.createElement('div');
+      sectionHead.className = 'wn-section-head';
+
+      const icon = document.createElement('span');
+      icon.className = 'wn-section-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = meta.icon;
+
+      const sectionTitle = document.createElement('h4');
+      sectionTitle.className = 'wn-section-title';
+      sectionTitle.textContent = meta.label;
+
+      const sectionCount = document.createElement('span');
+      sectionCount.className = 'wn-section-count';
+      sectionCount.textContent = `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
+
+      sectionHead.append(icon, sectionTitle, sectionCount);
+      section.appendChild(sectionHead);
+
+      const itemList = document.createElement('div');
+      itemList.className = 'wn-items';
+      for (const item of items) {
+        const itemCard = document.createElement('article');
+        itemCard.className = 'wn-item';
+        itemCard.style.setProperty('--wn-index', itemIndex++);
+
+        const itemTop = document.createElement('div');
+        itemTop.className = 'wn-item-top';
+
+        const itemTitle = document.createElement('div');
+        itemTitle.className = 'wn-item-title';
+        itemTitle.textContent = item.title;
+        itemTop.appendChild(itemTitle);
+
+        if (payload.releaseCount > 1 && item.version) {
+          const itemVersion = document.createElement('span');
+          itemVersion.className = 'wn-item-version';
+          itemVersion.textContent = `v${item.version}`;
+          itemTop.appendChild(itemVersion);
+        }
+        itemCard.appendChild(itemTop);
+
+        if (item.description) {
+          const description = document.createElement('p');
+          description.className = 'wn-item-description';
+          description.textContent = item.description;
+          itemCard.appendChild(description);
+        }
+        itemList.appendChild(itemCard);
+      }
+      section.appendChild(itemList);
+      sections.appendChild(section);
     }
   }
-  void dismissWhatsNewNotice();
   $('#whatsNewModal')?.classList.add('show');
+  syncWhatsNewNotice();
 }
 
 async function showLanding() {
@@ -13276,7 +13488,7 @@ window.addEventListener('keydown', e => {
       } else if (confirmModal.classList.contains('show')) {
         hideConfirm(false);
       } else if (whatsNewModal.classList.contains('show')) {
-        hideWhatsNewModal();
+        void closeWhatsNewModal(true);
       } else {
         helpModal.classList.remove('show');
         exportModal.classList.remove('show');
@@ -13952,8 +14164,8 @@ $('#noteLinkUrl')?.addEventListener('keydown', e => {
 });
 $('#whatsNewOpen').addEventListener('click', openWhatsNewModal);
 $('#whatsNewDismiss').addEventListener('click', () => { void dismissWhatsNewNotice(); });
-$('#whatsNewGotIt').addEventListener('click', hideWhatsNewModal);
-$('#whatsNewModalClose').addEventListener('click', hideWhatsNewModal);
+$('#whatsNewGotIt').addEventListener('click', () => { void closeWhatsNewModal(true); });
+$('#whatsNewModalClose').addEventListener('click', () => { void closeWhatsNewModal(true); });
 for (const m of [helpModal, exportModal, exportImagesModal, settingsModal, unsavedModal, autosaveIntervalModal, confirmModal, noteLinkModal, whatsNewModal])
   m.addEventListener('click', e => {
     if (e.target !== m) return;
@@ -13962,7 +14174,7 @@ for (const m of [helpModal, exportModal, exportImagesModal, settingsModal, unsav
     if (m === autosaveIntervalModal && autosaveIntervalResolve) closeAutosaveIntervalModal(null);
     if (m === confirmModal && confirmResolve) hideConfirm(false);
     if (m === noteLinkModal && noteLinkResolve) closeNoteLinkModal(null);
-    if (m === whatsNewModal) hideWhatsNewModal();
+    if (m === whatsNewModal) void closeWhatsNewModal(true);
   });
 
 $('#settingsClose').addEventListener('click', closeSettings);

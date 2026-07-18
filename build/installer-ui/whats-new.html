@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RefBoard — What's New</title>
+  <style>
+    :root{
+      color-scheme:dark;
+      --bg:#08090c; --panel:#151820; --card:#11141b; --line:rgba(255,255,255,.095);
+      --txt:#f2f5fa; --mut:#9da6b5; --dim:#687181; --acc:#5aa2ff;
+      font-family:Inter,"Segoe UI",system-ui,sans-serif;
+    }
+    *{ box-sizing:border-box; }
+    html,body{ width:100%; height:100%; margin:0; overflow:hidden; }
+    body{
+      background:
+        radial-gradient(circle at 80% 15%, rgba(51,101,180,.15), transparent 35%),
+        radial-gradient(circle at 18% 85%, rgba(45,75,125,.09), transparent 32%),
+        #08090c;
+      color:var(--txt);
+    }
+    body::before{
+      content:""; position:fixed; inset:0; pointer-events:none; opacity:.23;
+      background-image:radial-gradient(rgba(255,255,255,.13) .65px, transparent .65px);
+      background-size:18px 18px;
+      mask-image:linear-gradient(110deg, transparent 3%, #000 52%, transparent 98%);
+    }
+    .app-shell{ position:fixed; inset:0; display:grid; grid-template-rows:42px 1fr; }
+    .titlebar{
+      display:flex; align-items:center; justify-content:space-between; padding:0 18px;
+      border-bottom:1px solid rgba(255,255,255,.055); background:rgba(9,11,15,.72);
+      backdrop-filter:blur(22px);
+    }
+    .brand{ display:flex; align-items:center; gap:10px; font-size:11px; font-weight:700; letter-spacing:.12em; }
+    .brand img{ width:22px; height:22px; filter:drop-shadow(0 0 9px rgba(90,162,255,.35)); }
+    .preview-label{ color:var(--dim); font-size:10px; letter-spacing:.12em; text-transform:uppercase; }
+    .landing{ display:grid; grid-template-columns:230px 1fr; min-height:0; }
+    .sidebar{ padding:30px 18px; border-right:1px solid rgba(255,255,255,.055); background:rgba(12,14,19,.46); }
+    .sidebar-title{ margin:0 10px 22px; color:#d7dce6; font-size:11px; font-weight:650; }
+    .nav-item{ display:flex; align-items:center; gap:10px; height:38px; margin:4px 0; padding:0 11px; border-radius:9px; color:#737c8c; font-size:11px; }
+    .nav-item.active{ color:#dbe9ff; background:rgba(90,162,255,.1); border:1px solid rgba(90,162,255,.13); }
+    .nav-dot{ width:7px; height:7px; border-radius:50%; border:1px solid currentColor; }
+    .nav-item.active .nav-dot{ background:var(--acc); box-shadow:0 0 9px var(--acc); border-color:var(--acc); }
+    .empty-state{ display:grid; place-items:center; color:#4f5663; }
+    .empty-copy{ transform:translateY(-25px); text-align:center; opacity:.55; }
+    .empty-icon{ width:72px; height:54px; margin:0 auto 16px; border:1px solid rgba(255,255,255,.12); border-radius:12px; background:rgba(255,255,255,.018); }
+    .empty-copy strong{ display:block; color:#8992a1; font-size:13px; font-weight:550; }
+    .empty-copy span{ display:block; margin-top:7px; font-size:10.5px; }
+    .scrim{ position:fixed; inset:42px 0 0; background:rgba(5,7,11,.69); backdrop-filter:blur(13px) saturate(.9); }
+    .modal-wrap{ position:fixed; inset:42px 0 0; display:grid; place-items:center; padding:20px; }
+    .card{
+      width:660px; max-width:calc(100vw - 40px); max-height:calc(100vh - 82px); position:relative;
+      display:flex; flex-direction:column; overflow:hidden; border-radius:24px;
+      background:linear-gradient(145deg, color-mix(in srgb, var(--panel) 91%, var(--acc) 9%), color-mix(in srgb, var(--card) 96%, #000 4%));
+      border:1px solid color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.1));
+      box-shadow:0 38px 110px rgba(0,0,0,.72), 0 1px 0 rgba(255,255,255,.09) inset, 0 0 70px rgba(90,162,255,.07);
+      backdrop-filter:blur(34px) saturate(1.16); animation:cardIn .55s cubic-bezier(.16,1,.3,1) both;
+    }
+    .card::before{ content:""; position:absolute; z-index:2; left:8%; right:8%; top:0; height:1px; background:linear-gradient(90deg,transparent,#a7d0ff,transparent); opacity:.65; }
+    @keyframes cardIn{ from{ opacity:0; transform:translateY(20px) scale(.965); filter:blur(7px); } to{ opacity:1; transform:none; filter:none; } }
+    .close{ position:absolute; z-index:4; top:18px; right:18px; width:32px; height:32px; border:1px solid transparent; border-radius:10px; background:rgba(255,255,255,.025); color:var(--dim); font-size:19px; cursor:pointer; }
+    .close:hover{ border-color:var(--line); background:rgba(255,255,255,.07); color:#fff; }
+    .head{ position:relative; flex:none; padding:30px 34px 24px; border-bottom:1px solid rgba(255,255,255,.07); background:linear-gradient(180deg,rgba(90,162,255,.07),transparent); }
+    .head::after{ content:""; position:absolute; width:220px; height:130px; right:44px; top:-70px; border-radius:50%; background:rgba(90,162,255,.17); filter:blur(46px); pointer-events:none; }
+    .kicker{ display:flex; align-items:center; gap:8px; margin-bottom:14px; color:#91c3ff; font-size:10px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; }
+    .kicker::before{ content:""; width:22px; height:2px; border-radius:2px; background:var(--acc); box-shadow:0 0 10px var(--acc); }
+    h1{ max-width:520px; margin:0 0 9px; font-size:27px; line-height:1.14; font-weight:650; letter-spacing:-.025em; }
+    .summary{ max-width:540px; margin:0; color:var(--mut); font-size:13.5px; line-height:1.55; }
+    .meta{ display:flex; align-items:center; gap:8px; margin-top:16px; }
+    .pill{ display:inline-flex; align-items:center; height:25px; padding:0 9px; border-radius:8px; font-size:10.5px; font-weight:600; }
+    .version{ color:#d7eaff; background:rgba(90,162,255,.14); border:1px solid rgba(90,162,255,.25); }
+    .count{ color:var(--mut); background:rgba(255,255,255,.035); border:1px solid var(--line); }
+    .scroll{ padding:24px 28px 12px 34px; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.18) transparent; }
+    .sections{ display:flex; flex-direction:column; gap:24px; padding-bottom:14px; }
+    .section{ --section:var(--acc); }
+    .section.improved{ --section:#9a89f5; }
+    .section.fixed{ --section:#58c7a7; }
+    .section-head{ display:flex; align-items:center; gap:10px; margin:0 2px 10px; }
+    .section-icon{ width:25px; height:25px; display:grid; place-items:center; border-radius:8px; color:color-mix(in srgb,var(--section) 82%,#fff 18%); background:color-mix(in srgb,var(--section) 12%,transparent); border:1px solid color-mix(in srgb,var(--section) 25%,transparent); font-size:13px; font-weight:700; }
+    .section-title{ color:var(--txt); font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+    .section-count{ margin-left:auto; color:var(--dim); font-size:10.5px; }
+    .items{ display:flex; flex-direction:column; gap:8px; }
+    .item{ position:relative; padding:14px 15px 14px 17px; overflow:hidden; border-radius:13px; border:1px solid rgba(255,255,255,.075); background:linear-gradient(135deg,rgba(255,255,255,.052),rgba(255,255,255,.022)); box-shadow:0 9px 26px rgba(0,0,0,.16); animation:itemIn .46s cubic-bezier(.16,1,.3,1) both; animation-delay:calc(var(--i) * 55ms + 140ms); }
+    .item::before{ content:""; position:absolute; left:0; top:11px; bottom:11px; width:2px; border-radius:2px; background:var(--section); box-shadow:0 0 10px var(--section); }
+    @keyframes itemIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+    .item-title{ font-size:13px; font-weight:620; line-height:1.35; }
+    .item p{ margin:4px 0 0; color:var(--mut); font-size:12px; line-height:1.5; }
+    .foot{ flex:none; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:15px 22px 16px 34px; border-top:1px solid rgba(255,255,255,.07); background:rgba(17,20,27,.84); backdrop-filter:blur(22px); }
+    .foot-note{ color:var(--dim); font-size:10.5px; }
+    .continue{ min-width:104px; height:34px; padding:0 17px; border:1px solid rgba(145,198,255,.33); border-radius:9px; background:#5aa2ff; color:#08111e; font-weight:700; font-size:11px; cursor:pointer; box-shadow:0 8px 24px rgba(90,162,255,.2); }
+    .continue:hover{ background:#70b0ff; }
+    .scrim,.modal-wrap{ transition:opacity .24s ease,visibility .24s ease; }
+    body.dismissed .scrim,body.dismissed .modal-wrap{ opacity:0; visibility:hidden; pointer-events:none; }
+    .reopen{
+      position:fixed; right:24px; bottom:24px; z-index:10; display:flex; align-items:center; gap:9px;
+      height:42px; padding:0 14px; border:1px solid rgba(90,162,255,.24); border-radius:12px;
+      background:rgba(21,24,32,.9); color:#e7f1ff; font-size:11px; font-weight:650; cursor:pointer;
+      box-shadow:0 14px 44px rgba(0,0,0,.5),0 0 30px rgba(90,162,255,.08); backdrop-filter:blur(22px);
+      opacity:0; transform:translateY(10px); visibility:hidden; transition:.25s cubic-bezier(.16,1,.3,1);
+    }
+    .reopen::before{ content:"✦"; color:var(--acc); font-size:15px; }
+    body.dismissed .reopen{ opacity:1; transform:none; visibility:visible; }
+    @media(max-height:780px){ .card{ max-height:calc(100vh - 66px); } .head{ padding:24px 34px 19px; } .scroll{ padding-top:18px; } .sections{ gap:18px; } }
+    @media(max-width:620px){ .landing{ grid-template-columns:1fr; } .sidebar{ display:none; } .card{ border-radius:20px; } .head{ padding:26px 24px 20px; } .scroll{ padding:20px 18px 10px 24px; } .foot{ padding:14px 18px 15px 24px; } .foot-note{ display:none; } h1{ font-size:23px; } }
+    @media(prefers-reduced-motion:reduce){ .card,.item{ animation:none; } }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="titlebar">
+      <div class="brand"><img src="refboard-icon.png" alt=""><span>REFBOARD</span></div>
+      <span class="preview-label">What's New preview</span>
+    </header>
+    <div class="landing">
+      <aside class="sidebar">
+        <div class="sidebar-title">Your boards</div>
+        <div class="nav-item active"><span class="nav-dot"></span>Recent boards</div>
+        <div class="nav-item"><span class="nav-dot"></span>New board</div>
+        <div class="nav-item"><span class="nav-dot"></span>Open from disk</div>
+      </aside>
+      <main class="empty-state">
+        <div class="empty-copy"><div class="empty-icon"></div><strong>Your visual workspace</strong><span>Create or open a board to begin.</span></div>
+      </main>
+    </div>
+  </div>
+  <div class="scrim"></div>
+  <main class="modal-wrap">
+    <section class="card" role="dialog" aria-modal="true" aria-labelledby="releaseHeadline">
+      <button class="close" type="button" aria-label="Close preview">×</button>
+      <header class="head">
+        <div class="kicker">What's new in RefBoard</div>
+        <h1 id="releaseHeadline">Your creative workflow, refined.</h1>
+        <p class="summary">A focused update with faster navigation, clearer previews, and fixes that keep every board feeling dependable.</p>
+        <div class="meta"><span class="pill version">Version 1.2.0</span><span class="pill count">6 changes</span></div>
+      </header>
+      <div class="scroll">
+        <div class="sections">
+          <section class="section">
+            <div class="section-head"><span class="section-icon">+</span><span class="section-title">New</span><span class="section-count">2 items</span></div>
+            <div class="items">
+              <article class="item" style="--i:0"><div class="item-title">Instant board previews</div><p>See a clean visual thumbnail before opening any recent project.</p></article>
+              <article class="item" style="--i:1"><div class="item-title">Smarter batch export names</div><p>Keep original names or create consistently numbered image sequences.</p></article>
+            </div>
+          </section>
+          <section class="section improved">
+            <div class="section-head"><span class="section-icon">↗</span><span class="section-title">Improved</span><span class="section-count">2 items</span></div>
+            <div class="items">
+              <article class="item" style="--i:2"><div class="item-title">Smoother large-board navigation</div><p>Zoom and pan through image-heavy canvases with less memory pressure.</p></article>
+              <article class="item" style="--i:3"><div class="item-title">More natural note editing</div><p>Place the cursor directly and preserve cleaner lists, links, and checkboxes.</p></article>
+            </div>
+          </section>
+          <section class="section fixed">
+            <div class="section-head"><span class="section-icon">✓</span><span class="section-title">Fixed</span><span class="section-count">2 items</span></div>
+            <div class="items">
+              <article class="item" style="--i:4"><div class="item-title">Consistent image sharpness</div><p>References remain crisp while zooming in and out.</p></article>
+              <article class="item" style="--i:5"><div class="item-title">Seamless quality switching</div><p>Images change rendering quality without visibly popping.</p></article>
+            </div>
+          </section>
+        </div>
+      </div>
+      <footer class="foot"><span class="foot-note">RefBoard keeps your work private and local.</span><button class="continue" type="button">Continue</button></footer>
+    </section>
+  </main>
+  <button class="reopen" type="button">Show What's New</button>
+  <script>
+    const dismiss = () => document.body.classList.add('dismissed');
+    document.querySelector('.close').addEventListener('click', dismiss);
+    document.querySelector('.continue').addEventListener('click', dismiss);
+    document.querySelector('.reopen').addEventListener('click', () => document.body.classList.remove('dismissed'));
+  </script>
+</body>
+</html>
