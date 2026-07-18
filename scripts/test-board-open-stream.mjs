@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { boardHeaderPrefix, boardImageParts } = require('./board-save-format.js');
-const { scanBoardFile, readBoardImageBytes } = require('./board-open-stream.js');
+const { scanBoardFile, readBoardImageBytes, readBoardPreview } = require('./board-open-stream.js');
 
 function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed'); }
 
@@ -17,7 +17,8 @@ try {
   const b = Buffer.from([0, 1, 2, 3, 250, 251, 252]);
   const pa = boardImageParts({ id: 'a', type: 'image/png', name: 'A', w: 10, h: 20 }, a);
   const pb = boardImageParts({ id: 'b', type: 'image/jpeg', name: 'B', w: 30, h: 40 }, b);
-  const json = boardHeaderPrefix(core, null)
+  const preview = Buffer.from('high resolution preview').toString('base64');
+  const json = boardHeaderPrefix(core, preview)
     + pa.prefix + pa.base64 + pa.suffix + ','
     + pb.prefix + pb.base64 + pb.suffix + ']}';
   await fs.writeFile(file, json);
@@ -27,6 +28,7 @@ try {
   assert(scanned.images.length === 2, 'two images indexed');
   assert(scanned.images[0].w === 10 && scanned.images[1].h === 40, 'dimensions retained');
   assert((await readBoardImageBytes(file, scanned.images[0])).equals(a), 'first image range decodes');
+  assert((await readBoardPreview(file)) === preview, 'embedded preview reads without decoding board images');
   assert((await readBoardImageBytes(file, scanned.images[1])).equals(b), 'second image range decodes');
   console.log('board open stream tests passed');
 } finally {

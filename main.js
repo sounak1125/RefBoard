@@ -1,7 +1,7 @@
 'use strict';
 const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
-const { scanBoardFile, readBoardImageBytes } = require('./scripts/board-open-stream');
+const { scanBoardFile, readBoardImageBytes, readBoardPreview } = require('./scripts/board-open-stream');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -909,6 +909,15 @@ function setupIpc() {
     try {
       const buf = await fs.readFile(path.join(thumbnailsDir(), filename));
       return buf.toString('base64');
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle('get-board-preview', async (_, filePath) => {
+    if (!filePath) return null;
+    try {
+      return await readBoardPreview(path.resolve(String(filePath)));
     } catch {
       return null;
     }

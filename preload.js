@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   touchRecentWorkEdited: (filePath) => ipcRenderer.invoke('touch-recent-work-edited', filePath),
   removeRecentWork: (filePath) => ipcRenderer.invoke('remove-recent-work', filePath),
   getThumbnailData: (filename) => ipcRenderer.invoke('get-thumbnail-data', filename),
+  getBoardPreview: (filePath) => ipcRenderer.invoke('get-board-preview', filePath),
   getPendingOpenPath: () => ipcRenderer.invoke('get-pending-open-path'),
   readClipboardImage: () => ipcRenderer.invoke('clipboard-read-image'),
   writeClipboardNotes: (payload, plainText) => ipcRenderer.invoke('clipboard-write-notes', { payload, plainText }),

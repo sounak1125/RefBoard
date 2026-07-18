@@ -646,6 +646,9 @@ body.board-instant-open #titlebarPeek{
   visibility:hidden;
   pointer-events:none;
 }
+/* Board mode must never retain the landing carousel above the canvas, even if
+   an async open finishes through an unexpected transition state. */
+body.board-active #recentWorks{ display:none; }
 
 .rw-inner{
   width:min(1080px, calc(100vw - 48px));
@@ -760,6 +763,7 @@ body.board-instant-open #titlebarPeek{
 }
 .rw-thumb img{
   width:100%; height:100%; min-width:0; flex:1 1 100%; object-fit:cover; display:block;
+  image-rendering:auto;
 }
 .rw-thumb-empty svg{
   width:36px; height:36px; stroke:#3a3e4c; stroke-width:1.5; fill:none;
@@ -829,6 +833,173 @@ body.board-instant-open #titlebarPeek{
 .rw-btn.primary:hover{
   background:#5eacff;
   box-shadow:0 1px 0 rgba(255,255,255,.15) inset, 0 4px 12px rgba(90,162,255,.22);
+}
+
+/* ---------- focus flow landing ---------- */
+#recentWorks.layout-focus{
+  overflow:hidden;
+  isolation:isolate;
+  background:
+    radial-gradient(ellipse 46% 34% at 50% 60%, color-mix(in srgb, var(--acc) 4%, transparent), transparent 74%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 98%, #fff 2%), var(--bg) 48%, color-mix(in srgb, var(--bg) 96%, #000 4%));
+}
+#recentWorks.layout-focus::after{
+  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:radial-gradient(ellipse 78% 72% at 50% 48%, transparent 58%, rgba(3,5,9,.16) 100%);
+}
+#recentWorks.layout-focus .rw-inner{
+  position:relative; z-index:2;
+  width:100%; height:100%; min-height:0;
+  padding:30px 0 22px;
+  display:flex; flex-direction:column;
+}
+#recentWorks.layout-focus .rw-header{
+  width:min(1120px, calc(100vw - 56px));
+  margin:0 auto 2px;
+  flex:0 0 auto;
+}
+#recentWorks.layout-focus .rw-brand{ margin-bottom:12px; }
+#recentWorks.layout-focus .rw-brand-icon{ width:42px; height:42px; border-radius:12px; }
+#recentWorks.layout-focus .rw-heading-row{ padding-bottom:10px; border-bottom:none; align-items:center; }
+#recentWorks.layout-focus .rw-header h1{ font-size:29px; }
+#recentWorks.layout-focus .rw-sub{ max-width:560px; }
+#recentWorks.layout-focus .rw-empty{
+  width:min(720px, calc(100vw - 56px)); margin:40px auto 0;
+  backdrop-filter:blur(22px); background:color-mix(in srgb, var(--panel) 68%, transparent);
+}
+
+.ff-flow{
+  position:relative; z-index:1; flex:1 1 auto; min-height:0;
+  width:100%; overflow:hidden;
+}
+.ff-stage{
+  position:relative; height:calc(100% - 54px); min-height:370px;
+  width:100%; outline:none; perspective:1500px;
+  touch-action:pan-y; user-select:none; cursor:grab;
+}
+.ff-stage.dragging{ cursor:grabbing; }
+.ff-stage:focus-visible::after{
+  content:""; position:absolute; inset:10px 26px; border-radius:22px;
+  border:1px solid color-mix(in srgb, var(--acc) 48%, transparent); pointer-events:none;
+}
+.ff-track{ position:absolute; inset:0; transform-style:preserve-3d; }
+.ff-card{
+  --ff-offset:0; --ff-scale:1; --ff-brightness:1; --ff-saturation:1;
+  position:absolute; left:50%; top:50%;
+  width:clamp(340px, 43vw, 620px);
+  padding:8px; border-radius:18px;
+  color:var(--txt); text-align:left; cursor:pointer;
+  background:color-mix(in srgb, var(--card) 97%, #fff 3%);
+  border:1px solid rgba(255,255,255,.085);
+  box-shadow:0 1px 0 rgba(255,255,255,.055) inset, 0 22px 68px rgba(0,0,0,.42);
+  transform:
+    translate3d(calc(-50% + var(--ff-offset) * clamp(220px, 32vw, 390px) + var(--ff-drag-x, 0px)), -50%, 0)
+    rotateY(calc(var(--ff-offset) * -5deg)) scale(var(--ff-scale));
+  filter:brightness(var(--ff-brightness)) saturate(var(--ff-saturation));
+  transform-origin:center center;
+  transition:transform .46s cubic-bezier(.2,.85,.2,1), opacity .34s ease, filter .34s ease, visibility .34s,
+    border-color .25s ease, box-shadow .25s ease, background .25s ease;
+  will-change:transform, opacity, filter;
+}
+.ff-stage.dragging .ff-card{
+  transition:transform .08s linear, opacity .16s ease, filter .16s ease, visibility .16s,
+    border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+.ff-card.is-active{
+  border-color:color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.12));
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.075) inset,
+    0 30px 84px rgba(0,0,0,.52);
+}
+.ff-card.is-active:hover{
+  background:color-mix(in srgb, var(--card) 94%, #fff 6%);
+}
+.ff-card:focus-visible{ outline:2px solid var(--acc); outline-offset:4px; }
+.ff-card .rw-thumb{
+  position:relative; aspect-ratio:4/3; border-radius:12px;
+  border-color:rgba(255,255,255,.055);
+  background:#1b1d24;
+  box-shadow:0 1px 0 rgba(255,255,255,.035) inset;
+}
+.ff-card .rw-thumb img{ object-fit:contain; }
+.ff-card .rw-meta{
+  display:flex; align-items:center; justify-content:space-between; gap:18px;
+  padding:14px 8px 5px;
+  transition:opacity .18s ease;
+}
+.ff-card:not(.is-active) .rw-meta{ opacity:0; }
+.ff-card-copy{ min-width:0; }
+.ff-card .rw-title{ font-size:17px; letter-spacing:-.015em; }
+.ff-card .rw-date{ margin-top:5px; font-size:12px; }
+.ff-card .rw-card-clear{ top:17px; right:17px; }
+.ff-card:hover .rw-card-clear,
+.ff-card.is-active .rw-card-clear:focus-visible{ opacity:1; }
+.ff-card-badge{
+  position:absolute; left:22px; top:22px; z-index:3;
+  padding:5px 9px; border-radius:8px;
+  background:color-mix(in srgb, var(--acc) 88%, #fff 12%); color:#0b1524;
+  box-shadow:0 5px 18px rgba(0,0,0,.25); font-size:10px; font-weight:700; letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.ff-arrow{
+  position:absolute; z-index:70; top:50%; width:42px; height:42px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:50%; border:1px solid rgba(255,255,255,.105);
+  background:color-mix(in srgb, var(--panel) 66%, transparent); color:var(--mut);
+  backdrop-filter:blur(18px); cursor:pointer;
+  box-shadow:0 10px 30px rgba(0,0,0,.24);
+  transform:translateY(-50%); transition:opacity .2s ease, color .2s ease, background .2s ease, transform .2s ease;
+}
+.ff-arrow svg{ width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; }
+.ff-arrow.prev{ left:max(18px, calc(50% - clamp(340px, 32vw, 460px))); }
+.ff-arrow.next{ right:max(18px, calc(50% - clamp(340px, 32vw, 460px))); }
+.ff-arrow:hover:not(:disabled),
+.ff-arrow:focus-visible:not(:disabled){ color:var(--txt); background:color-mix(in srgb, var(--panel) 82%, var(--acc) 18%); outline:none; }
+.ff-arrow.prev:hover:not(:disabled){ transform:translate(-2px,-50%); }
+.ff-arrow.next:hover:not(:disabled){ transform:translate(2px,-50%); }
+.ff-arrow:disabled{ opacity:.18; cursor:default; }
+.ff-footer{
+  position:absolute; left:50%; bottom:4px; z-index:80;
+  width:min(520px, calc(100vw - 64px)); transform:translateX(-50%);
+  display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px 18px;
+}
+.ff-position{ color:var(--mut); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ff-hint{ color:var(--dim); font-size:10.5px; white-space:nowrap; }
+.ff-progress{
+  grid-column:1 / -1; height:2px; overflow:hidden; border-radius:999px;
+  background:rgba(255,255,255,.07);
+}
+.ff-progress-fill{
+  display:block; height:100%; width:0; border-radius:inherit;
+  background:linear-gradient(90deg, color-mix(in srgb, var(--acc) 62%, transparent), var(--acc));
+  box-shadow:0 0 12px color-mix(in srgb, var(--acc) 45%, transparent);
+  transition:width .42s cubic-bezier(.22,1,.36,1);
+}
+
+@media (max-width:720px){
+  #recentWorks.layout-focus .rw-inner{ padding-top:22px; }
+  #recentWorks.layout-focus .rw-header{ width:calc(100vw - 32px); }
+  #recentWorks.layout-focus .rw-brand{ display:none; }
+  #recentWorks.layout-focus .rw-heading-row{ align-items:flex-start; }
+  #recentWorks.layout-focus .rw-header h1{ font-size:24px; }
+  #recentWorks.layout-focus .rw-actions .rw-btn{ padding:8px 11px; }
+  .ff-card{ width:min(76vw, 520px); }
+  .ff-arrow{ width:36px; height:36px; }
+  .ff-arrow.prev{ left:10px; }
+  .ff-arrow.next{ right:10px; }
+  .ff-hint{ display:none; }
+  .ff-footer{ grid-template-columns:1fr; }
+}
+@media (max-height:700px){
+  #recentWorks.layout-focus .rw-inner{ padding-top:18px; }
+  #recentWorks.layout-focus .rw-brand{ display:none; }
+  #recentWorks.layout-focus .rw-header{ margin-bottom:0; }
+  #recentWorks.layout-focus .rw-heading-row{ padding-bottom:2px; }
+  .ff-card{ width:clamp(300px, 38vw, 500px); }
+  .ff-stage{ min-height:320px; }
+}
+@media (prefers-reduced-motion:reduce){
+  .ff-card, .ff-progress-fill{ transition-duration:.01ms !important; }
 }
 
 /* ---------- what's new (landing) ---------- */
@@ -1307,6 +1478,67 @@ body.board-active #whatsNewNotice{ display:none; }
 .settings2-content select:hover{ border-color:rgba(255,255,255,.18); }
 .settings2-content select:focus{ border-color:var(--acc); outline:none; }
 .settings2-content select option{ background:var(--card); color:var(--txt); }
+.ui-select{ position:relative; min-width:142px; }
+.ui-select-native{
+  position:absolute !important; width:1px !important; height:1px !important;
+  opacity:0 !important; pointer-events:none !important; overflow:hidden !important;
+  padding:0 !important; border:0 !important;
+}
+.ui-select-button{
+  width:100%; min-width:142px; height:34px; padding:0 10px 0 11px;
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  border:1px solid var(--line); border-radius:9px;
+  background:color-mix(in srgb, var(--panel) 96%, #fff 4%); color:var(--txt);
+  box-shadow:0 1px 0 rgba(255,255,255,.035) inset;
+  font:500 12.5px/1 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  text-align:left; cursor:pointer;
+  transition:border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.ui-select-button:hover{
+  border-color:rgba(255,255,255,.17);
+  background:color-mix(in srgb, var(--panel) 92%, #fff 8%);
+}
+.ui-select-button:focus-visible,
+.ui-select-button[aria-expanded="true"]{
+  outline:none; border-color:color-mix(in srgb, var(--acc) 68%, #fff 8%);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 14%, transparent), 0 1px 0 rgba(255,255,255,.04) inset;
+}
+.ui-select-button-label{ overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.ui-select-chevron{
+  width:14px; height:14px; flex:0 0 auto; fill:none; stroke:var(--mut); stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round;
+  transition:transform .18s cubic-bezier(.22,1,.36,1), stroke .16s ease;
+}
+.ui-select-button[aria-expanded="true"] .ui-select-chevron{ transform:rotate(180deg); stroke:var(--txt); }
+.ui-select-menu{
+  position:fixed; z-index:190; display:none;
+  min-width:142px; padding:5px; border-radius:11px;
+  background:color-mix(in srgb, var(--card) 97%, #fff 3%);
+  border:1px solid rgba(255,255,255,.1);
+  box-shadow:0 18px 52px rgba(0,0,0,.56), 0 1px 0 rgba(255,255,255,.045) inset;
+}
+.ui-select-menu.show{ display:flex; flex-direction:column; gap:2px; animation:uiSelectIn .14s cubic-bezier(.22,1,.36,1); }
+@keyframes uiSelectIn{
+  from{ opacity:0; transform:translateY(-4px) scale(.985); }
+  to{ opacity:1; transform:translateY(0) scale(1); }
+}
+.ui-select-option{
+  position:relative; width:100%; min-height:32px; padding:7px 30px 7px 9px;
+  border:0; border-radius:7px; background:transparent; color:var(--mut);
+  font:500 12.5px/1.25 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  text-align:left; cursor:pointer;
+}
+.ui-select-option:hover,
+.ui-select-option:focus-visible{
+  outline:none; color:var(--txt); background:rgba(255,255,255,.06);
+}
+.ui-select-option[aria-selected="true"]{
+  color:var(--txt); background:color-mix(in srgb, var(--acc) 13%, transparent);
+}
+.ui-select-option[aria-selected="true"]::after{
+  content:"✓"; position:absolute; right:10px; top:50%; transform:translateY(-52%);
+  color:var(--acc); font-size:12px; font-weight:700;
+}
 .settings2-content input[type=number]{ appearance:textfield; -webkit-appearance:textfield; }
 .settings2-content input[type=number]::-webkit-inner-spin-button,
 .settings2-content input[type=number]::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
@@ -1791,6 +2023,22 @@ body.board-active #whatsNewNotice{ display:none; }
       </div>
     </header>
     <div class="rw-grid hide" id="recentGrid"></div>
+    <section class="ff-flow" id="focusFlow" aria-label="Recent boards carousel" hidden>
+      <div class="ff-stage" id="focusStage" tabindex="0" role="group" aria-roledescription="carousel" aria-label="Recent boards. Use arrow keys or drag to browse.">
+        <div class="ff-track" id="focusTrack"></div>
+        <button type="button" class="ff-arrow prev" id="focusPrev" aria-label="Previous board">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <button type="button" class="ff-arrow next" id="focusNext" aria-label="Next board">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
+      </div>
+      <div class="ff-footer">
+        <div class="ff-position" id="focusPosition" aria-live="polite"></div>
+        <div class="ff-hint">Scroll, drag, or use arrow keys</div>
+        <div class="ff-progress" aria-hidden="true"><span class="ff-progress-fill" id="focusProgressFill"></span></div>
+      </div>
+    </section>
     <div class="rw-empty" id="recentEmpty">
       <div class="frame">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M3.5 17.5 9 12l4 4 3-3 4.5 4.5"/></svg>
@@ -2395,6 +2643,12 @@ body.board-active #whatsNewNotice{ display:none; }
             <div><div class="s2-label">Grid style</div><div class="s2-sub">Board background pattern</div></div>
             <div class="s2-control">
               <select id="setGridStyle"><option value="none">None</option><option value="dots">Dots</option></select>
+            </div>
+          </div>
+          <div class="s2-row">
+            <div><div class="s2-label">Home layout</div><div class="s2-sub">Choose how recent boards appear on the Home screen</div></div>
+            <div class="s2-control">
+              <select id="setLandingLayout"><option value="classic">Classic Grid</option><option value="focus">Focus Flow</option></select>
             </div>
           </div>
         </div>
@@ -3645,6 +3899,7 @@ const SETTINGS_DEFAULTS = {
   warnLargeImages: true,
   largeImageMP: 40,
   generateThumbnails: true,
+  landingLayout: 'classic',
   checkUpdatesOnStartup: true,
 };
 let appSettings = { ...SETTINGS_DEFAULTS };
@@ -3659,10 +3914,15 @@ function normalizeAutosaveInterval(v) {
   return AUTOSAVE_INTERVALS.includes(n) ? n : 10;
 }
 
+function normalizeLandingLayout(v) {
+  return v === 'focus' ? 'focus' : 'classic';
+}
+
 function loadAppSettings() {
   try { appSettings = { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('refboard.settings') || '{}') }; }
   catch (e) { appSettings = { ...SETTINGS_DEFAULTS }; }
   appSettings.autosaveIntervalMin = normalizeAutosaveInterval(appSettings.autosaveIntervalMin);
+  appSettings.landingLayout = normalizeLandingLayout(appSettings.landingLayout);
 }
 function saveAppSettings() {
   try { localStorage.setItem('refboard.settings', JSON.stringify(appSettings)); } catch (e) {}
@@ -3673,6 +3933,8 @@ function applyAppSettings() {
   pauseWhenHidden = !!appSettings.pauseWhenHidden;
   hideGridWhileNavigating = !!appSettings.hideGridWhileNavigating;
   lightDragPreview = !!appSettings.lightDragPreview;
+  const recentWorks = document.getElementById('recentWorks');
+  if (recentWorks) recentWorks.classList.toggle('layout-focus', appSettings.landingLayout === 'focus');
   startAutosaveTimer();
   invalidate();
 }
@@ -9363,11 +9625,14 @@ async function prepareBoardOpen(opts = {}) {
 async function transitionToBoard(opts = {}) {
   const board = $('#board');
   const recent = $('#recentWorks');
-  const fromLanding = onLanding || !document.body.classList.contains('board-active');
   document.body.classList.add('board-instant-open');
   await prepareBoardOpen(opts);
   onLanding = false;
   board.classList.remove('board-preparing');
+  // Hide the complete landing surface before exposing board mode. This is
+  // unconditional so stale transition state can never leave cards over canvas.
+  recent.classList.add('landing-hidden');
+  recent.classList.remove('landing-out');
   document.body.classList.add('board-active');
   document.body.classList.remove('titlebar-revealed');
   // Returning from Home reuses the in-memory board. Always replace and redraw
@@ -9377,16 +9642,14 @@ async function transitionToBoard(opts = {}) {
   startAutosaveTimer();
   restoredSessionPendingOpen = false;
   invalidate();
-  if (fromLanding && !recent.classList.contains('landing-hidden')) {
-    recent.classList.add('landing-hidden');
-    recent.classList.remove('landing-out');
-  }
   await nextUiFrame();
   document.body.classList.remove('board-instant-open');
 }
 
 async function transitionToLanding() {
   onLanding = true;
+  focusFlowEntries = [];
+  focusFlowIndex = 0;
   closeDrawFeatures();
   stopAutosaveTimer();
   document.body.classList.remove('board-active', 'titlebar-revealed');
@@ -9815,7 +10078,7 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
   }
   let preview = null;
   if (snapshot.core.items.length) {
-    try { preview = await captureBoardFilePreviewBase64(640); } catch { /* ignore */ }
+    try { preview = await captureBoardFilePreviewBase64(1440); } catch { /* ignore */ }
   }
   const core = { ...snapshot.core, images: imgs };
   return preview ? { preview, ...core } : core;
@@ -9836,7 +10099,7 @@ async function performBoardSave(opts = {}) {
     let token = null;
     let preview = null;
     try {
-      preview = await captureBoardFilePreviewBase64(640);
+      preview = await captureBoardFilePreviewBase64(1440);
       const begin = await window.RefBoardAPI.beginBoardSave(
         defaultName, currentBoardPath || undefined, snapshot.core, preview, saveAs,
       );
@@ -9903,7 +10166,7 @@ function boardTitleFromPath(filePath) {
   return base.replace(/\.refboard$/i, '') || base || 'Untitled';
 }
 
-async function captureBoardThumbnailBase64(maxPx = 360) {
+async function captureBoardThumbnailBase64(maxPx = 1440) {
   if (!state.items.length) return null;
   try {
     const c = await boundedCompositeCanvas(state.items, {
@@ -9912,7 +10175,7 @@ async function captureBoardThumbnailBase64(maxPx = 360) {
       background: THUMBNAIL_CANVAS_BACKGROUND,
     });
     if (!c) return null;
-    const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.84));
+    const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.94));
     c.width = 0; c.height = 0;
     if (!small) return null;
     return await blobToBase64(small);
@@ -9921,17 +10184,17 @@ async function captureBoardThumbnailBase64(maxPx = 360) {
   }
 }
 
-async function captureBoardFilePreviewBase64(maxPx = 640) {
+async function captureBoardFilePreviewBase64(maxPx = 1440) {
   if (!state.items.length) return null;
   try {
     const c = await boundedCompositeCanvas(state.items, {
       maxWidth: maxPx,
-      maxHeight: maxPx,
+      maxHeight: Math.round(maxPx * 3 / 4),
       fit: 'cover',
       background: THUMBNAIL_CANVAS_BACKGROUND,
     });
     if (!c) return null;
-    const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+    const small = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.94));
     c.width = 0; c.height = 0;
     if (!small) return null;
     return await blobToBase64(small);
@@ -10102,7 +10365,13 @@ function formatWorkRelative(work) {
   return formatEditedRelative(opened, 'Opened');
 }
 
-async function thumbSrcForWork(work) {
+async function thumbSrcForWork(work, opts = {}) {
+  if (opts.preferBoardPreview && work.path && window.RefBoardAPI?.getBoardPreview) {
+    try {
+      const preview = await window.RefBoardAPI.getBoardPreview(work.path);
+      if (preview) return `data:image/jpeg;base64,${preview}`;
+    } catch { /* use the recent-work cache below */ }
+  }
   if (work.thumbnailData) {
     const mime = work.thumbnailData.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
     return `data:${mime};base64,${work.thumbnailData}`;
@@ -10145,10 +10414,10 @@ function setRwThumbImage(thumbEl, src) {
   img.src = src;
 }
 
-async function renderRecentWorks() {
+async function renderClassicRecentWorks(listOverride = null, renderSeq = 0) {
   const grid = $('#recentGrid');
   const empty = $('#recentEmpty');
-  const list = await getRecentWorksList();
+  const list = listOverride || await getRecentWorksList();
   const hasCurrent = state.items.length > 0;
   grid.innerHTML = '';
 
@@ -10229,11 +10498,300 @@ async function renderRecentWorks() {
     });
     grid.appendChild(card);
     thumbJobs.push(thumbSrcForWork(work).then(src => {
-      if (src) setRwThumbImage(thumb, src);
+      if (src && (!renderSeq || renderSeq === recentWorksRenderSeq) && thumb.isConnected) setRwThumbImage(thumb, src);
     }));
     i++;
   }
   await Promise.all(thumbJobs);
+}
+
+let recentWorksRenderSeq = 0;
+let focusFlowEntries = [];
+let focusFlowIndex = 0;
+let focusFlowSuppressClick = false;
+let focusFlowDrag = null;
+let focusFlowWheelAt = 0;
+
+function currentFocusEntry() {
+  if (!state.items.length) return null;
+  return {
+    key: 'current',
+    current: true,
+    title: currentBoardTitle || 'Current board',
+    detail: (boardFileDirty ? 'Unsaved' : 'In progress') + ' · ' + state.items.length + ' item' + (state.items.length === 1 ? '' : 's'),
+    path: currentBoardPath,
+    thumbnailSrc: cachedCurrentBoardThumb ? 'data:image/jpeg;base64,' + cachedCurrentBoardThumb : null,
+  };
+}
+
+function recentFocusEntry(work) {
+  return {
+    key: 'recent:' + recentPathKey(work.path),
+    current: false,
+    title: work.title || boardTitleFromPath(work.path) || 'Untitled',
+    detail: formatWorkRelative(work) || 'Ready to open',
+    path: work.path,
+    work,
+  };
+}
+
+function openFocusEntry(entry) {
+  if (!entry) return;
+  if (entry.current) void enterBoard();
+  else void openBoardFromPath(entry.path);
+}
+
+function focusRemoveButton(entry) {
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'rw-card-clear';
+  clearBtn.title = 'Remove from recent';
+  clearBtn.setAttribute('aria-label', `Remove ${entry.title} from recent`);
+  clearBtn.textContent = '×';
+  clearBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    void removeRecentWork(entry.path);
+  });
+  return clearBtn;
+}
+
+function focusCardMeta(entry) {
+  const meta = document.createElement('div');
+  meta.className = 'rw-meta';
+  const copy = document.createElement('div');
+  copy.className = 'ff-card-copy';
+  const title = document.createElement('div');
+  title.className = 'rw-title';
+  title.textContent = entry.title;
+  const date = document.createElement('div');
+  date.className = 'rw-date';
+  date.textContent = entry.detail;
+  copy.append(title, date);
+  meta.append(copy);
+  return meta;
+}
+
+function focusFlowVisibleRadius() {
+  if (innerWidth >= 1800) return 3; // active + three cards on each side
+  if (innerWidth >= 980) return 2;  // active + two cards on each side
+  return 1;                         // active + one card on each side
+}
+
+function syncFocusFlowUi(opts = {}) {
+  const stage = $('#focusStage');
+  const cards = Array.from($('#focusTrack')?.children || []);
+  if (!stage || !focusFlowEntries.length) return;
+  focusFlowIndex = clamp(focusFlowIndex, 0, focusFlowEntries.length - 1);
+  const visibleRadius = focusFlowVisibleRadius();
+  stage.dataset.visibleCards = String(visibleRadius * 2 + 1);
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+    const offset = i - focusFlowIndex;
+    const distance = Math.abs(offset);
+    const visible = distance <= visibleRadius;
+    const scales = [1, .895, .79, .7];
+    // Keep every visible card materially opaque so cards behind it cannot
+    // ghost through; depth comes from tonal falloff, not blur or transparency.
+    const opacities = [1, .97, .92, .84];
+    const brightness = [1, .66, .42, .28];
+    const saturation = [1, .72, .45, .28];
+    card.style.setProperty('--ff-offset', offset);
+    card.style.setProperty('--ff-scale', String(scales[Math.min(distance, 3)]));
+    card.style.setProperty('--ff-brightness', String(brightness[Math.min(distance, 3)]));
+    card.style.setProperty('--ff-saturation', String(saturation[Math.min(distance, 3)]));
+    card.style.opacity = visible ? String(opacities[Math.min(distance, 3)]) : '0';
+    card.style.visibility = visible ? 'visible' : 'hidden';
+    card.style.zIndex = String(60 - distance);
+    card.style.pointerEvents = visible ? 'auto' : 'none';
+    card.dataset.depth = String(Math.min(distance, 3));
+    card.classList.toggle('is-active', distance === 0);
+    card.tabIndex = distance === 0 ? 0 : -1;
+    card.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    if (distance === 0) card.setAttribute('aria-current', 'true');
+    else card.removeAttribute('aria-current');
+    const clearBtn = card.querySelector('.rw-card-clear');
+    if (clearBtn) clearBtn.tabIndex = distance === 0 ? 0 : -1;
+  }
+  const active = focusFlowEntries[focusFlowIndex];
+  const activeCard = cards[focusFlowIndex];
+  if (activeCard) stage.setAttribute('aria-activedescendant', activeCard.id);
+  $('#focusPrev').disabled = focusFlowIndex === 0;
+  $('#focusNext').disabled = focusFlowIndex === focusFlowEntries.length - 1;
+  $('#focusPosition').textContent = `${focusFlowIndex + 1} of ${focusFlowEntries.length} · ${active.title}`;
+  $('#focusProgressFill').style.width = `${((focusFlowIndex + 1) / focusFlowEntries.length) * 100}%`;
+  if (opts.focusCard) activeCard?.focus({ preventScroll: true });
+}
+
+function setFocusFlowIndex(index, opts = {}) {
+  if (!focusFlowEntries.length) return;
+  focusFlowIndex = clamp(Math.round(index), 0, focusFlowEntries.length - 1);
+  syncFocusFlowUi(opts);
+}
+
+async function renderFocusRecentWorks(list, renderSeq) {
+  const track = $('#focusTrack');
+  const previousKey = focusFlowEntries[focusFlowIndex]?.key;
+  const current = currentFocusEntry();
+  const recent = current?.path
+    ? list.filter(work => !sameFilePath(work.path, current.path))
+    : list;
+  focusFlowEntries = [current, ...recent.map(recentFocusEntry)].filter(Boolean);
+  const keptIndex = previousKey ? focusFlowEntries.findIndex(entry => entry.key === previousKey) : -1;
+  focusFlowIndex = keptIndex >= 0 ? keptIndex : 0;
+  track.innerHTML = '';
+
+  const thumbJobs = [];
+  for (let i = 0; i < focusFlowEntries.length; i++) {
+    const entry = focusFlowEntries[i];
+    const card = document.createElement('div');
+    card.className = 'ff-card';
+    card.id = `focusCard${i}`;
+    card.role = 'button';
+    card.setAttribute('aria-roledescription', 'slide');
+    card.setAttribute('aria-label', `${entry.title}. ${entry.detail}`);
+    card.dataset.focusIndex = String(i);
+    card.title = entry.current ? 'Return to your current board' : (entry.path || entry.title);
+    const thumb = rwPlaceholderThumb();
+    if (entry.current) {
+      const badge = document.createElement('span');
+      badge.className = 'ff-card-badge';
+      badge.textContent = 'Current';
+      card.appendChild(badge);
+      if (entry.thumbnailSrc) setRwThumbImage(thumb, entry.thumbnailSrc);
+    } else {
+      card.appendChild(focusRemoveButton(entry));
+      thumbJobs.push(thumbSrcForWork(entry.work, { preferBoardPreview: true }).then(src => {
+        if (src && renderSeq === recentWorksRenderSeq && thumb.isConnected) setRwThumbImage(thumb, src);
+      }));
+    }
+    card.append(thumb, focusCardMeta(entry));
+    card.addEventListener('click', () => {
+      if (focusFlowSuppressClick) return;
+      openFocusEntry(entry);
+    });
+    track.appendChild(card);
+  }
+  syncFocusFlowUi();
+  await Promise.all(thumbJobs);
+}
+
+async function renderRecentWorks() {
+  const renderSeq = ++recentWorksRenderSeq;
+  const grid = $('#recentGrid');
+  const flow = $('#focusFlow');
+  const empty = $('#recentEmpty');
+  const heading = document.querySelector('.rw-heading-copy h1');
+  const subheading = document.querySelector('.rw-heading-copy .rw-sub');
+  const list = await getRecentWorksList();
+  if (renderSeq !== recentWorksRenderSeq) return;
+  const hasCurrent = state.items.length > 0;
+  const hasBoards = list.length > 0 || hasCurrent;
+  const focusLayout = appSettings.landingLayout === 'focus';
+  $('#recentWorks').classList.toggle('layout-focus', focusLayout);
+  grid.hidden = focusLayout || !hasBoards;
+  grid.classList.toggle('hide', focusLayout || !hasBoards);
+  flow.hidden = !focusLayout || !hasBoards;
+  empty.classList.toggle('hide', hasBoards);
+  if (heading) heading.textContent = focusLayout ? 'Focus Flow' : 'Recent Boards';
+  if (subheading) subheading.textContent = focusLayout
+    ? 'Your latest board, centered and ready to continue'
+    : 'Pick a board to continue, or start fresh';
+  if (!hasBoards) {
+    grid.innerHTML = '';
+    $('#focusTrack').innerHTML = '';
+    focusFlowEntries = [];
+    return;
+  }
+  if (focusLayout) await renderFocusRecentWorks(list, renderSeq);
+  else await renderClassicRecentWorks(list, renderSeq);
+}
+
+function wireFocusFlowControls() {
+  const stage = $('#focusStage');
+  const recentWorks = $('#recentWorks');
+  if (!stage || !recentWorks) return;
+
+  $('#focusPrev').addEventListener('click', e => {
+    e.stopPropagation();
+    setFocusFlowIndex(focusFlowIndex - 1);
+  });
+  $('#focusNext').addEventListener('click', e => {
+    e.stopPropagation();
+    setFocusFlowIndex(focusFlowIndex + 1);
+  });
+  stage.addEventListener('keydown', e => {
+    if (appSettings.landingLayout !== 'focus' || !focusFlowEntries.length) return;
+    let next = focusFlowIndex;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') next--;
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') next++;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = focusFlowEntries.length - 1;
+    else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openFocusEntry(focusFlowEntries[focusFlowIndex]);
+      return;
+    } else return;
+    e.preventDefault();
+    setFocusFlowIndex(next);
+  });
+  stage.addEventListener('wheel', e => {
+    if (appSettings.landingLayout !== 'focus' || !focusFlowEntries.length) return;
+    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(delta) < 4) return;
+    e.preventDefault();
+    const now = performance.now();
+    if (now - focusFlowWheelAt < 190) return;
+    focusFlowWheelAt = now;
+    setFocusFlowIndex(focusFlowIndex + Math.sign(delta));
+  }, { passive: false });
+
+  stage.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || appSettings.landingLayout !== 'focus') return;
+    if (e.target.closest('.rw-card-clear, .ff-arrow')) return;
+    focusFlowDrag = { pointerId: e.pointerId, startX: e.clientX, startIndex: focusFlowIndex, moved: false };
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!focusFlowDrag || focusFlowDrag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - focusFlowDrag.startX;
+    if (!focusFlowDrag.moved) {
+      if (Math.abs(dx) <= 10) return;
+      focusFlowDrag.moved = true;
+      stage.classList.add('dragging');
+      // Capturing on pointerdown retargets a normal mouse click from the card
+      // to the stage. Capture only after the gesture is unquestionably a drag.
+      try { stage.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    }
+    stage.style.setProperty('--ff-drag-x', `${dx * .72}px`);
+  });
+  const finishDrag = e => {
+    if (!focusFlowDrag || focusFlowDrag.pointerId !== e.pointerId) return;
+    const drag = focusFlowDrag;
+    focusFlowDrag = null;
+    const dx = e.clientX - drag.startX;
+    stage.classList.remove('dragging');
+    stage.style.removeProperty('--ff-drag-x');
+    try { stage.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (!drag.moved) return;
+    focusFlowSuppressClick = true;
+    setTimeout(() => { focusFlowSuppressClick = false; }, 0);
+    const stepWidth = Math.max(110, Math.min(210, stage.clientWidth * .18));
+    let steps = Math.round(-dx / stepWidth);
+    if (!steps && Math.abs(dx) > 38) steps = dx > 0 ? -1 : 1;
+    setFocusFlowIndex(drag.startIndex + steps);
+  };
+  stage.addEventListener('pointerup', finishDrag);
+  stage.addEventListener('pointercancel', e => {
+    if (!focusFlowDrag || focusFlowDrag.pointerId !== e.pointerId) return;
+    focusFlowDrag = null;
+    stage.classList.remove('dragging');
+    stage.style.removeProperty('--ff-drag-x');
+    syncFocusFlowUi();
+  });
+
+  window.addEventListener('resize', () => {
+    if (onLanding && appSettings.landingLayout === 'focus') syncFocusFlowUi();
+  });
 }
 
 let whatsNewPayload = null;
@@ -10460,7 +11018,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
     const payloadImageIds = new Set();
     const payloadHasImageItems = j.items.some(it =>
       it && typeof it === 'object' && (it.kind || 'image') === 'image');
-    cachedCurrentBoardThumb = null;
+    cachedCurrentBoardThumb = typeof j.preview === 'string' && j.preview.length ? j.preview : null;
 
     for (const rec of j.images || []) {
       const imgId = typeof rec?.id === 'string' ? rec.id : '';
@@ -13189,6 +13747,143 @@ function showMenu(x, y, hitItem) {
   menuEl.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
 }
 
+const settingsSelectControls = [];
+
+function closeSettingsSelectMenus(except = null) {
+  for (const control of settingsSelectControls) {
+    if (control === except) continue;
+    control.menu.classList.remove('show');
+    control.button.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function syncSettingsSelectControl(control) {
+  const selected = Array.from(control.select.options).find(option => option.value === control.select.value)
+    || control.select.options[0];
+  control.label.textContent = selected?.textContent || '';
+  for (const optionButton of control.options) {
+    optionButton.setAttribute('aria-selected', optionButton.dataset.value === control.select.value ? 'true' : 'false');
+  }
+}
+
+function syncSettingsSelectControls() {
+  for (const control of settingsSelectControls) syncSettingsSelectControl(control);
+}
+
+function positionSettingsSelectMenu(control) {
+  const rect = control.button.getBoundingClientRect();
+  const width = Math.max(142, rect.width);
+  control.menu.style.width = `${width}px`;
+  control.menu.style.left = `${Math.min(Math.max(8, rect.left), innerWidth - width - 8)}px`;
+  control.menu.style.top = `${rect.bottom + 6}px`;
+  const menuRect = control.menu.getBoundingClientRect();
+  if (menuRect.bottom > innerHeight - 8) {
+    control.menu.style.top = `${Math.max(8, rect.top - menuRect.height - 6)}px`;
+  }
+}
+
+function openSettingsSelectMenu(control, focusSelected = false) {
+  closeSettingsSelectMenus(control);
+  syncSettingsSelectControl(control);
+  control.menu.classList.add('show');
+  control.button.setAttribute('aria-expanded', 'true');
+  positionSettingsSelectMenu(control);
+  if (focusSelected) {
+    (control.options.find(option => option.getAttribute('aria-selected') === 'true') || control.options[0])?.focus();
+  }
+}
+
+function setupSettingsSelects() {
+  for (const select of document.querySelectorAll('.settings2-content select')) {
+    if (select.dataset.uiSelect === 'true') continue;
+    select.dataset.uiSelect = 'true';
+    const root = document.createElement('div');
+    root.className = 'ui-select';
+    const parent = select.parentNode;
+    parent.insertBefore(root, select);
+    root.appendChild(select);
+    select.classList.add('ui-select-native');
+    select.tabIndex = -1;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ui-select-button';
+    button.setAttribute('aria-haspopup', 'listbox');
+    button.setAttribute('aria-expanded', 'false');
+    const label = document.createElement('span');
+    label.className = 'ui-select-button-label';
+    const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    chevron.classList.add('ui-select-chevron');
+    chevron.setAttribute('viewBox', '0 0 24 24');
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.innerHTML = '<path d="m7 10 5 5 5-5"/>';
+    button.append(label, chevron);
+    root.appendChild(button);
+
+    const menu = document.createElement('div');
+    menu.className = 'ui-select-menu';
+    menu.id = `uiSelectMenu-${select.id}`;
+    menu.role = 'listbox';
+    menu.setAttribute('aria-label', select.closest('.s2-row')?.querySelector('.s2-label')?.textContent || 'Options');
+    button.setAttribute('aria-controls', menu.id);
+    const optionButtons = Array.from(select.options).map(option => {
+      const optionButton = document.createElement('button');
+      optionButton.type = 'button';
+      optionButton.className = 'ui-select-option';
+      optionButton.role = 'option';
+      optionButton.dataset.value = option.value;
+      optionButton.textContent = option.textContent;
+      menu.appendChild(optionButton);
+      return optionButton;
+    });
+    document.body.appendChild(menu);
+
+    const control = { select, root, button, label, menu, options: optionButtons };
+    settingsSelectControls.push(control);
+    button.addEventListener('click', e => {
+      e.stopPropagation();
+      if (menu.classList.contains('show')) closeSettingsSelectMenus();
+      else openSettingsSelectMenu(control);
+    });
+    button.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        openSettingsSelectMenu(control, true);
+      } else if (e.key === 'Escape') {
+        closeSettingsSelectMenus();
+      }
+    });
+    for (let i = 0; i < optionButtons.length; i++) {
+      const optionButton = optionButtons[i];
+      optionButton.addEventListener('click', () => {
+        select.value = optionButton.dataset.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        syncSettingsSelectControl(control);
+        closeSettingsSelectMenus();
+        button.focus({ preventScroll: true });
+      });
+      optionButton.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const direction = e.key === 'ArrowDown' ? 1 : -1;
+          optionButtons[(i + direction + optionButtons.length) % optionButtons.length].focus();
+        } else if (e.key === 'Home' || e.key === 'End') {
+          e.preventDefault();
+          optionButtons[e.key === 'Home' ? 0 : optionButtons.length - 1].focus();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeSettingsSelectMenus();
+          button.focus({ preventScroll: true });
+        }
+      });
+    }
+    select.addEventListener('change', () => syncSettingsSelectControl(control));
+    syncSettingsSelectControl(control);
+  }
+  document.querySelector('.settings2-content')?.addEventListener('scroll', () => closeSettingsSelectMenus(), { passive: true });
+  window.addEventListener('resize', () => closeSettingsSelectMenus());
+}
+
 function syncSettingsUi() {
   const $$ = id => document.getElementById(id);
   $$('setUndoLimit').value = appSettings.undoLimit;
@@ -13211,6 +13906,9 @@ function syncSettingsUi() {
   document.querySelectorAll('.theme-swatch').forEach(x => x.classList.toggle('active', x.dataset.theme === curTheme));
   const gridStyleSel = document.getElementById('setGridStyle');
   if (gridStyleSel) gridStyleSel.value = state.gridAppearance;
+  const landingLayoutSel = document.getElementById('setLandingLayout');
+  if (landingLayoutSel) landingLayoutSel.value = normalizeLandingLayout(appSettings.landingLayout);
+  syncSettingsSelectControls();
   syncSystemUi();
 }
 
@@ -13344,6 +14042,7 @@ function restoreSettingsDefaults() {
   }
   syncSettingsUi();
   syncSystemUi();
+  if (onLanding) void renderRecentWorks();
 }
 
 function wireSettingsControls() {
@@ -13392,6 +14091,16 @@ function wireSettingsControls() {
   document.querySelectorAll('.theme-swatch').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.theme)));
   const gridStyleSel = document.getElementById('setGridStyle');
   if (gridStyleSel) gridStyleSel.addEventListener('change', e => setGridAppearance(e.target.value));
+  const landingLayoutSel = document.getElementById('setLandingLayout');
+  if (landingLayoutSel) landingLayoutSel.addEventListener('change', e => {
+    appSettings.landingLayout = normalizeLandingLayout(e.target.value);
+    saveAppSettings();
+    applyAppSettings();
+    focusFlowEntries = [];
+    focusFlowIndex = 0;
+    syncSettingsUi();
+    if (onLanding) void renderRecentWorks();
+  });
   toggle('setCheckOnStartup', 'checkUpdatesOnStartup');
   document.getElementById('setCheckOnStartup')?.addEventListener('click', () => {
     if (appSettings.checkUpdatesOnStartup) setUpdateStatus('Checks automatically when RefBoard starts');
@@ -13406,6 +14115,7 @@ function wireSettingsControls() {
     }
   });
   document.querySelectorAll('.s2-tab').forEach(t => t.addEventListener('click', () => {
+    closeSettingsSelectMenus();
     document.querySelectorAll('.s2-tab').forEach(x => x.classList.toggle('active', x === t));
     document.querySelectorAll('.s2-pane').forEach(p => p.hidden = p.dataset.pane !== t.dataset.pane);
   }));
@@ -13430,11 +14140,13 @@ function openSettings() {
 }
 
 function closeSettings() {
+  closeSettingsSelectMenus();
   settingsModal.classList.remove('show');
 }
 
 window.addEventListener('pointerdown', e => {
   if (isAnimaticsInputActive()) return;
+  if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
   if (e.target.closest('#drawColorBtn')) return;
   if (!e.target.closest('#drawCanvasPop')) closeDrawCanvasPop();
@@ -13468,11 +14180,6 @@ window.addEventListener('keydown', e => {
   }
   if (formControl || e.target.closest('#noteEditor')) return;
 
-  if (onLanding) {
-    if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
-    return;
-  }
-
   if (helpModal.classList.contains('show') || exportModal.classList.contains('show')
       || exportImagesModal.classList.contains('show') || settingsModal.classList.contains('show')
       || unsavedModal.classList.contains('show') || autosaveIntervalModal.classList.contains('show')
@@ -13502,6 +14209,11 @@ window.addEventListener('keydown', e => {
       const v = ($('#noteLinkUrl')?.value || '').trim();
       closeNoteLinkModal(v || null);
     }
+    return;
+  }
+
+  if (onLanding) {
+    if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
     return;
   }
 
@@ -14367,7 +15079,9 @@ async function init() {
   applyTheme(localStorage.getItem('refboard.theme') || 'midnight');
   loadAppSettings();
   applyAppSettings();
+  setupSettingsSelects();
   wireSettingsControls();
+  wireFocusFlowControls();
   renderShortcutsList();
   syncSettingsUi();
   syncChromeLayout();

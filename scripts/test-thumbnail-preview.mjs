@@ -64,8 +64,8 @@ try {
   );
   assert.match(
     rendererSource,
-    /captureBoardFilePreviewBase64[\s\S]*?boundedCompositeCanvas\(state\.items,\s*\{[\s\S]*?maxWidth:\s*maxPx,[\s\S]*?maxHeight:\s*maxPx,[\s\S]*?fit:\s*['"]cover['"][\s\S]*?background:\s*THUMBNAIL_CANVAS_BACKGROUND/,
-    'saved board previews should use the same safe backdrop',
+    /captureBoardFilePreviewBase64[\s\S]*?boundedCompositeCanvas\(state\.items,\s*\{[\s\S]*?maxWidth:\s*maxPx,[\s\S]*?maxHeight:\s*Math\.round\(maxPx \* 3 \/ 4\),[\s\S]*?fit:\s*['"]cover['"][\s\S]*?background:\s*THUMBNAIL_CANVAS_BACKGROUND/,
+    'saved board previews should use a high-resolution 4:3 canvas with the safe backdrop',
   );
   assert.match(
     handlerSource,

@@ -14,6 +14,30 @@ async function readChunk(handle, position, size = CHUNK_SIZE) {
   return buffer.subarray(0, bytesRead);
 }
 
+async function readBoardPreview(filePath) {
+  const handle = await fs.open(filePath, 'r');
+  try {
+    const stat = await handle.stat();
+    let nextPos = 0;
+    let header = Buffer.alloc(0);
+    let markerAt = -1;
+
+    while (markerAt < 0 && nextPos < stat.size) {
+      const chunk = await readChunk(handle, nextPos);
+      if (!chunk.length) break;
+      nextPos += chunk.length;
+      header = Buffer.concat([header, chunk]);
+      if (header.length > MAX_HEADER_BYTES) throw new Error('Board header is too large');
+      markerAt = header.indexOf(IMAGES_MARKER);
+    }
+    if (markerAt < 0) return null;
+    const core = JSON.parse(header.subarray(0, markerAt).toString('utf8') + '}');
+    return typeof core.preview === 'string' && core.preview.length ? core.preview : null;
+  } finally {
+    await handle.close();
+  }
+}
+
 async function scanBoardFile(filePath) {
   const handle = await fs.open(filePath, 'r');
   try {
@@ -124,4 +148,4 @@ async function readBoardImageBytes(filePath, image) {
   }
 }
 
-module.exports = { scanBoardFile, readBoardImageBytes };
+module.exports = { scanBoardFile, readBoardImageBytes, readBoardPreview };
