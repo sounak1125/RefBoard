@@ -9,6 +9,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'refboard-landing-smoke-'
 const screenshotPath = process.env.REFBOARD_SMOKE_SCREENSHOT || path.join(tempRoot, 'focus-flow.png');
 const screenshotExt = path.extname(screenshotPath) || '.png';
 const settingsScreenshotPath = screenshotPath.slice(0, screenshotPath.length - screenshotExt.length) + '-settings' + screenshotExt;
+const toolbarScreenshotPath = screenshotPath.slice(0, screenshotPath.length - screenshotExt.length) + '-toolbar' + screenshotExt;
 app.setPath('userData', path.join(tempRoot, 'user-data'));
 app.commandLine.appendSwitch('disable-gpu');
 
@@ -25,6 +26,29 @@ async function waitFor(win, expression, label, timeoutMs = 10000) {
     await delay(80);
   }
   throw new Error(`Timed out waiting for ${label}`);
+}
+
+async function clickElement(win, selector) {
+  const point = await win.webContents.executeJavaScript(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+  })()`);
+  if (!point) throw new Error(`Missing click target: ${selector}`);
+  point.hitBefore = await win.webContents.executeJavaScript(`document.elementFromPoint(${point.x}, ${point.y})?.closest('button')?.id || document.elementFromPoint(${point.x}, ${point.y})?.id || null`);
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: point.x, y: point.y });
+  win.webContents.sendInputEvent({ type: 'mouseDown', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+  await delay(40);
+  point.hitAfter = await win.webContents.executeJavaScript(`document.elementFromPoint(${point.x}, ${point.y})?.closest('button')?.id || document.elementFromPoint(${point.x}, ${point.y})?.id || null`);
+  return point;
+}
+
+async function revealToolbarForSmoke(win) {
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 450 });
+  await waitFor(win, "document.body.classList.contains('toolbar-revealed')", 'toolbar reveal');
+  await delay(240);
 }
 
 async function run() {
@@ -75,7 +99,7 @@ async function run() {
   if (!focusState.focusClass || !focusState.flowVisible || !focusState.gridHidden
       || focusState.activeTitle !== 'Latest concepts' || focusState.cardCount !== 9
       || focusState.visiblePolicy !== '5' || focusState.settingValue !== 'focus'
-      || focusState.landingSettingsPresent || focusState.customSelectCount !== 3) {
+      || focusState.landingSettingsPresent || focusState.customSelectCount !== 4) {
     throw new Error(`Unexpected Focus Flow state: ${JSON.stringify(focusState)}`);
   }
 
@@ -203,9 +227,155 @@ async function run() {
       || directCardOpen.hasOpenLabel) {
     throw new Error(`Unexpected direct card-open behavior: ${JSON.stringify(directCardOpen)}`);
   }
+  await waitFor(win, "!document.querySelector('#openingOverlay').classList.contains('show')", 'completed board-open overlay');
+
+  smokeStep = 'floating toolbar reveal and buttons';
+  const floatingInitial = await win.webContents.executeJavaScript(`({
+    floating: document.body.classList.contains('toolbar-floating'),
+    revealed: document.body.classList.contains('toolbar-revealed'),
+    handleDisplay: getComputedStyle(document.querySelector('#toolbarEdgeHandle')).display,
+    toolbarOpacity: getComputedStyle(document.querySelector('#toolbar')).opacity,
+    buttonCount: document.querySelectorAll('#toolbar > .tb').length
+  })`);
+  if (!floatingInitial.floating || floatingInitial.revealed || floatingInitial.handleDisplay !== 'flex'
+      || floatingInitial.toolbarOpacity !== '0' || floatingInitial.buttonCount !== 14) {
+    throw new Error(`Unexpected initial floating toolbar: ${JSON.stringify(floatingInitial)}`);
+  }
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 450 });
+  await waitFor(win, "document.body.classList.contains('toolbar-revealed') && Number(getComputedStyle(document.querySelector('#toolbar')).opacity) > .9", 'left-edge toolbar reveal');
+  await delay(260);
+  const toolbarPng = await win.webContents.capturePage();
+  fs.writeFileSync(toolbarScreenshotPath, toolbarPng.toPNG());
+  const handClick = await clickElement(win, '#btnHandTool');
+  const handState = await win.webContents.executeJavaScript(`({
+    handOn: document.querySelector('#btnHandTool').classList.contains('on'),
+    selectOn: document.querySelector('#btnSelectTool').classList.contains('on'),
+    handleLabel: document.querySelector('#toolbarEdgeHandle').getAttribute('aria-label'),
+    toolbarPointerEvents: getComputedStyle(document.querySelector('#toolbar')).pointerEvents,
+    toolbarRect: document.querySelector('#toolbar').getBoundingClientRect().toJSON()
+  })`);
+  if (!handState.handOn || !handState.handleLabel.includes('Hand active')) {
+    throw new Error(`Hand button did not activate: ${JSON.stringify({ handClick, handState })}`);
+  }
+  await clickElement(win, '#btnSelectTool');
+  await waitFor(win, "document.querySelector('#btnSelectTool').classList.contains('on') && document.querySelector('#toolbarEdgeHandle').getAttribute('aria-label').includes('Select active')", 'Select toolbar button');
+  await clickElement(win, '#btnAdd');
+  await waitFor(win, "document.querySelector('#addPanelWrap').classList.contains('open') && document.body.classList.contains('toolbar-revealed')", 'Add toolbar drawer');
+  const addDrawerOffset = await win.webContents.executeJavaScript(`(() => {
+    const toolbar = document.querySelector('#toolbar').getBoundingClientRect();
+    const drawer = document.querySelector('#addPanelWrap').getBoundingClientRect();
+    return Math.abs(drawer.left - (toolbar.right + 8));
+  })()`);
+  if (addDrawerOffset > 2) throw new Error(`Add drawer is detached from compact toolbar by ${addDrawerOffset}px`);
+  await clickElement(win, '#btnAdd');
+  await waitFor(win, "!document.querySelector('#addPanelWrap').classList.contains('open')", 'Add toolbar drawer close');
+  await clickElement(win, '#btnDraw');
+  await waitFor(win, "document.querySelector('#drawPanelWrap').classList.contains('open') && document.body.classList.contains('toolbar-revealed')", 'Draw toolbar drawer');
+  await clickElement(win, '#btnDraw');
+  await waitFor(win, "!document.querySelector('#drawPanelWrap').classList.contains('open')", 'Draw toolbar drawer close');
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: 720, y: 450 });
+  await waitFor(win, "!document.body.classList.contains('toolbar-revealed')", 'floating toolbar auto-hide', 2500);
+
+  smokeStep = 'toolbar mode Settings persistence';
+  await win.webContents.executeJavaScript(`
+    (() => {
+      document.querySelector('#settingsModal').classList.add('show');
+      document.querySelector('.s2-tab[data-pane="appearance"]').click();
+      const root = document.querySelector('#setToolbarMode').closest('.ui-select');
+      root.querySelector('.ui-select-button').click();
+      document.querySelector('#uiSelectMenu-setToolbarMode [data-value="pinned"]').click();
+    })()
+  `);
+  await waitFor(win, "document.body.classList.contains('toolbar-pinned') && JSON.parse(localStorage.getItem('refboard.settings')).toolbarMode === 'pinned'", 'Always Visible setting');
+  const pinnedToolbar = await win.webContents.executeJavaScript(`({
+    mode: document.querySelector('#setToolbarMode').value,
+    buttonLabel: document.querySelector('#setToolbarMode').closest('.ui-select').querySelector('.ui-select-button-label').textContent,
+    handleDisplay: getComputedStyle(document.querySelector('#toolbarEdgeHandle')).display,
+    toolbarOpacity: getComputedStyle(document.querySelector('#toolbar')).opacity,
+    toolbarPointerEvents: getComputedStyle(document.querySelector('#toolbar')).pointerEvents,
+    toolbarHeight: document.querySelector('#toolbar').getBoundingClientRect().height
+  })`);
+  if (pinnedToolbar.mode !== 'pinned' || pinnedToolbar.buttonLabel !== 'Always Visible'
+      || pinnedToolbar.handleDisplay !== 'none' || pinnedToolbar.toolbarOpacity !== '1'
+      || pinnedToolbar.toolbarPointerEvents !== 'auto') {
+    throw new Error(`Unexpected pinned toolbar state: ${JSON.stringify(pinnedToolbar)}`);
+  }
+  const toolbarHeights = {
+    floating: handState.toolbarRect.height,
+    pinned: pinnedToolbar.toolbarHeight,
+    difference: Math.abs(handState.toolbarRect.height - pinnedToolbar.toolbarHeight)
+  };
+  if (toolbarHeights.difference > 0.5) {
+    throw new Error(`Floating and pinned toolbar heights do not match: ${JSON.stringify(toolbarHeights)}`);
+  }
+  await win.webContents.executeJavaScript(`
+    (() => {
+      const root = document.querySelector('#setToolbarMode').closest('.ui-select');
+      root.querySelector('.ui-select-button').click();
+      document.querySelector('#uiSelectMenu-setToolbarMode [data-value="floating"]').click();
+      document.querySelector('#settingsModal').classList.remove('show');
+    })()
+  `);
+  await waitFor(win, "document.body.classList.contains('toolbar-floating') && JSON.parse(localStorage.getItem('refboard.settings')).toolbarMode === 'floating'", 'Floating Compact setting restore');
+  const toolbarModes = await win.webContents.executeJavaScript(`({
+    savedMode: JSON.parse(localStorage.getItem('refboard.settings')).toolbarMode,
+    floating: document.body.classList.contains('toolbar-floating'),
+    pinnedTest: true
+  })`);
+
+  smokeStep = 'remaining toolbar button actions';
+  await win.webContents.executeJavaScript(`(() => {
+    Object.assign(window.RefBoardAPI, {
+      readClipboardNotes: async () => null,
+      readClipboardImage: async () => null,
+      saveBoardFile: async () => ({ saved: false }),
+      openBoardDialog: async () => null
+    });
+    return true;
+  })()`);
+  await revealToolbarForSmoke(win);
+  await clickElement(win, '#btnPaste');
+  await clickElement(win, '#btnNote');
+  await waitFor(win, "window.RefBoard.state.items.some(item => item.kind === 'note')", 'Note toolbar button');
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' });
+  await delay(80);
+  await revealToolbarForSmoke(win);
+  await clickElement(win, '#btnArrange');
+  await clickElement(win, '#btnFit');
+  await clickElement(win, '#btnAnimatics');
+  await delay(100);
+  await win.webContents.executeJavaScript(`(() => { window.RefBoard.animatics?.close?.(); return true; })()`);
+  await revealToolbarForSmoke(win);
+  await clickElement(win, '#btnExport');
+  await waitFor(win, "document.querySelector('#exportModal').classList.contains('show')", 'Export toolbar button');
+  await clickElement(win, '#expCancel');
+  await revealToolbarForSmoke(win);
+  await clickElement(win, '#btnSave');
+  await delay(100);
+  await revealToolbarForSmoke(win);
+  await clickElement(win, '#btnOpen');
+  await delay(80);
+  await revealToolbarForSmoke(win);
+  await clickElement(win, '#btnClear');
+  await waitFor(win, "document.querySelector('#confirmModal').classList.contains('show')", 'Clear toolbar button');
+  await clickElement(win, '#confirmCancel');
+  await revealToolbarForSmoke(win);
+  await clickElement(win, '#sidebarHome');
+  await waitFor(win, "document.querySelector('#unsavedModal').classList.contains('show')", 'Home toolbar button');
+  await clickElement(win, '#unsavedDiscard');
+  await waitFor(win, "!document.body.classList.contains('board-active') && getComputedStyle(document.querySelector('#recentWorks')).display !== 'none'", 'Home navigation from toolbar');
+  const allToolbarButtons = await win.webContents.executeJavaScript(`({
+    total: document.querySelectorAll('#toolbar > .tb').length,
+    homeReached: !document.body.classList.contains('board-active'),
+    rendererHasNote: window.RefBoard.state.items.some(item => item.kind === 'note')
+  })`);
+  if (allToolbarButtons.total !== 14 || !allToolbarButtons.homeReached) {
+    throw new Error(`Unexpected all-button smoke state: ${JSON.stringify(allToolbarButtons)}`);
+  }
 
   if (rendererErrors.length) throw new Error(`Renderer errors: ${rendererErrors.join(' | ')}`);
-  return { focusState, desktopHierarchy, wideHierarchy, compactHierarchy, classicState, cardClickPoint, directCardOpen, screenshotPath, settingsScreenshotPath };
+  return { focusState, desktopHierarchy, wideHierarchy, compactHierarchy, classicState, cardClickPoint, directCardOpen, floatingInitial, addDrawerOffset, pinnedToolbar, toolbarHeights, toolbarModes, allToolbarButtons, screenshotPath, settingsScreenshotPath, toolbarScreenshotPath };
   } catch (error) {
     throw new Error(`${smokeStep}: ${error.message}${rendererErrors.length ? ` | ${rendererErrors.join(' | ')}` : ''}`);
   }

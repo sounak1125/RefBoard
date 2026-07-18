@@ -118,6 +118,11 @@ assert.match(editor, /releaseVideoElements\(\);releaseAudioPlaybackContext\(\);c
 assert.match(editor, /try\{onClose\(\)/, 'closing Animatics must notify the board after restoring visibility');
 assert.match(editor, /id="anTimelineResizer"/, 'timeline height must be pointer-resizable');
 assert.match(editor, /timelineHeight:286/, 'timeline height must persist in the project');
+assert.match(editor, /let timelineResizeRaf = 0/, 'timeline resizing must track a single animation-frame update');
+assert.match(editor, /function scheduleTimelineResize\(height\)[\s\S]*?requestAnimationFrame/, 'timeline pointer movement must be coalesced through requestAnimationFrame');
+assert.match(editor, /function resizeViewer\(\{redraw=true\}=\{\}\)[\s\S]*?if\(redraw\)\{drawViewer\(\);positionInlineTextEditor\(\);\}/, 'live resizing must be able to scale the existing viewer without recompositing it');
+assert.match(editor, /timelineResizer\.addEventListener\('pointermove',[^\n]+scheduleTimelineResize/, 'timeline pointermove must schedule rather than immediately redraw');
+assert.match(editor, /timelineResizer\.addEventListener\('pointerup',[^\n]+paintTimelineResize\(\{redraw:true\}\)/, 'timeline resize completion must flush one full viewer redraw');
 assert.match(editor, /videoTrackHeights:\[DEFAULT_TRACK_HEIGHT\]/, 'new projects must persist individual video track heights');
 assert.match(editor, /videoTrackEnabled:\[true\]/, 'new projects must enable the primary video track');
 assert.match(editor, /videoTrackLocked:\[false\]/, 'new projects must unlock the primary video track');

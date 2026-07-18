@@ -82,6 +82,14 @@ const smokeExpression = String.raw`(async()=>{
   const afterInspectorWidth=side.getBoundingClientRect().width,serializedInspectorWidth=window.RefBoard.animatics.serialize().inspectorWidth,tabLayouts=[];
   for(const tab of document.querySelectorAll('.an-tab')){tab.click();const panel=document.querySelector('[data-panel-body="'+tab.dataset.panel+'"]'),panelRect=panel.getBoundingClientRect(),results=new Map(),recordVisible=()=>{for(const button of panel.querySelectorAll('button')){const rect=button.getBoundingClientRect();if(rect.width>0)results.set(button,rect.left>=panelRect.left-1&&rect.right<=panelRect.right+1);}};recordVisible();if(tab.dataset.panel==='draw'){document.querySelector('#anDrawPen').click();recordVisible();document.querySelector('#anDrawColorButton').click();recordVisible();document.querySelector('#anDrawWidthMenuButton').click();recordVisible();}const buttons=[...panel.querySelectorAll('button')].map(button=>results.get(button)===true);tabLayouts.push({tab:tab.dataset.panel,active:tab.classList.contains('on')&&panel.classList.contains('on'),buttons});}
   document.querySelector('[data-panel="draw"]').click();document.querySelector('#anDrawWidthMenuButton').click();await wait(20);const workspace=document.querySelector('#animaticsWorkspace'),drawPanel=document.querySelector('[data-panel-body="draw"]'),menu=document.querySelector('#anDrawWidthMenu'),workspaceRect=workspace.getBoundingClientRect(),sideRect=side.getBoundingClientRect(),timelineRect=document.querySelector('.an-timeline').getBoundingClientRect(),menuRect=menu.getBoundingClientRect(),lastPresetRect=menu.querySelector('[data-an-draw-width="48"]').getBoundingClientRect(),inspectorLayout={timelineFullWidth:Math.abs(timelineRect.left-workspaceRect.left)<=1&&Math.abs(timelineRect.right-workspaceRect.right)<=1,inspectorAboveTimeline:Math.abs(sideRect.bottom-timelineRect.top)<=1,menuParent:menu.parentElement.id,menuWithinViewport:menuRect.left>=0&&menuRect.top>=0&&menuRect.right<=innerWidth&&menuRect.bottom<=innerHeight,lastPresetVisible:lastPresetRect.bottom<=menuRect.bottom+1,panelClientHeight:drawPanel.clientHeight,panelScrollHeight:drawPanel.scrollHeight,panelNoScroll:drawPanel.scrollHeight<=drawPanel.clientHeight+1};document.querySelector('#anDrawWidthMenuButton').click();
+  const timelineResizer=document.querySelector('#anTimelineResizer'),beforeTimelineHeight=window.RefBoard.animatics.serialize().timelineHeight,timelineResizerRect=timelineResizer.getBoundingClientRect(),timelineResizeX=timelineResizerRect.left+timelineResizerRect.width/2,timelineResizeY=timelineResizerRect.top+timelineResizerRect.height/2;
+  timelineResizer.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:74,clientX:timelineResizeX,clientY:timelineResizeY,button:0}));
+  timelineResizer.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:74,clientX:timelineResizeX,clientY:timelineResizeY+50,buttons:1}));
+  await wait(80);
+  const liveTimelineHeight=window.RefBoard.animatics.serialize().timelineHeight,liveTimelineCss=parseFloat(getComputedStyle(workspace).getPropertyValue('--an-timeline-h'));
+  timelineResizer.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:74,clientX:timelineResizeX,clientY:timelineResizeY+50,button:0}));await wait(30);
+  const resizedTimelineHeight=window.RefBoard.animatics.serialize().timelineHeight,timelineResizeReleased=!timelineResizer.classList.contains('dragging');
+  timelineResizer.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));await wait(30);const resetTimelineHeight=window.RefBoard.animatics.serialize().timelineHeight;
   document.querySelector('[data-toggle-audio-mute="0"]').click();
   document.querySelector('[data-toggle-audio-solo="1"]').click();
   document.querySelector('[data-toggle-track-lock="video"][data-track="0"]').click();
@@ -111,7 +119,7 @@ const smokeExpression = String.raw`(async()=>{
   canvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:73,clientX:textX+80,clientY:textY+50,buttons:1}));
   canvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:73,clientX:textX+80,clientY:textY+50,button:0}));
   const after=window.RefBoard.animatics.serialize();
-  return {layout,beforeInspectorWidth,afterInspectorWidth,serializedInspectorWidth,tabLayouts,inspectorLayout,state,disabledTargets,played:window.__played.length,beforeClip:before.clips[0],afterClip:after.clips[0],beforeAudio:before.audio[1],afterAudio:after.audio[1],beforeText:before.texts[0],afterText:after.texts[0],toast:document.querySelector('#anToast').textContent};
+  return {layout,beforeInspectorWidth,afterInspectorWidth,serializedInspectorWidth,tabLayouts,inspectorLayout,beforeTimelineHeight,liveTimelineHeight,liveTimelineCss,resizedTimelineHeight,timelineResizeReleased,resetTimelineHeight,state,disabledTargets,played:window.__played.length,beforeClip:before.clips[0],afterClip:after.clips[0],beforeAudio:before.audio[1],afterAudio:after.audio[1],beforeText:before.texts[0],afterText:after.texts[0],toast:document.querySelector('#anToast').textContent};
 })()`;
 
 try {
@@ -127,6 +135,11 @@ try {
   assert.equal(result.inspectorLayout.menuWithinViewport,true,'the size menu must stay inside the viewport');
   assert.equal(result.inspectorLayout.lastPresetVisible,true,'the size menu must expose every preset without clipping');
   assert.ok(result.inspectorLayout.panelNoScroll,`opening the size menu must not add an inspector scrollbar (${result.inspectorLayout.panelScrollHeight}/${result.inspectorLayout.panelClientHeight})`);
+  assert.equal(result.liveTimelineHeight,result.beforeTimelineHeight-50,'timeline height must update on the scheduled animation frame');
+  assert.equal(result.liveTimelineCss,result.liveTimelineHeight,'the live timeline CSS height must match the project state');
+  assert.equal(result.resizedTimelineHeight,result.liveTimelineHeight,'pointerup must flush and retain the resized timeline height');
+  assert.equal(result.timelineResizeReleased,true,'pointerup must clear the timeline divider drag state');
+  assert.equal(result.resetTimelineHeight,286,'double-click must still reset the timeline height');
   assert.deepEqual(result.state.audioTrackMuted,[true,false]);
   assert.deepEqual(result.state.audioTrackSolo,[false,true]);
   assert.deepEqual(result.state.videoTrackLocked,[true,false]);

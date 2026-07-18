@@ -597,6 +597,7 @@ export function createAnimaticsEditor(options) {
   let trimWavePeaks = [];
   let trimHandleDrag = null;
   let timelineResize = null;
+  let timelineResizeRaf = 0;
   let inspectorResize = null;
   let trackResize = null;
   let trackReorder = null;
@@ -1660,7 +1661,8 @@ export function createAnimaticsEditor(options) {
     if(!open)return;
     if(audioTrimState)finishAudioTrimmer(false);if(inlineTextId)finishInlineTextEdit(false);flushDeferredHistory();open=false;setPlaying(false);
     cancelAnimationFrame(scrubPreviewRaf);scrubPreviewRaf=0;scrubPreviewQueued=false;cancelFramingPreview();viewerDrawToken++;
-    drawMode=false;drawBrushesOpen=false;drawColorOpen=false;drawWidthMenuOpen=false;activeStroke=null;clearActiveDrawingSession();hideDrawSizePreview();framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;handPan=null;spaceHand=null;inspectorResize=null;root.classList.remove('hand-panning','inspector-resizing');$('#anInspectorResizer')?.classList.remove('dragging');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
+    if(timelineResizeRaf)cancelAnimationFrame(timelineResizeRaf);timelineResizeRaf=0;timelineResize=null;
+    drawMode=false;drawBrushesOpen=false;drawColorOpen=false;drawWidthMenuOpen=false;activeStroke=null;clearActiveDrawingSession();hideDrawSizePreview();framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;handPan=null;spaceHand=null;inspectorResize=null;root.classList.remove('hand-panning','inspector-resizing');$('#anInspectorResizer')?.classList.remove('dragging');$('#anTimelineResizer')?.classList.remove('dragging');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
     // Pausing alone leaves Chromium decoder buffers and GPU textures resident.
     // Keep the source Blob URLs/project intact, but recreate decoders and the
     // preview backing store next time Animatics opens.
@@ -1668,7 +1670,7 @@ export function createAnimaticsEditor(options) {
     try{onClose();}catch(err){console.error('[animatics] board return recovery failed',err);}
   }
 
-  function resizeViewer(){
+  function resizeViewer({redraw=true}={}){
     const shell=canvas.parentElement,wrap=shell.parentElement;
     const availableW=wrap.clientWidth,availableH=Math.max(1,wrap.clientHeight-52);
     if(!availableW||!availableH)return;
@@ -1676,7 +1678,23 @@ export function createAnimaticsEditor(options) {
     const ratio=rw/rh; let w=availableW,h=w/ratio;
     if(h>availableH){h=availableH;w=h*ratio;}
     shell.style.width=`${Math.floor(w)}px`;shell.style.height=`${Math.floor(h)}px`;
-    canvas.style.width='100%';canvas.style.height='100%';drawViewer();positionInlineTextEditor();
+    canvas.style.width='100%';canvas.style.height='100%';
+    if(redraw){drawViewer();positionInlineTextEditor();}
+  }
+
+  function paintTimelineResize({redraw=false}={}){
+    if(timelineResizeRaf){cancelAnimationFrame(timelineResizeRaf);timelineResizeRaf=0;}
+    if(!timelineResize)return;
+    project.timelineHeight=timelineResize.nextHeight;
+    applyTimelineHeight();
+    resizeViewer({redraw});
+  }
+
+  function scheduleTimelineResize(height){
+    if(!timelineResize)return;
+    timelineResize.nextHeight=height;
+    if(timelineResizeRaf)return;
+    timelineResizeRaf=requestAnimationFrame(()=>{timelineResizeRaf=0;paintTimelineResize();});
   }
 
   function setActiveTool(tool){
@@ -2240,10 +2258,10 @@ export function createAnimaticsEditor(options) {
   inspectorResizer.addEventListener('dblclick',()=>{project.inspectorWidth=DEFAULT_INSPECTOR_WIDTH;applyInspectorWidth();resizeViewer();markDirty();});
   inspectorResizer.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home'].includes(e.key))return;project.inspectorWidth=e.key==='Home'?DEFAULT_INSPECTOR_WIDTH:clamp(project.inspectorWidth+(e.key==='ArrowRight'?24:-24),MIN_INSPECTOR_WIDTH,inspectorWidthMaximum());applyInspectorWidth();resizeViewer();markDirty();e.preventDefault();});
   const timelineResizer=$('#anTimelineResizer');
-  timelineResizer.addEventListener('pointerdown',e=>{timelineResize={startY:e.clientY,startHeight:project.timelineHeight};timelineResizer.classList.add('dragging');timelineResizer.setPointerCapture?.(e.pointerId);e.preventDefault();});
-  timelineResizer.addEventListener('pointermove',e=>{if(!timelineResize)return;project.timelineHeight=clamp(timelineResize.startHeight+timelineResize.startY-e.clientY,180,Math.max(180,window.innerHeight-220));applyTimelineHeight();resizeViewer();});
-  timelineResizer.addEventListener('pointerup',()=>{if(!timelineResize)return;timelineResize=null;timelineResizer.classList.remove('dragging');markDirty();});
-  timelineResizer.addEventListener('pointercancel',()=>{timelineResize=null;timelineResizer.classList.remove('dragging');applyTimelineHeight();});
+  timelineResizer.addEventListener('pointerdown',e=>{timelineResize={startY:e.clientY,startHeight:project.timelineHeight,nextHeight:project.timelineHeight};timelineResizer.classList.add('dragging');timelineResizer.setPointerCapture?.(e.pointerId);e.preventDefault();});
+  timelineResizer.addEventListener('pointermove',e=>{if(!timelineResize)return;scheduleTimelineResize(clamp(timelineResize.startHeight+timelineResize.startY-e.clientY,180,Math.max(180,window.innerHeight-220)));});
+  timelineResizer.addEventListener('pointerup',()=>{if(!timelineResize)return;paintTimelineResize({redraw:true});timelineResize=null;timelineResizer.classList.remove('dragging');markDirty();});
+  timelineResizer.addEventListener('pointercancel',()=>{if(!timelineResize)return;paintTimelineResize({redraw:true});timelineResize=null;timelineResizer.classList.remove('dragging');});
   timelineResizer.addEventListener('dblclick',()=>{project.timelineHeight=286;applyTimelineHeight();resizeViewer();markDirty();});
   timelineResizer.addEventListener('keydown',e=>{if(!['ArrowUp','ArrowDown','Home'].includes(e.key))return;project.timelineHeight=e.key==='Home'?286:clamp(project.timelineHeight+(e.key==='ArrowUp'?24:-24),180,Math.max(180,window.innerHeight-220));applyTimelineHeight();resizeViewer();markDirty();e.preventDefault();});
   scroll.addEventListener('scroll',syncPlayheadVisibility,{passive:true});

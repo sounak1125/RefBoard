@@ -142,7 +142,8 @@ body.board-active.titlebar-revealed #titlebar{
   max-height:min(86vh, calc(100vh - var(--float-gap) * 2));
   overflow:visible;
   scrollbar-width:none;
-  transition:top .32s cubic-bezier(.22,1,.36,1), transform .32s cubic-bezier(.22,1,.36,1), max-height .32s cubic-bezier(.22,1,.36,1);
+  transition:top .32s cubic-bezier(.22,1,.36,1), transform .22s cubic-bezier(.22,1,.36,1),
+    opacity .18s ease, max-height .32s cubic-bezier(.22,1,.36,1);
 }
 body.board-active.titlebar-revealed #toolbar{
   top:calc(50vh + var(--titlebar-h) / 2);
@@ -152,6 +153,54 @@ body.board-active.titlebar-revealed #toolbar{
 #toolbar .tb.on{ background:rgba(90,162,255,.22); color:#fff; }
 #toolbar .sep{ width:22px; height:1px; background:var(--line); margin:4px 0; }
 #toolbar .tb-spacer{ flex:1; min-height:4px; }
+
+/* Compact edge-reveal toolbar */
+#toolbarEdgeHandle{
+  position:fixed; left:0; top:50%; z-index:26;
+  width:28px; height:48px; padding:0; border:1px solid var(--line); border-left:0;
+  border-radius:0 12px 12px 0;
+  display:none; align-items:center; justify-content:center; gap:1px;
+  background:color-mix(in srgb, var(--panel) 94%, transparent); color:var(--mut);
+  box-shadow:0 8px 24px rgba(0,0,0,.34), 0 1px 0 rgba(255,255,255,.04) inset;
+  backdrop-filter:blur(16px); cursor:pointer;
+  transform:translateY(-50%); transform-origin:left center;
+  transition:opacity .16s ease, transform .2s cubic-bezier(.22,1,.36,1),
+    background .16s ease, color .16s ease, border-color .16s ease;
+}
+#toolbarEdgeHandle::before{
+  content:""; position:absolute; left:0; top:10px; bottom:10px; width:2px;
+  border-radius:0 2px 2px 0; background:var(--acc); opacity:.72;
+  box-shadow:0 0 10px color-mix(in srgb, var(--acc) 48%, transparent);
+}
+#toolbarEdgeHandle:hover,
+#toolbarEdgeHandle:focus-visible{
+  color:#fff; outline:none;
+  border-color:color-mix(in srgb, var(--acc) 32%, var(--line));
+  background:color-mix(in srgb, var(--panel) 90%, var(--acc) 10%);
+}
+#toolbarEdgeIcon{ width:15px; height:15px; stroke:currentColor; stroke-width:1.7; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+.toolbar-edge-chevron{ width:8px; height:12px; stroke:currentColor; stroke-width:1.8; fill:none; opacity:.62; }
+body.board-active.toolbar-floating #toolbarEdgeHandle{ display:flex; }
+body.board-active.toolbar-floating #toolbar{
+  left:8px; opacity:0; pointer-events:none;
+  transform:translate(calc(-100% - 14px), -50%) scale(.98);
+}
+body.board-active.toolbar-floating.toolbar-revealed #toolbar{
+  opacity:1; pointer-events:auto;
+  transform:translate(0, -50%) scale(1);
+}
+body.toolbar-floating.toolbar-revealed #toolbarEdgeHandle{
+  opacity:0; pointer-events:none; transform:translate(-100%, -50%) scale(.94);
+}
+body.toolbar-floating #toolbar.pill{ padding:5px 4px; border-radius:12px; }
+body.toolbar-floating #toolbar .tb{ width:30px; height:34px; border-radius:8px; }
+body.toolbar-floating #toolbar .tb svg{ width:16px; height:16px; }
+body.toolbar-floating #toolbar .sep{ width:18px; margin:4px 0; }
+body.board-active.titlebar-revealed #toolbarEdgeHandle{ top:calc(50vh + var(--titlebar-h) / 2); }
+
+@media (prefers-reduced-motion:reduce){
+  #toolbar,#toolbarEdgeHandle{ transition-duration:.01ms !important; }
+}
 
 /* Left-rail compact tooltips (toolbar + draw panel) */
 #toolbar .tb[data-tip-title]::after,
@@ -208,7 +257,7 @@ body.board-active.titlebar-revealed #toolbar{
 #addPanelWrap{
   position:fixed;
   top:0; transform:none;
-  left:calc(var(--float-gap) + var(--toolbar-float-w) + 8px);
+  left:var(--toolbar-drawer-left, calc(var(--float-gap) + var(--toolbar-float-w) + 8px));
   display:flex; flex-direction:row; align-items:flex-start; gap:6px; z-index:24;
   max-height:min(86vh, calc(100vh - var(--float-gap) * 2));
   width:0; overflow:hidden; pointer-events:none;
@@ -319,7 +368,7 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 #drawPanelWrap{
   position:fixed;
   top:50%; transform:translateY(-50%);
-  left:calc(var(--float-gap) + var(--toolbar-float-w) + 8px);
+  left:var(--toolbar-drawer-left, calc(var(--float-gap) + var(--toolbar-float-w) + 8px));
   display:flex; flex-direction:row; align-items:flex-start; gap:6px; z-index:24;
   max-height:min(86vh, calc(100vh - var(--float-gap) * 2));
   width:0; overflow:hidden; pointer-events:none;
@@ -2131,6 +2180,11 @@ body.board-active #whatsNewNotice{ display:none; }
   </button>
 </aside>
 
+<button type="button" id="toolbarEdgeHandle" aria-label="Show tools" aria-controls="toolbar" aria-expanded="false" title="Show tools">
+  <svg id="toolbarEdgeIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 7.5-6 .75L9 20l-1.5-6.5L5 3z"/></svg>
+  <svg class="toolbar-edge-chevron" viewBox="0 0 12 18" aria-hidden="true"><path d="m4 4 4 5-4 5"/></svg>
+</button>
+
 <div id="addPanelWrap" aria-hidden="true">
 <div id="addPanel">
   <span class="draw-lbl">Add</span>
@@ -2649,6 +2703,12 @@ body.board-active #whatsNewNotice{ display:none; }
             <div><div class="s2-label">Home layout</div><div class="s2-sub">Choose how recent boards appear on the Home screen</div></div>
             <div class="s2-control">
               <select id="setLandingLayout"><option value="classic">Classic Grid</option><option value="focus">Focus Flow</option></select>
+            </div>
+          </div>
+          <div class="s2-row">
+            <div><div class="s2-label">Left toolbar</div><div class="s2-sub">Choose a compact edge reveal or keep every tool visible</div></div>
+            <div class="s2-control">
+              <select id="setToolbarMode"><option value="floating">Floating Compact</option><option value="pinned">Always Visible</option></select>
             </div>
           </div>
         </div>
@@ -3470,8 +3530,111 @@ function titlebarH() {
 function chromeLeft() {
   return 0;
 }
+
+let toolbarHideTimer = 0;
+
+function toolbarIsFloating() {
+  return normalizeToolbarMode(appSettings.toolbarMode) === 'floating';
+}
+
+function syncToolbarEdgeIcon() {
+  const source = document.querySelector(drawFeaturesOpen || drawActive ? '#btnDraw svg' : `#btn${boardTool === 'hand' ? 'Hand' : 'Select'}Tool svg`);
+  const icon = $('#toolbarEdgeIcon');
+  const handle = $('#toolbarEdgeHandle');
+  if (!source || !icon || !handle) return;
+  icon.setAttribute('viewBox', source.getAttribute('viewBox') || '0 0 24 24');
+  icon.innerHTML = source.innerHTML;
+  const activeLabel = drawFeaturesOpen || drawActive ? 'Draw' : (boardTool === 'hand' ? 'Hand' : 'Select');
+  handle.setAttribute('aria-label', `Show tools. ${activeLabel} active`);
+  handle.title = `Show tools · ${activeLabel} active`;
+}
+
+function syncToolbarDrawerOffset() {
+  const toolbar = $('#toolbar');
+  if (!toolbar) return;
+  const rect = toolbar.getBoundingClientRect();
+  const fallbackRight = toolbarIsFloating() ? 48 : 60;
+  const right = rect.right > 0 ? rect.right : fallbackRight;
+  document.body.style.setProperty('--toolbar-drawer-left', `${Math.round(right + 8)}px`);
+}
+
+function setToolbarRevealed(on) {
+  clearTimeout(toolbarHideTimer);
+  toolbarHideTimer = 0;
+  const reveal = toolbarIsFloating() && !!on;
+  document.body.classList.toggle('toolbar-revealed', reveal);
+  $('#toolbarEdgeHandle')?.setAttribute('aria-expanded', reveal ? 'true' : 'false');
+  syncToolbarDrawerOffset();
+  if (reveal) requestAnimationFrame(syncToolbarDrawerOffset);
+}
+
+function toolbarShouldStayOpen() {
+  if (!toolbarIsFloating()) return true;
+  if (drawFeaturesOpen || addFeaturesOpen || brushDrawerOpen) return true;
+  const active = document.activeElement;
+  const regions = [$('#toolbar'), $('#toolbarEdgeHandle'), $('#drawPanelWrap'), $('#addPanelWrap'), $('#drawColorPop'), $('#drawCanvasPop')].filter(Boolean);
+  const keyboardFocusVisible = active?.matches?.(':focus-visible');
+  return regions.some(region => region.matches(':hover') || (keyboardFocusVisible && region.contains(active)));
+}
+
+function revealToolbar() {
+  if (!document.body.classList.contains('board-active') || !toolbarIsFloating()) return;
+  setToolbarRevealed(true);
+}
+
+function scheduleToolbarHide(delay = 620) {
+  if (!toolbarIsFloating()) return;
+  clearTimeout(toolbarHideTimer);
+  toolbarHideTimer = setTimeout(() => {
+    toolbarHideTimer = 0;
+    if (!toolbarShouldStayOpen()) setToolbarRevealed(false);
+  }, delay);
+}
+
+function applyToolbarMode() {
+  const floating = toolbarIsFloating();
+  document.body.classList.toggle('toolbar-floating', floating);
+  document.body.classList.toggle('toolbar-pinned', !floating);
+  if (!floating) setToolbarRevealed(false);
+  else setToolbarRevealed(drawFeaturesOpen || addFeaturesOpen || brushDrawerOpen);
+  syncToolbarEdgeIcon();
+  syncToolbarDrawerOffset();
+}
+
+function setupToolbarBehavior() {
+  const toolbar = $('#toolbar');
+  const handle = $('#toolbarEdgeHandle');
+  const regions = [toolbar, $('#drawPanelWrap'), $('#addPanelWrap')].filter(Boolean);
+  if (!toolbar || !handle) return;
+
+  handle.addEventListener('mouseenter', revealToolbar);
+  handle.addEventListener('focus', revealToolbar);
+  handle.addEventListener('click', revealToolbar);
+  handle.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      revealToolbar();
+      requestAnimationFrame(() => toolbar.querySelector('.tb.on, .tb')?.focus({ preventScroll: true }));
+    }
+  });
+  for (const region of regions) {
+    region.addEventListener('mouseenter', revealToolbar);
+    region.addEventListener('mouseleave', () => scheduleToolbarHide());
+    region.addEventListener('focusin', revealToolbar);
+    region.addEventListener('focusout', () => scheduleToolbarHide());
+  }
+  document.addEventListener('mousemove', e => {
+    if (e.clientX <= 10) revealToolbar();
+  }, { passive: true });
+  window.addEventListener('resize', () => {
+    syncToolbarDrawerOffset();
+    syncAddPanelPosition();
+  });
+}
+
 function syncChromeLayout() {
   resize();
+  syncToolbarDrawerOffset();
   syncAddPanelPosition();
 }
 
@@ -3900,6 +4063,7 @@ const SETTINGS_DEFAULTS = {
   largeImageMP: 40,
   generateThumbnails: true,
   landingLayout: 'classic',
+  toolbarMode: 'floating',
   checkUpdatesOnStartup: true,
 };
 let appSettings = { ...SETTINGS_DEFAULTS };
@@ -3918,11 +4082,16 @@ function normalizeLandingLayout(v) {
   return v === 'focus' ? 'focus' : 'classic';
 }
 
+function normalizeToolbarMode(v) {
+  return v === 'pinned' ? 'pinned' : 'floating';
+}
+
 function loadAppSettings() {
   try { appSettings = { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('refboard.settings') || '{}') }; }
   catch (e) { appSettings = { ...SETTINGS_DEFAULTS }; }
   appSettings.autosaveIntervalMin = normalizeAutosaveInterval(appSettings.autosaveIntervalMin);
   appSettings.landingLayout = normalizeLandingLayout(appSettings.landingLayout);
+  appSettings.toolbarMode = normalizeToolbarMode(appSettings.toolbarMode);
 }
 function saveAppSettings() {
   try { localStorage.setItem('refboard.settings', JSON.stringify(appSettings)); } catch (e) {}
@@ -3935,6 +4104,7 @@ function applyAppSettings() {
   lightDragPreview = !!appSettings.lightDragPreview;
   const recentWorks = document.getElementById('recentWorks');
   if (recentWorks) recentWorks.classList.toggle('layout-focus', appSettings.landingLayout === 'focus');
+  applyToolbarMode();
   startAutosaveTimer();
   invalidate();
 }
@@ -5693,6 +5863,8 @@ function setDrawFeaturesOpen(on) {
     closeDrawColorPop();
     closeDrawCanvasPop();
   }
+  syncToolbarEdgeIcon();
+  if (drawFeaturesOpen) revealToolbar(); else scheduleToolbarHide();
   syncChromeLayout();
 }
 
@@ -5713,6 +5885,7 @@ function setAddFeaturesOpen(on) {
   $('#btnAdd')?.setAttribute('aria-expanded', addFeaturesOpen ? 'true' : 'false');
   if (addFeaturesOpen) closeDrawFeatures();
   if (!addFeaturesOpen) closeDrawCanvasPop();
+  if (addFeaturesOpen) revealToolbar(); else scheduleToolbarHide();
   syncAddPanelPosition();
   if (addFeaturesOpen) requestAnimationFrame(syncAddPanelPosition);
   syncChromeLayout();
@@ -5729,6 +5902,7 @@ function closeAddFeatures() {
 function syncBoardToolUi() {
   $('#btnSelectTool')?.classList.toggle('on', boardTool === 'select');
   $('#btnHandTool')?.classList.toggle('on', boardTool === 'hand');
+  syncToolbarEdgeIcon();
 }
 
 function activateHandTool() {
@@ -5947,6 +6121,7 @@ function setArrowTool(style) {
     exitCropMode();
     finishNoteEdit();
   }
+  syncToolbarEdgeIcon();
   syncDrawUi();
   invalidate();
   if (arrowTool) toast(arrowTool === 'dotted' ? 'Dotted arrow — drag to place' : 'Arrow — drag to place');
@@ -5970,6 +6145,7 @@ function setDrawActive(on) {
       cancelDrawSession();
     }
   }
+  syncToolbarEdgeIcon();
   syncDrawUi();
   invalidate();
 }
@@ -9648,6 +9824,7 @@ async function transitionToBoard(opts = {}) {
 
 async function transitionToLanding() {
   onLanding = true;
+  setToolbarRevealed(false);
   focusFlowEntries = [];
   focusFlowIndex = 0;
   closeDrawFeatures();
@@ -13908,6 +14085,8 @@ function syncSettingsUi() {
   if (gridStyleSel) gridStyleSel.value = state.gridAppearance;
   const landingLayoutSel = document.getElementById('setLandingLayout');
   if (landingLayoutSel) landingLayoutSel.value = normalizeLandingLayout(appSettings.landingLayout);
+  const toolbarModeSel = document.getElementById('setToolbarMode');
+  if (toolbarModeSel) toolbarModeSel.value = normalizeToolbarMode(appSettings.toolbarMode);
   syncSettingsSelectControls();
   syncSystemUi();
 }
@@ -14101,6 +14280,13 @@ function wireSettingsControls() {
     syncSettingsUi();
     if (onLanding) void renderRecentWorks();
   });
+  const toolbarModeSel = document.getElementById('setToolbarMode');
+  if (toolbarModeSel) toolbarModeSel.addEventListener('change', e => {
+    appSettings.toolbarMode = normalizeToolbarMode(e.target.value);
+    saveAppSettings();
+    applyToolbarMode();
+    syncSettingsUi();
+  });
   toggle('setCheckOnStartup', 'checkUpdatesOnStartup');
   document.getElementById('setCheckOnStartup')?.addEventListener('click', () => {
     if (appSettings.checkUpdatesOnStartup) setUpdateStatus('Checks automatically when RefBoard starts');
@@ -14158,6 +14344,10 @@ window.addEventListener('pointerdown', e => {
       && !e.target.closest('#drawCanvasPop') && !e.target.closest('#drawColorPop')) closeDrawFeatures();
   if (!e.target.closest('#btnAdd') && !e.target.closest('#addPanelWrap')
       && !e.target.closest('#addCanvasBtn') && !e.target.closest('#drawCanvasPop')) closeAddFeatures();
+  if (toolbarIsFloating() && document.body.classList.contains('toolbar-revealed')
+      && !e.target.closest('#toolbar, #toolbarEdgeHandle, #drawPanelWrap, #addPanelWrap, #drawColorPop, #drawCanvasPop')) {
+    setToolbarRevealed(false);
+  }
 }, true);
 
 /* ================= keyboard ================= */
@@ -14223,6 +14413,11 @@ window.addEventListener('keydown', e => {
     if (drawFeaturesOpen) { closeDrawFeatures(); return; }
     if (arrowTool) { arrowTool = null; syncDrawUi(); toast('Arrow tool off'); invalidate(); return; }
     if (drawActive) { setDrawActive(false); toast('Draw mode off'); return; }
+    if (toolbarIsFloating() && document.body.classList.contains('toolbar-revealed')) {
+      setToolbarRevealed(false);
+      $('#toolbarEdgeHandle')?.focus({ preventScroll: true });
+      return;
+    }
     if (tool === 'eyedropper') { tool = null; canvas.style.cursor = 'default'; toast('Eyedropper canceled'); invalidate(); return; }
     if (cropItemId) { exitCropMode(); toast('Crop done'); return; }
   }
@@ -15081,6 +15276,7 @@ async function init() {
   applyAppSettings();
   setupSettingsSelects();
   wireSettingsControls();
+  setupToolbarBehavior();
   wireFocusFlowControls();
   renderShortcutsList();
   syncSettingsUi();
