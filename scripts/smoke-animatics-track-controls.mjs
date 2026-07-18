@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,7 +32,7 @@ async function debuggerPort() {
   throw new Error(`Electron debugging port did not become ready\n${stderr}`);
 }
 
-async function evaluate(port, expression) {
+async function evaluate(port, expression, screenshotPath = '') {
   let targets = [];
   for (let attempt = 0; attempt < 50; attempt++) {
     try { targets = await fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json()); } catch { /* retry */ }
@@ -56,6 +56,10 @@ async function evaluate(port, expression) {
   });
   await send('Runtime.enable');
   const response = await send('Runtime.evaluate', { expression, awaitPromise:true, returnByValue:true });
+  if (screenshotPath) {
+    const captured = await send('Page.captureScreenshot', { format:'png', captureBeyondViewport:false });
+    await writeFile(screenshotPath, Buffer.from(captured.data, 'base64'));
+  }
   socket.close();
   if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);
   return response.result.value;
@@ -73,6 +77,26 @@ const smokeExpression = String.raw`(async()=>{
     texts:[{id:'text-0',track:0,start:0,duration:4,content:'Locked text',size:42,color:'#ffffff',scale:1,rotation:0,x:.5,y:.5}],
     audio:[audio('sound-0',0,'audio-0'),audio('sound-1',1,'audio-1')]},blobs);
   window.RefBoard.animatics.open();await wait(150);
+
+  const previewCanvas=document.querySelector('#anViewer'),previewShell=previewCanvas.parentElement,previewRect=previewCanvas.getBoundingClientRect(),previewFramingBefore=window.RefBoard.animatics.serialize().clips[0].framing.scale;
+  previewCanvas.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-360,clientX:previewRect.left+previewRect.width*.7,clientY:previewRect.top+previewRect.height*.35}));await wait(30);
+  const previewZoomAfterWheel=parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-zoom')),previewFramingAfterWheel=window.RefBoard.animatics.serialize().clips[0].framing.scale,previewHudShown=document.querySelector('#anPreviewZoomHud').classList.contains('show'),previewViewport=document.querySelector('.an-viewer-viewport'),viewportRect=previewViewport.getBoundingClientRect();
+  previewViewport.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:80,clientX:viewportRect.left+3,clientY:viewportRect.top+viewportRect.height/2}));await wait(30);
+  const previewZoomAfterBlackWheel=parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-zoom'));
+  document.body.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,code:'Space',key:' '}));
+  previewCanvas.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:68,clientX:previewRect.left+previewRect.width/2,clientY:previewRect.top+previewRect.height/2,button:0}));
+  previewCanvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:68,clientX:previewRect.left+previewRect.width/2+42,clientY:previewRect.top+previewRect.height/2+24,buttons:1}));
+  previewCanvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:68,clientX:previewRect.left+previewRect.width/2+42,clientY:previewRect.top+previewRect.height/2+24,button:0}));
+  document.body.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,code:'Space',key:' '}));await wait(20);
+  const previewPanAfterDrag={x:parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-pan-x')),y:parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-pan-y'))};
+  document.querySelector('#anPreviewLock').click();const previewLockedPressed=document.querySelector('#anPreviewLock').getAttribute('aria-pressed'),previewLockedZoom=parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-zoom')),previewLockedPan={x:parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-pan-x')),y:parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-pan-y'))};
+  previewViewport.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-240,clientX:viewportRect.left+3,clientY:viewportRect.top+viewportRect.height/2}));await wait(20);
+  const previewZoomAfterLockedWheel=parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-zoom'));
+  document.body.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,code:'Space',key:' '}));previewCanvas.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:69,clientX:previewRect.left+previewRect.width/2,clientY:previewRect.top+previewRect.height/2,button:0}));previewCanvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:69,clientX:previewRect.left+previewRect.width/2+50,clientY:previewRect.top+previewRect.height/2+30,buttons:1}));previewCanvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:69,clientX:previewRect.left+previewRect.width/2+50,clientY:previewRect.top+previewRect.height/2+30,button:0}));document.body.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,code:'Space',key:' '}));await wait(20);
+  const previewPanAfterLockedDrag={x:parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-pan-x')),y:parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-pan-y'))};
+  const previewAspect=document.querySelector('#anFooterAspect'),aspectControl=previewAspect.closest('.an-view-select'),aspectButton=aspectControl.querySelector('.an-view-select-button');aspectButton.click();const customAspectOpened=aspectControl.classList.contains('open');aspectControl.querySelector('[data-value="9:16"]').click();await wait(30);const customAspectValue=previewAspect.value,customAspectLabel=aspectButton.querySelector('span').textContent,customAspectClosed=!aspectControl.classList.contains('open'),previewZoomAfterLockedResize=parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-zoom')),previewQuality=document.querySelector('#anFooterQuality'),qualityControl=previewQuality.closest('.an-view-select'),qualityButton=qualityControl.querySelector('.an-view-select-button');qualityButton.click();qualityControl.querySelector('[data-value="half"]').click();await wait(20);const customQualityValue=previewQuality.value,customQualityLabel=qualityButton.querySelector('span').textContent;qualityButton.click();qualityControl.querySelector('[data-value="full"]').click();await wait(20);
+  document.querySelector('#anPreviewLock').click();document.querySelector('#anPreviewFit').click();await wait(20);const previewZoomAfterFit=parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-zoom')),previewPanAfterFit={x:parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-pan-x')),y:parseFloat(getComputedStyle(previewShell).getPropertyValue('--an-preview-pan-y'))},footer=document.querySelector('.an-stage-foot'),footerRect=footer.getBoundingClientRect(),footerLeft=document.querySelector('.an-footer-left').getBoundingClientRect(),footerTransport=document.querySelector('.an-transport').getBoundingClientRect(),footerSettings=document.querySelector('.an-view-settings').getBoundingClientRect(),previewFooter={background:getComputedStyle(footer).backgroundColor,clusterCount:document.querySelectorAll('.an-shot-cluster,.an-time,.an-transport').length,clusterBackgrounds:[...document.querySelectorAll('.an-shot-cluster,.an-time,.an-transport')].map(element=>getComputedStyle(element).backgroundColor),settingsBackground:getComputedStyle(document.querySelector('.an-view-settings')).backgroundColor,leftAligned:Math.abs(footerLeft.left-footerRect.left)<=1,rightAligned:Math.abs(footerSettings.right-footerRect.right)<=1,transportCentered:Math.abs((footerTransport.left+footerTransport.width/2)-(footerRect.left+footerRect.width/2))<=1,transportContainsTime:!!document.querySelector('.an-transport #anTime')};
+  previewAspect.value='16:9';previewAspect.dispatchEvent(new Event('change',{bubbles:true}));await wait(30);
 
   const layout=[...document.querySelectorAll('.an-track-label')].map(label=>{const labelRect=label.getBoundingClientRect(),actions=label.querySelector('.an-track-actions'),actionRect=actions?.getBoundingClientRect();return {clientWidth:label.clientWidth,scrollWidth:label.scrollWidth,contained:!actions||actionRect.left>=labelRect.left-1&&actionRect.right<=labelRect.right+1};});
   const side=document.querySelector('.an-side'),resizer=document.querySelector('#anInspectorResizer'),beforeInspectorWidth=side.getBoundingClientRect().width,resizerRect=resizer.getBoundingClientRect(),resizeX=resizerRect.left+resizerRect.width/2;
@@ -119,11 +143,38 @@ const smokeExpression = String.raw`(async()=>{
   canvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:73,clientX:textX+80,clientY:textY+50,buttons:1}));
   canvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:73,clientX:textX+80,clientY:textY+50,button:0}));
   const after=window.RefBoard.animatics.serialize();
-  return {layout,beforeInspectorWidth,afterInspectorWidth,serializedInspectorWidth,tabLayouts,inspectorLayout,beforeTimelineHeight,liveTimelineHeight,liveTimelineCss,resizedTimelineHeight,timelineResizeReleased,resetTimelineHeight,state,disabledTargets,played:window.__played.length,beforeClip:before.clips[0],afterClip:after.clips[0],beforeAudio:before.audio[1],afterAudio:after.audio[1],beforeText:before.texts[0],afterText:after.texts[0],toast:document.querySelector('#anToast').textContent};
+  previewAspect.value='9:16';previewAspect.dispatchEvent(new Event('change',{bubbles:true}));await wait(20);previewCanvas.dispatchEvent(new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:-240,clientX:previewCanvas.getBoundingClientRect().left+previewCanvas.getBoundingClientRect().width/2,clientY:previewCanvas.getBoundingClientRect().top+previewCanvas.getBoundingClientRect().height/2}));if(document.querySelector('#anPreviewLock').getAttribute('aria-pressed')!=='true')document.querySelector('#anPreviewLock').click();
+  return {previewZoomAfterWheel,previewZoomAfterBlackWheel,previewFramingBefore,previewFramingAfterWheel,previewHudShown,previewPanAfterDrag,previewLockedPressed,previewLockedZoom,previewLockedPan,previewZoomAfterLockedWheel,previewPanAfterLockedDrag,customAspectOpened,customAspectValue,customAspectLabel,customAspectClosed,customQualityValue,customQualityLabel,previewZoomAfterLockedResize,previewZoomAfterFit,previewPanAfterFit,previewFooter,layout,beforeInspectorWidth,afterInspectorWidth,serializedInspectorWidth,tabLayouts,inspectorLayout,beforeTimelineHeight,liveTimelineHeight,liveTimelineCss,resizedTimelineHeight,timelineResizeReleased,resetTimelineHeight,state,disabledTargets,played:window.__played.length,beforeClip:before.clips[0],afterClip:after.clips[0],beforeAudio:before.audio[1],afterAudio:after.audio[1],beforeText:before.texts[0],afterText:after.texts[0],toast:document.querySelector('#anToast').textContent};
 })()`;
 
 try {
-  const result = await evaluate(await debuggerPort(), smokeExpression);
+  const screenshotPath = process.env.REFBOARD_ANIMATICS_SCREENSHOT || '';
+  const result = await evaluate(await debuggerPort(), smokeExpression, screenshotPath);
+  assert.ok(result.previewZoomAfterWheel>1,'plain wheel input over the viewer must zoom the preview');
+  assert.ok(result.previewZoomAfterBlackWheel<result.previewZoomAfterWheel,'wheel input over the black viewport must zoom the preview out');
+  assert.equal(result.previewFramingAfterWheel,result.previewFramingBefore,'preview zoom must not modify clip framing or exports');
+  assert.equal(result.previewHudShown,true,'zooming must reveal the Fit and Lock HUD');
+  assert.ok(Math.abs(result.previewPanAfterDrag.x)>1||Math.abs(result.previewPanAfterDrag.y)>1,'Space-drag must pan a zoomed preview');
+  assert.equal(result.previewLockedPressed,'true','Lock must expose its active state');
+  assert.equal(result.previewZoomAfterLockedWheel,result.previewLockedZoom,'Lock must block wheel zoom from the preview and black viewport');
+  assert.deepEqual(result.previewPanAfterLockedDrag,result.previewLockedPan,'Lock must block Space-drag panning');
+  assert.equal(result.customAspectOpened,true,'the custom aspect listbox must open from its RefBoard-style trigger');
+  assert.equal(result.customAspectValue,'9:16','choosing a custom aspect option must update the native project control');
+  assert.equal(result.customAspectLabel,'9:16','the custom aspect trigger must show the selected value');
+  assert.equal(result.customAspectClosed,true,'choosing a custom aspect option must close the listbox');
+  assert.equal(result.customQualityValue,'half','the custom quality listbox must update preview quality');
+  assert.equal(result.customQualityLabel,'Half 540p','the custom quality trigger must show its selected label');
+  assert.equal(result.previewZoomAfterLockedResize,result.previewLockedZoom,'locked preview zoom must survive viewer aspect changes');
+  assert.equal(result.previewZoomAfterFit,1,'Fit must restore the fitted preview scale');
+  assert.deepEqual(result.previewPanAfterFit,{x:0,y:0},'Fit must recenter the preview');
+  assert.equal(result.previewFooter.background,'rgba(0, 0, 0, 0)','the footer must not render as a solid full-width bar');
+  assert.equal(result.previewFooter.clusterCount,3,'shot metadata, timecode, and transport must render as independent compact groups');
+  assert.ok(result.previewFooter.clusterBackgrounds.every(color=>color!=='rgba(0, 0, 0, 0)'),'each primary viewer control group must retain a readable compact surface');
+  assert.equal(result.previewFooter.settingsBackground,'rgba(0, 0, 0, 0)','the right controls must not have a redundant outer box');
+  assert.equal(result.previewFooter.leftAligned,true,'shot details and timecode must align to the left edge of the footer');
+  assert.equal(result.previewFooter.rightAligned,true,'aspect and quality controls must align to the right edge of the footer');
+  assert.equal(result.previewFooter.transportCentered,true,'playback controls must remain centered in the viewer');
+  assert.equal(result.previewFooter.transportContainsTime,false,'timecode must not remain inside the center transport');
   assert.ok(result.layout.length>=5,'text, video, and audio track headers must render');
   assert.ok(result.layout.every(row=>row.contained&&row.scrollWidth<=row.clientWidth+1),'every track action group must remain inside the widened fixed header');
   assert.ok(result.afterInspectorWidth>=result.beforeInspectorWidth+99,'dragging the inspector divider must widen the tools panel');
@@ -151,6 +202,7 @@ try {
   assert.deepEqual([result.afterAudio.track,result.afterAudio.start],[result.beforeAudio.track,result.beforeAudio.start],'locked audio clips must ignore timeline drag edits');
   assert.deepEqual([result.afterText.x,result.afterText.y],[result.beforeText.x,result.beforeText.y],'locked text must ignore canvas transforms');
   assert.match(result.toast,/locked/i);
+  if (screenshotPath) console.log(`animatics screenshot: ${screenshotPath}`);
   console.log('animatics Electron track-control smoke passed');
 } finally {
   if (child.exitCode === null) child.kill();

@@ -178,7 +178,7 @@ function css() {
   return `
   body.animatics-open { overflow:hidden; }
   body.animatics-open #toolbar, body.animatics-open #selbar, body.animatics-open #empty,
-  body.animatics-open #status, body.animatics-open #credit, body.animatics-open #board,
+  body.animatics-open #status, body.animatics-open #board,
   body.animatics-open #drawPanelWrap, body.animatics-open #addPanelWrap { visibility:hidden !important; pointer-events:none !important; }
   #animaticsWorkspace { --an-timeline-h:286px; --an-inspector-w:${DEFAULT_INSPECTOR_WIDTH}px; --an-track-label-w:${TRACK_LABEL_WIDTH}px; position:fixed; inset:0; z-index:80; display:none; color:#eef0f5; color-scheme:dark; background:#0c0d10; font:12px/1.35 "Segoe UI",sans-serif; user-select:none; }
   #animaticsWorkspace.open { display:grid; grid-template-rows:52px minmax(0,1fr) var(--an-timeline-h); }
@@ -192,12 +192,12 @@ function css() {
   .an-brand-mark { grid-row:1/3; width:27px; height:27px; display:block; filter:drop-shadow(0 3px 8px rgba(0,0,0,.35)); }
   .an-brand-name { align-self:end; color:#f6f8fb; font-size:11px; font-weight:700; line-height:1; letter-spacing:.01em; white-space:nowrap; }
   .an-title { align-self:start; color:#78b7ff; font-size:9px; font-weight:650; line-height:1; letter-spacing:.13em; text-transform:uppercase; white-space:nowrap; }
-  .an-transport { display:flex; align-items:center; justify-content:center; gap:4px; min-width:310px; }
+  .an-transport { display:flex; align-items:center; justify-content:center; gap:4px; }
   .an-transport .an-icon { width:31px; height:31px; }
   .an-play { width:36px; height:36px; border-radius:50%; background:#f0f2f7; color:#101217; border:0; display:grid; place-items:center; cursor:pointer; }
   .an-play:hover { background:#fff; transform:scale(1.03); }
   .an-play svg { width:17px; height:17px; fill:currentColor; }
-  .an-time { min-width:128px; text-align:center; color:#e9ebf1; font:600 12px/1.2 ui-monospace,Consolas,monospace; }
+  .an-time { min-width:154px; padding:0 10px; display:flex; align-items:center; justify-content:center; text-align:center; color:#e9ebf1; font:600 11px/1.2 ui-monospace,Consolas,monospace; white-space:nowrap; }
   .an-top-actions { display:flex; align-items:center; gap:7px; margin-left:auto; justify-content:flex-end; }
   .an-btn { height:34px; padding:0 12px; border-radius:9px; font-weight:600; }
   .an-btn.primary { color:#0c1118; background:#67aaff; }
@@ -284,8 +284,11 @@ function css() {
   .an-draw-size-preview { position:absolute; z-index:18; left:0; top:0; width:8px; height:8px; border:1px solid rgba(255,255,255,.96); border-radius:50%; opacity:0; pointer-events:none; translate:-50% -50%; scale:.88; box-shadow:0 0 0 1px rgba(7,9,13,.9),0 2px 10px rgba(0,0,0,.32); transition:width .085s ease,height .085s ease,opacity .12s ease,scale .12s ease; }
   .an-draw-size-preview.show { opacity:1; scale:1; }
   .an-stage { min-width:0; min-height:0; position:relative; display:grid; place-items:center; padding:18px 38px 12px; overflow:hidden; }
-  .an-viewer-wrap { width:min(100%, 960px); height:100%; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) 44px; gap:8px; }
-  .an-viewer-shell { min-height:0; position:relative; display:grid; place-items:center; justify-self:center; align-self:center; overflow:hidden; border-radius:7px; background:#050607; box-shadow:0 18px 60px rgba(0,0,0,.48); aspect-ratio:16/9; }
+  .an-viewer-wrap { position:relative; width:100%; height:100%; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) 44px; gap:8px; }
+  .an-viewer-viewport { min-width:0; min-height:0; position:relative; display:grid; place-items:center; overflow:hidden; }
+  .an-viewer-shell { z-index:1; min-height:0; position:relative; display:grid; place-items:center; justify-self:center; align-self:center; overflow:hidden; border-radius:7px; background:#050607; box-shadow:0 18px 60px rgba(0,0,0,.48); aspect-ratio:16/9; transform:translate3d(var(--an-preview-pan-x,0px),var(--an-preview-pan-y,0px),0) scale(var(--an-preview-zoom,1)); transform-origin:center; will-change:transform; }
+  .an-viewer-shell.preview-zoomed { box-shadow:0 22px 72px rgba(0,0,0,.62); }
+  .an-viewer-shell.preview-panning { cursor:grabbing!important; }
   #anViewer { display:block; width:100%; height:100%; background:#000; touch-action:none; }
   .an-inline-text { position:absolute; z-index:12; display:none; min-width:120px; min-height:42px; box-sizing:border-box; padding:7px 10px; border:1px solid #6baaff; border-radius:7px; outline:none; resize:none; overflow:hidden; color:#fff; background:rgba(8,11,17,.78); box-shadow:0 8px 24px rgba(0,0,0,.4),0 0 0 2px rgba(93,164,255,.18); text-align:center; font:600 24px "Segoe UI",sans-serif; line-height:1.18; transform-origin:center; user-select:text; }
   .an-inline-text.open { display:block; }
@@ -293,14 +296,37 @@ function css() {
   .an-viewer-shell.framing::after { content:"Reframe · drag to position · wheel to scale · double-click to finish"; position:absolute; left:50%; bottom:12px; translate:-50% 0; padding:6px 10px; border-radius:7px; background:rgba(7,10,15,.78); color:#e7f1ff; font-size:10px; white-space:nowrap; pointer-events:none; }
   .an-empty-stage { position:absolute; inset:0; display:grid; place-items:center; color:#727987; text-align:center; pointer-events:none; }
   .an-empty-stage.hide { display:none; }
-  .an-stage-foot { display:grid; grid-template-columns:minmax(120px,1fr) auto minmax(120px,1fr); align-items:center; gap:10px; color:#858c9a; }
+  .an-stage-foot { position:relative; z-index:20; display:grid; grid-template-columns:minmax(120px,1fr) auto minmax(120px,1fr); align-items:center; gap:10px; color:#858c9a; background:transparent; }
   .an-stage-foot b { color:#d9dde5; font-weight:600; }
-  .an-view-settings { justify-self:end; display:flex; align-items:center; gap:5px; }
-  .an-view-settings select { height:28px; border:1px solid #30343e; border-radius:7px; background-color:#17191f; color:#aeb5c2; padding:0 25px 0 8px; outline:none; font:11px "Segoe UI",sans-serif; cursor:pointer; }
-  .an-view-settings select:hover,.an-view-settings select:focus { border-color:#4e5666; color:#fff; }
+  .an-footer-left { min-width:0; display:flex; align-items:center; gap:5px; justify-self:start; }
+  .an-shot-cluster,.an-time,.an-transport { min-height:36px; border:1px solid rgba(255,255,255,.075); background:rgba(20,23,29,.72); box-shadow:0 8px 24px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.025); backdrop-filter:blur(12px); }
+  .an-shot-cluster { min-width:0; width:max-content; max-width:100%; padding:0 10px; border-radius:10px; display:flex; align-items:center; }
+  .an-time { border-radius:10px; }
+  .an-transport { min-width:126px; padding:0 7px; border-radius:12px; }
+  .an-view-settings { position:relative; z-index:32; justify-self:end; display:flex; align-items:center; gap:5px; }
+  .an-view-select { position:relative; min-width:74px; }
+  .an-view-select.quality { min-width:110px; }
+  .an-view-select-native { position:absolute!important; width:1px!important; height:1px!important; opacity:0!important; pointer-events:none!important; overflow:hidden!important; }
+  .an-view-select-button { width:100%; height:34px; padding:0 9px 0 10px; display:flex; align-items:center; justify-content:space-between; gap:9px; border:1px solid #30343e; border-radius:9px; color:#aeb5c2; background:#17191f; box-shadow:0 8px 24px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.025); font:600 10.5px "Segoe UI",sans-serif; cursor:pointer; }
+  .an-view-select-button:hover,.an-view-select.open .an-view-select-button { border-color:#4e5666; color:#fff; background:#1d2129; }
+  .an-view-select-button:focus-visible { outline:none; border-color:#5f9fe8; box-shadow:0 0 0 3px rgba(95,159,232,.16); }
+  .an-view-select-button svg { width:12px; height:12px; flex:0 0 12px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; transition:transform .15s ease; }
+  .an-view-select.open .an-view-select-button svg { transform:rotate(180deg); }
+  .an-view-select-menu { position:absolute; z-index:60; right:0; bottom:calc(100% + 6px); min-width:100%; width:max-content; max-width:220px; display:none; flex-direction:column; gap:2px; padding:5px; border:1px solid #343945; border-radius:10px; color:#bbc3d0; background:#171920; box-shadow:0 16px 42px rgba(0,0,0,.52); backdrop-filter:blur(14px); }
+  .an-view-select.open .an-view-select-menu { display:flex; }
+  .an-view-select-option { min-width:100%; height:30px; padding:0 28px 0 9px; position:relative; border:0; border-radius:7px; color:inherit; background:transparent; text-align:left; white-space:nowrap; font:11px "Segoe UI",sans-serif; cursor:pointer; }
+  .an-view-select-option:hover,.an-view-select-option:focus-visible { outline:none; color:#fff; background:#252b36; }
+  .an-view-select-option.on { color:#e9f4ff; background:#24364c; }
+  .an-view-select-option.on::after { content:"✓"; position:absolute; right:9px; top:50%; translate:0 -50%; color:#73b2ff; font-weight:700; }
   #anShotLabel { min-width:0; display:flex; align-items:center; overflow:hidden; white-space:nowrap; }
   .an-shot-name { min-width:0; max-width:min(42vw,320px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .an-shot-meta { flex:0 0 auto; color:#9299a7; white-space:nowrap; }
+  .an-preview-zoom-hud { position:absolute; z-index:28; left:50%; bottom:53px; translate:-50% 6px; min-height:34px; padding:4px; display:flex; align-items:center; gap:3px; border:1px solid rgba(255,255,255,.1); border-radius:11px; color:#dce3ed; background:rgba(17,20,26,.86); box-shadow:0 12px 34px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.035); backdrop-filter:blur(14px); opacity:0; visibility:hidden; pointer-events:none; transition:opacity .16s ease,translate .16s ease,visibility 0s linear .16s; }
+  .an-preview-zoom-hud.show { opacity:1; visibility:visible; pointer-events:auto; translate:-50% 0; transition-delay:0s; }
+  .an-preview-zoom-value { min-width:48px; padding:0 8px; color:#f2f5f9; text-align:center; font:650 10px/26px ui-monospace,Consolas,monospace; }
+  .an-preview-zoom-action { height:26px; padding:0 8px; border:0; border-radius:7px; color:#aeb7c5; background:transparent; font:600 10px "Segoe UI",sans-serif; cursor:pointer; }
+  .an-preview-zoom-action:hover { color:#fff; background:rgba(255,255,255,.09); }
+  .an-preview-zoom-action.on { color:#dceeff; background:#28496d; box-shadow:inset 0 0 0 1px #5a9de7; }
   .an-frame-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:10px; }
   .an-frame-actions .an-tool-btn { margin:0; }
   .an-scale-row { display:grid; grid-template-columns:1fr 46px; align-items:center; gap:8px; margin-bottom:13px; }
@@ -469,7 +495,67 @@ function css() {
   .an-trim-summary { display:flex; justify-content:space-between; gap:10px; margin-top:12px; color:#8e96a5; }
   .an-trim-summary b { color:#e4e9f2; font:11px ui-monospace,Consolas,monospace; }
   .an-trim-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
-  @media(max-width:900px){ .an-top-actions{min-width:auto}.an-brand{min-width:auto}.an-stage{padding-inline:12px}.an-stage-foot{grid-template-columns:1fr auto}.an-stage-foot #anShotLabel{display:none}.an-transport{min-width:0} }
+
+  /* Shared RefBoard appearance system. The canvas stays project-neutral while
+     every piece of application chrome follows the selected theme. */
+  #animaticsWorkspace {
+    --an-bg:var(--bg);
+    --an-void:var(--void);
+    --an-workspace:var(--workspace);
+    --an-surface-1:var(--surface-1);
+    --an-surface-2:var(--surface-2);
+    --an-surface-3:var(--surface-3);
+    --an-line:var(--line);
+    --an-line-strong:var(--line-strong);
+    --an-text:var(--txt);
+    --an-muted:var(--mut);
+    --an-dim:var(--dim);
+    --an-accent:var(--acc);
+    --an-accent-hover:var(--acc-hover);
+    --an-accent-contrast:var(--acc-contrast);
+    --an-danger:var(--danger);
+    --an-shadow:var(--shadow);
+    color:var(--an-text);
+    background:var(--an-bg);
+  }
+  .an-top,.an-side,.an-timeline,.an-tl-head { background:var(--an-surface-1); border-color:var(--an-line); }
+  .an-tabs,.an-ruler-row,.an-track-label,.an-track-lane { border-color:var(--an-line); }
+  .an-tabs,.an-ruler-row,.an-track-label { background:var(--an-surface-1); }
+  .an-shot-cluster,.an-time,.an-transport,.an-preview-zoom-hud { border-color:var(--an-line); background:color-mix(in srgb,var(--an-surface-1) 78%,transparent); }
+  .an-view-select-button,.an-view-select-menu { border-color:var(--an-line); background:color-mix(in srgb,var(--an-surface-1) 94%,transparent); }
+  .an-track-lane,.an-tl-grid { background-color:var(--an-void); }
+  .an-brand-name,.an-export-card h2,.an-audio-trim-card h2,.an-trim-point h4 { color:var(--an-text); }
+  .an-title,.an-tab.on,.an-section-title { color:var(--an-accent); }
+  .an-back,.an-btn,.an-icon,.an-tab { color:var(--an-muted); }
+  .an-tool-btn,.an-draw-tool,.an-draw-color-btn,.an-draw-size-btn,.an-mark-btn,.an-track-btn { color:var(--an-muted); border-color:var(--an-line); background:var(--an-surface-1); }
+  .an-back:hover,.an-btn:hover,.an-icon:hover,.an-track-add:hover,.an-tab:hover,.an-tool-btn:hover,.an-draw-tool:hover,.an-draw-color-btn:hover,.an-draw-size-btn:hover,.an-mark-btn:hover,.an-track-btn:hover { color:var(--an-text); border-color:var(--an-line-strong); background:var(--an-surface-3); }
+  .an-tab.on { color:var(--an-text); border-color:var(--an-line-strong); background:var(--an-surface-3); }
+  .an-tool-btn.on,.an-draw-tool.on,.an-draw-size-btn.on,.an-mark-btn.on,.an-track-btn.on { color:var(--an-accent); border-color:color-mix(in srgb,var(--an-accent) 60%,var(--an-line)); background:color-mix(in srgb,var(--an-accent) 13%,var(--an-surface-2)); }
+  .an-btn.primary { color:var(--an-accent-contrast); border-color:transparent; background:var(--an-accent); }
+  .an-btn.primary:hover { color:var(--an-accent-contrast); background:var(--an-accent-hover); }
+  .an-time,.an-field label,.an-stage-foot,.an-track-sub,.an-export-card p,.an-sequence-hint,.an-audio-trim-name,.an-trim-summary { color:var(--an-dim); }
+  .an-field input,.an-field textarea,.an-field select,.an-edit-select,.an-draw-size-input { color:var(--an-text); border-color:var(--an-line); background:var(--an-surface-2); }
+  .an-field input:hover,.an-field textarea:hover,.an-field select:hover,.an-edit-select:hover,.an-draw-size-input:hover { border-color:var(--an-line-strong); }
+  .an-field input:focus,.an-field textarea:focus,.an-field select:focus,.an-edit-select:focus,.an-draw-size-input:focus { outline:1px solid var(--an-accent); border-color:var(--an-accent); }
+  .an-field input[type="range"],.an-zoom input[type="range"] { accent-color:var(--an-accent); }
+  .an-field input[type="range"]::-webkit-slider-runnable-track,.an-zoom input[type="range"]::-webkit-slider-runnable-track { background:var(--an-surface-3); }
+  .an-field input[type="range"]::-webkit-slider-thumb,.an-zoom input[type="range"]::-webkit-slider-thumb { background:var(--an-accent); border-color:var(--an-accent-contrast); }
+  .an-draw-size-menu,.an-draw-color-pop,.an-toast,.an-export-card,.an-audio-trim-card,.an-trim-point { color:var(--an-text); border-color:var(--an-line-strong); background:var(--an-surface-1); box-shadow:var(--an-shadow); }
+  .an-draw-size-option:hover,.an-draw-size-option.on { color:var(--an-accent); background:color-mix(in srgb,var(--an-accent) 12%,var(--an-surface-2)); }
+  .an-wave-shell { border-color:var(--an-line); background:var(--an-void); }
+  .an-progress { background:var(--an-surface-3); }
+  .an-progress i { background:var(--an-accent); }
+  .an-export-modal,.an-audio-trim-modal { background:var(--scrim); }
+  .an-track-add { border-color:var(--an-line); background:var(--an-surface-1); box-shadow:0 0 0 4px var(--an-bg); }
+  .an-sequence-range { background:color-mix(in srgb,var(--an-accent) 8%,transparent); border-inline-color:color-mix(in srgb,var(--an-accent) 42%,transparent); }
+  .an-sequence-marker::after { background:var(--an-accent); box-shadow:0 0 7px color-mix(in srgb,var(--an-accent) 38%,transparent); }
+  .an-sequence-marker::before { color:var(--an-accent-contrast); background:var(--an-accent); }
+  .an-drop-target { outline-color:var(--an-accent); background-color:color-mix(in srgb,var(--an-accent) 12%,transparent); }
+  .an-clip:hover,.an-clip.on,.an-clip:focus-visible { border-color:var(--an-accent); box-shadow:0 0 0 1px color-mix(in srgb,var(--an-accent) 38%,transparent),0 7px 22px rgba(0,0,0,.38); }
+  .an-ruler-tick.major::after,.an-ruler-label { color:var(--an-dim); }
+  .an-timeline ::-webkit-scrollbar-thumb,.an-side ::-webkit-scrollbar-thumb { background:var(--an-surface-3); border-color:var(--an-surface-1); }
+  .an-timeline ::-webkit-scrollbar-thumb:hover,.an-side ::-webkit-scrollbar-thumb:hover { background:var(--an-line-strong); }
+  @media(max-width:900px){ .an-top-actions{min-width:auto}.an-brand{min-width:auto}.an-stage{padding-inline:12px}.an-stage-foot{gap:6px}.an-shot-cluster{display:none}.an-time{min-width:0;padding-inline:7px}.an-transport{min-width:0}.an-view-select.quality{min-width:96px} }
   `;
 }
 
@@ -499,7 +585,7 @@ function markup() {
         <div class="an-panel" data-panel-body="draw"><h3 class="an-section-title">Draw on shot</h3><button class="an-tool-btn" id="anDrawToggle" title="Toggle drawing (D)">Start drawing (D)</button><div class="an-draw-tool-row"><button class="an-draw-tool on" id="anDrawPen" aria-expanded="false" aria-controls="anDrawBrushes"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Pen</span></button><button class="an-draw-tool" id="anDrawEraser" title="Eraser (E)"><svg viewBox="0 0 24 24"><path d="m4 15 8-10 8 7-7 8H8Z"/><path d="m9 12 7 6M8 20h12"/></svg><span>Eraser</span><kbd>E</kbd></button></div><div class="an-draw-brushes" id="anDrawBrushes"><button class="an-draw-brush on" data-an-brush="pen"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Pen</span></button><button class="an-draw-brush" data-an-brush="soft"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="6" opacity=".45"/></svg><span>Soft</span></button><button class="an-draw-brush" data-an-brush="marker"><svg viewBox="0 0 24 24"><path d="M6 18h12" stroke-width="3" opacity=".55"/><path d="m7 14 9-7 2.5 2.5-9 7H7Z"/></svg><span>Marker</span></button><button class="an-draw-brush" data-an-brush="pencil"><svg viewBox="0 0 24 24"><path d="m14.5 3.5 6 6L9 21l-5 1 1-5ZM13 5l6 6"/></svg><span>Pencil</span></button></div><button class="an-draw-color-btn" id="anDrawColorButton" aria-expanded="false" aria-controls="anDrawColorPop"><span class="an-draw-color-swatch" id="anDrawColorSwatch"></span><span>Color</span></button><div class="an-draw-color-pop" id="anDrawColorPop" aria-hidden="true"><div class="an-draw-cp-sv" id="anDrawCpSv"><div class="an-draw-cp-white"></div><div class="an-draw-cp-black"></div><div class="an-draw-cp-dot" id="anDrawCpDot"></div></div><input class="an-draw-cp-hue" id="anDrawCpHue" type="range" min="0" max="360" value="0" aria-label="Drawing hue"><div class="an-draw-cp-row"><span class="an-draw-cp-preview" id="anDrawCpPreview"></span><input class="an-draw-cp-hex" id="anDrawCpHex" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Drawing color hex"></div><div class="an-draw-cp-presets" id="anDrawCpPresets"></div></div><div class="an-draw-size-row"><button class="an-draw-size-btn" id="anDrawWidthDown" title="Thinner ([)">−</button><output class="an-draw-size-value" id="anDrawWidthVal">2 <kbd>[ ]</kbd></output><button class="an-draw-size-btn" id="anDrawWidthUp" title="Thicker (])">+</button></div><button class="an-tool-btn" id="anClearDraw">Clear drawing</button></div>
         <div class="an-panel" data-panel-body="view"><h3 class="an-section-title">Viewer</h3><div class="an-split"><label class="an-field">Playback counter<select id="anCounterMode"><option value="timecode">Timecode</option><option value="frames">Frames</option><option value="seconds">Seconds</option></select></label><label class="an-field">Project rate<select id="anProjectFps"><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div><button class="an-tool-btn" id="anTcToggle">Show counter in picture</button><label class="an-field">Background<select id="anBackground"><option value="#000000">Black</option><option value="#181a20">Charcoal</option><option value="#ffffff">White</option></select></label></div>
       </div></aside><div class="an-side-resizer" id="anInspectorResizer" role="separator" aria-label="Resize inspector" aria-orientation="vertical" aria-valuemin="${MIN_INSPECTOR_WIDTH}" aria-valuemax="${MAX_INSPECTOR_WIDTH}" aria-valuenow="${DEFAULT_INSPECTOR_WIDTH}" tabindex="0" title="Drag to resize tools · double-click to reset"></div>
-      <main class="an-stage"><div class="an-viewer-wrap"><div class="an-viewer-shell"><canvas id="anViewer" width="1920" height="1080"></canvas><div class="an-draw-size-preview" id="anDrawSizePreview" aria-hidden="true"></div><div class="an-empty-stage" id="anEmpty"><div>No clips at the playhead<br><small>Add or move images in the timeline</small></div></div></div><div class="an-stage-foot"><span id="anShotLabel">No shot selected</span><div class="an-transport"><button class="an-icon" id="anPrev" title="Previous frame">${icon('<path d="M7 5v14M18 6l-8 6 8 6z"/>')}</button><button class="an-play" id="anPlay" title="Play / pause">${icon('<path d="m8 5 11 7-11 7z"/>',true)}</button><button class="an-icon" id="anNext" title="Next frame">${icon('<path d="M17 5v14M6 6l8 6-8 6z"/>')}</button><span class="an-time" id="anTime">00:00:00:00 / 00:00:00:00</span></div><div class="an-view-settings"><select id="anFooterAspect" aria-label="Sequence aspect"><option value="16:9">16:9</option><option value="4:3">4:3</option><option value="5:4">5:4</option><option value="9:16">9:16</option><option value="21:9">21:9</option></select><select id="anFooterQuality" aria-label="Preview quality"><option value="full">Full 1080p</option><option value="half">Half 540p</option><option value="low">Low 270p</option></select></div></div></div></main><aside></aside>
+      <main class="an-stage"><div class="an-viewer-wrap"><div class="an-viewer-viewport"><div class="an-viewer-shell"><canvas id="anViewer" width="1920" height="1080"></canvas><div class="an-draw-size-preview" id="anDrawSizePreview" aria-hidden="true"></div><div class="an-empty-stage" id="anEmpty"><div>No clips at the playhead<br><small>Add or move images in the timeline</small></div></div></div></div><div class="an-preview-zoom-hud" id="anPreviewZoomHud" role="group" aria-label="Preview zoom"><span class="an-preview-zoom-value" id="anPreviewZoomValue">100%</span><button class="an-preview-zoom-action" id="anPreviewFit" type="button" title="Fit preview">Fit</button><button class="an-preview-zoom-action" id="anPreviewLock" type="button" aria-pressed="false" title="Freeze preview zoom and position">Lock</button></div><div class="an-stage-foot"><div class="an-footer-left"><div class="an-shot-cluster"><span id="anShotLabel">No shot selected</span></div><span class="an-time" id="anTime">00:00:00:00 / 00:00:00:00</span></div><div class="an-transport" role="toolbar" aria-label="Viewer playback"><button class="an-icon" id="anPrev" title="Previous frame">${icon('<path d="M7 5v14M18 6l-8 6 8 6z"/>')}</button><button class="an-play" id="anPlay" title="Play / pause">${icon('<path d="m8 5 11 7-11 7z"/>',true)}</button><button class="an-icon" id="anNext" title="Next frame">${icon('<path d="M17 5v14M6 6l8 6-8 6z"/>')}</button></div><div class="an-view-settings"><select id="anFooterAspect" aria-label="Sequence aspect"><option value="16:9">16:9</option><option value="4:3">4:3</option><option value="5:4">5:4</option><option value="9:16">9:16</option><option value="21:9">21:9</option></select><select id="anFooterQuality" aria-label="Preview quality"><option value="full">Full 1080p</option><option value="half">Half 540p</option><option value="low">Low 270p</option></select></div></div></div></main><aside></aside>
     </div>
     <section class="an-timeline"><div class="an-timeline-resizer" id="anTimelineResizer" role="separator" aria-label="Resize timeline" aria-orientation="horizontal" tabindex="0" title="Drag to resize timeline · double-click to reset"></div><div class="an-tl-head"><div class="an-edit-tools" role="toolbar" aria-label="Timeline tools"><button class="an-edit-tool on" data-an-tool="select" title="Selection tool (V)" aria-label="Selection tool">${selectionToolIcon()}</button><button class="an-edit-tool" data-an-tool="text" title="Text tool (T)" aria-label="Text tool"><span class="text-glyph">T</span></button><button class="an-edit-tool" data-an-tool="razor" title="Razor tool (C)" aria-label="Razor tool">${razorToolIcon()}</button></div><button class="an-icon an-snap-btn on" id="anSnap" title="Timeline snapping (S)" aria-pressed="true">⌁ Snap</button><button class="an-icon" id="anAddImages" title="Add selected board images">${icon('<path d="M12 5v14M5 12h14"/>')}</button><button class="an-icon" id="anAddVideo" title="Add video">${icon('<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3z"/>')}</button><button class="an-icon" id="anAddAudio" title="Add audio">${icon('<path d="M9 18V5l10-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="16" cy="16" r="3"/>')}</button><button class="an-mark-btn" id="anSequenceSettings" title="Sequence duration and timeline display">Sequence</button><button class="an-mark-btn" id="anSetIn" title="Set sequence In point (I)">Set In</button><button class="an-mark-btn" id="anSetOut" title="Set sequence Out point (O)">Set Out</button><button class="an-mark-btn" id="anClearRange" title="Clear sequence In/Out">Clear</button><span id="anTlSummary">0 clips · 0:00</span><label class="an-zoom">Timeline <input id="anZoom" type="range" min="0.001" max="320" step="0.001" value="90"></label></div><div class="an-tl-scroll" id="anTlScroll"><div class="an-tl-grid" id="anTlGrid"><div class="an-playhead"></div></div></div><div class="an-marquee" id="anMarquee"></div><div class="an-razor-guide" id="anRazorGuide"><span></span></div></section>
     <input id="anAudioPick" type="file" accept="audio/*" multiple hidden>
@@ -526,12 +612,53 @@ export function createAnimaticsEditor(options) {
   const canonicalBrandMark=document.querySelector('#landingBrandIcon')?.currentSrc||document.querySelector('#landingBrandIcon')?.src||document.querySelector('#titlebarIcon')?.currentSrc||document.querySelector('#titlebarIcon')?.src||'';
   if(canonicalBrandMark)root.querySelector('#anBrandMark').src=canonicalBrandMark;
   const canvas = root.querySelector('#anViewer');
+  const viewerViewport = canvas.parentElement.parentElement;
   const ctx = canvas.getContext('2d');
   const inlineTextEditor=document.createElement('textarea');inlineTextEditor.className='an-inline-text';inlineTextEditor.setAttribute('aria-label','Edit text on canvas');canvas.parentElement.append(inlineTextEditor);
   const inlineTextDismissEvents=new WeakSet();
   const grid = root.querySelector('#anTlGrid');
   const scroll = root.querySelector('#anTlScroll');
   const $ = selector => root.querySelector(selector);
+  const viewerSelectControls = new Map();
+
+  function closeViewerSelectMenus(except=null){
+    for(const control of viewerSelectControls.values()){
+      if(control===except)continue;
+      control.classList.remove('open');
+      control.querySelector('.an-view-select-button')?.setAttribute('aria-expanded','false');
+    }
+  }
+
+  function syncViewerSelectControl(select){
+    const control=viewerSelectControls.get(select);if(!control)return;
+    const selected=select.options[select.selectedIndex],button=control.querySelector('.an-view-select-button span');
+    if(button)button.textContent=selected?.textContent||'';
+    for(const option of control.querySelectorAll('.an-view-select-option')){
+      const on=option.dataset.value===select.value;option.classList.toggle('on',on);option.setAttribute('aria-selected',String(on));
+    }
+  }
+
+  function syncViewerSelectControls(){for(const select of viewerSelectControls.keys())syncViewerSelectControl(select);}
+
+  function setupViewerSelect(select,{quality=false}={}){
+    if(!select||viewerSelectControls.has(select))return;
+    const control=document.createElement('div');control.className=`an-view-select${quality?' quality':''}`;
+    select.before(control);control.append(select);select.classList.add('an-view-select-native');
+    const button=document.createElement('button');button.type='button';button.className='an-view-select-button';button.setAttribute('aria-haspopup','listbox');button.setAttribute('aria-expanded','false');button.setAttribute('aria-label',select.getAttribute('aria-label')||'Choose option');button.innerHTML='<span></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 9 5 5 5-5"/></svg>';
+    const menu=document.createElement('div');menu.className='an-view-select-menu';menu.setAttribute('role','listbox');menu.setAttribute('aria-label',select.getAttribute('aria-label')||'Options');
+    for(const nativeOption of select.options){
+      const option=document.createElement('button');option.type='button';option.className='an-view-select-option';option.dataset.value=nativeOption.value;option.setAttribute('role','option');option.textContent=nativeOption.textContent;
+      option.addEventListener('click',()=>{select.value=nativeOption.value;select.dispatchEvent(new Event('change',{bubbles:true}));syncViewerSelectControl(select);closeViewerSelectMenus();button.focus();});menu.append(option);
+    }
+    button.addEventListener('click',()=>{const opening=!control.classList.contains('open');closeViewerSelectMenus(control);control.classList.toggle('open',opening);button.setAttribute('aria-expanded',String(opening));if(opening)requestAnimationFrame(()=>menu.querySelector('.on')?.focus());});
+    button.addEventListener('keydown',e=>{if(!['ArrowDown','ArrowUp'].includes(e.key))return;e.preventDefault();if(!control.classList.contains('open'))button.click();});
+    menu.addEventListener('keydown',e=>{const options=[...menu.querySelectorAll('.an-view-select-option')],index=options.indexOf(document.activeElement);if(e.key==='Escape'){closeViewerSelectMenus();button.focus();e.preventDefault();e.stopPropagation();return;}if(!['ArrowDown','ArrowUp'].includes(e.key))return;options[(index+(e.key==='ArrowDown'?1:-1)+options.length)%options.length]?.focus();e.preventDefault();});
+    select.addEventListener('change',()=>syncViewerSelectControl(select));control.append(button,menu);viewerSelectControls.set(select,control);syncViewerSelectControl(select);
+  }
+
+  setupViewerSelect($('#anFooterAspect'));
+  setupViewerSelect($('#anFooterQuality'),{quality:true});
+  root.addEventListener('pointerdown',e=>{if(!e.target.closest?.('.an-view-select'))closeViewerSelectMenus();},true);
   let project = freshProject();
   let selectedClipId = null;
   let selectedTextId = null;
@@ -571,6 +698,15 @@ export function createAnimaticsEditor(options) {
   let audioFadeDragRaf = 0;
   let handPan = null;
   let spaceHand = null;
+  const PREVIEW_ZOOM_MIN = .5;
+  const PREVIEW_ZOOM_MAX = 4;
+  let previewZoom = 1;
+  let previewPanX = 0;
+  let previewPanY = 0;
+  let previewZoomLocked = false;
+  let previewPanDrag = null;
+  let previewZoomHudTimer = 0;
+  let previewShotKey = '';
   let marqueeDrag = null;
   let gapPress = null;
   let audioPlayers = [];
@@ -1393,8 +1529,8 @@ export function createAnimaticsEditor(options) {
 
   function positionInlineTextEditor(){
     const text=project.texts.find(item=>item.id===inlineTextId);if(!text||!inlineTextEditor.classList.contains('open'))return;
-    const layout=textLayout(ctx,text,canvas.width,canvas.height),rect=canvas.getBoundingClientRect(),width=clamp(layout.halfW*2*rect.width/canvas.width+28,120,Math.max(120,rect.width*.9)),height=clamp(layout.halfH*2*rect.height/canvas.height+18,42,Math.max(42,rect.height*.72));
-    inlineTextEditor.style.left=`${text.x*100}%`;inlineTextEditor.style.top=`${text.y*100}%`;inlineTextEditor.style.width=`${width}px`;inlineTextEditor.style.height=`${height}px`;inlineTextEditor.style.fontSize=`${Math.max(14,layout.size*rect.height/canvas.height)}px`;inlineTextEditor.style.color=text.color||'#fff';inlineTextEditor.style.transform=`translate(-50%,-50%) rotate(${clamp(finiteOr(text.rotation,0),-180,180)}deg)`;
+    const layout=textLayout(ctx,text,canvas.width,canvas.height),rect=canvas.getBoundingClientRect(),displayW=rect.width/Math.max(.001,previewZoom),displayH=rect.height/Math.max(.001,previewZoom),width=clamp(layout.halfW*2*displayW/canvas.width+28,120,Math.max(120,displayW*.9)),height=clamp(layout.halfH*2*displayH/canvas.height+18,42,Math.max(42,displayH*.72));
+    inlineTextEditor.style.left=`${text.x*100}%`;inlineTextEditor.style.top=`${text.y*100}%`;inlineTextEditor.style.width=`${width}px`;inlineTextEditor.style.height=`${height}px`;inlineTextEditor.style.fontSize=`${Math.max(14,layout.size*displayH/canvas.height)}px`;inlineTextEditor.style.color=text.color||'#fff';inlineTextEditor.style.transform=`translate(-50%,-50%) rotate(${clamp(finiteOr(text.rotation,0),-180,180)}deg)`;
   }
 
   function beginInlineTextEdit(text){
@@ -1426,6 +1562,9 @@ export function createAnimaticsEditor(options) {
     targetCtx.restore();
     if(!mainViewer)return;
     $('#anEmpty')?.classList.toggle('hide',active.length>0||activeTexts.length>0);
+    const nextPreviewShotKey=active.at(-1)?.id||activeTexts.at(-1)?.id||'';
+    if(previewShotKey&&previewShotKey!==nextPreviewShotKey&&!previewZoomLocked&&previewZoom!==1)fitPreviewZoom({show:false});
+    previewShotKey=nextPreviewShotKey;
     const top=active.at(-1);$('#anShotLabel').innerHTML=top?`<b class="an-shot-name" title="${esc(top.name)}">${esc(top.name)}</b><span class="an-shot-meta">&nbsp;· ${Math.max(1,Math.round(top.duration*project.fps))} frames · V${top.track+1}</span>`:activeTexts.length?'<b class="an-shot-name">Text overlay</b><span class="an-shot-meta">&nbsp;· T1</span>':'No shot at playhead';
   }
 
@@ -1521,6 +1660,7 @@ export function createAnimaticsEditor(options) {
     $('#anProjectFps').value=String(project.fps);
     $('#anFooterAspect').value=project.aspect;
     $('#anFooterQuality').value=project.previewQuality;
+    syncViewerSelectControls();
     $('#anFramingTitle').textContent=`${project.aspect} framing`;
     $('#anBackground').value=project.background;
     syncLinkButton();
@@ -1568,6 +1708,58 @@ export function createAnimaticsEditor(options) {
     canvas.parentElement.style.aspectRatio=`${rw}/${rh}`;
     $('#anFooterAspect').value=project.aspect;
     $('#anFooterQuality').value=project.previewQuality;
+    syncViewerSelectControls();
+  }
+
+  function clampPreviewPan(){
+    const shell=canvas.parentElement,extraX=Math.max(0,shell.offsetWidth*(previewZoom-1)/2),extraY=Math.max(0,shell.offsetHeight*(previewZoom-1)/2);
+    previewPanX=clamp(previewPanX,-extraX,extraX);previewPanY=clamp(previewPanY,-extraY,extraY);
+    if(Math.abs(previewZoom-1)<.001){previewZoom=1;previewPanX=0;previewPanY=0;}
+  }
+
+  function hidePreviewZoomHud(){
+    if(previewZoomLocked)return;
+    $('#anPreviewZoomHud')?.classList.remove('show');
+  }
+
+  function revealPreviewZoomHud(){
+    clearTimeout(previewZoomHudTimer);previewZoomHudTimer=0;
+    $('#anPreviewZoomHud')?.classList.add('show');
+    if(!previewZoomLocked)previewZoomHudTimer=setTimeout(hidePreviewZoomHud,1700);
+  }
+
+  function syncPreviewZoomUi({show=false}={}){
+    const shell=canvas.parentElement,locked=$('#anPreviewLock'),fit=$('#anPreviewFit');
+    clampPreviewPan();
+    shell.style.setProperty('--an-preview-zoom',String(previewZoom));
+    shell.style.setProperty('--an-preview-pan-x',`${previewPanX}px`);
+    shell.style.setProperty('--an-preview-pan-y',`${previewPanY}px`);
+    shell.classList.toggle('preview-zoomed',Math.abs(previewZoom-1)>.001);
+    $('#anPreviewZoomValue').textContent=`${Math.round(previewZoom*100)}%`;
+    fit.disabled=previewZoom===1&&previewPanX===0&&previewPanY===0;
+    locked.classList.toggle('on',previewZoomLocked);locked.setAttribute('aria-pressed',String(previewZoomLocked));locked.textContent=previewZoomLocked?'Locked':'Lock';
+    if(previewZoomLocked)$('#anPreviewZoomHud').classList.add('show');else if(show)revealPreviewZoomHud();
+    positionInlineTextEditor();
+  }
+
+  function setPreviewZoom(next,{clientX=null,clientY=null,show=true}={}){
+    const old=previewZoom,value=clamp(Number(next)||1,PREVIEW_ZOOM_MIN,PREVIEW_ZOOM_MAX),rect=canvas.parentElement.getBoundingClientRect();
+    if(Number.isFinite(clientX)&&Number.isFinite(clientY)&&old>0){const ratio=value/old,offsetX=clientX-(rect.left+rect.width/2),offsetY=clientY-(rect.top+rect.height/2);previewPanX+=offsetX*(1-ratio);previewPanY+=offsetY*(1-ratio);}
+    previewZoom=value;syncPreviewZoomUi({show});
+  }
+
+  function fitPreviewZoom({show=true}={}){
+    previewZoom=1;previewPanX=0;previewPanY=0;syncPreviewZoomUi({show});
+  }
+
+  function setPreviewZoomLocked(locked){
+    previewZoomLocked=!!locked;if(previewZoomLocked)finishPreviewPan();clearTimeout(previewZoomHudTimer);previewZoomHudTimer=0;syncPreviewZoomUi({show:true});
+  }
+
+  function finishPreviewPan(){
+    if(!previewPanDrag)return;
+    previewPanDrag=null;canvas.parentElement.classList.remove('preview-panning');
+    canvas.style.cursor=spaceHand&&previewZoom>1&&!previewZoomLocked?'grab':'';
   }
 
   function applyTimelineHeight(){root.style.setProperty('--an-timeline-h',`${clamp(project.timelineHeight,180,Math.max(180,window.innerHeight-220))}px`);}
@@ -1652,7 +1844,7 @@ export function createAnimaticsEditor(options) {
   function openEditor(items=[]){
     if(!open){try{onOpen();}catch(err){console.error('[animatics] board view capture failed',err);}}
     open=true; document.body.classList.add('animatics-open'); root.classList.add('open','panel-open'); root.setAttribute('aria-hidden','false');
-    syncActiveTrackTargets();setActiveTool('select');
+    syncActiveTrackTargets();setActiveTool('select');if(!previewZoomLocked)fitPreviewZoom({show:false});
     if(items.length) addItems(items,{append:project.clips.length>0}); else renderAll();
     resizeViewer();
   }
@@ -1662,7 +1854,7 @@ export function createAnimaticsEditor(options) {
     if(audioTrimState)finishAudioTrimmer(false);if(inlineTextId)finishInlineTextEdit(false);flushDeferredHistory();open=false;setPlaying(false);
     cancelAnimationFrame(scrubPreviewRaf);scrubPreviewRaf=0;scrubPreviewQueued=false;cancelFramingPreview();viewerDrawToken++;
     if(timelineResizeRaf)cancelAnimationFrame(timelineResizeRaf);timelineResizeRaf=0;timelineResize=null;
-    drawMode=false;drawBrushesOpen=false;drawColorOpen=false;drawWidthMenuOpen=false;activeStroke=null;clearActiveDrawingSession();hideDrawSizePreview();framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;handPan=null;spaceHand=null;inspectorResize=null;root.classList.remove('hand-panning','inspector-resizing');$('#anInspectorResizer')?.classList.remove('dragging');$('#anTimelineResizer')?.classList.remove('dragging');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
+    drawMode=false;drawBrushesOpen=false;drawColorOpen=false;drawWidthMenuOpen=false;activeStroke=null;clearActiveDrawingSession();hideDrawSizePreview();framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;handPan=null;spaceHand=null;finishPreviewPan();inspectorResize=null;clearTimeout(previewZoomHudTimer);previewZoomHudTimer=0;root.classList.remove('hand-panning','inspector-resizing');$('#anInspectorResizer')?.classList.remove('dragging');$('#anTimelineResizer')?.classList.remove('dragging');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
     // Pausing alone leaves Chromium decoder buffers and GPU textures resident.
     // Keep the source Blob URLs/project intact, but recreate decoders and the
     // preview backing store next time Animatics opens.
@@ -1671,14 +1863,15 @@ export function createAnimaticsEditor(options) {
   }
 
   function resizeViewer({redraw=true}={}){
-    const shell=canvas.parentElement,wrap=shell.parentElement;
-    const availableW=wrap.clientWidth,availableH=Math.max(1,wrap.clientHeight-52);
+    const shell=canvas.parentElement,viewport=shell.parentElement;
+    const availableW=Math.min(960,viewport.clientWidth),availableH=Math.max(1,viewport.clientHeight);
     if(!availableW||!availableH)return;
     const [rw,rh]=ASPECT_RATIOS[project.aspect]||ASPECT_RATIOS['16:9'];
     const ratio=rw/rh; let w=availableW,h=w/ratio;
     if(h>availableH){h=availableH;w=h*ratio;}
     shell.style.width=`${Math.floor(w)}px`;shell.style.height=`${Math.floor(h)}px`;
     canvas.style.width='100%';canvas.style.height='100%';
+    if(!previewZoomLocked&&previewZoom!==1)fitPreviewZoom({show:false});else syncPreviewZoomUi();
     if(redraw){drawViewer();positionInlineTextEditor();}
   }
 
@@ -2179,6 +2372,13 @@ export function createAnimaticsEditor(options) {
 
   canvas.addEventListener('pointerdown',e=>{
     if(inlineTextDismissEvents.has(e)){e.preventDefault();return;}
+    if(previewZoomLocked&&previewZoom>1&&!framingMode&&!drawMode&&(spaceHand||e.button===1)){
+      if(spaceHand)spaceHand.used=true;revealPreviewZoomHud();e.preventDefault();return;
+    }
+    if(previewZoom>1&&!previewZoomLocked&&!framingMode&&!drawMode&&(spaceHand||e.button===1)){
+      previewPanDrag={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,panX:previewPanX,panY:previewPanY};
+      if(spaceHand)spaceHand.used=true;canvas.parentElement.classList.add('preview-panning');canvas.style.cursor='grabbing';canvas.setPointerCapture(e.pointerId);revealPreviewZoomHud();e.preventDefault();return;
+    }
     const clip=drawMode?drawingTargetClip():selectedClip();
     if(activeTool==='text'&&!drawMode&&!framingMode){
       const hit=hitTextControl(e);
@@ -2205,6 +2405,7 @@ export function createAnimaticsEditor(options) {
   });
   canvas.addEventListener('pointermove',e=>{
     const pointerRect=canvas.getBoundingClientRect();drawPointer={x:clamp((e.clientX-pointerRect.left)/Math.max(1,pointerRect.width),0,1),y:clamp((e.clientY-pointerRect.top)/Math.max(1,pointerRect.height),0,1),inside:true};if(drawMode)positionDrawSizePreview();
+    if(previewPanDrag){previewPanX=previewPanDrag.panX+e.clientX-previewPanDrag.startX;previewPanY=previewPanDrag.panY+e.clientY-previewPanDrag.startY;syncPreviewZoomUi({show:true});e.preventDefault();return;}
     if(textDrag){
       const text=project.texts.find(item=>item.id===textDrag.textId);if(!text)return;
       if(textDrag.mode==='move'){text.x=clamp(textDrag.x+(e.clientX-textDrag.startX)/textDrag.width,0,1);text.y=clamp(textDrag.y+(e.clientY-textDrag.startY)/textDrag.height,0,1);}
@@ -2216,8 +2417,8 @@ export function createAnimaticsEditor(options) {
     if(activeStroke){const coalesced=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():null,samples=coalesced?.length?coalesced:[e];for(const sample of samples){const point={x:clamp((sample.clientX-pointerRect.left)/Math.max(1,pointerRect.width),0,1),y:clamp((sample.clientY-pointerRect.top)/Math.max(1,pointerRect.height),0,1)},previous=activeStroke.points.at(-1),distance=Math.hypot((point.x-previous.x)*canvas.width,(point.y-previous.y)*canvas.height);if(distance<.35)continue;activeStroke.points.push(point);appendActiveDrawingSegment(previous,point);}scheduleActiveDrawingPaint();return;}
     if(!drawMode&&!framingMode){const hit=hitTextControl(e);canvas.style.cursor=hit?.mode==='scale'?'nwse-resize':hit?.mode==='rotate'?'grab':hit?'move':activeTool==='text'?'text':'default';}
   });
-  canvas.addEventListener('pointerup',()=>{if(textDrag){textDrag=null;markDirty();syncInspector();drawViewer();}if(framingDrag){framingDrag=null;flushFramingPreview({full:true});markDirty();syncInspector();}finishActiveDrawing();});
-  canvas.addEventListener('pointercancel',()=>{textDrag=null;if(framingDrag){framingDrag=null;flushFramingPreview({full:true});}finishActiveDrawing();});
+  canvas.addEventListener('pointerup',()=>{finishPreviewPan();if(textDrag){textDrag=null;markDirty();syncInspector();drawViewer();}if(framingDrag){framingDrag=null;flushFramingPreview({full:true});markDirty();syncInspector();}finishActiveDrawing();});
+  canvas.addEventListener('pointercancel',()=>{finishPreviewPan();textDrag=null;if(framingDrag){framingDrag=null;flushFramingPreview({full:true});}finishActiveDrawing();});
   canvas.addEventListener('pointerenter',e=>{const r=canvas.getBoundingClientRect();drawPointer={x:clamp((e.clientX-r.left)/Math.max(1,r.width),0,1),y:clamp((e.clientY-r.top)/Math.max(1,r.height),0,1),inside:true};if(drawMode)showDrawSizePreview();});
   canvas.addEventListener('pointerleave',()=>{drawPointer.inside=false;hideDrawSizePreview();});
   canvas.addEventListener('dblclick',e=>{
@@ -2229,9 +2430,14 @@ export function createAnimaticsEditor(options) {
     framingMode=!framingMode;drawMode=false;canvas.style.cursor=framingMode?'move':'default';
     root.querySelector('[data-panel="clip"]')?.click();syncInspector();drawViewer();
   });
-  canvas.addEventListener('wheel',e=>{
-    if(!framingMode||!selectedClip())return;e.preventDefault();const framing=selectedClip().framing;
-    framing.scale=clamp(framing.scale*Math.exp(-e.deltaY*.001),.01,8);deferMarkDirty();syncInspector();scheduleFramingPreview();scheduleFramingPreviewFinish();
+  viewerViewport.addEventListener('wheel',e=>{
+    const overPreview=canvas.parentElement.contains(e.target);
+    if(framingMode&&selectedClip()&&overPreview){e.preventDefault();const framing=selectedClip().framing;framing.scale=clamp(framing.scale*Math.exp(-e.deltaY*.001),.01,8);deferMarkDirty();syncInspector();scheduleFramingPreview();scheduleFramingPreviewFinish();return;}
+    if(activeStroke)return;
+    e.preventDefault();
+    if(previewZoomLocked){revealPreviewZoomHud();return;}
+    const rect=canvas.parentElement.getBoundingClientRect(),clientX=clamp(e.clientX,rect.left,rect.right),clientY=clamp(e.clientY,rect.top,rect.bottom);
+    setPreviewZoom(previewZoom*Math.exp(-e.deltaY*.0012),{clientX,clientY,show:true});
   },{passive:false});
   inlineTextEditor.addEventListener('input',()=>{const text=project.texts.find(item=>item.id===inlineTextId);if(!text||isTrackLocked('text'))return;text.content=inlineTextEditor.value;$('#anText').value=text.content;drawViewerLive();positionInlineTextEditor();});
   inlineTextEditor.addEventListener('blur',()=>finishInlineTextEdit(false));
@@ -2322,6 +2528,8 @@ export function createAnimaticsEditor(options) {
   $('#anProjectFps').onchange=e=>{project.fps=Number(e.target.value);markDirty();renderAll();updateAudioTrimUi();};
   $('#anFooterQuality').onchange=e=>{project.previewQuality=e.target.value;markDirty();applyPreviewQuality();resizeViewer();syncInspector();};
   $('#anFooterAspect').onchange=e=>{project.aspect=ASPECT_RATIOS[e.target.value]?e.target.value:'16:9';markDirty();applyPreviewQuality();resizeViewer();syncInspector();};
+  $('#anPreviewFit').onclick=()=>fitPreviewZoom({show:true});
+  $('#anPreviewLock').onclick=()=>setPreviewZoomLocked(!previewZoomLocked);
   $('#anBackground').onchange=e=>{project.background=e.target.value;markDirty();drawViewer();};
   $('#anAddImages').onclick=()=>options.onRequestImages?.();
   $('#anAddVideo').onclick=()=>$('#anVideoPick').click();
@@ -2373,8 +2581,8 @@ export function createAnimaticsEditor(options) {
     else if(!form&&mod&&key==='c'){copyTimelineSelection(false);e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='x'){copyTimelineSelection(true);e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='v'){pasteTimelineSelection();e.preventDefault();e.stopImmediatePropagation();}
-    else if(e.key==='Escape'){if(e.target===drawWidthInput){drawWidthInput.value=String(drawWidth);drawWidthInput.blur();}else if(inlineTextId)finishInlineTextEdit(true);else if($('#anGainModal').classList.contains('open'))closeAudioGainDialog();else if($('#anAudioTrimModal').classList.contains('open'))finishAudioTrimmer(false);else if($('#anSequenceModal').classList.contains('open'))$('#anSequenceModal').classList.remove('open');else if($('#anExportModal').classList.contains('open'))$('#anExportModal').classList.remove('open');else if(drawWidthMenuOpen)setDrawWidthMenuOpen(false);else if(drawColorOpen)setDrawColorOpen(false);else if(drawBrushesOpen)setDrawBrushesOpen(false);else if(drawMode)setDrawMode(false);else if(selectedGap){selectedGap=null;renderTimeline();}else if(activeTool!=='select')setActiveTool('select');else closeEditor();e.preventDefault();e.stopImmediatePropagation();}
-    else if(e.code==='Space'&&inspectorSpacePlaybackAllowed(e.target)){if(!spaceHand){flushInspectorEditsForPlayback(e.target);spaceHand={startedAt:Date.now(),used:false};setActiveTool('hand');}e.preventDefault();e.stopImmediatePropagation();}
+    else if(e.key==='Escape'){if(root.querySelector('.an-view-select.open'))closeViewerSelectMenus();else if(e.target===drawWidthInput){drawWidthInput.value=String(drawWidth);drawWidthInput.blur();}else if(inlineTextId)finishInlineTextEdit(true);else if($('#anGainModal').classList.contains('open'))closeAudioGainDialog();else if($('#anAudioTrimModal').classList.contains('open'))finishAudioTrimmer(false);else if($('#anSequenceModal').classList.contains('open'))$('#anSequenceModal').classList.remove('open');else if($('#anExportModal').classList.contains('open'))$('#anExportModal').classList.remove('open');else if(drawWidthMenuOpen)setDrawWidthMenuOpen(false);else if(drawColorOpen)setDrawColorOpen(false);else if(drawBrushesOpen)setDrawBrushesOpen(false);else if(drawMode)setDrawMode(false);else if(selectedGap){selectedGap=null;renderTimeline();}else if(activeTool!=='select')setActiveTool('select');else closeEditor();e.preventDefault();e.stopImmediatePropagation();}
+    else if(e.code==='Space'&&inspectorSpacePlaybackAllowed(e.target)){if(!spaceHand){flushInspectorEditsForPlayback(e.target);spaceHand={startedAt:Date.now(),used:false};setActiveTool('hand');if(previewZoom>1&&!previewZoomLocked&&!framingMode&&!drawMode)canvas.style.cursor='grab';}e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='a'){setTimelineSelection([...project.clips,...project.texts,...project.audio].map(item=>item.id),primarySelectionId());renderTimeline();syncInspector();e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='l'){toggleLinkSelection();e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='h'){toggleSelectedVisualVisibility();e.preventDefault();e.stopImmediatePropagation();}
@@ -2388,7 +2596,7 @@ export function createAnimaticsEditor(options) {
     else if(key==='o'&&!form){setSequenceOut();e.preventDefault();e.stopImmediatePropagation();}
     else if((e.key==='Delete'||e.key==='Backspace')&&!e.target.matches('input,textarea')){deleteSelected();e.preventDefault();e.stopImmediatePropagation();}
   },true);
-  window.addEventListener('keyup',e=>{if(!open||e.code!=='Space'||!spaceHand)return;const state=spaceHand;spaceHand=null;if(handPan){grid.releasePointerCapture?.(handPan.pointerId);handPan=null;root.classList.remove('hand-panning');state.used=true;}setActiveTool('select');if(!state.used&&Date.now()-state.startedAt<260)setPlaying(!playing);e.preventDefault();e.stopImmediatePropagation();},true);
+  window.addEventListener('keyup',e=>{if(!open||e.code!=='Space'||!spaceHand)return;const state=spaceHand;spaceHand=null;if(handPan){grid.releasePointerCapture?.(handPan.pointerId);handPan=null;root.classList.remove('hand-panning');state.used=true;}if(previewPanDrag){canvas.releasePointerCapture?.(previewPanDrag.pointerId);finishPreviewPan();state.used=true;}setActiveTool('select');if(!state.used&&Date.now()-state.startedAt<260)setPlaying(!playing);e.preventDefault();e.stopImmediatePropagation();},true);
 
   async function exportProject(){
     if(!project.clips.length){notify('Add at least one clip');return;}

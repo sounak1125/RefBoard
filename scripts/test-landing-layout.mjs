@@ -18,6 +18,8 @@ assert.match(
   /<select id="setLandingLayout">[\s\S]*?value="classic">Classic Grid[\s\S]*?value="focus">Focus Flow/,
   'Appearance settings should expose both named home layouts',
 );
+assert.match(source, /if \(heading\) heading\.textContent = 'Recent Works'/, 'both home layouts should use the user-facing Recent Works heading');
+assert.doesNotMatch(source, /heading\.textContent = focusLayout \? 'Focus Flow'/, 'the internal Focus Flow layout name should not replace the landing section title');
 assert.doesNotMatch(source, /id="rwSettings"|\$\('#rwSettings'\)/, 'Home should not expose a separate Settings entry');
 assert.match(
   source,
