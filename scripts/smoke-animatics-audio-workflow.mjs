@@ -97,7 +97,7 @@ const smokeExpression = String.raw`Promise.race([(async()=>{
   const waveformAfterGain=await waitFor(()=>{const height=waveformPixelHeight();return height>0&&height<waveformBeforeGain?height:0;});
 
   const fadeOutDuration=document.querySelector('#anFadeOutDuration'),fadeOutCurve=document.querySelector('#anFadeOutCurve'),fadeOutShape=document.querySelector('#anFadeOutShape');
-  fadeOutDuration.value='.25';fadeOutDuration.dispatchEvent(new Event('change',{bubbles:true}));
+  fadeOutDuration.value='.25';fadeOutDuration.dispatchEvent(new Event('input',{bubbles:true}));const liveTypedFadeDuration=window.RefBoard.animatics.serialize().audio[0].fadeOutDuration;fadeOutDuration.dispatchEvent(new Event('change',{bubbles:true}));
   fadeOutCurve.value='custom';fadeOutCurve.dispatchEvent(new Event('change',{bubbles:true}));
   fadeOutShape.value='40';fadeOutShape.dispatchEvent(new Event('input',{bubbles:true}));fadeOutShape.dispatchEvent(new Event('change',{bubbles:true}));
 
@@ -113,10 +113,12 @@ const smokeExpression = String.raw`Promise.race([(async()=>{
   class FakeSource{connect(destination){return destination;}disconnect(){}}
   class FakeContext{constructor(){this.currentTime=10;this.state='running';this.destination={};}resume(){return Promise.resolve();}close(){this.state='closed';return Promise.resolve();}createMediaElementSource(){return new FakeSource();}createGain(){return new FakeGain();}}
   Object.defineProperty(window,'Audio',{value:FakeAudio,configurable:true});Object.defineProperty(window,'AudioContext',{value:FakeContext,configurable:true});Object.defineProperty(window,'webkitAudioContext',{value:undefined,configurable:true});
-  window.__smokeStep='playback';const volumeSlider=document.querySelector('#anAudioVolume'),tapSpace=()=>{volumeSlider.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,key:' ',code:'Space'}));volumeSlider.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,cancelable:true,key:' ',code:'Space'}));};volumeSlider.focus();tapSpace();await wait(40);const volumeSpacePlayed=window.__audioPlayCount===1;document.querySelector('#anPlay').click();window.__smokeStep='serialized';
+  window.__smokeStep='playback';const volumeSlider=document.querySelector('#anAudioVolume'),durationInput=document.querySelector('#anAudioDuration'),tapSpace=target=>{target.dispatchEvent(new KeyboardEvent('keydown',{bubbles:true,cancelable:true,key:' ',code:'Space'}));target.dispatchEvent(new KeyboardEvent('keyup',{bubbles:true,cancelable:true,key:' ',code:'Space'}));};
+  durationInput.value='.8';durationInput.dispatchEvent(new Event('input',{bubbles:true}));const liveAudioDuration=window.RefBoard.animatics.serialize().audio[0].duration;durationInput.focus();tapSpace(durationInput);await wait(40);const durationSpacePlayed=document.querySelector('#anPlay').dataset.playing==='1',durationFocusRetained=document.activeElement===durationInput;document.querySelector('#anPlay').click();
+  volumeSlider.value='37';volumeSlider.dispatchEvent(new Event('input',{bubbles:true}));const liveVolume=window.RefBoard.animatics.serialize().audio[0].volume;volumeSlider.focus();tapSpace(volumeSlider);await wait(40);const volumeSpacePlayed=document.querySelector('#anPlay').dataset.playing==='1',volumeFocusRetained=document.activeElement===volumeSlider;document.querySelector('#anPlay').click();window.__smokeStep='serialized';
 
   const state=window.RefBoard.animatics.serialize(),audio=state.audio[0],envelope=document.querySelector('.an-fade-envelope polyline')?.getAttribute('points')||'',mediaRefs=window.RefBoard.animatics.mediaRefs();
-  return {boardImages:window.RefBoard.state.items.filter(item=>item.kind==='image').length,clipCount:state.clips.length,audio,audioTracks:state.audioTracks,mediaRefs:mediaRefs.map(item=>item.name),gainShortcutHandled,waveformBeforeGain,waveformAfterGain,liveFadeDuration,volumeSpacePlayed,gainModalOpen:document.querySelector('#anGainModal').classList.contains('open'),customVisible:document.querySelector('#anFadeOutCustom').classList.contains('show'),envelope,gainEvents:window.__gainEvents,errors:window.__smokeErrors};
+  return {boardImages:window.RefBoard.state.items.filter(item=>item.kind==='image').length,clipCount:state.clips.length,audio,audioTracks:state.audioTracks,mediaRefs:mediaRefs.map(item=>item.name),gainShortcutHandled,waveformBeforeGain,waveformAfterGain,liveTypedFadeDuration,liveFadeDuration,liveAudioDuration,liveVolume,durationSpacePlayed,durationFocusRetained,volumeSpacePlayed,volumeFocusRetained,gainModalOpen:document.querySelector('#anGainModal').classList.contains('open'),customVisible:document.querySelector('#anFadeOutCustom').classList.contains('show'),envelope,gainEvents:window.__gainEvents,errors:window.__smokeErrors};
 })(),new Promise(resolve=>setTimeout(()=>resolve({timedOut:true,step:window.__smokeStep,errors:window.__smokeErrors||[],toast:document.querySelector('#anToast')?.textContent,clips:window.RefBoard?.animatics?.serialize()?.clips?.length,items:window.RefBoard?.state?.items?.length}),12000))])`;
 
 try {
@@ -126,13 +128,19 @@ try {
   assert.equal(result.clipCount, 1, 'Explorer-dropped images must also enter the target Animatics video track');
   assert.equal(result.audioTracks, 1, 'Explorer-dropped audio must create its target audio track');
   assert.ok(result.mediaRefs.includes('explorer-drop.wav'), 'Explorer-dropped audio must remain embedded for board saves and exports');
-  assert.ok(Math.abs(result.audio.volume - .501187) < 1e-5, 'G must apply the requested -6 dB gain');
+  assert.ok(Math.abs(result.liveVolume - .37) < 1e-5, 'audio volume must update while the slider is moving');
+  assert.ok(Math.abs(result.audio.volume - .37) < 1e-5, 'the live audio volume must remain committed');
   assert.equal(result.gainShortcutHandled, true, `G must open Audio Gain (${result.errors.join('; ')})`);
   assert.ok(result.waveformAfterGain/result.waveformBeforeGain>=.4&&result.waveformAfterGain/result.waveformBeforeGain<=.65, '-6 dB must visibly reduce the live waveform to approximately half height');
   assert.equal(result.volumeSpacePlayed, true, 'Space must start playback while the edited audio volume slider still has focus');
+  assert.equal(result.volumeFocusRetained, true, 'starting playback must not blur the audio volume slider');
+  assert.ok(Math.abs(result.liveAudioDuration - .8) <= 1 / 30, 'typed audio duration must update before Enter or blur');
+  assert.equal(result.durationSpacePlayed, true, 'Space must start playback while an audio duration field has focus');
+  assert.equal(result.durationFocusRetained, true, 'starting playback must not blur the audio duration field');
   assert.ok(Math.abs(result.liveFadeDuration - .515) < .005, 'the fade handle must follow the pointer continuously between project frames');
   assert.ok(Math.abs(result.audio.fadeInDuration - .5) <= 1 / 30, 'dragging the fade-in handle must remain frame-snapped');
   assert.ok(Math.abs(result.audio.fadeOutDuration - .266667) <= 1 / 30, 'typed fade durations must remain frame-snapped');
+  assert.ok(Math.abs(result.liveTypedFadeDuration - .266667) <= 1 / 30, 'typed fade durations must apply on input without Enter');
   assert.equal(result.audio.fadeOutCurve, 'custom');
   assert.equal(result.audio.fadeOutShape, 40);
   assert.equal(result.gainModalOpen, false);

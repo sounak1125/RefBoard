@@ -35,14 +35,12 @@ export function constrainedTrackDelta(items = [], requestedDelta = 0, trackCount
   return delta===0?0:delta;
 }
 
-export function snappedMoveDelta({ moving = [], stationary = [], proposedDelta = 0, threshold = 0, extraTimes = [], trackDelta = 0 } = {}) {
+export function snappedMoveDelta({ moving = [], stationary = [], proposedDelta = 0, threshold = 0, extraTimes = [] } = {}) {
   const globalCandidates = [...extraTimes.filter(Number.isFinite)];
   let best = null;
   for (const clip of moving) {
-    const hasTrack=Number.isFinite(Number(clip?.track)),destinationTrack=Number.isFinite(Number(clip?.targetTrack))?Math.round(finite(clip.targetTrack)):Math.round(finite(clip?.track))+Math.round(finite(trackDelta)),clipKind=typeof clip?.kind==='string'?clip.kind:null,candidates=[...globalCandidates];
+    const candidates=[...globalCandidates];
     for(const candidate of stationary){
-      if(clipKind&&typeof candidate?.kind==='string'&&candidate.kind!==clipKind)continue;
-      if(hasTrack&&Number.isFinite(Number(candidate?.track))&&Math.round(finite(candidate.track))!==destinationTrack)continue;
       candidates.push(finite(candidate.start),timelineEnd(candidate));
     }
     const proposedStart = finite(clip.start) + proposedDelta;

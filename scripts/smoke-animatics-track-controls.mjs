@@ -75,6 +75,13 @@ const smokeExpression = String.raw`(async()=>{
   window.RefBoard.animatics.open();await wait(150);
 
   const layout=[...document.querySelectorAll('.an-track-label')].map(label=>{const labelRect=label.getBoundingClientRect(),actions=label.querySelector('.an-track-actions'),actionRect=actions?.getBoundingClientRect();return {clientWidth:label.clientWidth,scrollWidth:label.scrollWidth,contained:!actions||actionRect.left>=labelRect.left-1&&actionRect.right<=labelRect.right+1};});
+  const side=document.querySelector('.an-side'),resizer=document.querySelector('#anInspectorResizer'),beforeInspectorWidth=side.getBoundingClientRect().width,resizerRect=resizer.getBoundingClientRect(),resizeX=resizerRect.left+resizerRect.width/2;
+  resizer.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:70,clientX:resizeX,clientY:resizerRect.top+40,button:0}));
+  resizer.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:70,clientX:resizeX+100,clientY:resizerRect.top+40,buttons:1}));
+  resizer.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:70,clientX:resizeX+100,clientY:resizerRect.top+40,button:0}));await wait(30);
+  const afterInspectorWidth=side.getBoundingClientRect().width,serializedInspectorWidth=window.RefBoard.animatics.serialize().inspectorWidth,tabLayouts=[];
+  for(const tab of document.querySelectorAll('.an-tab')){tab.click();const panel=document.querySelector('[data-panel-body="'+tab.dataset.panel+'"]'),panelRect=panel.getBoundingClientRect(),results=new Map(),recordVisible=()=>{for(const button of panel.querySelectorAll('button')){const rect=button.getBoundingClientRect();if(rect.width>0)results.set(button,rect.left>=panelRect.left-1&&rect.right<=panelRect.right+1);}};recordVisible();if(tab.dataset.panel==='draw'){document.querySelector('#anDrawPen').click();recordVisible();document.querySelector('#anDrawColorButton').click();recordVisible();document.querySelector('#anDrawWidthMenuButton').click();recordVisible();}const buttons=[...panel.querySelectorAll('button')].map(button=>results.get(button)===true);tabLayouts.push({tab:tab.dataset.panel,active:tab.classList.contains('on')&&panel.classList.contains('on'),buttons});}
+  document.querySelector('[data-panel="draw"]').click();document.querySelector('#anDrawWidthMenuButton').click();await wait(20);const workspace=document.querySelector('#animaticsWorkspace'),drawPanel=document.querySelector('[data-panel-body="draw"]'),menu=document.querySelector('#anDrawWidthMenu'),workspaceRect=workspace.getBoundingClientRect(),sideRect=side.getBoundingClientRect(),timelineRect=document.querySelector('.an-timeline').getBoundingClientRect(),menuRect=menu.getBoundingClientRect(),lastPresetRect=menu.querySelector('[data-an-draw-width="48"]').getBoundingClientRect(),inspectorLayout={timelineFullWidth:Math.abs(timelineRect.left-workspaceRect.left)<=1&&Math.abs(timelineRect.right-workspaceRect.right)<=1,inspectorAboveTimeline:Math.abs(sideRect.bottom-timelineRect.top)<=1,menuParent:menu.parentElement.id,menuWithinViewport:menuRect.left>=0&&menuRect.top>=0&&menuRect.right<=innerWidth&&menuRect.bottom<=innerHeight,lastPresetVisible:lastPresetRect.bottom<=menuRect.bottom+1,panelClientHeight:drawPanel.clientHeight,panelScrollHeight:drawPanel.scrollHeight,panelNoScroll:drawPanel.scrollHeight<=drawPanel.clientHeight+1};document.querySelector('#anDrawWidthMenuButton').click();
   document.querySelector('[data-toggle-audio-mute="0"]').click();
   document.querySelector('[data-toggle-audio-solo="1"]').click();
   document.querySelector('[data-toggle-track-lock="video"][data-track="0"]').click();
@@ -104,13 +111,22 @@ const smokeExpression = String.raw`(async()=>{
   canvas.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:73,clientX:textX+80,clientY:textY+50,buttons:1}));
   canvas.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:73,clientX:textX+80,clientY:textY+50,button:0}));
   const after=window.RefBoard.animatics.serialize();
-  return {layout,state,disabledTargets,played:window.__played.length,beforeClip:before.clips[0],afterClip:after.clips[0],beforeAudio:before.audio[1],afterAudio:after.audio[1],beforeText:before.texts[0],afterText:after.texts[0],toast:document.querySelector('#anToast').textContent};
+  return {layout,beforeInspectorWidth,afterInspectorWidth,serializedInspectorWidth,tabLayouts,inspectorLayout,state,disabledTargets,played:window.__played.length,beforeClip:before.clips[0],afterClip:after.clips[0],beforeAudio:before.audio[1],afterAudio:after.audio[1],beforeText:before.texts[0],afterText:after.texts[0],toast:document.querySelector('#anToast').textContent};
 })()`;
 
 try {
   const result = await evaluate(await debuggerPort(), smokeExpression);
   assert.ok(result.layout.length>=5,'text, video, and audio track headers must render');
   assert.ok(result.layout.every(row=>row.contained&&row.scrollWidth<=row.clientWidth+1),'every track action group must remain inside the widened fixed header');
+  assert.ok(result.afterInspectorWidth>=result.beforeInspectorWidth+99,'dragging the inspector divider must widen the tools panel');
+  assert.equal(result.serializedInspectorWidth,result.afterInspectorWidth,'the resized inspector width must persist in project state');
+  assert.ok(result.tabLayouts.every(panel=>panel.active&&panel.buttons.every(Boolean)),'every inspector tab and action button must remain usable after resizing');
+  assert.equal(result.inspectorLayout.timelineFullWidth,true,'the timeline must retain its original full workspace width');
+  assert.equal(result.inspectorLayout.inspectorAboveTimeline,true,'the inspector must remain limited to the viewer row');
+  assert.equal(result.inspectorLayout.menuParent,'animaticsWorkspace','the size menu must escape the scrolling panel');
+  assert.equal(result.inspectorLayout.menuWithinViewport,true,'the size menu must stay inside the viewport');
+  assert.equal(result.inspectorLayout.lastPresetVisible,true,'the size menu must expose every preset without clipping');
+  assert.ok(result.inspectorLayout.panelNoScroll,`opening the size menu must not add an inspector scrollbar (${result.inspectorLayout.panelScrollHeight}/${result.inspectorLayout.panelClientHeight})`);
   assert.deepEqual(result.state.audioTrackMuted,[true,false]);
   assert.deepEqual(result.state.audioTrackSolo,[false,true]);
   assert.deepEqual(result.state.videoTrackLocked,[true,false]);

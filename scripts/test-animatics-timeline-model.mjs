@@ -48,8 +48,22 @@ const linkedSnap=snappedMoveDelta({
   proposedDelta:.95,threshold:.1,
 });
 assert.equal(linkedSnap.snapped,true,'any linked video edge must snap against its own destination track');
-assert.equal(linkedSnap.guide,8,'linked snapping must ignore candidates of another media kind');
-assert.ok(Math.abs(linkedSnap.delta-1)<1e-9,'the linked group must receive one shared snap delta');
+assert.equal(linkedSnap.guide,7.95,'linked snapping must use the closest edge even when it belongs to audio');
+assert.ok(Math.abs(linkedSnap.delta-.95)<1e-9,'the linked group must receive one shared cross-media snap delta');
+const crossTrackVideoSnap=snappedMoveDelta({
+  moving:[{start:0,duration:2,track:0,kind:'video'}],
+  stationary:[{start:5,duration:2,track:1,kind:'video'}],
+  proposedDelta:2.95,threshold:.1,
+});
+assert.deepEqual(crossTrackVideoSnap,{delta:3,guide:5,snapped:true},'video clips must snap to aligned edges on other video tracks');
+const crossTrackAudioSnap=snappedMoveDelta({
+  moving:[{start:0,duration:2,track:0,kind:'audio'}],
+  stationary:[{start:5,duration:2,track:1,kind:'audio'}],
+  proposedDelta:2.95,threshold:.1,
+});
+assert.deepEqual(crossTrackAudioSnap,{delta:3,guide:5,snapped:true},'audio clips must snap across audio tracks');
+assert.deepEqual(snappedMoveDelta({moving:[{start:0,duration:2,kind:'video'}],stationary:[{start:5,duration:2,kind:'audio'}],proposedDelta:2.95,threshold:.1}),{delta:3,guide:5,snapped:true},'video clips must snap to audio edges');
+assert.deepEqual(snappedMoveDelta({moving:[{start:0,duration:2,kind:'audio'}],stationary:[{start:5,duration:2,kind:'video'}],proposedDelta:2.95,threshold:.1}),{delta:3,guide:5,snapped:true},'audio clips must snap to video edges');
 
 let nextId = 0;
 const video = { id: 'v', track: 0, start: 2, duration: 6, sourceIn: 10, sourceOut: 16, name: 'Video' };

@@ -67,16 +67,27 @@ const smokeExpression = String.raw`(async()=>{
   if(!window.RefBoard)throw new Error('RefBoard API unavailable');
   Element.prototype.setPointerCapture=()=>{};Element.prototype.releasePointerCapture=()=>{};
   const clip=(id,track,start,duration,linkGroupId)=>({id,itemId:id,track,start,duration,name:id,linkGroupId,framing:{fit:'contain',scale:1,x:0,y:0}});
+  const video=(id,track,start,duration)=>({id,mediaId:id,mediaKind:'video',track,start,duration,sourceIn:0,sourceOut:duration,originalDuration:10,name:id,framing:{fit:'contain',scale:1,x:0,y:0}});
+  const audio=(id,track,start,duration)=>({id,mediaId:id,track,start,duration,sourceIn:0,sourceOut:duration,originalDuration:10,name:id,volume:1});
   window.RefBoard.animatics.load({fps:30,sequenceDuration:20,timelineZoom:90,videoTracks:3,clips:[clip('linked-a',0,2,4,'pair'),clip('linked-b',1,2.5,4,'pair')]},new Map());
   window.RefBoard.animatics.open();await wait(120);
 
   const drag=(id,targetTrack,deltaSeconds,pointerId)=>{
-    const element=document.querySelector('[data-clip="'+id+'"]'),source=element.getBoundingClientRect(),lane=document.querySelector('.an-track-lane[data-kind="video"][data-track="'+targetTrack+'"]'),laneRect=lane.getBoundingClientRect(),px=Number(document.querySelector('#anZoom').value),startX=source.left+source.width/2,targetX=startX+deltaSeconds*px,targetY=laneRect.top+laneRect.height/2;
+    const element=document.querySelector('[data-clip="'+id+'"]'),kind=element.dataset.kind,source=element.getBoundingClientRect(),lane=document.querySelector('.an-track-lane[data-kind="'+kind+'"][data-track="'+targetTrack+'"]'),laneRect=lane.getBoundingClientRect(),px=Number(document.querySelector('#anZoom').value),startX=source.left+source.width/2,targetX=startX+deltaSeconds*px,targetY=laneRect.top+laneRect.height/2;
     element.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId,clientX:startX,clientY:source.top+source.height/2,button:0}));
+    const idleGhostCount=document.querySelectorAll('.an-drag-ghost').length;
     element.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId,clientX:targetX,clientY:targetY,buttons:1}));
-    const project=window.RefBoard.animatics.serialize(),ghosts=[...document.querySelectorAll('.an-drag-ghost')].map(ghost=>{const item=project.clips.find(candidate=>candidate.id===ghost.dataset.clip),target=document.querySelector('.an-track-lane[data-kind="video"][data-track="'+item.track+'"]').getBoundingClientRect();return {id:item.id,topAligned:Math.abs(parseFloat(ghost.style.top)-(target.top+4))<1,leftAligned:Math.abs(parseFloat(ghost.style.left)-(target.left+item.start*px))<2};});
+    const project=window.RefBoard.animatics.serialize(),items=[...project.clips,...project.audio],ghosts=[...document.querySelectorAll('.an-drag-ghost')].map(ghost=>{const item=items.find(candidate=>candidate.id===ghost.dataset.clip),ghostKind=ghost.dataset.kind,target=document.querySelector('.an-track-lane[data-kind="'+ghostKind+'"][data-track="'+item.track+'"]').getBoundingClientRect(),bounds=ghost.getBoundingClientRect();return {id:item.id,topAligned:Math.abs(bounds.top-(target.top+4))<1,leftAligned:Math.abs(bounds.left-(target.left+item.start*px))<2};}),snapGuide=document.querySelector('.an-snap-guide.show span')?.textContent||'';
     element.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId,clientX:targetX,clientY:targetY,button:0}));
-    return {project,ghosts};
+    return {project,ghosts,idleGhostCount,snapGuide};
+  };
+  const trim=(id,edge,deltaSeconds,pointerId)=>{
+    const element=document.querySelector('[data-clip="'+id+'"]'),handle=element.querySelector('[data-trim="'+edge+'"]'),source=element.getBoundingClientRect(),px=Number(document.querySelector('#anZoom').value),startX=edge==='left'?source.left+1:source.right-1,targetX=startX+deltaSeconds*px,y=source.top+source.height/2;
+    handle.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId,clientX:startX,clientY:y,button:0}));
+    handle.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId,clientX:targetX,clientY:y,buttons:1}));
+    const project=window.RefBoard.animatics.serialize(),snapGuide=document.querySelector('.an-snap-guide.show span')?.textContent||'';
+    handle.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId,clientX:targetX,clientY:y,button:0}));
+    return {project,snapGuide};
   };
 
   const blocked=drag('linked-b',0,1,51),blockedCommitted=window.RefBoard.animatics.serialize();
@@ -88,13 +99,27 @@ const smokeExpression = String.raw`(async()=>{
   snapElement.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:53,clientX:snapStartX+.95*snapPx,clientY:snapY,buttons:1}));
   const snapped=window.RefBoard.animatics.serialize(),snapGuide=document.querySelector('.an-snap-guide span').textContent;
   snapElement.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:53,clientX:snapStartX+.95*snapPx,clientY:snapY,button:0}));
-  return {blocked,blockedCommitted,moved,movedCommitted,snapped,snapGuide};
+
+  window.RefBoard.animatics.load({fps:30,sequenceDuration:20,timelineZoom:90,videoTracks:2,clips:[clip('cross-video',0,0,2),clip('video-anchor',1,5,2)]},new Map());await wait(80);
+  const crossVideo=drag('cross-video',0,2.95,54);
+  window.RefBoard.animatics.load({fps:30,sequenceDuration:20,timelineZoom:90,videoTracks:1,audioTracks:2,audio:[audio('cross-audio',0,0,2),audio('audio-anchor',1,5,2)]},new Map());await wait(80);
+  const crossAudio=drag('cross-audio',0,2.95,55);
+  window.RefBoard.animatics.load({fps:30,sequenceDuration:20,timelineZoom:90,videoTracks:1,audioTracks:1,clips:[clip('video-to-audio',0,0,2)],audio:[audio('move-audio-anchor',0,5,2)]},new Map());await wait(80);
+  const videoToAudio=drag('video-to-audio',0,2.95,56);
+  window.RefBoard.animatics.load({fps:30,sequenceDuration:20,timelineZoom:90,videoTracks:1,audioTracks:1,clips:[clip('move-video-anchor',0,5,2)],audio:[audio('audio-to-video',0,0,2)]},new Map());await wait(80);
+  const audioToVideo=drag('audio-to-video',0,2.95,57);
+  window.RefBoard.animatics.load({fps:30,sequenceDuration:20,timelineZoom:90,videoTracks:1,audioTracks:1,clips:[video('trim-video',0,0,2)],audio:[audio('trim-audio-anchor',0,5,2)]},new Map());await wait(80);
+  const videoTrimToAudio=trim('trim-video','right',2.95,58);
+  window.RefBoard.animatics.load({fps:30,sequenceDuration:20,timelineZoom:90,videoTracks:1,audioTracks:1,clips:[clip('trim-video-anchor',0,5,2)],audio:[audio('trim-audio',0,0,2)]},new Map());await wait(80);
+  const audioTrimToVideo=trim('trim-audio','right',2.95,59);
+  return {blocked,blockedCommitted,moved,movedCommitted,snapped,snapGuide,crossVideo,crossAudio,videoToAudio,audioToVideo,videoTrimToAudio,audioTrimToVideo};
 })()`;
 
 try {
   const result = await evaluate(await debuggerPort(), smokeExpression);
   assert.deepEqual(result.blocked.project.clips.map(clip => [clip.id,clip.track,clip.start]), [['linked-a',0,3],['linked-b',1,3.5]], 'boundary drag must preserve linked track spacing and time offsets');
   assert.deepEqual(result.blockedCommitted.clips.map(clip => [clip.id,clip.track,clip.start]), [['linked-a',0,3],['linked-b',1,3.5]]);
+  assert.equal(result.blocked.idleGhostCount,0,'pointer-down selection must not create drag ghosts before movement');
   assert.equal(result.blocked.ghosts.length,2,'both linked clips must have drag ghosts');
   assert.ok(result.blocked.ghosts.every(ghost=>ghost.topAligned&&ghost.leftAligned),'every linked ghost must follow its exact clip without lag or index mismatch');
   assert.deepEqual(result.moved.project.clips.map(clip => [clip.id,clip.track,clip.start]), [['linked-a',1,3],['linked-b',2,3.5]], 'linked V1/V2 clips must move intact to V2/V3');
@@ -102,6 +127,18 @@ try {
   assert.ok(result.moved.ghosts.every(ghost=>ghost.topAligned&&ghost.leftAligned));
   assert.deepEqual(result.snapped.clips.map(clip=>[clip.id,Math.round(clip.start*1e9)/1e9]),[['snap-a',1],['snap-b',6],['stationary',8]],'a secondary linked edge must snap the complete group');
   assert.equal(result.snapGuide,'00:00:08:00');
+  assert.equal(result.crossVideo.project.clips.find(clip=>clip.id==='cross-video').start,3,'a video clip must snap to an edge on another video track');
+  assert.equal(result.crossVideo.snapGuide,'00:00:05:00','cross-track video alignment must display the full timeline snap guide');
+  assert.equal(result.crossAudio.project.audio.find(clip=>clip.id==='cross-audio').start,3,'an audio clip must snap to an edge on another audio track');
+  assert.equal(result.crossAudio.snapGuide,'00:00:05:00','cross-track audio alignment must display the full timeline snap guide');
+  assert.equal(result.videoToAudio.project.clips.find(clip=>clip.id==='video-to-audio').start,3,'a video clip must snap while moving to an audio edge');
+  assert.equal(result.videoToAudio.snapGuide,'00:00:05:00');
+  assert.equal(result.audioToVideo.project.audio.find(clip=>clip.id==='audio-to-video').start,3,'an audio clip must snap while moving to a video edge');
+  assert.equal(result.audioToVideo.snapGuide,'00:00:05:00');
+  assert.equal(result.videoTrimToAudio.project.clips.find(clip=>clip.id==='trim-video').duration,5,'a video right edge must snap to an audio edge');
+  assert.equal(result.videoTrimToAudio.snapGuide,'00:00:05:00');
+  assert.equal(result.audioTrimToVideo.project.audio.find(clip=>clip.id==='trim-audio').duration,5,'an audio right edge must snap to a video edge');
+  assert.equal(result.audioTrimToVideo.snapGuide,'00:00:05:00');
   console.log('animatics Electron linked-drag smoke passed');
 } finally {
   if (child.exitCode === null) child.kill();
