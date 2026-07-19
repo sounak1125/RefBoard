@@ -96,6 +96,22 @@ gh release edit v1.0.3 --draft=false
 - **Run without installing:** `dist\win-unpacked\RefBoard.exe` after `npm run dist`
 - **Dev mode:** `npm start` (no auto-update in dev builds)
 
+### Performance overlay (dev only)
+
+Live FPS / frame-time / JS heap / item counts HUD for stress-testing. **Default OFF.** Inert in packaged (installed) builds — it cannot appear in production even if toggled.
+
+**Enable** (unpackaged / `npm start` only):
+
+| Method | How |
+|--------|-----|
+| Keyboard | `Ctrl+Shift+F12` (toggle) |
+| Console | `window.__PERF_OVERLAY__ = true` |
+| URL | `?perf=1` or `#perf` (if the window URL includes them) |
+
+**Disable:** `Ctrl+Shift+F12` again, or `window.__PERF_OVERLAY__ = false`.
+
+When off, no overlay rAF runs. Implementation: `scripts/perf-overlay.mjs`.
+
 ### Rebuilding after changing the app
 
 All the app logic lives in `index.html`. After editing it:
