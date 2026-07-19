@@ -61,6 +61,7 @@
       "scripts/animatics-premiere-export.mjs",
       "scripts/animatics-after-effects-export.mjs",
       "scripts/animatics.mjs",
+      "scripts/perf-overlay.mjs",
       "scripts/image-residency.mjs",
       "scripts/image-render-demand.mjs",
       "scripts/shell-integration.js",
