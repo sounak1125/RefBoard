@@ -13,3 +13,5 @@ dist-stage2-check/
 scripts/stage2-*
 probe-*.txt
 probe-*.json
+stress-out/
+stress-out-smoke/
