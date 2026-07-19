@@ -97,7 +97,17 @@ assert.match(
 assert.match(
   source,
   /function setupSettingsSelects\(\)[\s\S]*?ui-select-button[\s\S]*?ui-select-menu[\s\S]*?role = 'listbox'/,
-  'Settings selects should be upgraded to the custom RefBoard dropdown UI',
+  'Settings and export selects should be upgraded to the custom RefBoard dropdown UI',
+);
+assert.match(
+  source,
+  /querySelectorAll\('\.settings2-content select, #exportImagesModal select'\)/,
+  'the standard image export dialog should share the Settings dropdown component',
+);
+assert.match(
+  source,
+  /\.ui-select-button\{[\s\S]*?font:500 12\.5px\/1\.3/,
+  'custom select labels should reserve enough line height for descenders such as the g in High',
 );
 assert.match(
   source,

@@ -1532,8 +1532,8 @@ body.board-active #whatsNewNotice{ display:none; }
   background:var(--sw-acc); box-shadow:0 0 9px color-mix(in srgb, var(--sw-acc) 42%, transparent);
 }
 .theme-copy{ min-width:0; display:flex; flex-direction:column; gap:3px; }
-.theme-copy strong{ overflow:hidden; color:var(--txt); font-size:11.5px; font-weight:650; line-height:1; text-overflow:ellipsis; white-space:nowrap; }
-.theme-copy small{ overflow:hidden; color:var(--dim); font-size:9.5px; line-height:1; text-overflow:ellipsis; white-space:nowrap; }
+.theme-copy strong{ overflow:hidden; padding-block:1px; color:var(--txt); font-size:11.5px; font-weight:650; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
+.theme-copy small{ overflow:hidden; padding-block:1px; color:var(--dim); font-size:9.5px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
 .theme-check{ width:15px; height:15px; opacity:0; color:var(--acc); fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; transform:scale(.72); transition:.16s; }
 .theme-swatch:hover{ transform:translateY(-1px); border-color:var(--line-strong); background:var(--surface-2); }
 .theme-swatch:focus-visible{ outline:none; border-color:var(--acc); box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 16%, transparent); }
@@ -1609,7 +1609,7 @@ body.board-active #whatsNewNotice{ display:none; }
   border:1px solid var(--line); border-radius:9px;
   background:color-mix(in srgb, var(--panel) 96%, #fff 4%); color:var(--txt);
   box-shadow:0 1px 0 rgba(255,255,255,.035) inset;
-  font:500 12.5px/1 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  font:500 12.5px/1.3 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
   text-align:left; cursor:pointer;
   transition:border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
@@ -1622,7 +1622,7 @@ body.board-active #whatsNewNotice{ display:none; }
   outline:none; border-color:color-mix(in srgb, var(--acc) 68%, #fff 8%);
   box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 14%, transparent), 0 1px 0 rgba(255,255,255,.04) inset;
 }
-.ui-select-button-label{ overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.ui-select-button-label{ min-width:0; min-height:1.3em; padding-block:1px; display:flex; align-items:center; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .ui-select-chevron{
   width:14px; height:14px; flex:0 0 auto; fill:none; stroke:var(--mut); stroke-width:1.8;
   stroke-linecap:round; stroke-linejoin:round;
@@ -1760,6 +1760,9 @@ body.board-active #whatsNewNotice{ display:none; }
 }
 .name-row{ display:flex; gap:6px; align-items:center; }
 .name-row .text-in{ flex:1; }
+.form-row > .ui-select{ width:100%; }
+.name-row .ui-select{ width:92px; min-width:92px; flex:0 0 92px; }
+.name-row .ui-select-button{ min-width:0; padding-inline:8px; gap:5px; }
 .name-row select{
   width:92px; padding:8px 6px; border-radius:9px; border:1px solid var(--line);
   background:#1f222b; color:var(--txt); font-size:12px; cursor:pointer;
@@ -10142,6 +10145,7 @@ async function openExportImagesDialog() {
       : 'No crop is currently applied; the full frame will be exported.';
   }
   updateExportNamePreview();
+  syncSettingsSelectControls();
   $('#exportImagesModal').classList.add('show');
 }
 
@@ -14042,6 +14046,7 @@ function syncSettingsSelectControl(control) {
   const selected = Array.from(control.select.options).find(option => option.value === control.select.value)
     || control.select.options[0];
   control.label.textContent = selected?.textContent || '';
+  control.button.disabled = control.select.disabled;
   for (const optionButton of control.options) {
     optionButton.setAttribute('aria-selected', optionButton.dataset.value === control.select.value ? 'true' : 'false');
   }
@@ -14075,7 +14080,7 @@ function openSettingsSelectMenu(control, focusSelected = false) {
 }
 
 function setupSettingsSelects() {
-  for (const select of document.querySelectorAll('.settings2-content select')) {
+  for (const select of document.querySelectorAll('.settings2-content select, #exportImagesModal select')) {
     if (select.dataset.uiSelect === 'true') continue;
     select.dataset.uiSelect = 'true';
     const root = document.createElement('div');
@@ -14105,7 +14110,7 @@ function setupSettingsSelects() {
     menu.className = 'ui-select-menu';
     menu.id = `uiSelectMenu-${select.id}`;
     menu.role = 'listbox';
-    menu.setAttribute('aria-label', select.closest('.s2-row')?.querySelector('.s2-label')?.textContent || 'Options');
+    menu.setAttribute('aria-label', select.getAttribute('aria-label') || select.closest('.s2-row')?.querySelector('.s2-label')?.textContent || document.querySelector(`label[for="${select.id}"]`)?.textContent || select.title || 'Options');
     button.setAttribute('aria-controls', menu.id);
     const optionButtons = Array.from(select.options).map(option => {
       const optionButton = document.createElement('button');

@@ -94,12 +94,14 @@ async function run() {
     visiblePolicy: document.querySelector('#focusStage').dataset.visibleCards,
     settingValue: document.querySelector('#setLandingLayout').value,
     landingSettingsPresent: Boolean(document.querySelector('#rwSettings')),
-    customSelectCount: document.querySelectorAll('.settings2-content .ui-select').length
+    customSelectCount: document.querySelectorAll('.settings2-content .ui-select').length,
+    exportCustomSelectCount: document.querySelectorAll('#exportImagesModal .ui-select').length
   })`);
   if (!focusState.focusClass || !focusState.flowVisible || !focusState.gridHidden
       || focusState.activeTitle !== 'Latest concepts' || focusState.cardCount !== 9
       || focusState.visiblePolicy !== '5' || focusState.settingValue !== 'focus'
-      || focusState.landingSettingsPresent || focusState.customSelectCount !== 4) {
+      || focusState.landingSettingsPresent || focusState.customSelectCount !== 4
+      || focusState.exportCustomSelectCount !== 3) {
     throw new Error(`Unexpected Focus Flow state: ${JSON.stringify(focusState)}`);
   }
 
@@ -166,6 +168,31 @@ async function run() {
       || classicState.savedLayout !== 'classic' || classicState.buttonLabel !== 'Classic Grid'
       || classicState.selectedOption !== 'classic') {
     throw new Error(`Unexpected Classic Grid state: ${JSON.stringify(classicState)}`);
+  }
+
+  smokeStep = 'Settings label clipping';
+  const clippingState = await win.webContents.executeJavaScript(`
+    (() => {
+      document.querySelector('.s2-tab[data-pane="general"]').click();
+      const select = document.querySelector('#setRenderQuality');
+      select.value = 'high';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      const button = select.closest('.ui-select').querySelector('.ui-select-button');
+      const label = button.querySelector('.ui-select-button-label');
+      const buttonRect = button.getBoundingClientRect();
+      const labelRect = label.getBoundingClientRect();
+      document.querySelector('.s2-tab[data-pane="appearance"]').click();
+      return {
+        text: label.textContent,
+        lineHeight: parseFloat(getComputedStyle(button).lineHeight),
+        scrollFits: label.scrollHeight <= label.clientHeight + 1,
+        boundsFit: labelRect.top >= buttonRect.top - 1 && labelRect.bottom <= buttonRect.bottom + 1
+      };
+    })()
+  `);
+  if (clippingState.text !== 'High' || clippingState.lineHeight < 15
+      || !clippingState.scrollFits || !clippingState.boundsFit) {
+    throw new Error(`Settings dropdown label is clipped: ${JSON.stringify(clippingState)}`);
   }
 
   smokeStep = 'restore Focus Flow';
@@ -375,7 +402,7 @@ async function run() {
   }
 
   if (rendererErrors.length) throw new Error(`Renderer errors: ${rendererErrors.join(' | ')}`);
-  return { focusState, desktopHierarchy, wideHierarchy, compactHierarchy, classicState, cardClickPoint, directCardOpen, floatingInitial, addDrawerOffset, pinnedToolbar, toolbarHeights, toolbarModes, allToolbarButtons, screenshotPath, settingsScreenshotPath, toolbarScreenshotPath };
+  return { focusState, desktopHierarchy, wideHierarchy, compactHierarchy, classicState, clippingState, cardClickPoint, directCardOpen, floatingInitial, addDrawerOffset, pinnedToolbar, toolbarHeights, toolbarModes, allToolbarButtons, screenshotPath, settingsScreenshotPath, toolbarScreenshotPath };
   } catch (error) {
     throw new Error(`${smokeStep}: ${error.message}${rendererErrors.length ? ` | ${rendererErrors.join(' | ')}` : ''}`);
   }

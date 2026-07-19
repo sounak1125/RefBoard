@@ -412,6 +412,7 @@ assert.match(editor, /data-remove-track="video"/, 'video track labels must expos
 assert.match(editor, /data-remove-track="audio"/, 'audio track labels must expose removal controls');
 assert.match(editor, /class="an-shot-name"[\s\S]*?class="an-shot-meta"/, 'long viewer filenames must truncate separately from frame metadata');
 assert.match(editor, /\.an-shot-name[^\n]+text-overflow:ellipsis/, 'only the filename portion of the viewer footer may ellipsize');
+assert.match(editor, /\.an-shot-name[^\n]+max-width:min\(20vw,190px\)/, 'viewer filenames must stay compact even when source names are very long');
 assert.doesNotMatch(editor, /class="an-help"/, 'compact Clip, Text, Audio, Draw, and View panels must not include helper paragraphs');
 assert.match(editor, /snappedTextRotation\(rotation,e\.shiftKey\)/, 'holding Shift while rotating text must activate angular snapping');
 assert.match(editor, /dragging=\{clip,kind,trimEdge,movedIds[^\n]+sequenceEnd:duration\(\)/, 'clip drags must capture a stable sequence endpoint for snapping');
@@ -445,10 +446,15 @@ assert.match(editor, /\.an-stage-row \{ display:grid; grid-template-columns:0 0 
 assert.match(editor, /#animaticsWorkspace\.panel-open \.an-stage-row \{ grid-template-columns:var\(--an-inspector-w\) 6px minmax\(0,1fr\) 0; \}/, 'opening the inspector must resize only the viewer row');
 assert.doesNotMatch(editor, /\.an-timeline \{ grid-column:/, 'the dropdown fix must not move or narrow the timeline');
 assert.match(editor, /\.an-stage-foot \{[^}]*background:transparent/, 'the viewer footer must remain transparent instead of rendering a heavy full-width bar');
-assert.match(editor, /class="an-footer-left"[\s\S]*?id="anShotLabel"[\s\S]*?id="anTime"[\s\S]*?class="an-transport"[\s\S]*?class="an-view-settings"/, 'viewer metadata and timecode must stay left of the centered transport and right-aligned settings');
+assert.match(editor, /class="an-footer-left"[\s\S]*?id="anTime"[\s\S]*?id="anShotLabel"[\s\S]*?class="an-transport"[\s\S]*?class="an-view-settings"/, 'the fixed timecode must stay left of compact shot metadata, the centered transport, and right-aligned settings');
+assert.match(editor, /\.an-time \{[^}]*flex:0 0 164px/, 'viewer timecode width and position must not move when the shot name changes');
 assert.match(editor, /\.an-viewer-wrap \{[^}]*width:100%/, 'the viewer footer must span the available stage width');
 assert.match(editor, /const availableW=Math\.min\(960,viewport\.clientWidth\)/, 'the preview image must retain its focused maximum width independently from the footer');
-assert.match(editor, /function setupViewerSelect[\s\S]*?role','listbox'[\s\S]*?an-view-select-option/, 'aspect and quality must use RefBoard-style custom listboxes');
+assert.match(editor, /function setupAnimaticsSelect[\s\S]*?role','listbox'[\s\S]*?an-view-select-option/, 'Animatics selects must use RefBoard-style custom listboxes');
+assert.match(editor, /root\.querySelectorAll\('select'\)\.forEach[\s\S]*?setupAnimaticsSelect/, 'every Animatics dropdown, including export formats, must use the shared listbox');
+assert.match(editor, /\.an-view-select-menu \{ position:fixed/, 'Animatics dropdown menus must escape inspector and modal clipping');
+assert.match(editor, /id="anTextColor" type="hidden"[\s\S]*?id="anTextColorPop"/, 'text color must use the custom RefBoard color panel instead of the native browser picker');
+assert.doesNotMatch(editor, /id="anTextColor" type="color"/, 'the mismatched native text color input must not remain');
 assert.match(editor, /id="anPreviewZoomHud"[\s\S]*?id="anPreviewFit"[\s\S]*?id="anPreviewLock"/, 'the preview must expose Fit and Lock zoom controls');
 assert.match(editor, /function setPreviewZoom\(next,[\s\S]*?clientX[\s\S]*?clientY/, 'preview zoom must anchor to the pointer position');
 assert.match(editor, /viewerViewport\.addEventListener\('wheel'[\s\S]*?if\(framingMode&&selectedClip\(\)&&overPreview\)[\s\S]*?return;\}[\s\S]*?setPreviewZoom/, 'Reframe wheel scaling must take precedence over viewer-only zoom');
