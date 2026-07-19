@@ -3,7 +3,8 @@ param(
   [string]$Tag = '',
   [string]$Repo = 'sounak1125/RefBoard',
   [switch]$Draft,
-  [switch]$Publish
+  [switch]$Publish,
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,9 +22,69 @@ function Require-GhAuth {
   }
 }
 
-Require-GhAuth
+function ConvertTo-ReleaseNoteText {
+  param([object]$Value)
+  if ($null -eq $Value) { return '' }
+  return (([string]$Value).Trim() -replace '\r?\n', ' ').Replace([string][char]0x2014, '-')
+}
+
+function New-StructuredReleaseNotes {
+  param(
+    [object]$Entry,
+    [string]$Version
+  )
+
+  $headline = ConvertTo-ReleaseNoteText $Entry.headline
+  $summary = ConvertTo-ReleaseNoteText $Entry.summary
+  if (-not $headline) { $headline = "What is new in $Version" }
+  $lines = [System.Collections.Generic.List[string]]::new()
+  $lines.Add("# $headline")
+  if ($summary) {
+    $lines.Add('')
+    $lines.Add($summary)
+  }
+
+  $sectionTitles = [ordered]@{
+    new = 'New'
+    improved = 'Improved'
+    fixed = 'Fixed'
+  }
+  foreach ($sectionName in $sectionTitles.Keys) {
+    $items = @($Entry.sections.$sectionName)
+    if ($items.Count -eq 0) { continue }
+    $lines.Add('')
+    $lines.Add("## $($sectionTitles[$sectionName])")
+    $lines.Add('')
+    foreach ($item in $items) {
+      if ($item -is [string]) {
+        $lines.Add("- $(ConvertTo-ReleaseNoteText $item)")
+        continue
+      }
+      $title = ConvertTo-ReleaseNoteText $item.title
+      $description = ConvertTo-ReleaseNoteText $item.description
+      if ($title -and $description) { $lines.Add("- **$title** - $description") }
+      elseif ($title) { $lines.Add("- **$title**") }
+      elseif ($description) { $lines.Add("- $description") }
+    }
+  }
+  return $lines -join [Environment]::NewLine
+}
 
 $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+$changelog = Get-Content changelog.json -Raw | ConvertFrom-Json
+$entry = $changelog.$version
+if ($null -eq $entry) {
+  Write-Error "No changelog.json entry for $version"
+  exit 1
+}
+$notesText = New-StructuredReleaseNotes -Entry $entry -Version $version
+if ($DryRun) {
+  Write-Output $notesText
+  return
+}
+
+Require-GhAuth
+
 if (-not $Tag) { $Tag = "v$version" }
 
 $setup = Join-Path $DistDir "RefBoard-Setup-$version.exe"
@@ -36,17 +97,9 @@ foreach ($path in @($setup, $blockmap, $latest)) {
   }
 }
 
-$changelog = Get-Content changelog.json -Raw | ConvertFrom-Json
-$highlights = @($changelog.$version)
-if (-not $highlights -or $highlights.Count -eq 0) {
-  Write-Error "No changelog.json entry for $version"
-  exit 1
-}
-
-$heading = "**What is new in $version**"
-$notes = @($heading, '') + ($highlights | ForEach-Object { "- $_" })
 $notesFile = Join-Path $env:TEMP "refboard-release-$version.md"
-$notes -join [Environment]::NewLine | Out-File -FilePath $notesFile -Encoding utf8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($notesFile, $notesText, $utf8NoBom)
 
 $releaseExists = $false
 $prevEAP = $ErrorActionPreference
