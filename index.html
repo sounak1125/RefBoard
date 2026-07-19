@@ -2937,6 +2937,12 @@ import {
   sortItemsForExport,
 } from './scripts/export-order.mjs';
 import { createAnimaticsEditor } from './scripts/animatics.mjs';
+import {
+  initPerfOverlay,
+  isPerfOverlayEnabled,
+  noteDrawMs,
+  setPerfOverlayPackaged,
+} from './scripts/perf-overlay.mjs';
 
 'use strict';
 
@@ -12717,7 +12723,16 @@ function tick() {
     }
     if (dropTargetGroupId) invalidate();
     if (!(pauseWhenHidden && document.hidden)) {
-      if (dirty) { dirty = false; draw(); }
+      if (dirty) {
+        dirty = false;
+        if (isPerfOverlayEnabled()) {
+          const t0 = performance.now();
+          draw();
+          noteDrawMs(performance.now() - t0);
+        } else {
+          draw();
+        }
+      }
       if (noteEditId) positionNoteEditor();
     }
   } catch (err) {
@@ -15433,6 +15448,7 @@ async function init() {
   if (restoreResult.missingImages) toast('Restored session with some missing images');
 
   const info = await window.RefBoardAPI?.getAppInfo?.();
+  if (info) setPerfOverlayPackaged(!!info.isPackaged);
   if (info) await window.RefBoardAPI?.updaterInit?.({ checkOnStartup: !!appSettings.checkUpdatesOnStartup });
 }
 
@@ -15475,6 +15491,17 @@ animaticsEditor = createAnimaticsEditor({
 });
 
 window.RefBoard = { state, images, addImages, fitAll, animatics: animaticsEditor, memoryStats: memoryDiagnostics };
+
+initPerfOverlay({
+  getCounts() {
+    const animOpen = !!animaticsEditor?.isOpen?.();
+    const counts = { items: state.items.length, view: animOpen ? 'animatics' : 'board' };
+    if (animOpen && typeof animaticsEditor.debugCounts === 'function') {
+      Object.assign(counts, animaticsEditor.debugCounts());
+    }
+    return counts;
+  },
+});
 
 init();
 </script>

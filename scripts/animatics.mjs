@@ -14,7 +14,9 @@ import {
   snappedMoveDelta,
   splitLinkedTimelineItems,
   splitTimelineItem,
+  filterClipsInTimeRange,
   timelineTrackGaps,
+  timelineVisibleTimeRange,
   unlinkTimelineItems,
   waveformPeaks,
   waveformWindow,
@@ -48,6 +50,7 @@ import {
   gainToDb,
   normalizedAudioFades,
 } from './animatics-audio-model.mjs';
+import { isPerfOverlayEnabled, noteDrawMs } from './perf-overlay.mjs';
 
 const MAX_VIDEO_TRACKS = 8;
 const MAX_AUDIO_TRACKS = 5;
@@ -437,7 +440,7 @@ function css() {
   .an-track-row.track-locked .an-clip { filter:saturate(.55); cursor:not-allowed!important; }
   .an-track-row.track-locked .an-track-lane { background-color:rgba(38,45,56,.28); }
   .an-clip.dragging-source { opacity:.28; transform:scale(.975); box-shadow:none; }
-  .an-drag-ghost { position:fixed!important; z-index:70; bottom:auto; pointer-events:none; opacity:.8; transform:none; transition:none; box-shadow:0 12px 28px rgba(0,0,0,.48),0 0 0 1px rgba(114,180,255,.5)!important; will-change:left,top; }
+  .an-drag-ghost { position:fixed!important; z-index:70; left:0!important; top:0!important; bottom:auto; pointer-events:none; opacity:.8; transition:none; box-shadow:0 12px 28px rgba(0,0,0,.48),0 0 0 1px rgba(114,180,255,.5)!important; will-change:transform; }
   .an-track-lane.an-lane-hover { background-color:rgba(89,156,239,.11); box-shadow:inset 0 0 0 1px rgba(103,170,255,.38); }
   .an-clip img { width:clamp(24px,calc(var(--an-track-height,44px) - 2px),150px); height:100%; object-fit:cover; float:left; margin-right:7px; background:#0d0f13; pointer-events:none; }
   .an-clip-name { position:relative; z-index:2; display:block; max-width:calc(100% - 14px); margin-top:4px; padding-right:15px; box-sizing:border-box; font-size:10px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; text-shadow:0 1px 3px rgba(0,0,0,.9); }
@@ -844,7 +847,18 @@ export function createAnimaticsEditor(options) {
   let razorHoverClip = null;
   let timelineFitZoom = null;
   let deferredHistoryTimer = 0;
+  let virtualClipSyncRaf = 0;
   const videoElements = new Map();
+  let playheadEl = null;
+  let scrubSettleTimer = 0;
+  // Interactive-preview proxies: downscaled decodes reused while scrubbing/dragging
+  // so the viewer never decodes or uploads full-resolution stills mid-gesture.
+  const SCRUB_PROXY_EDGE = 1536;
+  const SCRUB_PROXY_MAX_PIXELS = 48e6;
+  const scrubProxyCache = new Map();
+  const scrubProxyJobs = new Map();
+  let scrubProxyPixels = 0;
+  let scrubProxyTouch = 0;
 
   function freshProject() {
     return { version:9, fps:30, resolution:1080, aspect:'16:9', playhead:0, inPoint:null, outPoint:null, sequenceDuration:null, timelineDisplay:'timecode', timelineZoom:90, timelineHeight:286, inspectorWidth:DEFAULT_INSPECTOR_WIDTH, timelineSnap:true, timecode:false, counterMode:'timecode', previewQuality:'full', background:'#000000', textDefaults:normalizedTextDefaults(null), videoTracks:1, audioTracks:0, videoTrackHeights:[DEFAULT_TRACK_HEIGHT], videoTrackEnabled:[true], videoTrackLocked:[false], audioTrackHeights:[], audioTrackMuted:[], audioTrackSolo:[], audioTrackLocked:[], textTrackLocked:false, clips:[], texts:[], audio:[] };
@@ -1414,6 +1428,66 @@ export function createAnimaticsEditor(options) {
     return clamp(available/total,MIN_TIMELINE_ZOOM,MAX_TIMELINE_ZOOM);
   }
 
+  function timelineClipVirtualizationSuspended(){
+    return !!(dragging||marqueeDrag||audioFadeDrag);
+  }
+
+  function timelineClipVirtualRange(px=Number(project.timelineZoom)||Number($('#anZoom')?.value)||90){
+    if(timelineClipVirtualizationSuspended()||!(scroll.clientWidth>TRACK_LABEL_WIDTH))return {start:-Infinity,end:Infinity,viewportPx:0,bufferPx:0};
+    return timelineVisibleTimeRange({
+      scrollLeft:scroll.scrollLeft,
+      clientWidth:scroll.clientWidth,
+      pixelsPerSecond:px,
+      trackLabelWidth:TRACK_LABEL_WIDTH,
+      bufferViewports:1.5,
+    });
+  }
+
+  function clipsForVirtualLane(collection,track,range){
+    const trackIndex=Number(track)||0;
+    return filterClipsInTimeRange((collection||[]).filter(clip=>(Number(clip.track)||0)===trackIndex),range.start,range.end);
+  }
+
+  function syncVirtualizedTimelineClips(){
+    if(virtualClipSyncRaf){cancelAnimationFrame(virtualClipSyncRaf);virtualClipSyncRaf=0;}
+    if(!grid.isConnected)return;
+    const totalClips=project.clips.length+project.audio.length+project.texts.length;
+    if(timelineClipVirtualizationSuspended()&&grid.querySelectorAll('.an-clip').length===totalClips)return;
+    const px=clamp(Number(project.timelineZoom)||Number($('#anZoom')?.value)||90,MIN_TIMELINE_ZOOM,MAX_TIMELINE_ZOOM);
+    const range=timelineClipVirtualRange(px);
+    const addedThumbs=[],addedWaves=[];
+    for(const lane of grid.querySelectorAll('.an-track-lane')){
+      const kind=lane.dataset.kind,track=Number(lane.dataset.track)||0;
+      const collection=kind==='audio'?project.audio:kind==='text'?project.texts:project.clips;
+      const desired=kind==='text'
+        ?filterClipsInTimeRange(collection,range.start,range.end)
+        :clipsForVirtualLane(collection,track,range);
+      const mounted=[...lane.querySelectorAll(':scope > .an-clip')];
+      if(mounted.length===desired.length&&mounted.every((el,index)=>el.dataset.clip===desired[index]?.id))continue;
+      const existing=new Map(mounted.map(el=>[el.dataset.clip,el]));
+      const nodes=[];
+      for(const clip of desired){
+        let el=existing.get(clip.id);
+        if(el){existing.delete(clip.id);nodes.push(el);continue;}
+        const wrap=document.createElement('template');
+        wrap.innerHTML=clipMarkup(clip,px,kind);
+        el=wrap.content.firstElementChild;
+        nodes.push(el);
+        addedThumbs.push(...el.querySelectorAll('[data-thumb]'));
+        addedWaves.push(...el.querySelectorAll('canvas[data-wave]'));
+      }
+      for(const el of existing.values())el.remove();
+      for(const el of nodes)lane.append(el);
+    }
+    if(addedThumbs.length)void hydrateThumbs(addedThumbs);
+    if(addedWaves.length)void hydrateWaveforms(addedWaves);
+  }
+
+  function scheduleVirtualizedClipSync(){
+    if(virtualClipSyncRaf)return;
+    virtualClipSyncRaf=requestAnimationFrame(()=>{virtualClipSyncRaf=0;syncVirtualizedTimelineClips();});
+  }
+
   function renderTimeline() {
     clearRazorGuide();
     ensureTrackHeightCounts();
@@ -1423,6 +1497,7 @@ export function createAnimaticsEditor(options) {
     if(Number.isFinite(fitZoom)){if(wasFitted)project.timelineZoom=fitZoom;timelineFitZoom=fitZoom;}
     const px=clamp(Number(project.timelineZoom)||90,Number(zoom.min)||MIN_TIMELINE_ZOOM,Number(zoom.max)||MAX_TIMELINE_ZOOM);project.timelineZoom=px;zoom.value=String(px);
     const laneWidth = Math.max(1,total*px),ticks=timelineRulerTicks(total,px);
+    const virtualRange=timelineClipVirtualRange(px);
     grid.style.setProperty('--an-second-px',`${px}px`);
     grid.style.setProperty('--an-lane-width',`${laneWidth}px`);
     grid.style.setProperty('--an-timeline-end-x',`${laneWidth}px`);
@@ -1438,7 +1513,7 @@ export function createAnimaticsEditor(options) {
     if(project.texts.length){
       const textLocked=isTrackLocked('text'),textLock=`<button class="an-track-toggle lock ${textLocked?'on':''}" data-toggle-track-lock="text" data-track="0" title="${textLocked?'Unlock':'Lock'} text track T1" aria-label="${textLocked?'Unlock':'Lock'} text track T1" aria-pressed="${String(textLocked)}">${lockIcon(textLocked)}</button>`;
       html+=`<div class="an-track-row${textLocked?' track-locked':''}" data-track-kind="text" data-track-index="0"><div class="an-track-label"><b>T1</b><span>TEXT</span><div class="an-track-actions">${textLock}</div></div><div class="an-track-lane" data-kind="text" data-track="0" style="width:${laneWidth}px">`;
-      for(const text of project.texts)html+=clipMarkup(text,px,'text');
+      for(const text of filterClipsInTimeRange(project.texts,virtualRange.start,virtualRange.end))html+=clipMarkup(text,px,'text');
       html+='</div></div>';
     }
     for(let track=0;track<project.videoTracks;track++){
@@ -1450,7 +1525,7 @@ export function createAnimaticsEditor(options) {
       const lock=`<button class="an-track-toggle lock ${trackLocked?'on':''}" data-toggle-track-lock="video" data-track="${track}" title="${trackLocked?'Unlock':'Lock'} video track V${track+1}" aria-label="${trackLocked?'Unlock':'Lock'} video track V${track+1}" aria-pressed="${String(trackLocked)}">${lockIcon(trackLocked)}</button>`;
       html+=`<div class="an-track-row${rowClass}${trackEnabled?'':' track-disabled'}${trackLocked?' track-locked':''}" data-track-kind="video" data-track-index="${track}" style="--an-track-height:${height}px"><div class="an-track-label">${grip}${target}<span>VIDEO</span><div class="an-track-actions">${visibility}${lock}${remove}</div></div><div class="an-track-lane" data-kind="video" data-track="${track}" style="width:${laneWidth}px">`;
       for(const gap of timelineTrackGaps(project.clips,track,{minDuration:1/project.fps-1e-8}))html+=gapMarkup(gap,px,'video');
-      for(const clip of project.clips.filter(c=>c.track===track)) html+=clipMarkup(clip,px,'video');
+      for(const clip of clipsForVirtualLane(project.clips,track,virtualRange)) html+=clipMarkup(clip,px,'video');
       html+=`</div><button class="an-track-resize" data-track-resize="video" data-track="${track}" role="separator" aria-orientation="horizontal" aria-label="Resize video track V${track+1}" title="Drag to resize V${track+1} · double-click to reset"></button></div>`;
     }
     if(project.videoTracks<MAX_VIDEO_TRACKS) html+=`<button class="an-track-add" data-add-track="video">+ Add video track <span>(${project.videoTracks}/${MAX_VIDEO_TRACKS})</span></button>`;
@@ -1462,12 +1537,13 @@ export function createAnimaticsEditor(options) {
       const mute=`<button class="an-track-toggle mute ${muted?'on':''}" data-toggle-audio-mute="${track}" title="${muted?'Unmute':'Mute'} audio track A${track+1}" aria-label="${muted?'Unmute':'Mute'} audio track A${track+1}" aria-pressed="${String(muted)}">M</button>`,soloButton=`<button class="an-track-toggle solo ${solo?'on':''}" data-toggle-audio-solo="${track}" title="${solo?'Disable solo':'Solo'} audio track A${track+1}" aria-label="${solo?'Disable solo':'Solo'} audio track A${track+1}" aria-pressed="${String(solo)}">S</button>`,lock=`<button class="an-track-toggle lock ${trackLocked?'on':''}" data-toggle-track-lock="audio" data-track="${track}" title="${trackLocked?'Unlock':'Lock'} audio track A${track+1}" aria-label="${trackLocked?'Unlock':'Lock'} audio track A${track+1}" aria-pressed="${String(trackLocked)}">${lockIcon(trackLocked)}</button>`;
       html+=`<div class="an-track-row${rowClass}${muted||hasSoloAudioTrack()&&!solo?' track-muted':''}${trackLocked?' track-locked':''}" data-track-kind="audio" data-track-index="${track}" style="--an-track-height:${height}px"><div class="an-track-label">${grip}${target}<span>AUDIO</span><div class="an-track-actions">${mute}${soloButton}${lock}${remove}</div></div><div class="an-track-lane" data-kind="audio" data-track="${track}" style="width:${laneWidth}px">`;
       for(const gap of timelineTrackGaps(project.audio,track,{minDuration:1/project.fps-1e-8}))html+=gapMarkup(gap,px,'audio');
-      for(const clip of project.audio.filter(c=>c.track===track)) html+=clipMarkup(clip,px,'audio');
+      for(const clip of clipsForVirtualLane(project.audio,track,virtualRange)) html+=clipMarkup(clip,px,'audio');
       html+=`</div><button class="an-track-resize" data-track-resize="audio" data-track="${track}" role="separator" aria-orientation="horizontal" aria-label="Resize audio track A${track+1}" title="Drag to resize A${track+1} · double-click to reset"></button></div>`;
     }
     if(project.audioTracks<MAX_AUDIO_TRACKS) html+=`<button class="an-track-add" data-add-track="audio">+ Add audio track <span>(${project.audioTracks}/${MAX_AUDIO_TRACKS})</span></button>`;
     grid.innerHTML=html;
-    grid.style.setProperty('--an-playhead-x',`${project.playhead*px}px`);
+    playheadEl=grid.querySelector('.an-playhead');
+    playheadEl?.style.setProperty('--an-playhead-x',`${project.playhead*px}px`);
     syncPlayheadVisibility();
     const range=hasSequenceRange()?` · IN ${timecode(project.inPoint,project.fps)} → OUT ${timecode(project.outPoint,project.fps)}`:'';
     $('#anTlSummary').textContent=`${project.clips.length} media · ${project.texts.length} text · ${formatDuration(duration())}${fixed===null?'':' fixed'}${range}`;
@@ -1520,8 +1596,8 @@ export function createAnimaticsEditor(options) {
     return `<div class="an-clip ${kind==='audio'?'an-audio':kind==='text'?'an-text-clip':isVideoClip(clip)?'an-video':''} ${disabled?'clip-disabled':''} ${selected?'on':''} ${primary?'primary':''} ${linkedPeer?'linked-peer':''}" data-clip="${esc(clip.id)}" data-kind="${kind}" style="left:${left}px;width:${width}px"><i class="an-trim an-trim-left" data-trim="left"></i>${visual}${kind==='audio'?audioFadeMarkup(clip,px):''}${linkBadge}<span class="an-clip-name">${esc(label)}</span><span class="an-clip-dur">${clipDurationLabel(clip)}</span><i class="an-trim" data-trim="right"></i></div>`;
   }
 
-  async function hydrateThumbs(){
-    for(const img of grid.querySelectorAll('[data-thumb]')){
+  async function hydrateThumbs(nodes=null){
+    for(const img of nodes||grid.querySelectorAll('[data-thumb]')){
       const clip=project.clips.find(c=>c.id===img.dataset.thumb); if(!clip) continue;
       img.src=await thumbUrl(clip);
     }
@@ -1562,8 +1638,8 @@ export function createAnimaticsEditor(options) {
     for(const clip of clips||[]){const canvas=grid.querySelector(`canvas[data-wave="${CSS.escape(clip.id)}"]`),waveform=audioWaveformCache.get(clip.mediaId);if(canvas&&waveform)drawTimelineWaveform(canvas,clip,waveform);}
   }
 
-  async function hydrateWaveforms(){
-    for(const canvas of grid.querySelectorAll('canvas[data-wave]')){
+  async function hydrateWaveforms(nodes=null){
+    for(const canvas of nodes||grid.querySelectorAll('canvas[data-wave]')){
       const clip=project.audio.find(item=>item.id===canvas.dataset.wave);if(!clip)continue;
       const waveform=await ensureAudioWaveform(clip);if(waveform&&canvas.dataset.wave===clip.id)drawTimelineWaveform(canvas,clip,waveform);
     }
@@ -1710,6 +1786,7 @@ export function createAnimaticsEditor(options) {
   }
 
   function paintViewer(targetCtx,w,h,t,burnTc,mainViewer,active,activeTexts,layers,{baseOnly=false}={}){
+    const perfT0 = mainViewer && isPerfOverlayEnabled() ? performance.now() : 0;
     if(mainViewer&&!playing){const activeVideoIds=new Set(active.filter(isVideoClip).map(c=>c.id));for(const [id,video] of videoElements)if(!activeVideoIds.has(id))video.pause();}
     targetCtx.save(); targetCtx.fillStyle=project.background; targetCtx.fillRect(0,0,w,h);
     for(const {clip,source} of layers){
@@ -1726,13 +1803,66 @@ export function createAnimaticsEditor(options) {
     if(previewShotKey&&previewShotKey!==nextPreviewShotKey&&!previewZoomLocked&&previewZoom!==1)fitPreviewZoom({show:false});
     previewShotKey=nextPreviewShotKey;
     const top=active.at(-1);$('#anShotLabel').innerHTML=top?`<b class="an-shot-name" title="${esc(top.name)}">${esc(top.name)}</b><span class="an-shot-meta">&nbsp;· ${Math.max(1,Math.round(top.duration*project.fps))} frames · V${top.track+1}</span>`:activeTexts.length?'<b class="an-shot-name">Text overlay</b><span class="an-shot-meta">&nbsp;· T1</span>':'No shot at playhead';
+    if (perfT0) noteDrawMs(performance.now() - perfT0);
+  }
+
+  function releaseScrubProxies(){
+    for(const entry of scrubProxyCache.values())try{entry.bitmap.close?.();}catch{}
+    scrubProxyCache.clear();scrubProxyJobs.clear();scrubProxyPixels=0;
+  }
+
+  function evictScrubProxies(){
+    while(scrubProxyPixels>SCRUB_PROXY_MAX_PIXELS&&scrubProxyCache.size>1){
+      let oldestKey=null,oldestTouch=Infinity;
+      for(const [key,entry] of scrubProxyCache)if(entry.touch<oldestTouch){oldestTouch=entry.touch;oldestKey=key;}
+      const entry=scrubProxyCache.get(oldestKey);scrubProxyCache.delete(oldestKey);scrubProxyPixels-=entry.pixels;
+      try{entry.bitmap.close?.();}catch{}
+    }
+  }
+
+  function ensureScrubProxy(itemId,image){
+    const cached=scrubProxyCache.get(itemId);
+    if(cached){cached.touch=++scrubProxyTouch;return Promise.resolve(cached.bitmap);}
+    if(scrubProxyJobs.has(itemId))return scrubProxyJobs.get(itemId);
+    const job=(async()=>{
+      try{
+        const blob=await getBlob(itemId);
+        if(!(blob instanceof Blob)||!blob.size)return null;
+        const w=Math.max(1,image?.w||1),h=Math.max(1,image?.h||1),k=Math.min(1,SCRUB_PROXY_EDGE/Math.max(w,h));
+        const bitmap=await createImageBitmap(blob,{resizeWidth:Math.max(1,Math.round(w*k)),resizeHeight:Math.max(1,Math.round(h*k)),resizeQuality:'high'});
+        if(scrubProxyCache.has(itemId)){try{bitmap.close?.();}catch{}return scrubProxyCache.get(itemId).bitmap;}
+        const pixels=bitmap.width*bitmap.height;
+        scrubProxyCache.set(itemId,{bitmap,pixels,touch:++scrubProxyTouch});scrubProxyPixels+=pixels;evictScrubProxies();
+        return bitmap;
+      }catch(err){console.warn('[animatics] scrub proxy unavailable',err);return null;}
+      finally{scrubProxyJobs.delete(itemId);}
+    })();
+    scrubProxyJobs.set(itemId,job);return job;
+  }
+
+  async function scrubPreviewSource(clip,image){
+    const long=Math.max(image?.w||0,image?.h||0);
+    if(long<=SCRUB_PROXY_EDGE)return image?.bitmap||image?.proxy||await getBitmap(clip.itemId,{priority:'high'});
+    const cached=scrubProxyCache.get(clip.itemId);
+    if(cached){cached.touch=++scrubProxyTouch;return cached.bitmap;}
+    const job=ensureScrubProxy(clip.itemId,image);
+    // Whatever is decoded right now wins this frame; the proxy job fills the cache for the next ones.
+    return image?.bitmap||image?.proxy||await job;
+  }
+
+  function scheduleScrubSettle(){
+    clearTimeout(scrubSettleTimer);
+    scrubSettleTimer=setTimeout(()=>{scrubSettleTimer=0;if(open&&!playing)void drawViewer(ctx,canvas.width,canvas.height,project.playhead,project.timecode,false,{settle:true});},160);
   }
 
   async function drawViewer(targetCtx=ctx, w=canvas.width, h=canvas.height, t=project.playhead, burnTc=project.timecode, fullQuality=false,options={}){
     const mainViewer=targetCtx===ctx,drawToken=mainViewer?++viewerDrawToken:0,active=clipsAt(t),activeTexts=textsAt(t),layers=[];
+    const interactive=mainViewer&&!fullQuality&&!options.settle&&project.previewQuality==='full'&&!!(scrubbing||dragging);
     for(const clip of active){
-      const image=isVideoClip(clip)?null:getImage(clip.itemId),needsFull=fullQuality||project.previewQuality==='full';
-      const source=isVideoClip(clip)?await videoSourceAt(clip,t,fullQuality):(needsFull?await getBitmap(clip.itemId,{priority:'high'}):(image?.proxy||image?.bitmap||await getBitmap(clip.itemId,{priority:'high'})));
+      const image=isVideoClip(clip)?null:getImage(clip.itemId),needsFull=(fullQuality||project.previewQuality==='full')&&!interactive;
+      const source=isVideoClip(clip)?await videoSourceAt(clip,t,fullQuality)
+        :interactive?await scrubPreviewSource(clip,image)
+        :(needsFull?await getBitmap(clip.itemId,{priority:'high'}):(image?.proxy||image?.bitmap||await getBitmap(clip.itemId,{priority:'high'})));
       if(mainViewer&&drawToken!==viewerDrawToken)return;
       if(source)layers.push({clip,source});
     }
@@ -1836,13 +1966,14 @@ export function createAnimaticsEditor(options) {
       play.dataset.playing=playState;
       play.innerHTML=playing?icon('<path d="M7 5h4v14H7zM14 5h4v14h-4z"/>',true):icon('<path d="m8 5 11 7-11 7z"/>',true);
     }
+    const px=Number($('#anZoom').value)||90,scrollLeft=scroll.scrollLeft,clientWidth=scroll.clientWidth;
     $('#anTime').textContent=`${counterLabel(project.playhead)} / ${counterLabel(duration(),false)}`;
-    const px=Number($('#anZoom').value)||90; grid.style.setProperty('--an-playhead-x',`${project.playhead*px}px`);syncPlayheadVisibility();
+    (playheadEl||=grid.querySelector('.an-playhead'))?.style.setProperty('--an-playhead-x',`${project.playhead*px}px`);syncPlayheadVisibility(scrollLeft,clientWidth);
   }
 
-  function syncPlayheadVisibility(){
-    const px=Number($('#anZoom').value)||90,isOutside=time=>{const x=TRACK_LABEL_WIDTH+time*px-scroll.scrollLeft;return x<TRACK_LABEL_WIDTH||x>scroll.clientWidth;};
-    grid.querySelector('.an-playhead')?.classList.toggle('out-of-view',isOutside(project.playhead));
+  function syncPlayheadVisibility(scrollLeft=scroll.scrollLeft,clientWidth=scroll.clientWidth){
+    const px=Number($('#anZoom').value)||90,isOutside=time=>{const x=TRACK_LABEL_WIDTH+time*px-scrollLeft;return x<TRACK_LABEL_WIDTH||x>clientWidth;};
+    (playheadEl||=grid.querySelector('.an-playhead'))?.classList.toggle('out-of-view',isOutside(project.playhead));
     for(const marker of grid.querySelectorAll('[data-sequence-marker]')){const time=marker.dataset.sequenceMarker==='in'?project.inPoint:project.outPoint;marker.classList.toggle('out-of-view',!Number.isFinite(time)||isOutside(time));}
   }
 
@@ -1962,7 +2093,7 @@ export function createAnimaticsEditor(options) {
     scrubPreviewRaf=requestAnimationFrame(async()=>{scrubPreviewRaf=0;if(!open){scrubPreviewQueued=false;return;}scrubPreviewQueued=false;scrubPreviewBusy=true;try{await drawViewer();}finally{scrubPreviewBusy=false;if(scrubPreviewQueued)scheduleScrubPreview();}});
   }
 
-  function scrubTo(value){project.playhead=clamp(value,0,duration());renderTransport();followPlayhead();scheduleScrubPreview();}
+  function scrubTo(value){project.playhead=clamp(value,0,duration());renderTransport();followPlayhead();scheduleScrubPreview();scheduleScrubSettle();}
 
   function stopAudioPlayback(){
     for(const timer of audioTimers)clearTimeout(timer); audioTimers=[];
@@ -2037,7 +2168,7 @@ export function createAnimaticsEditor(options) {
   function closeEditor(){
     if(!open)return;
     if(audioTrimState)finishAudioTrimmer(false);if(inlineTextId)finishInlineTextEdit(false);flushDeferredHistory();open=false;setPlaying(false);
-    cancelAnimationFrame(scrubPreviewRaf);scrubPreviewRaf=0;scrubPreviewQueued=false;clearTimeout(previewRasterTimer);previewRasterTimer=0;previewRasterEpoch++;if(textOverlayRaf)cancelAnimationFrame(textOverlayRaf);textOverlayRaf=0;if(textControlRaf)cancelAnimationFrame(textControlRaf);textControlRaf=0;cancelFramingPreview();viewerDrawToken++;
+    cancelAnimationFrame(scrubPreviewRaf);scrubPreviewRaf=0;scrubPreviewQueued=false;clearTimeout(scrubSettleTimer);scrubSettleTimer=0;releaseScrubProxies();clearTimeout(previewRasterTimer);previewRasterTimer=0;previewRasterEpoch++;if(textOverlayRaf)cancelAnimationFrame(textOverlayRaf);textOverlayRaf=0;if(textControlRaf)cancelAnimationFrame(textControlRaf);textControlRaf=0;cancelFramingPreview();viewerDrawToken++;
     if(timelineResizeRaf)cancelAnimationFrame(timelineResizeRaf);timelineResizeRaf=0;timelineResize=null;
     drawMode=false;drawBrushesOpen=false;drawColorOpen=false;drawWidthMenuOpen=false;activeStroke=null;clearActiveDrawingSession();hideDrawSizePreview();framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;viewerTextMarquee=null;handPan=null;spaceHand=null;finishPreviewPan();inspectorResize=null;clearTimeout(previewZoomHudTimer);previewZoomHudTimer=0;root.classList.remove('hand-panning','inspector-resizing');$('#anInspectorResizer')?.classList.remove('dragging');$('#anTimelineResizer')?.classList.remove('dragging');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
     // Pausing alone leaves Chromium decoder buffers and GPU textures resident.
@@ -2357,11 +2488,20 @@ export function createAnimaticsEditor(options) {
 
   function beginTimelineDragVisuals(state){
     if(!state||state.trimEdge||state.visuals.length)return;
+    // Batch all rect reads before any DOM writes so ghost creation costs one layout, not one per clip.
+    const mounted=new Map([...grid.querySelectorAll('.an-clip')].map(el=>[el.dataset.clip,el]));
+    const sources=[];
     for(const original of state.originals){
-      const el=grid.querySelector(`[data-clip="${CSS.escape(original.item.id)}"]`);if(!el)continue;
-      const rect=el.getBoundingClientRect(),ghost=el.cloneNode(true);ghost.classList.add('an-drag-ghost');ghost.classList.remove('dragging-source','on','primary');
-      Object.assign(ghost.style,{left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`});root.append(ghost);state.visuals.push({original,sourceEl:el,ghost});el.classList.add('dragging-source');
+      const el=mounted.get(original.item.id);if(!el)continue;
+      sources.push({original,el,rect:el.getBoundingClientRect()});
     }
+    const fragment=document.createDocumentFragment();
+    for(const {original,el,rect} of sources){
+      const ghost=el.cloneNode(true);ghost.classList.add('an-drag-ghost');ghost.classList.remove('dragging-source','on','primary');
+      Object.assign(ghost.style,{width:`${rect.width}px`,height:`${rect.height}px`,transform:`translate(${rect.left}px,${rect.top}px)`});
+      fragment.append(ghost);state.visuals.push({original,sourceEl:el,ghost});el.classList.add('dragging-source');
+    }
+    root.append(fragment);
     state.hoverLane?.classList.add('an-lane-hover');
   }
 
@@ -2396,10 +2536,21 @@ export function createAnimaticsEditor(options) {
     return {lane:lanes[0],bounds};
   }
 
-  function timelineLaneAtPointer(e,kind,fallback=null){
-    const direct=document.elementFromPoint(e.clientX,e.clientY)?.closest?.('.an-track-lane');if(direct?.dataset.kind===kind)return direct;
-    const byY=[...grid.querySelectorAll(`.an-track-lane[data-kind="${kind}"]`)].find(lane=>{const rect=lane.getBoundingClientRect();return e.clientY>=rect.top&&e.clientY<=rect.bottom;});
-    if(byY)return byY;
+  function dragLaneRects(state){
+    // One batched lane-rect read per scroll position; the drag move loop then runs write-only.
+    const scrollLeft=scroll.scrollLeft,scrollTop=scroll.scrollTop;
+    if(!state.laneRects||state.laneRectsLeft!==scrollLeft||state.laneRectsTop!==scrollTop){
+      state.laneRects=[...grid.querySelectorAll('.an-track-lane')].map(lane=>({lane,kind:lane.dataset.kind,track:Number(lane.dataset.track)||0,rect:lane.getBoundingClientRect()}));
+      state.laneByKey=new Map(state.laneRects.map(entry=>[`${entry.kind}:${entry.track}`,entry]));
+      state.laneRectsLeft=scrollLeft;state.laneRectsTop=scrollTop;
+    }
+    return state.laneRects;
+  }
+
+  function timelineLaneAtPointer(e,kind,fallback=null,laneRects=null){
+    const rects=laneRects||[...grid.querySelectorAll(`.an-track-lane[data-kind="${kind}"]`)].map(lane=>({lane,kind,rect:lane.getBoundingClientRect()}));
+    const byY=rects.find(entry=>entry.kind===kind&&e.clientY>=entry.rect.top&&e.clientY<=entry.rect.bottom);
+    if(byY)return byY.lane;
     const bounds=scroll.getBoundingClientRect();return e.clientY>=bounds.top&&e.clientY<=bounds.bottom?fallback:null;
   }
 
@@ -2408,6 +2559,7 @@ export function createAnimaticsEditor(options) {
     const additive=e.shiftKey||e.ctrlKey||e.metaKey,box=$('#anMarquee');
     const originX=startPoint?.x??e.clientX,originY=startPoint?.y??e.clientY,startX=bounds?clamp(originX,bounds.left,bounds.right):originX,startY=bounds?clamp(originY,bounds.top,bounds.bottom):originY;
     marqueeDrag={startX,startY,x:startX,y:startY,base:new Set(selectedTimelineIds),mode:additive?(e.ctrlKey||e.metaKey?'toggle':'add'):'replace',lane,bounds,moved:false,pointerId:e.pointerId};
+    syncVirtualizedTimelineClips();
     box.style.left=`${startX}px`;box.style.top=`${startY}px`;box.style.width='0px';box.style.height='0px';box.classList.add('show');captureEl.setPointerCapture?.(e.pointerId);e.preventDefault();
   }
 
@@ -2429,7 +2581,7 @@ export function createAnimaticsEditor(options) {
   grid.addEventListener('pointerdown',e=>{
     const temporaryHand=e.button===1,persistentHand=activeTool==='hand'&&e.button===0;
     if(temporaryHand||persistentHand){if(temporaryHand)setActiveTool('hand');handPan={startX:e.clientX,startY:e.clientY,startScrollLeft:scroll.scrollLeft,startScrollTop:scroll.scrollTop,temporary:temporaryHand,pointerId:e.pointerId};root.classList.add('hand-panning');grid.setPointerCapture?.(e.pointerId);e.preventDefault();return;}
-    const fadeHandle=e.target.closest('[data-audio-fade]');if(fadeHandle){const clipEl=fadeHandle.closest('.an-clip'),clip=project.audio.find(item=>item.id===clipEl?.dataset.clip);if(!clip)return;if(isTrackLocked('audio',clip.track)){notify(`A${clip.track+1} is locked`);return;}const side=fadeHandle.dataset.audioFade==='out'?'Out':'In',fades=applyNormalizedAudioFades(clip),startDuration=fades[`fade${side}Duration`];setTimelineSelection([clip.id],clip.id);audioFadeDrag={clip,clipEl,side,startX:e.clientX,startDuration,pendingDuration:startDuration,otherDuration:fades[`fade${side==='In'?'Out':'In'}Duration`],pointerId:e.pointerId};grid.setPointerCapture?.(e.pointerId);syncInspector();e.preventDefault();e.stopPropagation();return;}
+    const fadeHandle=e.target.closest('[data-audio-fade]');if(fadeHandle){const clipEl=fadeHandle.closest('.an-clip'),clip=project.audio.find(item=>item.id===clipEl?.dataset.clip);if(!clip)return;if(isTrackLocked('audio',clip.track)){notify(`A${clip.track+1} is locked`);return;}const side=fadeHandle.dataset.audioFade==='out'?'Out':'In',fades=applyNormalizedAudioFades(clip),startDuration=fades[`fade${side}Duration`];setTimelineSelection([clip.id],clip.id);audioFadeDrag={clip,clipEl,side,startX:e.clientX,startDuration,pendingDuration:startDuration,otherDuration:fades[`fade${side==='In'?'Out':'In'}Duration`],pointerId:e.pointerId};syncVirtualizedTimelineClips();grid.setPointerCapture?.(e.pointerId);syncInspector();e.preventDefault();e.stopPropagation();return;}
     const trackResizeHandle=e.target.closest('.an-track-resize');
     if(trackResizeHandle){const kind=trackResizeHandle.dataset.trackResize,track=Number(trackResizeHandle.dataset.track);trackResize={kind,track,startY:e.clientY,startHeight:trackHeight(kind,track),pointerId:e.pointerId};trackResizeHandle.classList.add('dragging');grid.setPointerCapture?.(e.pointerId);e.preventDefault();return;}
     const trackGrip=e.target.closest('.an-track-grip');
@@ -2472,6 +2624,7 @@ export function createAnimaticsEditor(options) {
     const originals=selectedEntries.map(entry=>({item:entry.item,kind:entry.kind,values:{start:entry.item.start,duration:entry.item.duration,track:entry.item.track,sourceIn:entry.item.sourceIn,sourceOut:entry.item.sourceOut,...(entry.kind==='audio'?normalizedAudioFades(entry.item):{})}}));
     const snapStationary=[...project.clips.filter(item=>!movedIds.has(item.id)).map(item=>({start:item.start,duration:item.duration,track:item.track,kind:'video'})),...project.audio.filter(item=>!movedIds.has(item.id)).map(item=>({start:item.start,duration:item.duration,track:item.track,kind:'audio'}))];
     dragging={clip,kind,trimEdge,movedIds,startX:e.clientX,startY:e.clientY,startScrollLeft:scroll.scrollLeft,startTrack:Number(clip.track)||0,trackDelta:0,sequenceEnd:duration(),originals,visuals,snapStationary,hoverLane:lane,moved:false};
+    syncVirtualizedTimelineClips();
     clipEl.setPointerCapture(e.pointerId); e.preventDefault();
   });
   grid.addEventListener('pointermove',e=>{
@@ -2497,19 +2650,19 @@ export function createAnimaticsEditor(options) {
       let start=original.values.start+delta;if(project.timelineSnap){const candidates=[0,dragging.sequenceEnd,project.playhead,project.inPoint,project.outPoint,...timelineMediaEdgeTimes([dragging.clip.id])].filter(Number.isFinite);let best=null;for(const candidate of candidates)if(Math.abs(candidate-start)<=8/px&&(best===null||Math.abs(candidate-start)<Math.abs(best-start)))best=candidate;if(best!==null){start=best;delta=start-original.values.start;showSnapGuide(best);}else showSnapGuide(null);}
       delta=clamp(start-original.values.start,minDelta,original.values.duration-MIN_SHOT_SECONDS);start=original.values.start+delta;dragging.clip.start=start;dragging.clip.duration=original.values.duration-delta;if(sourceBounded){dragging.clip.sourceIn=original.values.sourceIn+delta;dragging.clip.sourceOut=original.values.sourceOut;}
     }else {
-      const minStart=Math.min(...dragging.originals.map(o=>o.values.start));delta=Math.max(-minStart,delta);const pointerLane=timelineLaneAtPointer(e,dragging.kind,dragging.hoverLane),sameKind=dragging.originals.filter(original=>original.kind===dragging.kind),trackCount=dragging.kind==='video'?project.videoTracks:dragging.kind==='audio'?project.audioTracks:1;let requestedTrackDelta=dragging.trackDelta;
+      const minStart=Math.min(...dragging.originals.map(o=>o.values.start));delta=Math.max(-minStart,delta);const laneRects=dragLaneRects(dragging),pointerLane=timelineLaneAtPointer(e,dragging.kind,dragging.hoverLane,laneRects),sameKind=dragging.originals.filter(original=>original.kind===dragging.kind),trackCount=dragging.kind==='video'?project.videoTracks:dragging.kind==='audio'?project.audioTracks:1;let requestedTrackDelta=dragging.trackDelta;
       if(pointerLane)requestedTrackDelta=Number(pointerLane.dataset.track)-dragging.startTrack;
       const trackDelta=constrainedTrackDelta(sameKind.map(original=>original.values),requestedTrackDelta,trackCount);dragging.trackDelta=trackDelta;
-      const primaryOriginal=dragging.originals.find(o=>o.item===dragging.clip),primaryTargetTrack=(primaryOriginal?.values.track||0)+trackDelta,targetLane=grid.querySelector(`.an-track-lane[data-kind="${dragging.kind}"][data-track="${primaryTargetTrack}"]`);
+      const primaryOriginal=dragging.originals.find(o=>o.item===dragging.clip),primaryTargetTrack=(primaryOriginal?.values.track||0)+trackDelta,targetLane=dragging.laneByKey.get(`${dragging.kind}:${primaryTargetTrack}`)?.lane||null;
       if(targetLane&&dragging.hoverLane!==targetLane){dragging.hoverLane?.classList.remove('an-lane-hover');dragging.hoverLane=targetLane;targetLane.classList.add('an-lane-hover');}
       if(project.timelineSnap){const moving=dragging.originals.map(original=>({...original.values,kind:original.kind,targetTrack:(original.values.track||0)+(original.kind===dragging.kind?trackDelta:0)})),snap=snappedMoveDelta({moving,stationary:dragging.snapStationary,proposedDelta:delta,threshold:8/px,extraTimes:[0,dragging.sequenceEnd,project.playhead,project.inPoint,project.outPoint]});delta=snap.delta;showSnapGuide(snap.guide); }else showSnapGuide(null);
       const sequenceEnd=fixedSequenceEnd();if(sequenceEnd!==null){const selectedEnd=Math.max(...dragging.originals.map(o=>o.values.start+o.values.duration));delta=Math.min(delta,sequenceEnd-selectedEnd);}
       for(const original of dragging.originals){original.item.start=Math.max(0,original.values.start+delta);if(original.kind===dragging.kind)original.item.track=(original.values.track||0)+trackDelta;}
-      for(const visual of dragging.visuals){const {original,ghost}=visual,visualLane=grid.querySelector(`.an-track-lane[data-kind="${original.kind}"][data-track="${original.item.track||0}"]`);if(!visualLane)continue;const laneRect=visualLane.getBoundingClientRect();ghost.style.left=`${laneRect.left+original.item.start*px}px`;ghost.style.top=`${laneRect.top+4}px`;}
+      for(const visual of dragging.visuals){const {original,ghost}=visual,laneEntry=dragging.laneByKey.get(`${original.kind}:${original.item.track||0}`);if(!laneEntry)continue;ghost.style.transform=`translate(${laneEntry.rect.left+original.item.start*px}px,${laneEntry.rect.top+4}px)`;}
     }
     if(dragging.trimEdge&&dragging.kind==='audio')applyNormalizedAudioFades(dragging.clip);
     if(dragging.trimEdge){const el=grid.querySelector(`[data-clip="${CSS.escape(dragging.clip.id)}"]`);if(el){el.style.left=`${dragging.clip.start*px}px`;el.style.width=`${Math.max(16,dragging.clip.duration*px)}px`;const dur=el.querySelector('.an-clip-dur');if(dur)dur.textContent=clipDurationLabel(dragging.clip);if(dragging.kind==='audio')updateAudioFadeVisual(el,dragging.clip,px);}}
-    if(dragging.trimEdge)drawViewer();
+    if(dragging.trimEdge){drawViewer();scheduleScrubSettle();}
   });
   grid.addEventListener('pointerup',()=>{if(audioFadeDrag){flushAudioFadeDrag(true);audioFadeDrag=null;markDirty();renderAll();return;}if(handPan){const temporary=handPan.temporary;handPan=null;root.classList.remove('hand-panning');if(temporary)setActiveTool('select');return;}if(trackResize){const state=trackResize,changed=Math.abs(trackHeight(state.kind,state.track)-state.startHeight)>1e-8;trackResize=null;if(changed){markDirty();renderTimeline();}else grid.querySelector(`[data-track-resize="${state.kind}"][data-track="${state.track}"]`)?.classList.remove('dragging');return;}if(trackReorder){const state=trackReorder;trackReorder=null;if(moveTimelineTrack(state.kind,state.from,state.to)){markDirty();renderAll();notify(`Moved ${state.kind==='video'?'video':'audio'} track to ${state.kind==='video'?'V':'A'}${state.to+1}`);}else for(const row of grid.querySelectorAll('.an-track-row'))row.classList.remove('reorder-source','reorder-target');return;}if(gapPress){const state=gapPress;gapPress=null;setTimelineSelection([]);selectedGap={key:state.key,kind:state.kind,track:state.track,start:state.start,end:state.end};renderTimeline();syncInspector();return;}if(sequenceMarkerDrag){sequenceMarkerDrag=null;markDirty();renderTimeline();}if(scrubbing)scrubbing=null;if(marqueeDrag)finishMarquee();if(dragging){const changed=dragging.moved,movedIds=dragging.movedIds;if(changed&&movedTouchesLockedTrack(movedIds)){clearTimelineDrag(true);notify('Unlock the destination track before moving clips');renderAll();return;}if(changed)commitTimelineOverwrite(movedIds);clearTimelineDrag(false);if(changed)markDirty();renderAll();}});
   grid.addEventListener('pointercancel',()=>{if(audioFadeDrag){const state=audioFadeDrag;if(audioFadeDragRaf){cancelAnimationFrame(audioFadeDragRaf);audioFadeDragRaf=0;}state.clip[`fade${state.side}Duration`]=state.startDuration;applyNormalizedAudioFades(state.clip);updateActiveAudioGain(state.clip);audioFadeDrag=null;renderAll();}if(handPan){const temporary=handPan.temporary;handPan=null;root.classList.remove('hand-panning');if(temporary)setActiveTool('select');}if(trackResize){setTrackHeight(trackResize.kind,trackResize.track,trackResize.startHeight);trackResize=null;renderTimeline();}if(trackReorder){trackReorder=null;for(const row of grid.querySelectorAll('.an-track-row'))row.classList.remove('reorder-source','reorder-target');}gapPress=null;if(sequenceMarkerDrag){sequenceMarkerDrag=null;renderTimeline();}scrubbing=null;if(marqueeDrag){$('#anMarquee').classList.remove('show');marqueeDrag=null;renderTimeline();}if(dragging){clearTimelineDrag(true);renderAll();}});
@@ -2663,7 +2816,7 @@ export function createAnimaticsEditor(options) {
   timelineResizer.addEventListener('pointercancel',()=>{if(!timelineResize)return;paintTimelineResize({redraw:true});timelineResize=null;timelineResizer.classList.remove('dragging');});
   timelineResizer.addEventListener('dblclick',()=>{project.timelineHeight=286;applyTimelineHeight();resizeViewer();markDirty();});
   timelineResizer.addEventListener('keydown',e=>{if(!['ArrowUp','ArrowDown','Home'].includes(e.key))return;project.timelineHeight=e.key==='Home'?286:clamp(project.timelineHeight+(e.key==='ArrowUp'?24:-24),180,Math.max(180,window.innerHeight-220));applyTimelineHeight();resizeViewer();markDirty();e.preventDefault();});
-  scroll.addEventListener('scroll',syncPlayheadVisibility,{passive:true});
+  scroll.addEventListener('scroll',()=>{syncPlayheadVisibility();scheduleVirtualizedClipSync();},{passive:true});
   scroll.addEventListener('wheel',e=>{
     if(!e.altKey)return;
     e.preventDefault();
@@ -2939,6 +3092,7 @@ export function createAnimaticsEditor(options) {
     redo:redoAnimatics,
     historyState:()=>timelineHistory.sizes(),
     isOpen:()=>open,
+    debugCounts:()=>({ clips:project.clips.length, texts:project.texts.length, audio:project.audio.length }),
     serialize:()=>({ ...structuredClone({...project,audio:[],clips:[]}), playhead:0, clips:project.clips.map(({blob,url,...c})=>({...c,needsRelink:isVideoClip(c)&&!blob})), audio:project.audio.map(({blob,url,...a})=>({...a,needsRelink:!blob})) }),
     mediaRefs:()=>mediaEntries().map(entry=>({id:entry.mediaId,type:entry.type||entry.blob.type||'application/octet-stream',name:entry.name,size:entry.blob.size})),
     getMediaBlob:mediaId=>mediaEntries().find(entry=>entry.mediaId===mediaId)?.blob||null,

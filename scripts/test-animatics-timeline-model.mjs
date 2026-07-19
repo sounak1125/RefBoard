@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import {
   applyBatchTimelineDuration,
+  clipIntersectsTimeRange,
   closeTimelineTrackGap,
   constrainedTrackDelta,
   createTimelineClipboard,
   createTimelineHistory,
+  filterClipsInTimeRange,
   linkedTimelineIds,
   linkTimelineItems,
   marqueeSelection,
@@ -16,12 +18,36 @@ import {
   splitLinkedTimelineItems,
   splitTimelineItem,
   timelineTrackGaps,
+  timelineVisibleTimeRange,
   unlinkTimelineItems,
   waveformPeaks,
   waveformWindow,
 } from './animatics-timeline-model.mjs';
 
 const ids = set => [...set].sort();
+
+const visibleRange = timelineVisibleTimeRange({
+  scrollLeft: 900,
+  clientWidth: 916,
+  pixelsPerSecond: 90,
+  trackLabelWidth: 216,
+  bufferViewports: 1.5,
+});
+assert.equal(visibleRange.viewportPx, 700);
+assert.equal(visibleRange.bufferPx, 1050);
+assert.equal(visibleRange.start, 0, 'buffered range must clamp to the timeline start');
+assert.ok(Math.abs(visibleRange.end - (900 + 700 + 1050) / 90) < 1e-9);
+assert.equal(clipIntersectsTimeRange({ start: 10, duration: 2 }, 11, 20), true);
+assert.equal(clipIntersectsTimeRange({ start: 10, duration: 2 }, 12, 20), false);
+assert.equal(clipIntersectsTimeRange({ start: 10, duration: 2 }, 0, 10), false);
+assert.deepEqual(filterClipsInTimeRange([
+  { id: 'a', start: 0, duration: 1 },
+  { id: 'b', start: 5, duration: 2 },
+  { id: 'c', start: 20, duration: 1 },
+], 4, 8).map(clip => clip.id), ['b']);
+assert.deepEqual(filterClipsInTimeRange([
+  { id: 'a', start: 0, duration: 100 },
+], 40, 50).map(clip => clip.id), ['a'], 'long clips that span the viewport must stay mounted');
 
 assert.deepEqual(ids(marqueeSelection({ x1: 0, y1: 0, x2: 80, y2: 30 }, [
   { id: 'a', rect: { left: 10, top: 4, right: 40, bottom: 20 } },

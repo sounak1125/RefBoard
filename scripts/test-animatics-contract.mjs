@@ -276,7 +276,8 @@ assert.match(editor, /data-sequence-marker="in"[\s\S]*Number\.isFinite\(project\
 assert.match(editor, /setSequenceMarkerValue/, 'sequence In and Out markers must be draggable');
 assert.match(editor, /dragging-source/, 'timeline clip moves must show a translucent source state');
 assert.match(editor, /an-drag-ghost/, 'timeline clip moves must use a dedicated drag ghost');
-assert.match(editor, /\.an-drag-ghost[^\n]+transform:none; transition:none;/, 'drag ghosts must keep exact clip bounds and must not animate across timeline labels');
+assert.match(editor, /\.an-drag-ghost[^\n]+left:0!important; top:0!important;[^\n]*transition:none;/, 'drag ghosts must keep exact clip bounds and must not animate across timeline labels');
+assert.match(editor, /\.an-drag-ghost[^\n]+will-change:transform/, 'drag ghosts must move via compositor transforms, not per-frame layout');
 assert.match(editor, /if\(!dragging\.moved&&Math\.hypot[\s\S]*?<2\)return;dragging\.moved=true;if\(!dragging\.trimEdge\)beginTimelineDragVisuals\(dragging\)/, 'selection clicks must not create drag visuals before pointer movement crosses the drag threshold');
 assert.match(editor, /::-webkit-scrollbar-thumb/, 'Animatics scrollbars must match the editor theme');
 assert.match(editor, /::-webkit-slider-thumb/, 'Animatics sliders must match the editor theme');
@@ -322,8 +323,8 @@ assert.match(editor, /Date\.now\(\)-state\.startedAt<260\)setPlaying/, 'a quick 
 assert.match(editor, /startScrollLeft:\s*scroll\.scrollLeft/, 'hand panning must capture the current horizontal scroll position');
 assert.match(editor, /\*1\.35/, 'hand panning must move the timeline faster than the raw pointer distance');
 assert.match(editor, /function timelineLaneAtPointer/, 'cross-track dragging must resolve lanes independently from pointer capture');
-assert.match(editor, /timelineLaneAtPointer\(e,dragging\.kind,dragging\.hoverLane\)/, 'horizontal auto-scroll must retain the last valid target track');
-assert.match(editor, /e\.clientY>=rect\.top&&e\.clientY<=rect\.bottom/, 'right-edge dragging must identify a target lane by its vertical bounds');
+assert.match(editor, /timelineLaneAtPointer\(e,dragging\.kind,dragging\.hoverLane,laneRects\)/, 'horizontal auto-scroll must retain the last valid target track');
+assert.match(editor, /e\.clientY>=entry\.rect\.top&&e\.clientY<=entry\.rect\.bottom/, 'right-edge dragging must identify a target lane by its vertical bounds');
 assert.match(editor, /id="anLink"/, 'timeline must expose a link and unlink control');
 assert.match(editor, /linkTimelineItems\(timelineMediaItems\(\),ids,uid\(\)\)/, 'linking must persist a shared group on the selected media');
 assert.match(editor, /linkedTimelineIds\(timelineMediaItems\(\),selectedTimelineIds\)/, 'timeline dragging must expand through linked partners');
@@ -374,6 +375,13 @@ assert.match(editor, /const bounds=\{left:first\.left,right:first\.right/, 'marq
 assert.match(editor, /bottom:scrollRect\.bottom/, 'marquee selection must extend through empty space in a vertically expanded timeline');
 assert.match(editor, /timelineTrackGaps\(project\.clips,track/, 'video lanes must derive selectable internal gaps');
 assert.match(editor, /timelineTrackGaps\(project\.audio,track/, 'audio lanes must derive selectable internal gaps');
+assert.match(editor, /timelineVisibleTimeRange\(/, 'timeline clip virtualization must derive a scroll-relative visible time window');
+assert.match(editor, /filterClipsInTimeRange\(/, 'timeline clip virtualization must filter mounted clips by the visible time window');
+assert.match(editor, /function timelineClipVirtualizationSuspended\(\)/, 'clip virtualization must expose an interaction suspend path');
+assert.match(editor, /dragging\|\|marqueeDrag\|\|audioFadeDrag/, 'clip virtualization must suspend during drag, marquee, and audio-fade interactions');
+assert.match(editor, /function syncVirtualizedTimelineClips\(\)/, 'scroll must re-sync mounted timeline clips without rebuilding the whole grid');
+assert.match(editor, /scheduleVirtualizedClipSync/, 'timeline scroll clip sync must coalesce through requestAnimationFrame');
+assert.match(editor, /scroll\.addEventListener\('scroll',\(\)=>\{syncPlayheadVisibility\(\);scheduleVirtualizedClipSync\(\);\}/, 'horizontal timeline scroll must refresh virtualized clips');
 assert.match(editor, /class="an-gap/, 'timeline gaps must render as dedicated selection targets');
 assert.match(editor, /\.an-gap:hover[^\n]+background:#632a32/, 'gap hover must use a solid subtle red fill');
 assert.match(editor, /closeTimelineTrackGap\(project\.audio,current\)/, 'audio gap deletion must ripple only its audio collection');
@@ -385,7 +393,8 @@ assert.match(editor, /grid-template-columns:var\(--an-track-label-w\) var\(--an-
 assert.match(editor, /class="an-timeline-end"/, 'the sequence endpoint must have a visible boundary');
 assert.match(editor, /scrollbar-track:horizontal \{ margin-left:var\(--an-track-label-w\)/, 'the horizontal scrollbar must not enter the fixed track-label gutter');
 assert.match(editor, /\.an-playhead\.out-of-view \{ display:none/, 'an offscreen playhead must not overlap fixed track labels');
-assert.match(editor, /x<TRACK_LABEL_WIDTH\|\|x>scroll\.clientWidth/, 'playhead visibility must follow the scrollable content viewport');
+assert.match(editor, /syncPlayheadVisibility\(scrollLeft=scroll\.scrollLeft,clientWidth=scroll\.clientWidth\)/, 'playhead visibility must follow the scrollable content viewport');
+assert.match(editor, /x<TRACK_LABEL_WIDTH\|\|x>clientWidth/, 'playhead visibility must compare against the cached viewport width, not re-read layout per marker');
 assert.match(editor, /\.an-sequence-marker\.out-of-view \{ display:none/, 'offscreen In and Out markers must not overlap the fixed track-label gutter');
 assert.match(editor, /grid\.querySelectorAll\('\[data-sequence-marker\]'\)/, 'sequence markers must follow the same protected viewport boundary as the playhead');
 assert.match(editor, /\.an-playhead::before[^\n]+left:50%;[^\n]+translate:-50% 0;/, 'the playhead head must stay centered on its timeline line');

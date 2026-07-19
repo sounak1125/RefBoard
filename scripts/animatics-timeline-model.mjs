@@ -4,6 +4,33 @@ export function timelineEnd(item) {
   return finite(item?.start) + Math.max(0, finite(item?.duration));
 }
 
+/** Horizontal time window for timeline clip virtualization (lane px → seconds). */
+export function timelineVisibleTimeRange({
+  scrollLeft = 0,
+  clientWidth = 0,
+  pixelsPerSecond = 90,
+  trackLabelWidth = 216,
+  bufferViewports = 1.5,
+} = {}) {
+  const px = Math.max(.001, finite(pixelsPerSecond, 90));
+  const label = Math.max(0, finite(trackLabelWidth));
+  const viewportPx = Math.max(0, finite(clientWidth) - label);
+  const bufferPx = Math.max(0, viewportPx * Math.max(0, finite(bufferViewports, 1.5)));
+  const left = Math.max(0, finite(scrollLeft) - bufferPx);
+  const right = finite(scrollLeft) + viewportPx + bufferPx;
+  return { start: left / px, end: Math.max(left, right) / px, viewportPx, bufferPx };
+}
+
+export function clipIntersectsTimeRange(clip, rangeStart, rangeEnd) {
+  const start = finite(clip?.start);
+  const end = start + Math.max(0, finite(clip?.duration));
+  return end > finite(rangeStart) && start < finite(rangeEnd);
+}
+
+export function filterClipsInTimeRange(clips, rangeStart, rangeEnd) {
+  return (clips || []).filter(clip => clipIntersectsTimeRange(clip, rangeStart, rangeEnd));
+}
+
 export function normalizeRect(rect) {
   const x1 = Math.min(finite(rect?.x1), finite(rect?.x2));
   const x2 = Math.max(finite(rect?.x1), finite(rect?.x2));
