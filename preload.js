@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   installUpdate: () => ipcRenderer.invoke('install-update'),
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   checkWhatsNew: () => ipcRenderer.invoke('whats-new-check'),
+  getCurrentWhatsNew: () => ipcRenderer.invoke('whats-new-current'),
   dismissWhatsNew: () => ipcRenderer.invoke('whats-new-dismiss'),
   getAppIconDataUrl: () => ipcRenderer.invoke('get-app-icon-data-url'),
   updaterInit: (opts) => ipcRenderer.invoke('updater-init', opts),

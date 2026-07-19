@@ -1,0 +1,48 @@
+{
+  "name": "refboard-bootstrapper",
+  "version": "1.0.0",
+  "description": "Cinematic bootstrapper that runs the real RefBoard installer underneath a branded UI.",
+  "author": "Sounak",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "sync-ui": "node sync-ui.js",
+    "start": "npm run sync-ui && electron .",
+    "dist": "npm run sync-ui && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.sounak.refboard.installer",
+    "productName": "RefBoardInstaller",
+    "directories": {
+      "output": "dist-installer"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "ui/**"
+    ],
+    "extraResources": [
+      {
+        "from": "payload/RefBoard-Setup.exe",
+        "to": "RefBoard-Setup.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "ui/refboard-icon.png",
+      "signExecutable": false
+    },
+    "portable": {
+      "artifactName": "RefBoard-Installer-${version}.exe"
+    }
+  }
+}

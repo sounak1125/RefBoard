@@ -1,0 +1,4 @@
+node_modules/
+dist-installer/
+payload/
+ui/

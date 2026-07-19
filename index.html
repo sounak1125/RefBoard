@@ -2702,7 +2702,9 @@ body.board-active #whatsNewNotice{ display:none; }
     <div style="margin-top:16px;text-align:center;font-size:11.5px;color:var(--dim);">
       RefBoard v1.0.1 &nbsp;·&nbsp; made with care by <b style="color:var(--acc);">Sounak</b>
     </div>
-    <div class="row-btns"><button class="btn" id="helpClose">Close</button></div>
+    <div class="row-btns">
+      <button type="button" class="btn" id="helpClose">Close</button>
+    </div>
   </div>
 </div>
 
@@ -2787,6 +2789,10 @@ body.board-active #whatsNewNotice{ display:none; }
           <div class="s2-row">
             <div><div class="s2-label">Version</div><div class="s2-sub" id="setVersionSub">—</div></div>
             <div class="s2-control"><span class="s2-version" id="setVersionText">—</span></div>
+          </div>
+          <div class="s2-row">
+            <div><div class="s2-label">What's New</div><div class="s2-sub">See the latest features and changes in this version</div></div>
+            <div class="s2-control"><button type="button" class="s2-btn subtle" id="settingsWhatsNew">View changes</button></div>
           </div>
           <div class="s2-cat">Updates</div>
           <div class="s2-row">
@@ -11041,6 +11047,8 @@ function wireFocusFlowControls() {
 }
 
 let whatsNewPayload = null;
+let whatsNewPayloadBeforeManualOpen = null;
+let whatsNewOpenedManually = false;
 const WHATS_NEW_SECTION_META = {
   new: { label: 'New', icon: '+' },
   improved: { label: 'Improved', icon: '↗' },
@@ -11074,8 +11082,16 @@ async function refreshWhatsNew() {
 
 async function closeWhatsNewModal(markSeen = true) {
   $('#whatsNewModal')?.classList.remove('show');
-  if (markSeen) await dismissWhatsNewNotice();
-  else syncWhatsNewNotice();
+  if (whatsNewOpenedManually) {
+    whatsNewPayload = whatsNewPayloadBeforeManualOpen;
+    whatsNewPayloadBeforeManualOpen = null;
+    whatsNewOpenedManually = false;
+    syncWhatsNewNotice();
+  } else if (markSeen) {
+    await dismissWhatsNewNotice();
+  } else {
+    syncWhatsNewNotice();
+  }
 }
 
 async function dismissWhatsNewNotice() {
@@ -11165,6 +11181,25 @@ function openWhatsNewModal() {
   }
   $('#whatsNewModal')?.classList.add('show');
   syncWhatsNewNotice();
+}
+
+async function openCurrentWhatsNew() {
+  if (!window.RefBoardAPI?.getCurrentWhatsNew) return;
+  try {
+    const payload = await window.RefBoardAPI.getCurrentWhatsNew();
+    if (!payload) {
+      toast("What's New isn't available for this version");
+      return;
+    }
+    whatsNewPayloadBeforeManualOpen = whatsNewPayload;
+    whatsNewOpenedManually = true;
+    whatsNewPayload = payload;
+    helpModal.classList.remove('show');
+    settingsModal.classList.remove('show');
+    openWhatsNewModal();
+  } catch {
+    toast("What's New couldn't be loaded");
+  }
 }
 
 async function showLanding() {
@@ -14373,6 +14408,7 @@ function wireSettingsControls() {
       setUpdateStatus(r?.reason === 'dev' ? 'Updates in installed app only' : 'Could not check for updates');
     }
   });
+  $('#settingsWhatsNew').addEventListener('click', () => { void openCurrentWhatsNew(); });
   document.querySelectorAll('.s2-tab').forEach(t => t.addEventListener('click', () => {
     closeSettingsSelectMenus();
     document.querySelectorAll('.s2-tab').forEach(x => x.classList.toggle('active', x === t));

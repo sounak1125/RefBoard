@@ -617,10 +617,6 @@ button:focus-visible {
     padding-inline: 24px;
   }
 
-  .feature-tabs {
-    display: none;
-  }
-
   .install-zone {
     gap: 12px;
   }

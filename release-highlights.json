@@ -1,18 +1,16 @@
 {
-  "headline": "Sharper at every zoom",
-  "summary": "This update focuses on image stability and smoother rendering.",
+  "headline": "Introducing Animatics",
+  "summary": "RefBoard 2.0 turns your reference boards into motion, with a redesigned interface and a whole new way to work.",
   "sections": {
-    "new": [],
-    "improved": [],
-    "fixed": [
-      {
-        "title": "Consistent image sharpness",
-        "description": "Images remain crisp while zooming in and out."
-      },
-      {
-        "title": "Seamless quality switching",
-        "description": "References change rendering quality without visibly popping."
-      }
-    ]
+    "new": [
+      { "title": "Animatics timeline", "description": "Turn references into motion with a layered timeline, audio tracks, and precise in/out controls." },
+      { "title": "Export to Premiere & After Effects", "description": "Hand off your animatic straight to your editing and compositing workflow." },
+      { "title": "Themes", "description": "Personalize RefBoard's look with a refreshed, themeable interface." }
+    ],
+    "improved": [
+      { "title": "Redesigned interface", "description": "A cleaner, more focused workspace across the board and landing screens." },
+      { "title": "Board Save As", "description": "Save a copy of any board without overwriting your original." }
+    ],
+    "fixed": []
   }
 }

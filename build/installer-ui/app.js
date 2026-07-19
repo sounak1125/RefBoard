@@ -62,6 +62,15 @@ let autoTimer = null;
 let paused = false;
 let installing = false;
 let installComplete = false;
+let realInstallDone = false;
+let realInstallOk = true;
+
+if (window.RefBoardInstaller?.onComplete) {
+  window.RefBoardInstaller.onComplete((result) => {
+    realInstallDone = true;
+    realInstallOk = !result || result.ok !== false;
+  });
+}
 
 const sceneElements = features.map((feature, index) => {
   const scene = document.createElement('div');
@@ -180,18 +189,42 @@ async function simulateInstall() {
   installing = true;
   document.body.classList.add('is-installing');
   installButton.disabled = true;
-  installButton.querySelector('.button-label').textContent = 'Installing…';
+  installButton.querySelector('.button-label').textContent = 'Installing\u2026';
 
-  await animateInstallPhase(0, 10, 650, 'Preparing RefBoard…', 'Checking installation requirements');
-  await animateInstallPhase(10, 66, 2300, 'Installing RefBoard…', 'Copying application files');
-  await animateInstallPhase(66, 81, 720, 'Creating shortcuts…', 'Adding Start menu and desktop shortcuts');
-  await animateInstallPhase(81, 94, 900, 'Connecting Windows…', 'Registering .refboard files and previews');
-  await animateInstallPhase(94, 100, 720, 'Finishing setup…', 'Applying the final configuration');
+  const hasBridge = Boolean(window.RefBoardInstaller?.start);
+  if (hasBridge) {
+    window.RefBoardInstaller.start();
+  }
+
+  await animateInstallPhase(0, 10, 650, 'Preparing RefBoard\u2026', 'Checking installation requirements');
+  await animateInstallPhase(10, 66, 2300, 'Installing RefBoard\u2026', 'Copying application files');
+  await animateInstallPhase(66, 81, 720, 'Creating shortcuts\u2026', 'Adding Start menu and desktop shortcuts');
+  await animateInstallPhase(81, 94, 900, 'Connecting Windows\u2026', 'Registering .refboard files and previews');
+
+  if (hasBridge) {
+    installState.textContent = 'Finishing setup\u2026';
+    installMeta.textContent = 'Completing installation';
+    while (!realInstallDone) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+
+  await animateInstallPhase(94, 100, 720, 'Finishing setup\u2026', 'Applying the final configuration');
 
   installing = false;
   installComplete = true;
   document.body.classList.remove('is-installing');
   document.body.classList.add('is-complete');
+
+  if (hasBridge && !realInstallOk) {
+    installState.textContent = 'Installation needs attention';
+    installMeta.textContent = 'The installer did not complete cleanly. Please try again.';
+    installButton.querySelector('.button-label').textContent = 'Retry install';
+    installComplete = false;
+    installButton.disabled = false;
+    return;
+  }
+
   installState.textContent = 'RefBoard is ready';
   installMeta.textContent = 'Installation completed successfully';
   installButton.querySelector('.button-label').textContent = 'Launch RefBoard';

@@ -163,19 +163,13 @@ async function markWhatsNewSeen(version) {
   await saveWhatsNewStore({ lastSeenVersion: version });
 }
 
-async function evaluateWhatsNew() {
-  const current = app.getVersion();
-  const store = await loadWhatsNewStore();
-  const lastSeen = store.lastSeenVersion ?? null;
-
-  if (lastSeen !== null && !semverGt(current, lastSeen)) {
-    return { show: false };
-  }
-
+async function buildWhatsNewPayload({ current, lastSeen = null, currentOnly = false }) {
   const changelog = await loadChangelog();
   const versions = Object.keys(changelog)
     .filter(v => hasWhatsNewContent(changelog[v]))
-    .filter(v => (v === current) || (semverGt(current, v) && (lastSeen === null ? false : semverGt(v, lastSeen))))
+    .filter(v => currentOnly
+      ? v === current
+      : (v === current) || (semverGt(current, v) && (lastSeen === null ? false : semverGt(v, lastSeen))))
     .sort((a, b) => (semverGt(a, b) ? -1 : semverGt(b, a) ? 1 : 0));
 
   const releases = versions.map(v => normalizeChangelogRelease(v, changelog[v]));
@@ -209,6 +203,26 @@ async function evaluateWhatsNew() {
     releaseCount: releases.length,
     totalChanges,
   };
+}
+
+async function evaluateWhatsNew() {
+  const current = app.getVersion();
+  const store = await loadWhatsNewStore();
+  const lastSeen = store.lastSeenVersion ?? null;
+
+  if (lastSeen !== null && !semverGt(current, lastSeen)) {
+    return { show: false };
+  }
+
+  return buildWhatsNewPayload({ current, lastSeen });
+}
+
+async function getCurrentWhatsNew() {
+  const payload = await buildWhatsNewPayload({
+    current: app.getVersion(),
+    currentOnly: true,
+  });
+  return payload.show ? payload : null;
 }
 
 function notifyRenderer(msg) {
@@ -1007,6 +1021,7 @@ function setupIpc() {
   }));
 
   ipcMain.handle('whats-new-check', () => evaluateWhatsNew());
+  ipcMain.handle('whats-new-current', () => getCurrentWhatsNew());
 
   ipcMain.handle('whats-new-dismiss', async () => {
     await markWhatsNewSeen(app.getVersion());
