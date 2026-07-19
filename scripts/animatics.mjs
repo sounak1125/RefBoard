@@ -81,9 +81,14 @@ const TEXT_FONT_FAMILIES=['Segoe UI','Arial','Helvetica','Times New Roman','Geor
 const DEFAULT_TEXT_FONT_FAMILY='Segoe UI';
 const TEXT_COORDINATE_WIDTH=1280;
 const TEXT_DESIGN_SHORT_EDGE=1080;
-const normalizeTextFontFamily=value=>{const family=String(value??'').trim();return TEXT_FONT_FAMILIES.includes(family)?family:DEFAULT_TEXT_FONT_FAMILY;};
+const cleanTextFontName=(value,fallback='')=>String(value??'').replace(/[\u0000-\u001f]/g,'').trim().slice(0,160)||fallback;
+const normalizeTextFontFamily=value=>cleanTextFontName(value,DEFAULT_TEXT_FONT_FAMILY);
+const textFontStyleInfo=(style='Regular')=>{const name=cleanTextFontName(style,'Regular'),lower=name.toLowerCase();let weight=400;if(/thin/.test(lower))weight=100;else if(/extra\s*light|ultra\s*light/.test(lower))weight=200;else if(/light/.test(lower))weight=300;else if(/medium/.test(lower))weight=500;else if(/semi\s*bold|demi\s*bold/.test(lower))weight=600;else if(/extra\s*bold|ultra\s*bold/.test(lower))weight=800;else if(/black|heavy/.test(lower))weight=900;else if(/bold/.test(lower))weight=700;return {style:name,weight,italic:/italic|oblique/.test(lower)};};
+const normalizeTextFontWeight=(value,fallback=400)=>{const weight=Number(value);return Number.isFinite(weight)?clamp(Math.round(weight/100)*100,100,900):clamp(Number(fallback)||400,100,900);};
+const normalizedTextFontFace=text=>{const styleValue=text?.fontStyle??text?.style,inferred=textFontStyleInfo(styleValue),weight=normalizeTextFontWeight(text?.fontWeight??text?.weight,text?.bold===true?700:inferred.weight),italic=text?.italic===true||inferred.italic;return {family:normalizeTextFontFamily(text?.fontFamily??text?.family),style:cleanTextFontName(styleValue,italic?(weight>=600?'Bold Italic':'Italic'):(weight>=600?'Bold':'Regular')),weight,italic,fullName:cleanTextFontName(text?.fontFullName??text?.fullName),postscriptName:cleanTextFontName(text?.fontPostscriptName??text?.postscriptName)};};
 const normalizeTextAlign=value=>['left','center','right'].includes(value)?value:'center';
-const textCanvasFont=(text,size)=>`${text?.italic===true?'italic ':''}${text?.bold===true?700:400} ${size}px "${normalizeTextFontFamily(text?.fontFamily)}", sans-serif`;
+const textCanvasFont=(text,size)=>{const face=normalizedTextFontFace(text);return `${face.italic?'italic ':'normal '}${face.weight} ${size}px "${face.family.replace(/"/g,'\\"')}", sans-serif`;};
+const normalizedTextDefaults=value=>{const face=normalizedTextFontFace(value);return {size:clamp(Number(value?.size)||42,8,300),color:/^#[0-9a-f]{6}$/i.test(value?.color)?value.color:'#ffffff',fontFamily:face.family,fontStyle:face.style,fontWeight:face.weight,fontFullName:face.fullName,fontPostscriptName:face.postscriptName,bold:face.weight>=600,italic:face.italic,align:normalizeTextAlign(value?.align),background:value?.background===true};};
 const ASPECT_RATIOS = {
   '16:9': [16, 9],
   '4:3': [4, 3],
@@ -295,10 +300,12 @@ function css() {
   .an-stage { min-width:0; min-height:0; position:relative; display:grid; place-items:center; padding:18px 38px 12px; overflow:hidden; }
   .an-viewer-wrap { position:relative; width:100%; height:100%; min-height:0; display:grid; grid-template-rows:minmax(0,1fr) 44px; gap:8px; }
   .an-viewer-viewport { min-width:0; min-height:0; position:relative; display:grid; place-items:center; overflow:hidden; }
-  .an-viewer-shell { z-index:1; min-height:0; position:relative; display:grid; place-items:center; justify-self:center; align-self:center; overflow:hidden; border-radius:7px; background:#050607; box-shadow:0 18px 60px rgba(0,0,0,.48); aspect-ratio:16/9; transform:translate3d(var(--an-preview-pan-x,0px),var(--an-preview-pan-y,0px),0) scale(var(--an-preview-zoom,1)); transform-origin:center; will-change:transform; }
+  .an-viewer-shell { z-index:1; min-height:0; position:relative; display:grid; place-items:center; justify-self:center; align-self:center; overflow:hidden; border-radius:7px; background:#050607; box-shadow:0 18px 60px rgba(0,0,0,.48); aspect-ratio:16/9; transform:translate3d(var(--an-preview-pan-x,0px),var(--an-preview-pan-y,0px),0) scale(var(--an-preview-zoom,1)); transform-origin:center; }
   .an-viewer-shell.preview-zoomed { box-shadow:0 22px 72px rgba(0,0,0,.62); }
-  .an-viewer-shell.preview-panning { cursor:grabbing!important; }
+  .an-viewer-shell.preview-panning { cursor:grabbing!important; will-change:transform; }
   #anViewer { display:block; width:100%; height:100%; background:#000; touch-action:none; }
+  #anTextOverlay { position:absolute; z-index:8; inset:0; width:100%; height:100%; pointer-events:none; }
+  #anTextControlOverlay { position:absolute; z-index:30; inset:0; width:100%; height:100%; pointer-events:none; }
   .an-inline-text { position:absolute; z-index:12; display:none; min-width:24px; min-height:24px; box-sizing:border-box; padding:0 2px; border:1px solid #69aaff; border-radius:1px; outline:none; resize:none; overflow:hidden; color:#fff; background:transparent; box-shadow:none; text-align:center; font:400 24px "Segoe UI",sans-serif; line-height:1.2; transform-origin:center; user-select:text; }
   .an-inline-text.open { display:block; }
   .an-safe-guides { position:absolute; z-index:9; inset:0; display:none; pointer-events:none; }
@@ -607,15 +614,13 @@ function markup() {
         <div class="an-panel" data-panel-body="text">
           <h3 class="an-section-title">Text overlay layer</h3>
           <label class="an-field">Content<textarea id="anText" placeholder="Add a title or annotation…"></textarea></label>
-          <label class="an-field">Font family<select id="anTextFont"><option value="Segoe UI">Segoe UI</option><option value="Arial">Arial</option><option value="Helvetica">Helvetica</option><option value="Times New Roman">Times New Roman</option><option value="Georgia">Georgia</option><option value="Courier New">Courier New</option><option value="Verdana">Verdana</option><option value="Trebuchet MS">Trebuchet MS</option><option value="Impact">Impact</option><option value="Comic Sans MS">Comic Sans MS</option></select></label>
+          <div class="an-split"><label class="an-field">Font family<select id="anTextFont"><option value="Segoe UI">Segoe UI</option><option value="Arial">Arial</option><option value="Helvetica">Helvetica</option><option value="Times New Roman">Times New Roman</option><option value="Georgia">Georgia</option><option value="Courier New">Courier New</option><option value="Verdana">Verdana</option><option value="Trebuchet MS">Trebuchet MS</option><option value="Impact">Impact</option><option value="Comic Sans MS">Comic Sans MS</option></select></label><label class="an-field">Font style<select id="anTextFontStyle"><option value="Segoe UI|Regular">Regular</option><option value="Segoe UI|Bold">Bold</option><option value="Segoe UI|Italic">Italic</option><option value="Segoe UI|Bold Italic">Bold Italic</option></select></label></div>
           <div class="an-split"><button type="button" class="an-tool-btn" id="anTextBold" aria-pressed="false">Bold</button><button type="button" class="an-tool-btn" id="anTextItalic" aria-pressed="false">Italic</button></div>
           <button type="button" class="an-tool-btn" id="anTextBackground" aria-pressed="false">Background</button>
           <div class="an-field">Alignment<div class="an-frame-actions" role="group" aria-label="Text alignment"><button type="button" class="an-tool-btn" data-an-text-align="left" aria-pressed="false">Left</button><button type="button" class="an-tool-btn on" data-an-text-align="center" aria-pressed="true">Center</button><button type="button" class="an-tool-btn" data-an-text-align="right" aria-pressed="false">Right</button></div></div>
           <div class="an-split"><label class="an-field">Font size<input id="anTextSize" type="number" min="8" max="300" value="42"></label><div class="an-field"><span>Color</span><button type="button" class="an-draw-color-btn an-text-color-btn" id="anTextColorButton" aria-expanded="false" aria-controls="anTextColorPop"><span class="an-draw-color-swatch" id="anTextColorSwatch"></span><span>Text color</span></button><input id="anTextColor" type="hidden" value="#ffffff"></div></div>
           <div class="an-draw-color-pop an-text-color-pop" id="anTextColorPop" aria-hidden="true"><div class="an-draw-cp-sv" id="anTextCpSv"><div class="an-draw-cp-white"></div><div class="an-draw-cp-black"></div><div class="an-draw-cp-dot" id="anTextCpDot"></div></div><input class="an-draw-cp-hue" id="anTextCpHue" type="range" min="0" max="360" value="0" aria-label="Text hue"><div class="an-draw-cp-row"><span class="an-draw-cp-preview" id="anTextCpPreview"></span><input class="an-draw-cp-hex" id="anTextCpHex" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Text color hex"></div><div class="an-draw-cp-presets" id="anTextCpPresets"></div></div>
-          <label class="an-field">Scale<div class="an-scale-row"><input id="anTextScale" type="range" min="25" max="400" value="100"><output id="anTextScaleVal">100%</output></div></label>
           <div class="an-split"><label class="an-field">Rotation<input id="anTextRotation" type="number" min="-180" max="180" step="1" value="0"></label><label class="an-field">Duration (sec)<input id="anTextDuration" type="number" min="0.017" max="600" step="0.1" value="3"></label></div>
-          <button class="an-tool-btn" id="anAddText">Add text layer</button><button class="an-tool-btn" id="anClearText">Delete selected text</button>
         </div>
         <div class="an-panel" data-panel-body="audio"><h3 class="an-section-title" id="anAudioSelectionTitle">Selected audio</h3><div class="an-split"><label class="an-field">Seconds<input id="anAudioDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anAudioDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><label class="an-field">Volume<div class="an-scale-row"><input id="anAudioVolume" type="range" min="0" max="400" step="1" value="100"><output id="anAudioVolumeVal">100%</output></div></label><button class="an-tool-btn" id="anAudioGain">Audio Gain (G)</button><button class="an-tool-btn" id="anAudioMute">Mute selected</button><div class="an-fade-controls"><div class="an-fade-card"><h4>Fade in</h4><label class="an-field">Seconds<input id="anFadeInDuration" type="number" min="0" max="600" step="0.033"></label><label class="an-field">Curve<select id="anFadeInCurve"><option value="constant-gain">Constant Gain</option><option value="constant-power">Constant Power</option><option value="exponential">Exponential Fade</option><option value="custom">Custom</option></select></label><label class="an-field an-fade-custom" id="anFadeInCustom">Custom shape<input id="anFadeInShape" type="range" min="-100" max="100" step="1" value="0"></label></div><div class="an-fade-card"><h4>Fade out</h4><label class="an-field">Seconds<input id="anFadeOutDuration" type="number" min="0" max="600" step="0.033"></label><label class="an-field">Curve<select id="anFadeOutCurve"><option value="constant-gain">Constant Gain</option><option value="constant-power">Constant Power</option><option value="exponential">Exponential Fade</option><option value="custom">Custom</option></select></label><label class="an-field an-fade-custom" id="anFadeOutCustom">Custom shape<input id="anFadeOutShape" type="range" min="-100" max="100" step="1" value="0"></label></div></div><div class="an-split"><button class="an-tool-btn" id="anAudioSplit">Split at playhead</button><button class="an-tool-btn" id="anAudioDelete">Delete selected</button></div></div>
         <div class="an-panel" data-panel-body="draw"><h3 class="an-section-title">Draw on shot</h3><button class="an-tool-btn" id="anDrawToggle" title="Toggle drawing (D)">Start drawing (D)</button><div class="an-draw-tool-row"><button class="an-draw-tool on" id="anDrawPen" aria-expanded="false" aria-controls="anDrawBrushes"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Pen</span></button><button class="an-draw-tool" id="anDrawEraser" title="Eraser (E)"><svg viewBox="0 0 24 24"><path d="m4 15 8-10 8 7-7 8H8Z"/><path d="m9 12 7 6M8 20h12"/></svg><span>Eraser</span><kbd>E</kbd></button></div><div class="an-draw-brushes" id="anDrawBrushes"><button class="an-draw-brush on" data-an-brush="pen"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Pen</span></button><button class="an-draw-brush" data-an-brush="soft"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="6" opacity=".45"/></svg><span>Soft</span></button><button class="an-draw-brush" data-an-brush="marker"><svg viewBox="0 0 24 24"><path d="M6 18h12" stroke-width="3" opacity=".55"/><path d="m7 14 9-7 2.5 2.5-9 7H7Z"/></svg><span>Marker</span></button><button class="an-draw-brush" data-an-brush="pencil"><svg viewBox="0 0 24 24"><path d="m14.5 3.5 6 6L9 21l-5 1 1-5ZM13 5l6 6"/></svg><span>Pencil</span></button></div><button class="an-draw-color-btn" id="anDrawColorButton" aria-expanded="false" aria-controls="anDrawColorPop"><span class="an-draw-color-swatch" id="anDrawColorSwatch"></span><span>Color</span></button><div class="an-draw-color-pop" id="anDrawColorPop" aria-hidden="true"><div class="an-draw-cp-sv" id="anDrawCpSv"><div class="an-draw-cp-white"></div><div class="an-draw-cp-black"></div><div class="an-draw-cp-dot" id="anDrawCpDot"></div></div><input class="an-draw-cp-hue" id="anDrawCpHue" type="range" min="0" max="360" value="0" aria-label="Drawing hue"><div class="an-draw-cp-row"><span class="an-draw-cp-preview" id="anDrawCpPreview"></span><input class="an-draw-cp-hex" id="anDrawCpHex" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Drawing color hex"></div><div class="an-draw-cp-presets" id="anDrawCpPresets"></div></div><div class="an-draw-size-row"><button class="an-draw-size-btn" id="anDrawWidthDown" title="Thinner ([)">−</button><output class="an-draw-size-value" id="anDrawWidthVal">2 <kbd>[ ]</kbd></output><button class="an-draw-size-btn" id="anDrawWidthUp" title="Thicker (])">+</button></div><button class="an-tool-btn" id="anClearDraw">Clear drawing</button></div>
@@ -645,6 +650,7 @@ export function createAnimaticsEditor(options) {
 
   const root = document.querySelector('#animaticsWorkspace');
   root.querySelector('.an-edit-tools')?.insertAdjacentHTML('beforeend',`<button class="an-edit-tool" data-an-tool="hand" title="Hand tool (H)" aria-label="Hand tool">${handToolIcon()}</button><span class="an-edit-divider" aria-hidden="true"></span><button class="an-edit-tool" id="anLink" title="Link selected clips (Ctrl+L)" aria-label="Link selected clips" aria-pressed="false">${linkToolIcon()}</button>`);
+  const textOverlay=document.createElement('canvas');textOverlay.id='anTextOverlay';textOverlay.width=1920;textOverlay.height=1080;textOverlay.setAttribute('aria-hidden','true');root.querySelector('#anViewer')?.after(textOverlay);
   root.querySelector('#anViewer')?.insertAdjacentHTML('afterend','<div class="an-safe-guides" id="anSafeGuides" aria-hidden="true"><i class="an-safe-guide action"></i><i class="an-safe-guide title"></i><i class="an-safe-center"></i></div>');
   root.querySelector('.an-transport')?.insertAdjacentHTML('afterbegin',`<button class="an-icon" id="anGuides" type="button" title="Toggle title/action safe guides" aria-label="Toggle title and action safe guides" aria-pressed="false">${icon('<rect x="3" y="4" width="18" height="16"/><rect x="7" y="7" width="10" height="10"/>')}</button>`);
   root.querySelector('.an-transport')?.insertAdjacentHTML('beforeend',`<button class="an-icon" id="anPreviewMute" type="button" title="Mute timeline preview" aria-label="Mute timeline preview" aria-pressed="false">${previewVolumeIcon(false)}</button>`);
@@ -653,6 +659,8 @@ export function createAnimaticsEditor(options) {
   const canvas = root.querySelector('#anViewer');
   const viewerViewport = canvas.parentElement.parentElement;
   const ctx = canvas.getContext('2d');
+  const textOverlayCtx=textOverlay.getContext('2d');
+  const textControlOverlay=document.createElement('canvas');textControlOverlay.id='anTextControlOverlay';textControlOverlay.setAttribute('aria-hidden','true');viewerViewport.append(textControlOverlay);const textControlCtx=textControlOverlay.getContext('2d');
   const inlineTextEditor=document.createElement('textarea');inlineTextEditor.className='an-inline-text';inlineTextEditor.setAttribute('aria-label','Edit text on canvas');canvas.parentElement.append(inlineTextEditor);
   const inlineTextDismissEvents=new WeakSet();
   const grid = root.querySelector('#anTlGrid');
@@ -679,6 +687,13 @@ export function createAnimaticsEditor(options) {
 
   function syncAnimaticsSelectControls(){for(const select of animaticsSelectControls.keys())syncAnimaticsSelectControl(select);}
 
+  function appendAnimaticsSelectOption(control,nativeOption){
+    const option=document.createElement('button');option.type='button';option.className='an-view-select-option';option.dataset.value=nativeOption.value;option.setAttribute('role','option');option.textContent=nativeOption.textContent;
+    option.addEventListener('click',()=>{control.select.value=nativeOption.value;control.select.dispatchEvent(new Event('change',{bubbles:true}));syncAnimaticsSelectControl(control.select);closeAnimaticsSelectMenus();control.button.focus();});control.menu.append(option);control.options.push(option);
+  }
+
+  function rebuildAnimaticsSelectOptions(select){const control=animaticsSelectControls.get(select);if(!control)return;control.menu.replaceChildren();control.options.length=0;for(const nativeOption of select.options)appendAnimaticsSelectOption(control,nativeOption);syncAnimaticsSelectControl(select);}
+
   function positionAnimaticsSelectMenu(control){
     if(!control?.menu.classList.contains('open'))return;
     const rect=control.button.getBoundingClientRect(),gap=6,margin=8;
@@ -699,13 +714,10 @@ export function createAnimaticsEditor(options) {
     const label=document.createElement('span'),chevron=document.createElementNS('http://www.w3.org/2000/svg','svg');chevron.setAttribute('viewBox','0 0 24 24');chevron.setAttribute('aria-hidden','true');chevron.innerHTML='<path d="m7 9 5 5 5-5"/>';button.append(label,chevron);controlRoot.append(button);
     const menu=document.createElement('div');menu.className='an-view-select-menu';menu.id=`anSelectMenu-${select.id}`;menu.setAttribute('role','listbox');menu.setAttribute('aria-label',select.getAttribute('aria-label')||'Options');button.setAttribute('aria-controls',menu.id);
     const options=[];
-    for(const nativeOption of select.options){
-      const option=document.createElement('button');option.type='button';option.className='an-view-select-option';option.dataset.value=nativeOption.value;option.setAttribute('role','option');option.textContent=nativeOption.textContent;
-      option.addEventListener('click',()=>{select.value=nativeOption.value;select.dispatchEvent(new Event('change',{bubbles:true}));syncAnimaticsSelectControl(select);closeAnimaticsSelectMenus();button.focus();});menu.append(option);options.push(option);
-    }
     root.append(menu);
     const control={select,root:controlRoot,button,label,menu,options,preferUp};animaticsSelectControls.set(select,control);
-    button.addEventListener('click',()=>{if(button.disabled)return;const opening=!menu.classList.contains('open');if(opening)setTextColorOpen(false);closeAnimaticsSelectMenus(control);controlRoot.classList.toggle('open',opening);menu.classList.toggle('open',opening);button.setAttribute('aria-expanded',String(opening));if(opening)requestAnimationFrame(()=>{positionAnimaticsSelectMenu(control);menu.querySelector('.on')?.focus();});});
+    for(const nativeOption of select.options)appendAnimaticsSelectOption(control,nativeOption);
+    button.addEventListener('click',()=>{if(button.disabled)return;const opening=!menu.classList.contains('open');if(opening){setTextColorOpen(false);if(select.id==='anTextFont')ensureLocalFontsLoaded();}closeAnimaticsSelectMenus(control);controlRoot.classList.toggle('open',opening);menu.classList.toggle('open',opening);button.setAttribute('aria-expanded',String(opening));if(opening)requestAnimationFrame(()=>{positionAnimaticsSelectMenu(control);menu.querySelector('.on')?.focus();});});
     button.addEventListener('keydown',e=>{if(!['ArrowDown','ArrowUp'].includes(e.key))return;e.preventDefault();if(!menu.classList.contains('open'))button.click();});
     menu.addEventListener('keydown',e=>{const index=options.indexOf(document.activeElement);if(e.key==='Escape'){closeAnimaticsSelectMenus();button.focus();e.preventDefault();e.stopPropagation();return;}if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key))return;const next=e.key==='Home'?0:e.key==='End'?options.length-1:(index+(e.key==='ArrowDown'?1:-1)+options.length)%options.length;options[next]?.focus();e.preventDefault();});
     select.addEventListener('change',()=>syncAnimaticsSelectControl(select));syncAnimaticsSelectControl(select);
@@ -715,6 +727,27 @@ export function createAnimaticsEditor(options) {
   root.addEventListener('pointerdown',e=>{if(!e.target.closest?.('.an-view-select,.an-view-select-menu'))closeAnimaticsSelectMenus();},true);
   root.addEventListener('scroll',()=>{for(const control of animaticsSelectControls.values())if(control.menu.classList.contains('open'))positionAnimaticsSelectMenu(control);},true);
   window.addEventListener('resize',()=>closeAnimaticsSelectMenus());
+  const fontCatalog=new Map(),fontFacesByKey=new Map();
+  let localFontsLoadPromise=null;
+  const fontFaceKey=face=>`${face.family}|${face.postscriptName||face.style}`;
+  function normalizedCatalogFace(raw){const info=textFontStyleInfo(raw?.style),weight=normalizeTextFontWeight(raw?.weight,info.weight);return {family:normalizeTextFontFamily(raw?.family),style:cleanTextFontName(raw?.style,'Regular'),weight,italic:raw?.italic===true||info.italic,fullName:cleanTextFontName(raw?.fullName),postscriptName:cleanTextFontName(raw?.postscriptName)};}
+  function registerFontFace(raw){const face=normalizedCatalogFace(raw),key=fontFaceKey(face),familyKey=face.family.toLocaleLowerCase();if(fontFacesByKey.has(key))return fontFacesByKey.get(key);fontFacesByKey.set(key,face);if(!fontCatalog.has(familyKey))fontCatalog.set(familyKey,{name:face.family,faces:[]});fontCatalog.get(familyKey).faces.push(face);return face;}
+  function registerFallbackFontFaces(){for(const family of TEXT_FONT_FAMILIES)for(const style of ['Regular','Bold','Italic','Bold Italic']){const info=textFontStyleInfo(style);registerFontFace({family,style,weight:info.weight,italic:info.italic});}}
+  function ensureTextFontInCatalog(text){const face=normalizedTextFontFace(text),family=fontCatalog.get(face.family.toLocaleLowerCase());if(!family||!family.faces.some(candidate=>(face.postscriptName&&candidate.postscriptName===face.postscriptName)||candidate.style.toLocaleLowerCase()===face.style.toLocaleLowerCase()))registerFontFace(face);return face;}
+  function refreshTextFontFamilyOptions(preferred=$('#anTextFont').value){const select=$('#anTextFont'),families=[...fontCatalog.values()].sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));select.replaceChildren(...families.map(entry=>{const option=document.createElement('option');option.value=entry.name;option.textContent=entry.name;return option;}));const match=families.find(entry=>entry.name.toLocaleLowerCase()===String(preferred).toLocaleLowerCase());select.value=match?.name||DEFAULT_TEXT_FONT_FAMILY;rebuildAnimaticsSelectOptions(select);}
+  function closestFontFace(faces,preferred){const target=normalizedTextFontFace(preferred);return [...faces].sort((a,b)=>{const exactA=target.postscriptName&&a.postscriptName===target.postscriptName?-10000:0,exactB=target.postscriptName&&b.postscriptName===target.postscriptName?-10000:0,styleA=a.style.toLocaleLowerCase()===target.style.toLocaleLowerCase()?-400:0,styleB=b.style.toLocaleLowerCase()===target.style.toLocaleLowerCase()?-400:0;return exactA+styleA+Math.abs(a.weight-target.weight)+(a.italic===target.italic?0:250)-(exactB+styleB+Math.abs(b.weight-target.weight)+(b.italic===target.italic?0:250));})[0]||normalizedCatalogFace(target);}
+  function syncTextFontStyleOptions(preferred=null){const familyName=normalizeTextFontFamily($('#anTextFont').value),entry=fontCatalog.get(familyName.toLocaleLowerCase());if(!entry)return null;entry.faces.sort((a,b)=>a.weight-b.weight||Number(a.italic)-Number(b.italic)||a.style.localeCompare(b.style));const chosen=closestFontFace(entry.faces,preferred||{fontFamily:familyName,fontStyle:'Regular',fontWeight:400,italic:false}),select=$('#anTextFontStyle'),signature=entry.faces.map(fontFaceKey).join('\n');if(select.dataset.fontSignature!==signature){select.replaceChildren(...entry.faces.map(face=>{const option=document.createElement('option');option.value=fontFaceKey(face);option.textContent=face.style;return option;}));select.dataset.fontSignature=signature;rebuildAnimaticsSelectOptions(select);}select.value=fontFaceKey(chosen);syncAnimaticsSelectControl(select);return chosen;}
+  function selectedTextFontFace(){return fontFacesByKey.get($('#anTextFontStyle').value)||syncTextFontStyleOptions({fontFamily:$('#anTextFont').value,fontStyle:'Regular',fontWeight:400,italic:false});}
+  function applyFontFaceToText(text,face=selectedTextFontFace()){if(!text||!face)return;text.fontFamily=face.family;text.fontStyle=face.style;text.fontWeight=face.weight;text.fontFullName=face.fullName||'';text.fontPostscriptName=face.postscriptName||'';text.bold=face.weight>=600;text.italic=face.italic===true;}
+  function syncTextEmphasisButtons(face=selectedTextFontFace()){if(!face)return;for(const [selector,on] of [['#anTextBold',face.weight>=600],['#anTextItalic',face.italic===true]]){$(selector).classList.toggle('on',on);$(selector).setAttribute('aria-pressed',String(on));}}
+  function syncTextFontControls(text){const face=ensureTextFontInCatalog(text),familySelect=$('#anTextFont');if(![...familySelect.options].some(option=>option.value.toLocaleLowerCase()===face.family.toLocaleLowerCase()))refreshTextFontFamilyOptions(face.family);familySelect.value=[...familySelect.options].find(option=>option.value.toLocaleLowerCase()===face.family.toLocaleLowerCase())?.value||DEFAULT_TEXT_FONT_FAMILY;syncAnimaticsSelectControl(familySelect);const chosen=syncTextFontStyleOptions(face);syncTextEmphasisButtons(chosen);return chosen;}
+  function chooseTextFontEmphasis({bold,italic}){const family=fontCatalog.get(normalizeTextFontFamily($('#anTextFont').value).toLocaleLowerCase());if(!family)return;const current=selectedTextFontFace(),chosen=closestFontFace(family.faces,{fontFamily:family.name,fontStyle:'',fontWeight:bold?Math.max(700,current?.weight||700):Math.min(500,current?.weight||400),italic});$('#anTextFontStyle').value=fontFaceKey(chosen);syncAnimaticsSelectControl($('#anTextFontStyle'));syncTextEmphasisButtons(chosen);}
+  function ensureLocalFontsLoaded(){
+    if(localFontsLoadPromise)return localFontsLoadPromise;
+    if(typeof window.queryLocalFonts!=='function')return Promise.resolve(false);
+    try{localFontsLoadPromise=Promise.resolve(window.queryLocalFonts()).then(fonts=>{if(!Array.isArray(fonts)||!fonts.length)return false;const selected=selectedText()?normalizedTextFontFace(selectedText()):selectedTextFontFace(),installedFamilies=new Set(fonts.map(font=>normalizeTextFontFamily(font.family).toLocaleLowerCase()));fontCatalog.clear();fontFacesByKey.clear();for(const font of fonts)registerFontFace(font);for(const family of TEXT_FONT_FAMILIES)if(!installedFamilies.has(family.toLocaleLowerCase()))for(const style of ['Regular','Bold','Italic','Bold Italic']){const info=textFontStyleInfo(style);registerFontFace({family,style,weight:info.weight,italic:info.italic});}ensureTextFontInCatalog(selected);refreshTextFontFamilyOptions(selected.family);syncTextFontStyleOptions(selected);if(open)syncInspector();const control=animaticsSelectControls.get($('#anTextFont'));if(control?.menu.classList.contains('open'))requestAnimationFrame(()=>positionAnimaticsSelectMenu(control));return true;}).catch(()=>false);return localFontsLoadPromise;}catch{return Promise.resolve(false);}
+  }
+  registerFallbackFontFaces();refreshTextFontFamilyOptions(DEFAULT_TEXT_FONT_FAMILY);syncTextFontStyleOptions({fontFamily:DEFAULT_TEXT_FONT_FAMILY,fontStyle:'Regular',fontWeight:400,italic:false});
   let project = freshProject();
   let selectedClipId = null;
   let selectedTextId = null;
@@ -758,16 +791,22 @@ export function createAnimaticsEditor(options) {
   let spaceHand = null;
   const PREVIEW_ZOOM_MIN = .5;
   const PREVIEW_ZOOM_MAX = 4;
+  const MAX_PREVIEW_RASTER_EDGE = 4096;
   let previewZoom = 1;
   let previewPanX = 0;
   let previewPanY = 0;
   let previewZoomLocked = false;
   let previewPanDrag = null;
   let previewZoomHudTimer = 0;
+  let previewRasterTimer = 0;
+  let previewRasterEpoch = 0;
+  let textOverlayRaf = 0;
+  let textControlRaf = 0;
   let previewShotKey = '';
   let safeGuidesVisible = false;
   let previewMuted = false;
   let marqueeDrag = null;
+  let viewerTextMarquee = null;
   let gapPress = null;
   let audioPlayers = [];
   let playbackAudioContext = null;
@@ -808,7 +847,7 @@ export function createAnimaticsEditor(options) {
   const videoElements = new Map();
 
   function freshProject() {
-    return { version:9, fps:30, resolution:1080, aspect:'16:9', playhead:0, inPoint:null, outPoint:null, sequenceDuration:null, timelineDisplay:'timecode', timelineZoom:90, timelineHeight:286, inspectorWidth:DEFAULT_INSPECTOR_WIDTH, timelineSnap:true, timecode:false, counterMode:'timecode', previewQuality:'full', background:'#000000', videoTracks:1, audioTracks:0, videoTrackHeights:[DEFAULT_TRACK_HEIGHT], videoTrackEnabled:[true], videoTrackLocked:[false], audioTrackHeights:[], audioTrackMuted:[], audioTrackSolo:[], audioTrackLocked:[], textTrackLocked:false, clips:[], texts:[], audio:[] };
+    return { version:9, fps:30, resolution:1080, aspect:'16:9', playhead:0, inPoint:null, outPoint:null, sequenceDuration:null, timelineDisplay:'timecode', timelineZoom:90, timelineHeight:286, inspectorWidth:DEFAULT_INSPECTOR_WIDTH, timelineSnap:true, timecode:false, counterMode:'timecode', previewQuality:'full', background:'#000000', textDefaults:normalizedTextDefaults(null), videoTracks:1, audioTracks:0, videoTrackHeights:[DEFAULT_TRACK_HEIGHT], videoTrackEnabled:[true], videoTrackLocked:[false], audioTrackHeights:[], audioTrackMuted:[], audioTrackSolo:[], audioTrackLocked:[], textTrackLocked:false, clips:[], texts:[], audio:[] };
   }
 
   function notify(message) {
@@ -920,6 +959,8 @@ export function createAnimaticsEditor(options) {
   function selectedText() {
     return project.texts.find(c => c.id === selectedTextId) || null;
   }
+
+  function rememberTextDefaults(text){if(text)project.textDefaults=normalizedTextDefaults(text);return project.textDefaults;}
 
   function entryById(id) {
     let item=project.clips.find(c=>c.id===id);if(item)return {item,kind:'video',collection:project.clips};
@@ -1159,6 +1200,7 @@ export function createAnimaticsEditor(options) {
     base.counterMode = ['timecode','frames','seconds'].includes(raw.counterMode) ? raw.counterMode : 'timecode';
     base.previewQuality = ['full','half','low'].includes(raw.previewQuality) ? raw.previewQuality : 'full';
     base.background = /^#[0-9a-f]{6}$/i.test(raw.background) ? raw.background : '#000000';
+    base.textDefaults = normalizedTextDefaults(raw.textDefaults||(Array.isArray(raw.texts)?raw.texts.at(-1):null));
     base.videoTracks = clamp(Number(raw.videoTracks) || 1, 1, MAX_VIDEO_TRACKS);
     base.audioTracks = clamp(Number(raw.audioTracks) || 0, 0, MAX_AUDIO_TRACKS);
     base.clips = (Array.isArray(raw.clips) ? raw.clips : []).filter(c => c?.itemId || c?.mediaId).map(c => {
@@ -1182,16 +1224,16 @@ export function createAnimaticsEditor(options) {
         ...(typeof c.linkGroupId==='string'&&c.linkGroupId?{linkGroupId:c.linkGroupId}:{}),
       };
     });
-    base.texts=(Array.isArray(raw.texts)?raw.texts:[]).map(t=>({
+    base.texts=(Array.isArray(raw.texts)?raw.texts:[]).map(t=>{const face=normalizedTextFontFace(t);return {
       id:String(t.id||uid()),track:0,start:Math.max(0,Number(t.start)||0),duration:clamp(Number(t.duration)||DEFAULT_SHOT_SECONDS,MIN_SHOT_SECONDS,600),
       content:String(t.content||''),size:clamp(Number(t.size)||42,8,300),color:/^#[0-9a-f]{6}$/i.test(t.color)?t.color:'#ffffff',
-      fontFamily:normalizeTextFontFamily(t.fontFamily),bold:t.bold===true,italic:t.italic===true,align:normalizeTextAlign(t.align),background:t.background===true,
+      fontFamily:face.family,fontStyle:face.style,fontWeight:face.weight,fontFullName:face.fullName,fontPostscriptName:face.postscriptName,bold:face.weight>=600,italic:face.italic,align:normalizeTextAlign(t.align),background:t.background===true,
       scale:clamp(finiteOr(t.scale,1),.25,4),rotation:Math.round(clamp(finiteOr(t.rotation,0),-180,180)),x:clamp(finiteOr(t.x,.5),0,1),y:clamp(finiteOr(t.y,.82),0,1),
-    })).filter(t=>t.content);
+    };}).filter(t=>t.content);
     for(const rawClip of Array.isArray(raw.clips)?raw.clips:[]){
       if(!rawClip?.text?.content)continue;
       const clip=base.clips.find(c=>c.id===String(rawClip.id));if(!clip)continue;
-      base.texts.push({id:uid(),track:0,start:clip.start,duration:clip.duration,content:String(rawClip.text.content),size:clamp(Number(rawClip.text.size)||42,8,300),color:String(rawClip.text.color||'#ffffff'),fontFamily:DEFAULT_TEXT_FONT_FAMILY,bold:false,italic:false,align:'center',background:false,scale:1,rotation:0,x:.5,y:.82});
+      base.texts.push({id:uid(),track:0,start:clip.start,duration:clip.duration,content:String(rawClip.text.content),size:clamp(Number(rawClip.text.size)||42,8,300),color:String(rawClip.text.color||'#ffffff'),fontFamily:DEFAULT_TEXT_FONT_FAMILY,fontStyle:'Regular',fontWeight:400,fontFullName:'',fontPostscriptName:'',bold:false,italic:false,align:'center',background:false,scale:1,rotation:0,x:.5,y:.82});
     }
     base.audio = (Array.isArray(raw.audio) ? raw.audio : []).map(a => {
       const mediaId = String(a.mediaId || a.id || uid());
@@ -1564,69 +1606,110 @@ export function createAnimaticsEditor(options) {
     return {scale,size,lines,lineH,lineX,lineYs,maxWidth,boxH,backgroundX,pad,align,cx:clamp(finiteOr(text.x,.5),0,1)*w,cy:clamp(finiteOr(text.y,.82),0,1)*h,rotation:clamp(finiteOr(text.rotation,0),-180,180)*Math.PI/180,halfW,halfH};
   }
 
-  function textUiMetrics(layout,w){
-    const rect=canvas.getBoundingClientRect(),uiScale=w/Math.max(1,rect.width);
-    return {handle:8*uiScale,hit:12*uiScale,rotateOffset:30*uiScale,anchor:6*uiScale,selectionPad:2*uiScale};
-  }
-
-  function textControlBounds(layout,w){const {selectionPad}=textUiMetrics(layout,w);return {halfW:layout.halfW+selectionPad,halfH:layout.halfH+selectionPad};}
-
-  function drawTextOverlay(targetCtx,text,w,h,selected=false){
+  function drawTextOverlay(targetCtx,text,w,h){
     const layout=textLayout(targetCtx,text,w,h),{size,lines,lineX,lineYs,maxWidth,boxH,backgroundX,pad,align,cx,cy,rotation}=layout;
-    targetCtx.save();targetCtx.translate(cx,cy);targetCtx.rotate(rotation);
+    const renderX=targetCtx===textOverlayCtx?Math.round(cx):cx,renderY=targetCtx===textOverlayCtx?Math.round(cy):cy;
+    targetCtx.save();targetCtx.translate(renderX,renderY);targetCtx.rotate(rotation);
     targetCtx.font=textCanvasFont(text,size);targetCtx.textAlign=align;targetCtx.textBaseline='alphabetic';
     if(text.background===true){
       targetCtx.fillStyle='rgba(0,0,0,.58)';targetCtx.fillRect(backgroundX-maxWidth/2-pad,-boxH/2-pad*.65,maxWidth+pad*2,boxH+pad*1.3);
     }
     targetCtx.fillStyle=text.color||'#fff';lines.forEach((line,index)=>targetCtx.fillText(line,lineX,lineYs[index]));
-    if(selected){
-      const {handle,rotateOffset,anchor}=textUiMetrics(layout,w),{halfW,halfH}=textControlBounds(layout,w);
-      targetCtx.strokeStyle='#69aaff';targetCtx.lineWidth=Math.max(1,2*(w/TEXT_COORDINATE_WIDTH));targetCtx.setLineDash([]);targetCtx.strokeRect(-halfW,-halfH,halfW*2,halfH*2);
-      targetCtx.beginPath();targetCtx.moveTo(0,-halfH);targetCtx.lineTo(0,-halfH-rotateOffset);targetCtx.stroke();
-      targetCtx.fillStyle='#0f1723';targetCtx.strokeStyle='#8bc1ff';
-      for(const [x,y] of [[-halfW,-halfH],[0,-halfH],[halfW,-halfH],[-halfW,0],[halfW,0],[-halfW,halfH],[0,halfH],[halfW,halfH]]){targetCtx.beginPath();targetCtx.rect(x-handle/2,y-handle/2,handle,handle);targetCtx.fill();targetCtx.stroke();}
-      targetCtx.beginPath();targetCtx.arc(0,-halfH-rotateOffset,handle*.65,0,Math.PI*2);targetCtx.fill();targetCtx.stroke();
-      targetCtx.beginPath();targetCtx.arc(0,0,anchor,0,Math.PI*2);targetCtx.fill();targetCtx.stroke();targetCtx.beginPath();targetCtx.moveTo(-anchor*1.7,0);targetCtx.lineTo(anchor*1.7,0);targetCtx.moveTo(0,-anchor*1.7);targetCtx.lineTo(0,anchor*1.7);targetCtx.stroke();
-    }
     targetCtx.restore();
   }
 
-  function viewerPoint(event){const rect=canvas.getBoundingClientRect();return {x:(event.clientX-rect.left)*canvas.width/Math.max(1,rect.width),y:(event.clientY-rect.top)*canvas.height/Math.max(1,rect.height)};}
+  function textScreenControlLayout(text){
+    const layout=textLayout(textOverlayCtx,text,textOverlay.width,textOverlay.height),canvasRect=canvas.getBoundingClientRect(),viewportRect=viewerViewport.getBoundingClientRect(),scaleX=canvasRect.width/Math.max(1,textOverlay.width),scaleY=canvasRect.height/Math.max(1,textOverlay.height),clientX=canvasRect.left+Math.round(layout.cx)*scaleX,clientY=canvasRect.top+Math.round(layout.cy)*scaleY;
+    return {layout,clientX,clientY,viewportX:clientX-viewportRect.left,viewportY:clientY-viewportRect.top,halfW:layout.halfW*scaleX+2,halfH:layout.halfH*scaleY+2,rotation:layout.rotation};
+  }
 
-  function textLocalPoint(layout,point){const dx=point.x-layout.cx,dy=point.y-layout.cy,c=Math.cos(layout.rotation),s=Math.sin(layout.rotation);return {x:dx*c+dy*s,y:-dx*s+dy*c};}
+  function ensureTextControlSurface(){
+    const rect=viewerViewport.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1),width=Math.max(2,Math.round(rect.width*dpr)),height=Math.max(2,Math.round(rect.height*dpr));if(textControlOverlay.width!==width||textControlOverlay.height!==height){textControlOverlay.width=width;textControlOverlay.height=height;}return dpr;
+  }
+
+  function paintViewerTextControls(activeTexts=textsAt(project.playhead)){
+    const dpr=ensureTextControlSurface();textControlCtx.setTransform(1,0,0,1,0,0);textControlCtx.clearRect(0,0,textControlOverlay.width,textControlOverlay.height);textControlCtx.setTransform(dpr,0,0,dpr,0,0);
+    for(const text of activeTexts){if(text.id===inlineTextId||!selectedTimelineIds.has(text.id))continue;const {viewportX,viewportY,halfW,halfH,rotation}=textScreenControlLayout(text),primary=text.id===selectedTextId,handle=8,rotateOffset=30,anchor=6;textControlCtx.save();textControlCtx.translate(viewportX,viewportY);textControlCtx.rotate(rotation);textControlCtx.strokeStyle='#69aaff';textControlCtx.lineWidth=1.5;textControlCtx.setLineDash([]);textControlCtx.strokeRect(-halfW,-halfH,halfW*2,halfH*2);if(primary){textControlCtx.beginPath();textControlCtx.moveTo(0,-halfH);textControlCtx.lineTo(0,-halfH-rotateOffset);textControlCtx.stroke();textControlCtx.fillStyle='#0f1723';textControlCtx.strokeStyle='#8bc1ff';for(const [x,y] of [[-halfW,-halfH],[0,-halfH],[halfW,-halfH],[-halfW,0],[halfW,0],[-halfW,halfH],[0,halfH],[halfW,halfH]]){textControlCtx.beginPath();textControlCtx.rect(x-handle/2,y-handle/2,handle,handle);textControlCtx.fill();textControlCtx.stroke();}textControlCtx.beginPath();textControlCtx.arc(0,-halfH-rotateOffset,handle*.65,0,Math.PI*2);textControlCtx.fill();textControlCtx.stroke();textControlCtx.beginPath();textControlCtx.arc(0,0,anchor,0,Math.PI*2);textControlCtx.fill();textControlCtx.stroke();textControlCtx.beginPath();textControlCtx.moveTo(-anchor*1.7,0);textControlCtx.lineTo(anchor*1.7,0);textControlCtx.moveTo(0,-anchor*1.7);textControlCtx.lineTo(0,anchor*1.7);textControlCtx.stroke();}textControlCtx.restore();}
+  }
+
+  function viewerPoint(event){const rect=canvas.getBoundingClientRect();return {x:(event.clientX-rect.left)*canvas.width/Math.max(1,rect.width),y:(event.clientY-rect.top)*canvas.height/Math.max(1,rect.height)};}
 
   function hitTextControl(event){
     const point=viewerPoint(event),active=textsAt(project.playhead),ordered=[];
     const selected=active.find(text=>text.id===selectedTextId);if(selected)ordered.push(selected);for(const text of [...active].reverse())if(text.id!==selectedTextId)ordered.push(text);
     for(const text of ordered){
-      const layout=textLayout(ctx,text,canvas.width,canvas.height),local=textLocalPoint(layout,point),{hit,rotateOffset}=textUiMetrics(layout,canvas.width),{halfW,halfH}=textControlBounds(layout,canvas.width);
+      const screen=textScreenControlLayout(text),dx=event.clientX-screen.clientX,dy=event.clientY-screen.clientY,c=Math.cos(screen.rotation),s=Math.sin(screen.rotation),local={x:dx*c+dy*s,y:-dx*s+dy*c},hit=12,rotateOffset=30,{halfW,halfH}=screen;
       if(text.id===selectedTextId){
-        if(Math.hypot(local.x,local.y+halfH+rotateOffset)<=hit)return {text,layout,point,mode:'rotate'};
-        for(const handlePoint of [[-halfW,-halfH],[0,-halfH],[halfW,-halfH],[-halfW,0],[halfW,0],[-halfW,halfH],[0,halfH],[halfW,halfH]])if(Math.hypot(local.x-handlePoint[0],local.y-handlePoint[1])<=hit)return {text,layout,point,mode:'scale'};
+        if(Math.hypot(local.x,local.y+halfH+rotateOffset)<=hit)return {text,layout:screen.layout,point,mode:'rotate'};
+        for(const handlePoint of [[-halfW,-halfH],[0,-halfH],[halfW,-halfH],[-halfW,0],[halfW,0],[-halfW,halfH],[0,halfH],[halfW,halfH]])if(Math.hypot(local.x-handlePoint[0],local.y-handlePoint[1])<=hit)return {text,layout:screen.layout,point,mode:'scale'};
       }
-      if(Math.abs(local.x)<=halfW&&Math.abs(local.y)<=halfH)return {text,layout,point,mode:'move'};
+      if(Math.abs(local.x)<=halfW&&Math.abs(local.y)<=halfH)return {text,layout:screen.layout,point,mode:'move'};
     }
     return null;
+  }
+
+  function viewerTextClientBounds(text){
+    const {clientX,clientY,halfW,halfH,rotation}=textScreenControlLayout(text),c=Math.cos(rotation),s=Math.sin(rotation),points=[[-halfW,-halfH],[halfW,-halfH],[halfW,halfH],[-halfW,halfH]].map(([x,y])=>({x:clientX+x*c-y*s,y:clientY+x*s+y*c}));
+    const xs=points.map(point=>point.x),ys=points.map(point=>point.y);return {left:Math.min(...xs),right:Math.max(...xs),top:Math.min(...ys),bottom:Math.max(...ys)};
+  }
+
+  function beginViewerTextMarquee(e){
+    if(inlineTextId)finishInlineTextEdit(false);const additive=e.shiftKey||e.ctrlKey||e.metaKey,mode=additive?(e.ctrlKey||e.metaKey?'toggle':'add'):'replace';viewerTextMarquee={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,x:e.clientX,y:e.clientY,base:new Set(selectedTimelineIds),primary:primarySelectionId(),mode,moved:false};canvas.setPointerCapture(e.pointerId);e.preventDefault();
+  }
+
+  function updateViewerTextMarquee(e){
+    const state=viewerTextMarquee;if(!state||state.pointerId!==e.pointerId)return;const rect=canvas.getBoundingClientRect();state.x=clamp(e.clientX,rect.left,rect.right);state.y=clamp(e.clientY,rect.top,rect.bottom);state.moved=state.moved||Math.hypot(state.x-state.startX,state.y-state.startY)>3;if(!state.moved)return;
+    const left=Math.min(state.startX,state.x),right=Math.max(state.startX,state.x),top=Math.min(state.startY,state.y),bottom=Math.max(state.startY,state.y),box=$('#anMarquee');box.style.left=`${left}px`;box.style.top=`${top}px`;box.style.width=`${right-left}px`;box.style.height=`${bottom-top}px`;box.classList.add('show');
+    const hits=new Set(textsAt(project.playhead).filter(text=>{const bounds=viewerTextClientBounds(text);return bounds.right>=left&&bounds.left<=right&&bounds.bottom>=top&&bounds.top<=bottom;}).map(text=>text.id)),next=state.mode==='replace'?new Set(hits):new Set(state.base);if(state.mode==='add')for(const id of hits)next.add(id);else if(state.mode==='toggle')for(const id of hits)next.has(id)?next.delete(id):next.add(id);const primary=state.primary&&next.has(state.primary)?state.primary:[...hits].find(id=>next.has(id))||next.values().next().value||null;setTimelineSelection(next,primary);for(const clip of grid.querySelectorAll('.an-clip')){clip.classList.toggle('on',selectedTimelineIds.has(clip.dataset.clip));clip.classList.toggle('primary',clip.dataset.clip===primarySelectionId());}scheduleViewerTextOverlayPaint();
+  }
+
+  function finishViewerTextMarquee(cancel=false){
+    const state=viewerTextMarquee;if(!state)return;viewerTextMarquee=null;$('#anMarquee').classList.remove('show');if(cancel||!state.moved){if(cancel)setTimelineSelection(state.base,state.primary);else if(state.mode==='replace')setTimelineSelection([]);}
+    renderTimeline();syncInspector();paintViewerTextOverlay();
   }
 
   function positionInlineTextEditor(){
     const text=project.texts.find(item=>item.id===inlineTextId);if(!text||!inlineTextEditor.classList.contains('open'))return;
     const layout=textLayout(ctx,text,canvas.width,canvas.height),rect=canvas.getBoundingClientRect(),displayW=rect.width/Math.max(.001,previewZoom),displayH=rect.height/Math.max(.001,previewZoom),width=clamp(layout.halfW*2*displayW/canvas.width+6,24,Math.max(24,displayW*.95)),height=clamp(Math.max(layout.boxH,layout.lineH*Math.max(1,layout.lines.length))*displayH/canvas.height+4,24,Math.max(24,displayH*.9));
-    inlineTextEditor.style.left=`${text.x*100}%`;inlineTextEditor.style.top=`${text.y*100}%`;inlineTextEditor.style.width=`${width}px`;inlineTextEditor.style.height=`${height}px`;inlineTextEditor.style.fontSize=`${Math.max(1,layout.size*displayH/canvas.height)}px`;inlineTextEditor.style.lineHeight='1.2';inlineTextEditor.style.fontFamily=normalizeTextFontFamily(text.fontFamily);inlineTextEditor.style.fontWeight=text.bold===true?'700':'400';inlineTextEditor.style.fontStyle=text.italic===true?'italic':'normal';inlineTextEditor.style.textAlign=normalizeTextAlign(text.align);inlineTextEditor.style.color=text.color||'#fff';inlineTextEditor.style.transform=`translate(-50%,-50%) rotate(${clamp(finiteOr(text.rotation,0),-180,180)}deg)`;
+    const face=normalizedTextFontFace(text);inlineTextEditor.style.left=`${text.x*100}%`;inlineTextEditor.style.top=`${text.y*100}%`;inlineTextEditor.style.width=`${width}px`;inlineTextEditor.style.height=`${height}px`;inlineTextEditor.style.fontSize=`${Math.max(1,layout.size*displayH/canvas.height)}px`;inlineTextEditor.style.lineHeight='1.2';inlineTextEditor.style.fontFamily=face.family;inlineTextEditor.style.fontWeight=String(face.weight);inlineTextEditor.style.fontStyle=face.italic?'italic':'normal';inlineTextEditor.style.textAlign=normalizeTextAlign(text.align);inlineTextEditor.style.color=text.color||'#fff';inlineTextEditor.style.transform=`translate(-50%,-50%) rotate(${clamp(finiteOr(text.rotation,0),-180,180)}deg)`;
   }
 
   function beginInlineTextEdit(text){
     if(isTrackLocked('text')){notify('T1 is locked');return;}
-    inlineTextId=text.id;inlineTextOriginal=text.content;inlineTextEditor.value=text.content;drawViewerLive();inlineTextEditor.classList.add('open');positionInlineTextEditor();inlineTextEditor.focus();inlineTextEditor.select();
+    inlineTextId=text.id;inlineTextOriginal=text.content;inlineTextEditor.value=text.content;paintViewerTextOverlay();inlineTextEditor.classList.add('open');positionInlineTextEditor();inlineTextEditor.focus();inlineTextEditor.select();
   }
 
   function finishInlineTextEdit(cancel=false){
     if(!inlineTextId)return;const text=project.texts.find(item=>item.id===inlineTextId),previous=inlineTextOriginal;
     if(text)text.content=cancel?previous:inlineTextEditor.value;inlineTextId=null;inlineTextOriginal='';inlineTextEditor.classList.remove('open');inlineTextEditor.removeAttribute('style');
-    if(text){syncInspector();drawViewer();if(text.content!==previous&&!cancel){markDirty();renderTimeline();}}
+    if(activeTool==='text')setActiveTool('select');
+    if(text){syncInspector();paintViewerTextOverlay();if(text.content!==previous&&!cancel){markDirty();renderTimeline();}}
   }
 
-  function paintViewer(targetCtx,w,h,t,burnTc,mainViewer,active,activeTexts,layers){
+  function drawViewerTextContent(targetCtx,w,h,t,burnTc,activeTexts,mainViewer=false){
+    for(const text of activeTexts){if(mainViewer&&text.id===inlineTextId)continue;drawTextOverlay(targetCtx,text,w,h);}
+    if(burnTc){
+      const fs=Math.max(14,22*(w/1280));targetCtx.font=`600 ${fs}px ui-monospace,Consolas,monospace`;targetCtx.textAlign='left';targetCtx.textBaseline='top';
+      const label=counterLabel(t),pad=10*(w/1280),tw=targetCtx.measureText(label).width;
+      targetCtx.fillStyle='rgba(0,0,0,.62)';targetCtx.fillRect(pad,pad,tw+pad*1.4,fs+pad);targetCtx.fillStyle='#fff';targetCtx.fillText(label,pad*1.7,pad*1.45);
+    }
+  }
+
+  function paintViewerTextOverlay(t=project.playhead,activeTexts=textsAt(t),burnTc=project.timecode){
+    textOverlayCtx.clearRect(0,0,textOverlay.width,textOverlay.height);textOverlayCtx.save();drawViewerTextContent(textOverlayCtx,textOverlay.width,textOverlay.height,t,burnTc,activeTexts,true);textOverlayCtx.restore();paintViewerTextControls(activeTexts);
+  }
+
+  function scheduleViewerTextControlPaint(){
+    if(textControlRaf)return;
+    textControlRaf=requestAnimationFrame(()=>{textControlRaf=0;if(open)paintViewerTextControls();});
+  }
+
+  function scheduleViewerTextOverlayPaint(){
+    if(textOverlayRaf)return;
+    textOverlayRaf=requestAnimationFrame(()=>{textOverlayRaf=0;if(open)paintViewerTextOverlay();});
+  }
+
+  function paintViewer(targetCtx,w,h,t,burnTc,mainViewer,active,activeTexts,layers,{baseOnly=false}={}){
     if(mainViewer&&!playing){const activeVideoIds=new Set(active.filter(isVideoClip).map(c=>c.id));for(const [id,video] of videoElements)if(!activeVideoIds.has(id))video.pause();}
     targetCtx.save(); targetCtx.fillStyle=project.background; targetCtx.fillRect(0,0,w,h);
     for(const {clip,source} of layers){
@@ -1634,15 +1717,10 @@ export function createAnimaticsEditor(options) {
       if(mainViewer&&clip.id===activeDrawingClipId&&activeDrawingOverlay){targetCtx.drawImage(activeDrawingOverlay,0,0,w,h);if(activeStroke?.tool!=='eraser'&&activeDrawingStrokeCanvas){const brush=DRAW_BRUSHES[activeStroke.brush]||DRAW_BRUSHES.pen;targetCtx.save();targetCtx.globalAlpha=brush.alpha;targetCtx.drawImage(activeDrawingStrokeCanvas,0,0,w,h);targetCtx.restore();}}
       else drawClipDrawings(targetCtx,clip,w,h);
     }
-    for(const text of activeTexts){if(mainViewer&&text.id===inlineTextId)continue;drawTextOverlay(targetCtx,text,w,h,mainViewer&&text.id===selectedTextId);}
-    if(burnTc){
-      const fs=Math.max(14,22*(w/1280)); targetCtx.font=`600 ${fs}px ui-monospace,Consolas,monospace`; targetCtx.textAlign='left'; targetCtx.textBaseline='top';
-      const label=counterLabel(t),pad=10*(w/1280); const tw=targetCtx.measureText(label).width;
-      targetCtx.fillStyle='rgba(0,0,0,.62)'; targetCtx.fillRect(pad,pad,tw+pad*1.4,fs+pad);
-      targetCtx.fillStyle='#fff'; targetCtx.fillText(label,pad*1.7,pad*1.45);
-    }
+    if(!mainViewer&&!baseOnly)drawViewerTextContent(targetCtx,w,h,t,burnTc,activeTexts,false);
     targetCtx.restore();
     if(!mainViewer)return;
+    paintViewerTextOverlay(t,activeTexts,burnTc);
     $('#anEmpty')?.classList.toggle('hide',active.length>0||activeTexts.length>0);
     const nextPreviewShotKey=active.at(-1)?.id||activeTexts.at(-1)?.id||'';
     if(previewShotKey&&previewShotKey!==nextPreviewShotKey&&!previewZoomLocked&&previewZoom!==1)fitPreviewZoom({show:false});
@@ -1650,7 +1728,7 @@ export function createAnimaticsEditor(options) {
     const top=active.at(-1);$('#anShotLabel').innerHTML=top?`<b class="an-shot-name" title="${esc(top.name)}">${esc(top.name)}</b><span class="an-shot-meta">&nbsp;· ${Math.max(1,Math.round(top.duration*project.fps))} frames · V${top.track+1}</span>`:activeTexts.length?'<b class="an-shot-name">Text overlay</b><span class="an-shot-meta">&nbsp;· T1</span>':'No shot at playhead';
   }
 
-  async function drawViewer(targetCtx=ctx, w=canvas.width, h=canvas.height, t=project.playhead, burnTc=project.timecode, fullQuality=false){
+  async function drawViewer(targetCtx=ctx, w=canvas.width, h=canvas.height, t=project.playhead, burnTc=project.timecode, fullQuality=false,options={}){
     const mainViewer=targetCtx===ctx,drawToken=mainViewer?++viewerDrawToken:0,active=clipsAt(t),activeTexts=textsAt(t),layers=[];
     for(const clip of active){
       const image=isVideoClip(clip)?null:getImage(clip.itemId),needsFull=fullQuality||project.previewQuality==='full';
@@ -1658,7 +1736,7 @@ export function createAnimaticsEditor(options) {
       if(mainViewer&&drawToken!==viewerDrawToken)return;
       if(source)layers.push({clip,source});
     }
-    paintViewer(targetCtx,w,h,t,burnTc,mainViewer,active,activeTexts,layers);
+    paintViewer(targetCtx,w,h,t,burnTc,mainViewer,active,activeTexts,layers,options);
   }
 
   function drawViewerLive(){
@@ -1726,13 +1804,11 @@ export function createAnimaticsEditor(options) {
     $('#anSplit').disabled=!primarySelectionId();$('#anDeleteClip').disabled=!selectedTimelineIds.size;
     if(text){
       $('#anText').value=text.content;$('#anTextSize').value=String(text.size);applyTextColor(text.color);
-      $('#anTextScale').value=String(Math.round(text.scale*100));$('#anTextScaleVal').value=`${Math.round(text.scale*100)}%`;$('#anTextScaleVal').textContent=`${Math.round(text.scale*100)}%`;
       $('#anTextRotation').value=String(Math.round(text.rotation));$('#anTextDuration').value=String(Number(text.duration.toFixed(3)));
-      $('#anTextFont').value=normalizeTextFontFamily(text.fontFamily);
-      for(const [selector,on] of [['#anTextBold',text.bold===true],['#anTextItalic',text.italic===true],['#anTextBackground',text.background===true]]){$(selector).classList.toggle('on',on);$(selector).setAttribute('aria-pressed',String(on));}
+      syncTextFontControls(text);
+      $('#anTextBackground').classList.toggle('on',text.background===true);$('#anTextBackground').setAttribute('aria-pressed',String(text.background===true));
       const align=normalizeTextAlign(text.align);root.querySelectorAll('[data-an-text-align]').forEach(button=>{const on=button.dataset.anTextAlign===align;button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));});
     }
-    $('#anAddText').textContent=text?'Update text layer':'Add text layer';$('#anClearText').disabled=!text;
     const audioPercent=uniformValue(audios,item=>Math.round((item.volume??1)*100),0),audioFallback=Math.round((audios[0]?.volume??1)*100),allMuted=audios.length&&audios.every(item=>item.volume===0);$('#anAudioVolume').value=String(audioPercent??audioFallback);$('#anAudioVolume').disabled=!audios.length;$('#anAudioVolumeVal').value=audioPercent===null?'Mixed':`${audioPercent}%`;$('#anAudioVolumeVal').textContent=audioPercent===null?'Mixed':`${audioPercent}%`;
     $('#anAudioMute').disabled=!audios.length;$('#anAudioMute').classList.toggle('on',!!allMuted);$('#anAudioMute').textContent=allMuted?'Unmute selected':'Mute selected';$('#anAudioSplit').disabled=!primarySelectionId();$('#anAudioDelete').disabled=!selectedTimelineIds.size;
     $('#anAudioGain').disabled=!audios.length&&!project.audio.some(item=>item.track===activeAudioTrack&&!isTrackLocked('audio',activeAudioTrack));
@@ -1785,15 +1861,31 @@ export function createAnimaticsEditor(options) {
     project.timelineZoom=next;slider.value=String(next);renderTimeline();scroll.scrollLeft=Math.max(0,project.playhead*project.timelineZoom+TRACK_LABEL_WIDTH-anchorX);syncPlayheadVisibility();
   }
 
+  function previewRasterDimensions(){
+    const baseShortEdge=project.previewQuality==='full'?1080:project.previewQuality==='half'?540:270,requested=sequenceDimensions(baseShortEdge*Math.max(1,previewZoom),project.aspect),longEdge=Math.max(requested.width,requested.height),limitScale=Math.min(1,MAX_PREVIEW_RASTER_EDGE/longEdge);
+    return {width:Math.max(2,Math.round(requested.width*limitScale/2)*2),height:Math.max(2,Math.round(requested.height*limitScale/2)*2)};
+  }
+
   function applyPreviewQuality(){
-    const shortEdge=project.previewQuality==='full'?1080:project.previewQuality==='half'?540:270;
-    const {width,height}=sequenceDimensions(shortEdge,project.aspect);
-    if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
+    const {width,height}=previewRasterDimensions(),changed=canvas.width!==width||canvas.height!==height||textOverlay.width!==width||textOverlay.height!==height;
+    if(changed){canvas.width=width;canvas.height=height;textOverlay.width=width;textOverlay.height=height;drawingOverlayCache.clear();}
     const [rw,rh]=ASPECT_RATIOS[project.aspect]||ASPECT_RATIOS['16:9'];
     canvas.parentElement.style.aspectRatio=`${rw}/${rh}`;
     $('#anFooterAspect').value=project.aspect;
     $('#anFooterQuality').value=project.previewQuality;
     syncAnimaticsSelectControls();
+    return changed;
+  }
+
+  async function refreshPreviewRaster(epoch){
+    previewRasterTimer=0;if(!open||epoch!==previewRasterEpoch)return;const {width,height}=previewRasterDimensions();if(canvas.width===width&&canvas.height===height&&textOverlay.width===width&&textOverlay.height===height)return;
+    const t=project.playhead,burnTc=project.timecode,staging=document.createElement('canvas');staging.width=width;staging.height=height;drawingOverlayCache.clear();await drawViewer(staging.getContext('2d'),width,height,t,burnTc,false,{baseOnly:true});
+    if(!open||epoch!==previewRasterEpoch||Math.abs(project.playhead-t)>1e-7){staging.width=staging.height=0;return;}
+    canvas.width=width;canvas.height=height;textOverlay.width=width;textOverlay.height=height;ctx.drawImage(staging,0,0);staging.width=staging.height=0;paintViewerTextOverlay(t,textsAt(t),burnTc);positionInlineTextEditor();
+  }
+
+  function schedulePreviewRasterRefresh(){
+    clearTimeout(previewRasterTimer);const epoch=++previewRasterEpoch;previewRasterTimer=setTimeout(()=>{void refreshPreviewRaster(epoch);},120);
   }
 
   function clampPreviewPan(){
@@ -1824,17 +1916,17 @@ export function createAnimaticsEditor(options) {
     fit.disabled=previewZoom===1&&previewPanX===0&&previewPanY===0;
     locked.classList.toggle('on',previewZoomLocked);locked.setAttribute('aria-pressed',String(previewZoomLocked));locked.textContent=previewZoomLocked?'Locked':'Lock';
     if(previewZoomLocked)$('#anPreviewZoomHud').classList.add('show');else if(show)revealPreviewZoomHud();
-    positionInlineTextEditor();
+    positionInlineTextEditor();scheduleViewerTextControlPaint();
   }
 
   function setPreviewZoom(next,{clientX=null,clientY=null,show=true}={}){
     const old=previewZoom,value=clamp(Number(next)||1,PREVIEW_ZOOM_MIN,PREVIEW_ZOOM_MAX),rect=canvas.parentElement.getBoundingClientRect();
     if(Number.isFinite(clientX)&&Number.isFinite(clientY)&&old>0){const ratio=value/old,offsetX=clientX-(rect.left+rect.width/2),offsetY=clientY-(rect.top+rect.height/2);previewPanX+=offsetX*(1-ratio);previewPanY+=offsetY*(1-ratio);}
-    previewZoom=value;syncPreviewZoomUi({show});
+    previewZoom=value;syncPreviewZoomUi({show});schedulePreviewRasterRefresh();
   }
 
   function fitPreviewZoom({show=true}={}){
-    previewZoom=1;previewPanX=0;previewPanY=0;syncPreviewZoomUi({show});
+    previewZoom=1;previewPanX=0;previewPanY=0;syncPreviewZoomUi({show});schedulePreviewRasterRefresh();
   }
 
   function setPreviewZoomLocked(locked){
@@ -1945,13 +2037,13 @@ export function createAnimaticsEditor(options) {
   function closeEditor(){
     if(!open)return;
     if(audioTrimState)finishAudioTrimmer(false);if(inlineTextId)finishInlineTextEdit(false);flushDeferredHistory();open=false;setPlaying(false);
-    cancelAnimationFrame(scrubPreviewRaf);scrubPreviewRaf=0;scrubPreviewQueued=false;cancelFramingPreview();viewerDrawToken++;
+    cancelAnimationFrame(scrubPreviewRaf);scrubPreviewRaf=0;scrubPreviewQueued=false;clearTimeout(previewRasterTimer);previewRasterTimer=0;previewRasterEpoch++;if(textOverlayRaf)cancelAnimationFrame(textOverlayRaf);textOverlayRaf=0;if(textControlRaf)cancelAnimationFrame(textControlRaf);textControlRaf=0;cancelFramingPreview();viewerDrawToken++;
     if(timelineResizeRaf)cancelAnimationFrame(timelineResizeRaf);timelineResizeRaf=0;timelineResize=null;
-    drawMode=false;drawBrushesOpen=false;drawColorOpen=false;drawWidthMenuOpen=false;activeStroke=null;clearActiveDrawingSession();hideDrawSizePreview();framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;handPan=null;spaceHand=null;finishPreviewPan();inspectorResize=null;clearTimeout(previewZoomHudTimer);previewZoomHudTimer=0;root.classList.remove('hand-panning','inspector-resizing');$('#anInspectorResizer')?.classList.remove('dragging');$('#anTimelineResizer')?.classList.remove('dragging');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
+    drawMode=false;drawBrushesOpen=false;drawColorOpen=false;drawWidthMenuOpen=false;activeStroke=null;clearActiveDrawingSession();hideDrawSizePreview();framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;viewerTextMarquee=null;handPan=null;spaceHand=null;finishPreviewPan();inspectorResize=null;clearTimeout(previewZoomHudTimer);previewZoomHudTimer=0;root.classList.remove('hand-panning','inspector-resizing');$('#anInspectorResizer')?.classList.remove('dragging');$('#anTimelineResizer')?.classList.remove('dragging');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
     // Pausing alone leaves Chromium decoder buffers and GPU textures resident.
     // Keep the source Blob URLs/project intact, but recreate decoders and the
     // preview backing store next time Animatics opens.
-    releaseVideoElements();releaseAudioPlaybackContext();canvas.width=1;canvas.height=1;
+    releaseVideoElements();releaseAudioPlaybackContext();canvas.width=1;canvas.height=1;textOverlay.width=1;textOverlay.height=1;textControlOverlay.width=1;textControlOverlay.height=1;
     try{onClose();}catch(err){console.error('[animatics] board return recovery failed',err);}
   }
 
@@ -2087,8 +2179,8 @@ export function createAnimaticsEditor(options) {
 
   function addTextAtTime(start,{x=.5,y=.82}={}){
     if(isTrackLocked('text')){notify('T1 is locked');return null;}
-    start=Math.round(Math.max(0,start)*project.fps)/project.fps;const textDuration=durationWithinSequence(start,DEFAULT_SHOT_SECONDS,DEFAULT_SHOT_SECONDS);if(!textDuration){notify('The fixed sequence has no room for a text layer here');return null;}const text={id:uid(),track:0,start,duration:textDuration,content:'Text',size:42,color:'#ffffff',fontFamily:DEFAULT_TEXT_FONT_FAMILY,bold:false,italic:false,align:'center',background:false,scale:1,rotation:0,x:clamp(x,0,1),y:clamp(y,0,1)};
-    project.texts.push(text);project.playhead=text.start;setTimelineSelection([text.id],text.id);root.querySelector('[data-panel="text"]')?.click();markDirty();renderAll();requestAnimationFrame(()=>beginInlineTextEdit(text));
+    start=Math.round(Math.max(0,start)*project.fps)/project.fps;const textDuration=durationWithinSequence(start,DEFAULT_SHOT_SECONDS,DEFAULT_SHOT_SECONDS);if(!textDuration){notify('The fixed sequence has no room for a text layer here');return null;}const defaults=normalizedTextDefaults(project.textDefaults),text={id:uid(),track:0,start,duration:textDuration,content:'Text',...defaults,scale:1,rotation:0,x:clamp(x,0,1),y:clamp(y,0,1)};
+    project.texts.push(text);project.playhead=text.start;setTimelineSelection([text.id],text.id);setActiveTool('select');root.querySelector('[data-panel="text"]')?.click();markDirty();renderAll();requestAnimationFrame(()=>beginInlineTextEdit(text));
   }
 
   function razorTimelineEntry(entry,time){
@@ -2129,19 +2221,11 @@ export function createAnimaticsEditor(options) {
     ensureTrackHeightCounts();trackHeights(kind).splice(track,1);if(video){project.videoTrackEnabled.splice(track,1);project.videoTrackLocked.splice(track,1);project.videoTracks--;activeVideoTrack=activeVideoTrack===track?Math.min(track,project.videoTracks-1):activeVideoTrack>track?activeVideoTrack-1:activeVideoTrack;}else{project.audioTrackMuted.splice(track,1);project.audioTrackSolo.splice(track,1);project.audioTrackLocked.splice(track,1);project.audioTracks--;activeAudioTrack=activeAudioTrack===track?Math.min(track,Math.max(0,project.audioTracks-1)):activeAudioTrack>track?activeAudioTrack-1:activeAudioTrack;}markDirty();renderTimeline();notify(`${label} removed`);return true;
   }
 
-  function upsertTextLayer(){
-    if(isTrackLocked('text')){notify('T1 is locked');return;}
-    const content=$('#anText').value.trim();if(!content){notify('Enter some text first');return;}
-    let text=selectedText();
-    if(!text){const clip=selectedClip(),start=clip?.start??project.playhead,requested=Number($('#anTextDuration').value)||clip?.duration||DEFAULT_SHOT_SECONDS,textDuration=durationWithinSequence(start,requested,600);if(!textDuration){notify('The fixed sequence has no room for a text layer here');return;}text={id:uid(),track:0,start,duration:textDuration,content,size:42,color:'#ffffff',fontFamily:DEFAULT_TEXT_FONT_FAMILY,bold:false,italic:false,align:'center',background:false,scale:1,rotation:0,x:.5,y:.82};project.texts.push(text);setTimelineSelection([text.id],text.id);}
-    text.content=content;text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.fontFamily=normalizeTextFontFamily($('#anTextFont').value);text.bold=$('#anTextBold').classList.contains('on');text.italic=$('#anTextItalic').classList.contains('on');text.align=normalizeTextAlign(root.querySelector('[data-an-text-align].on')?.dataset.anTextAlign);text.background=$('#anTextBackground').classList.contains('on');text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;text.x=clamp(finiteOr(text.x,.5),0,1);text.y=clamp(finiteOr(text.y,.82),0,1);
-    project.playhead=clamp(project.playhead,text.start,text.start+text.duration-MIN_SHOT_SECONDS);markDirty();renderAll();root.querySelector('[data-panel="text"]')?.click();
-  }
-
   function updateSelectedTextFromControls(){
     const text=selectedText();if(!text)return;
-    text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.fontFamily=normalizeTextFontFamily($('#anTextFont').value);text.bold=$('#anTextBold').classList.contains('on');text.italic=$('#anTextItalic').classList.contains('on');text.align=normalizeTextAlign(root.querySelector('[data-an-text-align].on')?.dataset.anTextAlign);text.background=$('#anTextBackground').classList.contains('on');text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;
-    const label=`${Math.round(text.scale*100)}%`;$('#anTextScaleVal').value=label;$('#anTextScaleVal').textContent=label;drawViewerLive();positionInlineTextEditor();
+    text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;applyFontFaceToText(text);text.align=normalizeTextAlign(root.querySelector('[data-an-text-align].on')?.dataset.anTextAlign);text.background=$('#anTextBackground').classList.contains('on');text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;
+    rememberTextDefaults(text);
+    scheduleViewerTextOverlayPaint();positionInlineTextEditor();
   }
 
   function trimFrames(seconds){
@@ -2477,10 +2561,11 @@ export function createAnimaticsEditor(options) {
       const hit=hitTextControl(e);
       if(hit){
         if(isTrackLocked('text')){notify('T1 is locked');e.preventDefault();return;}
-        if(inlineTextId)finishInlineTextEdit(false);setTimelineSelection([hit.text.id],hit.text.id);root.querySelector('[data-panel="text"]')?.click();
+        if(activeTool==='text')setActiveTool('select');
+        if(inlineTextId)finishInlineTextEdit(false);const modifier=e.shiftKey||e.ctrlKey||e.metaKey;if(modifier)selectTimelineEntry(hit.text.id,{add:e.shiftKey,toggle:e.ctrlKey||e.metaKey});else if(selectedTimelineIds.has(hit.text.id))syncPrimarySelection(hit.text.id);else setTimelineSelection([hit.text.id],hit.text.id);if(!selectedTimelineIds.has(hit.text.id)){renderTimeline();syncInspector();drawViewer();e.preventDefault();return;}root.querySelector('[data-panel="text"]')?.click();
         const rect=canvas.getBoundingClientRect(),point=viewerPoint(e),startAngle=Math.atan2(point.y-hit.layout.cy,point.x-hit.layout.cx);
-        textDrag={mode:hit.mode,textId:hit.text.id,startX:e.clientX,startY:e.clientY,x:hit.text.x,y:hit.text.y,width:rect.width,height:rect.height,startScale:hit.text.scale,startDistance:Math.max(1,Math.hypot(point.x-hit.layout.cx,point.y-hit.layout.cy)),startAngle,startRotation:hit.text.rotation};
-        canvas.setPointerCapture(e.pointerId);syncInspector();drawViewer();e.preventDefault();return;
+        const activeIds=new Set(textsAt(project.playhead).map(text=>text.id)),positions=selectedEntries('text').map(entry=>entry.item).filter(text=>activeIds.has(text.id)).map(text=>({text,x:text.x,y:text.y}));textDrag={mode:hit.mode,textId:hit.text.id,startX:e.clientX,startY:e.clientY,x:hit.text.x,y:hit.text.y,width:rect.width,height:rect.height,startScale:hit.text.scale,startDistance:Math.max(1,Math.hypot(point.x-hit.layout.cx,point.y-hit.layout.cy)),startAngle,startRotation:hit.text.rotation,positions};
+        canvas.setPointerCapture(e.pointerId);syncInspector();paintViewerTextOverlay();e.preventDefault();return;
       }
     }
     if(activeTool==='text'&&!drawMode&&!framingMode){
@@ -2493,25 +2578,26 @@ export function createAnimaticsEditor(options) {
       framingDrag={startX:e.clientX,startY:e.clientY,x:framing.x,y:framing.y};
       canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
     }
-    if(!drawMode&&!framingMode){setTimelineSelection([]);syncInspector();drawViewer();return;}
+    if(!drawMode&&!framingMode){if(activeTool==='select'){beginViewerTextMarquee(e);return;}setTimelineSelection([]);syncInspector();drawViewer();return;}
     if(!drawMode)return;const target=validateDrawingTarget();if(!target)return;const r=canvas.getBoundingClientRect(),x=clamp((e.clientX-r.left)/r.width,0,1),y=clamp((e.clientY-r.top)/r.height,0,1);drawPointer={x,y,inside:true};prepareActiveDrawing(target);activeStroke={tool:drawTool,brush:drawBrushType,color:drawColor,width:drawWidth,points:[{x,y}]};target.strokes.push(activeStroke);appendActiveDrawingSegment(activeStroke.points[0],activeStroke.points[0]);canvas.setPointerCapture(e.pointerId);scheduleActiveDrawingPaint();e.preventDefault();
   });
   canvas.addEventListener('pointermove',e=>{
     const pointerRect=canvas.getBoundingClientRect();drawPointer={x:clamp((e.clientX-pointerRect.left)/Math.max(1,pointerRect.width),0,1),y:clamp((e.clientY-pointerRect.top)/Math.max(1,pointerRect.height),0,1),inside:true};if(drawMode)positionDrawSizePreview();
     if(previewPanDrag){previewPanX=previewPanDrag.panX+e.clientX-previewPanDrag.startX;previewPanY=previewPanDrag.panY+e.clientY-previewPanDrag.startY;syncPreviewZoomUi({show:true});e.preventDefault();return;}
+    if(viewerTextMarquee){updateViewerTextMarquee(e);e.preventDefault();return;}
     if(textDrag){
       const text=project.texts.find(item=>item.id===textDrag.textId);if(!text)return;
-      if(textDrag.mode==='move'){text.x=clamp(textDrag.x+(e.clientX-textDrag.startX)/textDrag.width,0,1);text.y=clamp(textDrag.y+(e.clientY-textDrag.startY)/textDrag.height,0,1);}
+      if(textDrag.mode==='move'){const rawX=(e.clientX-textDrag.startX)/textDrag.width,rawY=(e.clientY-textDrag.startY)/textDrag.height,minX=Math.min(...textDrag.positions.map(item=>item.x)),maxX=Math.max(...textDrag.positions.map(item=>item.x)),minY=Math.min(...textDrag.positions.map(item=>item.y)),maxY=Math.max(...textDrag.positions.map(item=>item.y)),dx=clamp(rawX,-minX,1-maxX),dy=clamp(rawY,-minY,1-maxY);for(const item of textDrag.positions){item.text.x=item.x+dx;item.text.y=item.y+dy;}}
       else if(textDrag.mode==='scale'){const layout=textLayout(ctx,text,canvas.width,canvas.height),point=viewerPoint(e),distance=Math.hypot(point.x-layout.cx,point.y-layout.cy);text.scale=clamp(textDrag.startScale*distance/textDrag.startDistance,.25,4);}
       else if(textDrag.mode==='rotate'){const layout=textLayout(ctx,text,canvas.width,canvas.height),point=viewerPoint(e),angle=Math.atan2(point.y-layout.cy,point.x-layout.cx);let rotation=textDrag.startRotation+(angle-textDrag.startAngle)*180/Math.PI;while(rotation>180)rotation-=360;while(rotation<-180)rotation+=360;text.rotation=snappedTextRotation(rotation,e.shiftKey);}
-      syncInspector();drawViewerLive();positionInlineTextEditor();return;
+      syncInspector();scheduleViewerTextOverlayPaint();positionInlineTextEditor();return;
     }
     if(framingDrag){const c=selectedClip(),r=canvas.getBoundingClientRect();if(!c)return;c.framing.x=clamp(framingDrag.x+(e.clientX-framingDrag.startX)*2/r.width,-1,1);c.framing.y=clamp(framingDrag.y+(e.clientY-framingDrag.startY)*2/r.height,-1,1);scheduleFramingPreview();return;}
     if(activeStroke){const coalesced=typeof e.getCoalescedEvents==='function'?e.getCoalescedEvents():null,samples=coalesced?.length?coalesced:[e];for(const sample of samples){const point={x:clamp((sample.clientX-pointerRect.left)/Math.max(1,pointerRect.width),0,1),y:clamp((sample.clientY-pointerRect.top)/Math.max(1,pointerRect.height),0,1)},previous=activeStroke.points.at(-1),distance=Math.hypot((point.x-previous.x)*canvas.width,(point.y-previous.y)*canvas.height);if(distance<.35)continue;activeStroke.points.push(point);appendActiveDrawingSegment(previous,point);}scheduleActiveDrawingPaint();return;}
     if(!drawMode&&!framingMode){const hit=hitTextControl(e);canvas.style.cursor=hit?.mode==='scale'?'nwse-resize':hit?.mode==='rotate'?'grab':hit?'move':activeTool==='text'?'text':'default';}
   });
-  canvas.addEventListener('pointerup',()=>{finishPreviewPan();if(textDrag){textDrag=null;markDirty();syncInspector();drawViewer();}if(framingDrag){framingDrag=null;flushFramingPreview({full:true});markDirty();syncInspector();}finishActiveDrawing();});
-  canvas.addEventListener('pointercancel',()=>{finishPreviewPan();textDrag=null;if(framingDrag){framingDrag=null;flushFramingPreview({full:true});}finishActiveDrawing();});
+  canvas.addEventListener('pointerup',()=>{finishPreviewPan();if(viewerTextMarquee){finishViewerTextMarquee();return;}if(textDrag){textDrag=null;markDirty();syncInspector();paintViewerTextOverlay();}if(framingDrag){framingDrag=null;flushFramingPreview({full:true});markDirty();syncInspector();}finishActiveDrawing();});
+  canvas.addEventListener('pointercancel',()=>{finishPreviewPan();if(viewerTextMarquee)finishViewerTextMarquee(true);textDrag=null;if(framingDrag){framingDrag=null;flushFramingPreview({full:true});}finishActiveDrawing();});
   canvas.addEventListener('pointerenter',e=>{const r=canvas.getBoundingClientRect();drawPointer={x:clamp((e.clientX-r.left)/Math.max(1,r.width),0,1),y:clamp((e.clientY-r.top)/Math.max(1,r.height),0,1),inside:true};if(drawMode)showDrawSizePreview();});
   canvas.addEventListener('pointerleave',()=>{drawPointer.inside=false;hideDrawSizePreview();});
   canvas.addEventListener('dblclick',e=>{
@@ -2605,16 +2691,17 @@ export function createAnimaticsEditor(options) {
   $('#anAudioGain').onclick=openAudioGainDialog;$('#anGainCancel').onclick=closeAudioGainDialog;$('#anGainApply').onclick=applyAudioGainDialog;$('#anGainDb').addEventListener('keydown',e=>{if(e.key==='Enter'){applyAudioGainDialog();e.preventDefault();}});
   for(const side of ['In','Out']){const durationInput=$(`#anFade${side}Duration`),curveInput=$(`#anFade${side}Curve`),shapeInput=$(`#anFade${side}Shape`),applyDuration=()=>{if(durationInput.value==='')return;const frames=Math.max(0,Math.round((Number(durationInput.value)||0)*project.fps));applySelectedFadeSetting(side,'Duration',frames/project.fps,{commit:false});deferMarkDirty();};durationInput.oninput=applyDuration;durationInput.onchange=()=>{if(durationInput.value==='')syncInspector();flushDeferredHistory();};curveInput.onchange=()=>applySelectedFadeSetting(side,'Curve',curveInput.value);shapeInput.oninput=()=>{applySelectedFadeSetting(side,'Shape',Number(shapeInput.value)||0,{commit:false});deferMarkDirty();};shapeInput.onchange=flushDeferredHistory;}
   $('#anLink').onclick=toggleLinkSelection;
-  $('#anAddText').onclick=upsertTextLayer;
-  $('#anClearText').onclick=()=>{if(selectedText())deleteSelected();};
-  for(const id of ['anTextSize','anTextColor','anTextScale','anTextRotation','anTextDuration'])$('#'+id).addEventListener('input',()=>{updateSelectedTextFromControls();if(selectedText())deferMarkDirty();});
+  for(const id of ['anTextSize','anTextColor','anTextRotation','anTextDuration'])$('#'+id).addEventListener('input',()=>{updateSelectedTextFromControls();if(selectedText())deferMarkDirty();});
   $('#anTextDuration').addEventListener('input',()=>{if(selectedText())renderTimeline();});
-  $('#anText').addEventListener('input',()=>{const text=selectedText();if(text){text.content=$('#anText').value;if(text.id===inlineTextId){inlineTextEditor.value=text.content;positionInlineTextEditor();}else drawViewerLive();deferMarkDirty();}});
-  $('#anText').addEventListener('change',()=>{if(selectedText()){flushDeferredHistory();renderTimeline();drawViewer();}});
-  for(const id of ['anTextSize','anTextColor','anTextScale','anTextRotation','anTextDuration'])$('#'+id).addEventListener('change',()=>{if(selectedText()){flushDeferredHistory();drawViewer();}});
-  const commitTextStyleControls=()=>{if(!selectedText())return;updateSelectedTextFromControls();markDirty();syncInspector();drawViewer();};
-  $('#anTextFont').addEventListener('change',commitTextStyleControls);
-  for(const id of ['anTextBold','anTextItalic','anTextBackground'])$('#'+id).onclick=e=>{e.currentTarget.classList.toggle('on');commitTextStyleControls();};
+  $('#anText').addEventListener('input',()=>{const text=selectedText();if(text){text.content=$('#anText').value;if(text.id===inlineTextId){inlineTextEditor.value=text.content;positionInlineTextEditor();}else scheduleViewerTextOverlayPaint();deferMarkDirty();}});
+  $('#anText').addEventListener('change',()=>{if(selectedText()){flushDeferredHistory();renderTimeline();paintViewerTextOverlay();}});
+  for(const id of ['anTextSize','anTextColor','anTextRotation','anTextDuration'])$('#'+id).addEventListener('change',()=>{if(selectedText()){flushDeferredHistory();paintViewerTextOverlay();}});
+  const commitTextStyleControls=()=>{if(!selectedText())return;updateSelectedTextFromControls();markDirty();syncInspector();paintViewerTextOverlay();};
+  $('#anTextFont').addEventListener('change',()=>{const current=normalizedTextFontFace(selectedText()||{}),face=syncTextFontStyleOptions({...current,fontFamily:$('#anTextFont').value});syncTextEmphasisButtons(face);commitTextStyleControls();});
+  $('#anTextFontStyle').addEventListener('change',()=>{syncTextEmphasisButtons();commitTextStyleControls();});
+  $('#anTextBold').onclick=()=>{const face=selectedTextFontFace();chooseTextFontEmphasis({bold:!(face?.weight>=600),italic:face?.italic===true});commitTextStyleControls();};
+  $('#anTextItalic').onclick=()=>{const face=selectedTextFontFace();chooseTextFontEmphasis({bold:face?.weight>=600,italic:!(face?.italic===true)});commitTextStyleControls();};
+  $('#anTextBackground').onclick=e=>{e.currentTarget.classList.toggle('on');commitTextStyleControls();};
   root.querySelectorAll('[data-an-text-align]').forEach(button=>button.onclick=()=>{root.querySelectorAll('[data-an-text-align]').forEach(candidate=>candidate.classList.toggle('on',candidate===button));commitTextStyleControls();});
   $('#anTextColorButton').onclick=()=>setTextColorOpen(!textColorOpen);
   for(const color of DRAW_COLOR_PRESETS){const button=document.createElement('button');button.type='button';button.className='an-draw-cp-preset';button.dataset.anTextColor=color;button.style.background=color;button.title=color;button.onclick=()=>applyTextColor(color,{emit:true,commit:true});$('#anTextCpPresets').append(button);}

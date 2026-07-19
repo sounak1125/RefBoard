@@ -27,7 +27,7 @@ const project = {
     { id:'still', itemId:'image-1', sourceAssetKey:'image-1-transformed', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', enabled:false, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1} },
   ],
-  texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', fontFamily:'Times New Roman', bold:true, italic:true, align:'left', background:true, scale:1.25, rotation:12, x:.25, y:.8 }],
+  texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', fontFamily:'Montserrat', fontStyle:'SemiBold Italic', fontWeight:600, fontFullName:'Montserrat SemiBold Italic', fontPostscriptName:'Montserrat-SemiBoldItalic', bold:true, italic:true, align:'left', background:true, scale:1.25, rotation:12, x:.25, y:.8 }],
   audio:[{ id:'music', mediaId:'audio-1', track:0, start:.5, duration:5, sourceIn:2, sourceOut:7, volume:.5, fadeInDuration:2, fadeOutDuration:1, fadeInCurve:'constant-power', fadeOutCurve:'exponential', name:'Music.wav' }],
 };
 
@@ -41,8 +41,8 @@ const assets = new Map([
 const timeline = buildPremiereTimeline({ project, name:'Animatic & Cut', fps:24, width:1920, height:1080, exportStart:1, exportEnd:5, assets });
 const title = timeline.videoTracks.flat().find(clip => clip.id === 'title');
 assert.deepEqual(
-  { fontFamily:title.text.fontFamily, bold:title.text.bold, italic:title.text.italic, align:title.text.align, background:title.text.background },
-  { fontFamily:'Times New Roman', bold:true, italic:true, align:'left', background:true },
+  { fontFamily:title.text.fontFamily, fontStyle:title.text.fontStyle, fontWeight:title.text.fontWeight, fontFullName:title.text.fontFullName, fontPostscriptName:title.text.fontPostscriptName, bold:title.text.bold, italic:title.text.italic, align:title.text.align, background:title.text.background },
+  { fontFamily:'Montserrat', fontStyle:'SemiBold Italic', fontWeight:600, fontFullName:'Montserrat SemiBold Italic', fontPostscriptName:'Montserrat-SemiBoldItalic', bold:true, italic:true, align:'left', background:true },
   'Premiere text clips must retain the selected character and background settings',
 );
 assert.equal(timeline.durationFrames, 96);
@@ -84,7 +84,7 @@ assert.match(output, /<keyframe><when>0<\/when><value>0\.191342<\/value><interp>
 assert.ok((output.match(/<keyframe>/g) || []).length > 10, 'curved fades must be represented with enough Premiere keyframes');
 assert.match(output, /<generatoritem id="generatoritem-title-/, 'text layers must export as editable title generators');
 assert.match(output, /<parameterid>str<\/parameterid><name>Text<\/name><value>Title &amp;&#13;Subtitle<\/value>/);
-assert.match(output, /<parameterid>fontname<\/parameterid><name>Font<\/name><value>Times New Roman<\/value>/, 'Premiere text must use the selected font family');
+assert.match(output, /<parameterid>fontname<\/parameterid><name>Font<\/name><value>Montserrat-SemiBoldItalic<\/value>/, 'Premiere text must prefer the exact selected PostScript font face');
 assert.match(output, /<parameterid>fontstyle<\/parameterid>[\s\S]*?<value>4<\/value>/, 'Premiere text must map bold plus italic to style enum 4');
 assert.match(output, /<parameterid>fontalign<\/parameterid>[\s\S]*?<value>1<\/value>/, 'Premiere text must map left alignment to enum 1');
 assert.doesNotMatch(output, /<parameterid>background<\/parameterid>/, 'Premiere XMEML must not emit an unsupported text-background parameter');
@@ -99,7 +99,7 @@ assert.equal((output.match(/<file id="file-image-1"><name>/g) || []).length, 1, 
 
 const legacyProject = {
   ...project,
-  texts:[{ ...project.texts[0], fontFamily:undefined, bold:undefined, italic:undefined, align:undefined, background:undefined }],
+  texts:[{ ...project.texts[0], fontFamily:undefined, fontStyle:undefined, fontWeight:undefined, fontFullName:undefined, fontPostscriptName:undefined, bold:undefined, italic:undefined, align:undefined, background:undefined }],
 };
 const legacyTimeline = buildPremiereTimeline({ project:legacyProject, name:'Legacy Text', fps:24, width:1920, height:1080, exportStart:1, exportEnd:5, assets });
 const legacyTitle = legacyTimeline.videoTracks.flat().find(clip => clip.id === 'title');

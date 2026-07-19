@@ -191,8 +191,12 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
         fontSize: Number((clamp(finite(item.size, 42), 8, 300) * compWidth / 1280).toFixed(6)),
         color: colorRgb(item.color, '#ffffff'),
         fontFamily: String(item.fontFamily || 'Segoe UI'),
-        bold: item.bold === true,
-        italic: item.italic === true,
+        fontStyle: String(item.fontStyle || (item.bold === true && item.italic === true ? 'Bold Italic' : item.bold === true ? 'Bold' : item.italic === true ? 'Italic' : 'Regular')),
+        fontWeight: clamp(finite(item.fontWeight, item.bold === true ? 700 : 400), 100, 900),
+        fontFullName: String(item.fontFullName || ''),
+        fontPostscriptName: String(item.fontPostscriptName || ''),
+        bold: finite(item.fontWeight, item.bold === true ? 700 : 400) >= 600 || item.bold === true,
+        italic: item.italic === true || /italic|oblique/i.test(String(item.fontStyle || '')),
         align: ['left', 'center', 'right'].includes(item.align) ? item.align : 'center',
         background: item.background === true,
       },
@@ -250,9 +254,10 @@ export function createAfterEffectsScript(project, { mediaFolderName, projectFile
     var documentValue = textProperty.value;
     documentValue.text = spec.text.content;
     documentValue.fontSize = spec.text.fontSize;
-    try { documentValue.font = spec.text.fontFamily || "Segoe UI"; } catch (fontError) {}
-    try { documentValue.fauxBold = spec.text.bold === true; } catch (boldError) {}
-    try { documentValue.fauxItalic = spec.text.italic === true; } catch (italicError) {}
+    var exactFont = spec.text.fontPostscriptName || spec.text.fontFullName || "";
+    try { documentValue.font = exactFont || spec.text.fontFamily || "Segoe UI"; } catch (fontError) {}
+    try { documentValue.fauxBold = !exactFont && (spec.text.fontWeight >= 600 || spec.text.bold === true); } catch (boldError) {}
+    try { documentValue.fauxItalic = !exactFont && spec.text.italic === true; } catch (italicError) {}
     documentValue.applyFill = true;
     documentValue.fillColor = spec.text.color;
     documentValue.applyStroke = false;

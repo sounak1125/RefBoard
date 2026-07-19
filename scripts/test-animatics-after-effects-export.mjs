@@ -26,7 +26,7 @@ const project = {
     { id:'still', itemId:'image-1', sourceAssetKey:'image-1-transformed', mediaKind:'image', track:0, start:0, duration:3, name:'Board & Shot.png', enabled:false, framing:{fit:'contain',scale:1,x:0,y:0}, strokes:[{points:[{x:0,y:0}]}] },
     { id:'video', mediaId:'video-1', mediaKind:'video', track:1, start:2, duration:4, sourceIn:10, sourceOut:14, name:'Take <1>.mp4', framing:{fit:'cover',scale:1.2,x:.1,y:-.1}, linkGroupId:'linked-1' },
   ],
-  texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', fontFamily:'Georgia', bold:true, italic:true, align:'right', background:true, scale:1.25, rotation:12, x:.25, y:.8 }],
+  texts:[{ id:'title', start:1, duration:2, content:'Title &\nSubtitle', name:'Title', size:48, color:'#3af09c', fontFamily:'Montserrat', fontStyle:'SemiBold Italic', fontWeight:600, fontFullName:'Montserrat SemiBold Italic', fontPostscriptName:'Montserrat-SemiBoldItalic', bold:true, italic:true, align:'right', background:true, scale:1.25, rotation:12, x:.25, y:.8 }],
   audio:[{ id:'music', mediaId:'audio-1', track:0, start:.5, duration:5, sourceIn:2, sourceOut:7, volume:.5, fadeInDuration:2, fadeOutDuration:1, fadeInCurve:'constant-power', fadeOutCurve:'exponential', name:'Music.wav', linkGroupId:'linked-1' }],
 };
 
@@ -72,7 +72,11 @@ assert.equal(music.enabled, false, 'muted RefBoard audio tracks must disable Aft
 assert.equal(music.locked, true, 'audio track locks must survive After Effects export');
 assert.equal(text.text.content, 'Title &\nSubtitle');
 assert.equal(text.text.fontSize, 72);
-assert.equal(text.text.fontFamily, 'Georgia');
+assert.equal(text.text.fontFamily, 'Montserrat');
+assert.equal(text.text.fontStyle, 'SemiBold Italic');
+assert.equal(text.text.fontWeight, 600);
+assert.equal(text.text.fontFullName, 'Montserrat SemiBold Italic');
+assert.equal(text.text.fontPostscriptName, 'Montserrat-SemiBoldItalic');
 assert.equal(text.text.bold, true);
 assert.equal(text.text.italic, true);
 assert.equal(text.text.align, 'right');
@@ -86,7 +90,7 @@ assert.deepEqual(portraitText.transform.position, [270, 1536], 'After Effects te
 
 const legacyProject = {
   ...project,
-  texts:[{ ...project.texts[0], fontFamily:undefined, bold:undefined, italic:undefined, align:undefined, background:undefined }],
+  texts:[{ ...project.texts[0], fontFamily:undefined, fontStyle:undefined, fontWeight:undefined, fontFullName:undefined, fontPostscriptName:undefined, bold:undefined, italic:undefined, align:undefined, background:undefined }],
 };
 const legacyText = buildAfterEffectsProject({ project:legacyProject, name:'Legacy Text', fps:24, width:1920, height:1080, exportStart:1, exportEnd:5, assets }).layers.find(layer => layer.id === 'title');
 assert.deepEqual(
@@ -108,11 +112,13 @@ assert.match(script, /categoryNames = \{ image:"Images", video:"Videos", audio:"
 assert.match(script, /asset\.relativePath/, 'the builder must import from categorized on-disk media folders');
 assert.match(script, /"relativePath":"Images\/Board & Shot\.png"/);
 assert.match(script, /sourceRectAtTime/, 'text must stay editable and receive a centered anchor point');
-assert.match(script, /documentValue\.font = spec\.text\.fontFamily \|\| "Segoe UI"/, 'After Effects text must use the selected font family');
-assert.match(script, /documentValue\.fauxBold = spec\.text\.bold === true/, 'After Effects text must carry bold through faux styling');
-assert.match(script, /documentValue\.fauxItalic = spec\.text\.italic === true/, 'After Effects text must carry italic through faux styling');
+assert.match(script, /var exactFont = spec\.text\.fontPostscriptName \|\| spec\.text\.fontFullName \|\| ""/, 'After Effects text must resolve an exact installed face before falling back to a family');
+assert.match(script, /documentValue\.font = exactFont \|\| spec\.text\.fontFamily \|\| "Segoe UI"/, 'After Effects text must use the exact selected font face');
+assert.match(script, /documentValue\.fauxBold = !exactFont && \(spec\.text\.fontWeight >= 600 \|\| spec\.text\.bold === true\)/, 'After Effects must only synthesize bold when no exact face is available');
+assert.match(script, /documentValue\.fauxItalic = !exactFont && spec\.text\.italic === true/, 'After Effects must only synthesize italic when no exact face is available');
 assert.match(script, /ParagraphJustification\.RIGHT_JUSTIFY/, 'After Effects text must map right alignment to paragraph justification');
-assert.match(script, /"fontFamily":"Georgia"/, 'selected font metadata must be embedded in the JSX payload');
+assert.match(script, /"fontFamily":"Montserrat"/, 'selected font family metadata must be embedded in the JSX payload');
+assert.match(script, /"fontPostscriptName":"Montserrat-SemiBoldItalic"/, 'selected exact font-face metadata must be embedded in the JSX payload');
 assert.match(script, /"background":true/, 'enabled text background metadata must be embedded in the JSX payload');
 assert.match(script, /ADBE Vector Shape - Rect/, 'After Effects text backgrounds must use an editable rectangle shape');
 assert.match(script, /ADBE Vector Fill Color"\)\.setValue\(\[0, 0, 0\]\)/, 'After Effects text backgrounds must be black');

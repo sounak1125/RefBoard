@@ -74,8 +74,12 @@ function clippedTimelineItem(item, kind, fps, exportStart, exportEnd, asset) {
       size: clamp(Number(item.size) || 42, 8, 300),
       color: String(item.color || '#ffffff'),
       fontFamily: String(item.fontFamily || 'Segoe UI'),
-      bold: item.bold === true,
-      italic: item.italic === true,
+      fontStyle: String(item.fontStyle || (item.italic === true ? (item.bold === true ? 'Bold Italic' : 'Italic') : item.bold === true ? 'Bold' : 'Regular')),
+      fontWeight: clamp(Number(item.fontWeight) || (item.bold === true ? 700 : 400), 100, 900),
+      fontFullName: String(item.fontFullName || ''),
+      fontPostscriptName: String(item.fontPostscriptName || ''),
+      bold: Number(item.fontWeight) >= 600 || item.bold === true,
+      italic: item.italic === true || /italic|oblique/i.test(String(item.fontStyle || '')),
       align: ['left', 'center', 'right'].includes(item.align) ? item.align : 'center',
       background: item.background === true,
       scale: clamp(Number(item.scale) || 1, .25, 4),
@@ -212,10 +216,13 @@ function textGeneratorXml(clip, index, fps, sequenceWidth) {
   const x = clamp((Number(text.x) || 0) - .5, -.5, .5);
   const y = clamp((Number(text.y) || 0) - .5, -.5, .5);
   const rotation = clamp(Number(text.rotation) || 0, -180, 180);
-  const fontStyle = text.bold === true ? (text.italic === true ? 4 : 2) : text.italic === true ? 3 : 1;
+  const bold = Number(text.fontWeight) >= 600 || text.bold === true;
+  const italic = text.italic === true || /italic|oblique/i.test(String(text.fontStyle || ''));
+  const fontStyle = bold ? (italic ? 4 : 2) : italic ? 3 : 1;
+  const fontName = text.fontPostscriptName || text.fontFullName || text.fontFamily || 'Segoe UI';
   const fontAlign = text.align === 'left' ? 1 : text.align === 'right' ? 3 : 2;
   const duration = Math.max(1, clip.out, clip.end - clip.start);
-  return `<generatoritem id="generatoritem-${xml(clip.id)}-${index}"><name>${xml(clip.name || 'Text')}</name><duration>${duration}</duration>${rateXml(fps)}<in>${clip.in}</in><out>${clip.out}</out><start>${clip.start}</start><end>${clip.end}</end><enabled>TRUE</enabled><anamorphic>FALSE</anamorphic><alphatype>black</alphatype><effect><name>Text</name><effectid>Text</effectid><effectcategory>Text</effectcategory><effecttype>generator</effecttype><mediatype>video</mediatype><parameter><parameterid>str</parameterid><name>Text</name><value>${content}</value></parameter><parameter><parameterid>fontname</parameterid><name>Font</name><value>${xml(text.fontFamily || 'Segoe UI')}</value></parameter><parameter><parameterid>fontsize</parameterid><name>Size</name><valuemin>0</valuemin><valuemax>1200</valuemax><value>${size.toFixed(6)}</value></parameter><parameter><parameterid>fontstyle</parameterid><name>Style</name><valuemin>1</valuemin><valuemax>4</valuemax><value>${fontStyle}</value></parameter><parameter><parameterid>fontalign</parameterid><name>Alignment</name><valuemin>1</valuemin><valuemax>3</valuemax><value>${fontAlign}</value></parameter><parameter><parameterid>fontcolor</parameterid><name>Font Color</name><value><alpha>255</alpha><red>${color.red}</red><green>${color.green}</green><blue>${color.blue}</blue></value></parameter><parameter><parameterid>origin</parameterid><name>Origin</name><value><horiz>${x.toFixed(6)}</horiz><vert>${y.toFixed(6)}</vert></value></parameter></effect>${textRotationXml(rotation)}<sourcetrack><mediatype>video</mediatype></sourcetrack></generatoritem>`;
+  return `<generatoritem id="generatoritem-${xml(clip.id)}-${index}"><name>${xml(clip.name || 'Text')}</name><duration>${duration}</duration>${rateXml(fps)}<in>${clip.in}</in><out>${clip.out}</out><start>${clip.start}</start><end>${clip.end}</end><enabled>TRUE</enabled><anamorphic>FALSE</anamorphic><alphatype>black</alphatype><effect><name>Text</name><effectid>Text</effectid><effectcategory>Text</effectcategory><effecttype>generator</effecttype><mediatype>video</mediatype><parameter><parameterid>str</parameterid><name>Text</name><value>${content}</value></parameter><parameter><parameterid>fontname</parameterid><name>Font</name><value>${xml(fontName)}</value></parameter><parameter><parameterid>fontsize</parameterid><name>Size</name><valuemin>0</valuemin><valuemax>1200</valuemax><value>${size.toFixed(6)}</value></parameter><parameter><parameterid>fontstyle</parameterid><name>Style</name><valuemin>1</valuemin><valuemax>4</valuemax><value>${fontStyle}</value></parameter><parameter><parameterid>fontalign</parameterid><name>Alignment</name><valuemin>1</valuemin><valuemax>3</valuemax><value>${fontAlign}</value></parameter><parameter><parameterid>fontcolor</parameterid><name>Font Color</name><value><alpha>255</alpha><red>${color.red}</red><green>${color.green}</green><blue>${color.blue}</blue></value></parameter><parameter><parameterid>origin</parameterid><name>Origin</name><value><horiz>${x.toFixed(6)}</horiz><vert>${y.toFixed(6)}</vert></value></parameter></effect>${textRotationXml(rotation)}<sourcetrack><mediatype>video</mediatype></sourcetrack></generatoritem>`;
 }
 
 export function createPremiereXml(sequence) {
