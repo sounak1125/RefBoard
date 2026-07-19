@@ -190,6 +190,11 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
         content: String(item.content ?? ''),
         fontSize: Number((clamp(finite(item.size, 42), 8, 300) * compWidth / 1280).toFixed(6)),
         color: colorRgb(item.color, '#ffffff'),
+        fontFamily: String(item.fontFamily || 'Segoe UI'),
+        bold: item.bold === true,
+        italic: item.italic === true,
+        align: ['left', 'center', 'right'].includes(item.align) ? item.align : 'center',
+        background: item.background === true,
       },
       transform: {
         position: [
@@ -245,13 +250,43 @@ export function createAfterEffectsScript(project, { mediaFolderName, projectFile
     var documentValue = textProperty.value;
     documentValue.text = spec.text.content;
     documentValue.fontSize = spec.text.fontSize;
+    try { documentValue.font = spec.text.fontFamily || "Segoe UI"; } catch (fontError) {}
+    try { documentValue.fauxBold = spec.text.bold === true; } catch (boldError) {}
+    try { documentValue.fauxItalic = spec.text.italic === true; } catch (italicError) {}
     documentValue.applyFill = true;
     documentValue.fillColor = spec.text.color;
     documentValue.applyStroke = false;
-    documentValue.justification = ParagraphJustification.CENTER_JUSTIFY;
+    documentValue.justification = spec.text.align === "left"
+      ? ParagraphJustification.LEFT_JUSTIFY
+      : spec.text.align === "right"
+        ? ParagraphJustification.RIGHT_JUSTIFY
+        : ParagraphJustification.CENTER_JUSTIFY;
     textProperty.setValue(documentValue);
     var bounds = layer.sourceRectAtTime(spec.start, false);
     layer.property("ADBE Transform Group").property("ADBE Anchor Point").setValue([bounds.left + bounds.width / 2, bounds.top + bounds.height / 2]);
+    if (spec.text.background === true) {
+      // A shape layer keeps the plate editable and matches the in-app 58% black fill.
+      var pad = spec.text.fontSize / 3;
+      var plate = comp.layers.addShape();
+      plate.name = spec.name + " Background";
+      var plateGroup = plate.property("ADBE Root Vectors Group").addProperty("ADBE Vector Group").property("ADBE Vectors Group");
+      var plateRect = plateGroup.addProperty("ADBE Vector Shape - Rect");
+      plateRect.property("ADBE Vector Rect Size").setValue([
+        Math.max(1, bounds.width + pad * 2),
+        Math.max(1, bounds.height + pad * 1.3)
+      ]);
+      var plateFill = plateGroup.addProperty("ADBE Vector Graphic - Fill");
+      plateFill.property("ADBE Vector Fill Color").setValue([0, 0, 0]);
+      plateFill.property("ADBE Vector Fill Opacity").setValue(58);
+      plate.startTime = spec.start;
+      plate.inPoint = spec.start;
+      plate.outPoint = spec.end;
+      plate.enabled = spec.enabled !== false;
+      if (spec.linkGroupId) plate.comment = "RefBoard linked group: " + spec.linkGroupId;
+      setTransform(plate, spec.transform);
+      plate.moveAfter(layer);
+      plate.locked = spec.locked === true;
+    }
     return layer;
   }
   function prepareNewProject() {

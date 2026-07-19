@@ -73,6 +73,11 @@ function clippedTimelineItem(item, kind, fps, exportStart, exportEnd, asset) {
       content: String(item.content ?? ''),
       size: clamp(Number(item.size) || 42, 8, 300),
       color: String(item.color || '#ffffff'),
+      fontFamily: String(item.fontFamily || 'Segoe UI'),
+      bold: item.bold === true,
+      italic: item.italic === true,
+      align: ['left', 'center', 'right'].includes(item.align) ? item.align : 'center',
+      background: item.background === true,
       scale: clamp(Number(item.scale) || 1, .25, 4),
       rotation: clamp(Number(item.rotation) || 0, -180, 180),
       x: clamp(Number.isFinite(Number(item.x)) ? Number(item.x) : .5, 0, 1),
@@ -194,18 +199,23 @@ function textRotationXml(rotation) {
   return `<filter><effect><name>Basic Motion</name><effectid>basic</effectid><effectcategory>motion</effectcategory><effecttype>motion</effecttype><mediatype>video</mediatype><parameter><parameterid>rotation</parameterid><name>Rotation</name><valuemin>-8640</valuemin><valuemax>8640</valuemax><value>${rotation.toFixed(6)}</value></parameter></effect></filter>`;
 }
 
-function textGeneratorXml(clip, index, fps) {
+function textGeneratorXml(clip, index, fps, sequenceWidth) {
+  // FCP7 XMEML's editable Text generator has no portable background-rectangle
+  // parameter. Preserve the flag in timeline metadata, but omit speculative
+  // XML so Premiere imports the text generator reliably.
   const text = clip.text || {};
   const color = textColor(text.color);
   const content = xml(text.content).replace(/\r?\n/g, '&#13;');
-  const size = clamp((Number(text.size) || 42) * (Number(text.scale) || 1), 2, 1200);
+  const size = clamp((Number(text.size) || 42) * (Number(text.scale) || 1) * Math.max(1, Number(sequenceWidth) || 1280) / 1280, 2, 1200);
   // Final Cut's Text generator origin is expressed as a normalized offset
   // from the sequence center. Animatics stores absolute normalized position.
   const x = clamp((Number(text.x) || 0) - .5, -.5, .5);
   const y = clamp((Number(text.y) || 0) - .5, -.5, .5);
   const rotation = clamp(Number(text.rotation) || 0, -180, 180);
+  const fontStyle = text.bold === true ? (text.italic === true ? 4 : 2) : text.italic === true ? 3 : 1;
+  const fontAlign = text.align === 'left' ? 1 : text.align === 'right' ? 3 : 2;
   const duration = Math.max(1, clip.out, clip.end - clip.start);
-  return `<generatoritem id="generatoritem-${xml(clip.id)}-${index}"><name>${xml(clip.name || 'Text')}</name><duration>${duration}</duration>${rateXml(fps)}<in>${clip.in}</in><out>${clip.out}</out><start>${clip.start}</start><end>${clip.end}</end><enabled>TRUE</enabled><anamorphic>FALSE</anamorphic><alphatype>black</alphatype><effect><name>Text</name><effectid>Text</effectid><effectcategory>Text</effectcategory><effecttype>generator</effecttype><mediatype>video</mediatype><parameter><parameterid>str</parameterid><name>Text</name><value>${content}</value></parameter><parameter><parameterid>fontname</parameterid><name>Font</name><value>Segoe UI</value></parameter><parameter><parameterid>fontsize</parameterid><name>Size</name><valuemin>0</valuemin><valuemax>1200</valuemax><value>${size.toFixed(6)}</value></parameter><parameter><parameterid>fontstyle</parameterid><name>Style</name><valuemin>1</valuemin><valuemax>4</valuemax><value>2</value></parameter><parameter><parameterid>fontalign</parameterid><name>Alignment</name><valuemin>1</valuemin><valuemax>3</valuemax><value>2</value></parameter><parameter><parameterid>fontcolor</parameterid><name>Font Color</name><value><alpha>255</alpha><red>${color.red}</red><green>${color.green}</green><blue>${color.blue}</blue></value></parameter><parameter><parameterid>origin</parameterid><name>Origin</name><value><horiz>${x.toFixed(6)}</horiz><vert>${y.toFixed(6)}</vert></value></parameter></effect>${textRotationXml(rotation)}<sourcetrack><mediatype>video</mediatype></sourcetrack></generatoritem>`;
+  return `<generatoritem id="generatoritem-${xml(clip.id)}-${index}"><name>${xml(clip.name || 'Text')}</name><duration>${duration}</duration>${rateXml(fps)}<in>${clip.in}</in><out>${clip.out}</out><start>${clip.start}</start><end>${clip.end}</end><enabled>TRUE</enabled><anamorphic>FALSE</anamorphic><alphatype>black</alphatype><effect><name>Text</name><effectid>Text</effectid><effectcategory>Text</effectcategory><effecttype>generator</effecttype><mediatype>video</mediatype><parameter><parameterid>str</parameterid><name>Text</name><value>${content}</value></parameter><parameter><parameterid>fontname</parameterid><name>Font</name><value>${xml(text.fontFamily || 'Segoe UI')}</value></parameter><parameter><parameterid>fontsize</parameterid><name>Size</name><valuemin>0</valuemin><valuemax>1200</valuemax><value>${size.toFixed(6)}</value></parameter><parameter><parameterid>fontstyle</parameterid><name>Style</name><valuemin>1</valuemin><valuemax>4</valuemax><value>${fontStyle}</value></parameter><parameter><parameterid>fontalign</parameterid><name>Alignment</name><valuemin>1</valuemin><valuemax>3</valuemax><value>${fontAlign}</value></parameter><parameter><parameterid>fontcolor</parameterid><name>Font Color</name><value><alpha>255</alpha><red>${color.red}</red><green>${color.green}</green><blue>${color.blue}</blue></value></parameter><parameter><parameterid>origin</parameterid><name>Origin</name><value><horiz>${x.toFixed(6)}</horiz><vert>${y.toFixed(6)}</vert></value></parameter></effect>${textRotationXml(rotation)}<sourcetrack><mediatype>video</mediatype></sourcetrack></generatoritem>`;
 }
 
 export function createPremiereXml(sequence) {
@@ -221,7 +231,7 @@ export function createPremiereXml(sequence) {
     return entries.length ? `<bin><name>${category}</name><children>${entries.map(asset => masterClipXml(asset, fps, emitted)).join('')}</children></bin>` : '';
   }).join('');
   let clipIndex = 0;
-  const video = sequence.videoTracks.map((track, index) => `<track>${track.map(clip => clip.kind === 'text' ? textGeneratorXml(clip, ++clipIndex, fps) : clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>${sequence.videoTrackEnabled?.[index] === false ? 'FALSE' : 'TRUE'}</enabled><locked>${sequence.videoTrackLocked?.[index] === true ? 'TRUE' : 'FALSE'}</locked></track>`).join('');
+  const video = sequence.videoTracks.map((track, index) => `<track>${track.map(clip => clip.kind === 'text' ? textGeneratorXml(clip, ++clipIndex, fps, width) : clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>${sequence.videoTrackEnabled?.[index] === false ? 'FALSE' : 'TRUE'}</enabled><locked>${sequence.videoTrackLocked?.[index] === true ? 'TRUE' : 'FALSE'}</locked></track>`).join('');
   const audio = sequence.audioTracks.map((track,index) => `<track>${track.map(clip => clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>${sequence.audioTrackEnabled?.[index] === false ? 'FALSE' : 'TRUE'}</enabled><locked>${sequence.audioTrackLocked?.[index] === true ? 'TRUE' : 'FALSE'}</locked></track>`).join('');
   const sequenceXml = `<sequence id="sequence-1"><name>${xml(name)}</name><duration>${durationFrames}</duration>${rateXml(fps)}<timecode>${rateXml(fps)}<string>00:00:00:00</string><frame>0</frame><displayformat>NDF</displayformat></timecode><media><video><format><samplecharacteristics>${rateXml(fps)}<width>${width}</width><height>${height}</height><anamorphic>FALSE</anamorphic><pixelaspectratio>square</pixelaspectratio><fielddominance>none</fielddominance><colordepth>24</colordepth></samplecharacteristics></format>${video}</video><audio><format><samplecharacteristics><depth>16</depth><samplerate>48000</samplerate></samplecharacteristics></format><outputs><group><index>1</index><numchannels>2</numchannels><downmix>0</downmix><channel><index>1</index></channel><channel><index>2</index></channel></group></outputs>${audio}</audio></media></sequence>`;
   return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="5"><project><name>${xml(name)}</name><children>${mediaBins}<bin><name>Sequences</name><children>${sequenceXml}</children></bin></children></project></xmeml>`;

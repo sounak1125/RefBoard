@@ -77,6 +77,13 @@ const DRAW_BRUSHES = {
   pencil:{widthMul:.72,alpha:.62,shadowMul:.12,cap:'round'},
 };
 const DRAW_COLOR_PRESETS=['#000000','#ffffff','#f0f2f6','#ff6b6b','#ff9f6b','#ffd166','#95e879','#5aa2ff','#7dd3fc','#c084fc','#f472b6','#8b8f9a'];
+const TEXT_FONT_FAMILIES=['Segoe UI','Arial','Helvetica','Times New Roman','Georgia','Courier New','Verdana','Trebuchet MS','Impact','Comic Sans MS'];
+const DEFAULT_TEXT_FONT_FAMILY='Segoe UI';
+const TEXT_COORDINATE_WIDTH=1280;
+const TEXT_DESIGN_SHORT_EDGE=1080;
+const normalizeTextFontFamily=value=>{const family=String(value??'').trim();return TEXT_FONT_FAMILIES.includes(family)?family:DEFAULT_TEXT_FONT_FAMILY;};
+const normalizeTextAlign=value=>['left','center','right'].includes(value)?value:'center';
+const textCanvasFont=(text,size)=>`${text?.italic===true?'italic ':''}${text?.bold===true?700:400} ${size}px "${normalizeTextFontFamily(text?.fontFamily)}", sans-serif`;
 const ASPECT_RATIOS = {
   '16:9': [16, 9],
   '4:3': [4, 3],
@@ -290,8 +297,18 @@ function css() {
   .an-viewer-shell.preview-zoomed { box-shadow:0 22px 72px rgba(0,0,0,.62); }
   .an-viewer-shell.preview-panning { cursor:grabbing!important; }
   #anViewer { display:block; width:100%; height:100%; background:#000; touch-action:none; }
-  .an-inline-text { position:absolute; z-index:12; display:none; min-width:120px; min-height:42px; box-sizing:border-box; padding:7px 10px; border:1px solid #6baaff; border-radius:7px; outline:none; resize:none; overflow:hidden; color:#fff; background:rgba(8,11,17,.78); box-shadow:0 8px 24px rgba(0,0,0,.4),0 0 0 2px rgba(93,164,255,.18); text-align:center; font:600 24px "Segoe UI",sans-serif; line-height:1.18; transform-origin:center; user-select:text; }
+  .an-inline-text { position:absolute; z-index:12; display:none; min-width:24px; min-height:24px; box-sizing:border-box; padding:0 2px; border:1px solid #69aaff; border-radius:1px; outline:none; resize:none; overflow:hidden; color:#fff; background:transparent; box-shadow:none; text-align:center; font:400 24px "Segoe UI",sans-serif; line-height:1.2; transform-origin:center; user-select:text; }
   .an-inline-text.open { display:block; }
+  .an-safe-guides { position:absolute; z-index:9; inset:0; display:none; pointer-events:none; }
+  .an-safe-guides.show { display:block; }
+  .an-safe-guide { position:absolute; box-sizing:border-box; border:1px dashed rgba(255,255,255,.72); filter:drop-shadow(0 1px 1px rgba(0,0,0,.72)); }
+  .an-safe-guide.action { inset:10%; }
+  .an-safe-guide.title { inset:20%; border-color:rgba(255,255,255,.9); }
+  .an-safe-center { position:absolute; left:50%; top:50%; width:28px; height:28px; translate:-50% -50%; filter:drop-shadow(0 1px 1px rgba(0,0,0,.72)); }
+  .an-safe-center::before,.an-safe-center::after { content:""; position:absolute; left:50%; top:50%; background:rgba(255,255,255,.9); translate:-50% -50%; }
+  .an-safe-center::before { width:28px; height:1px; }
+  .an-safe-center::after { width:1px; height:28px; }
+  .an-transport .an-icon.on { color:#cce5ff; background:#28496d; box-shadow:inset 0 0 0 1px #5a9de7; }
   .an-viewer-shell.framing { outline:2px solid #67aaff; outline-offset:3px; }
   .an-viewer-shell.framing::after { content:"Reframe · drag to position · wheel to scale · double-click to finish"; position:absolute; left:50%; bottom:12px; translate:-50% 0; padding:6px 10px; border-radius:7px; background:rgba(7,10,15,.78); color:#e7f1ff; font-size:10px; white-space:nowrap; pointer-events:none; }
   .an-empty-stage { position:absolute; inset:0; display:grid; place-items:center; color:#727987; text-align:center; pointer-events:none; }
@@ -563,6 +580,8 @@ function icon(path, fill = false) {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"${fill ? ' style="fill:currentColor;stroke:none"' : ''}>${path}</svg>`;
 }
 
+function previewVolumeIcon(muted=false){return icon(muted?'<path d="M11 5 6.5 9H3v6h3.5L11 19z"/><path d="m15 9 6 6M21 9l-6 6"/>':'<path d="M11 5 6.5 9H3v6h3.5L11 19z"/><path d="M15 9a4 4 0 0 1 0 6M17.8 6.2a8 8 0 0 1 0 11.6"/>');}
+
 function selectionToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 7.5-6 .75L9 20l-1.5-6.5L5 3z"/></svg>';}
 function razorToolIcon(){return '<svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(-28 16 16)" stroke-linejoin="round"><path d="M5 6h22v13l-8 7H5Z" fill="#080a0e" stroke="currentColor" stroke-width="1.8"/><path d="M5 20h13l9-8v7l-8 7H5Z" fill="#70b5ff" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="13" r="2.2" fill="none" stroke="currentColor" stroke-width="1.5"/></g></svg>';}
 function handToolIcon(){return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.1 11.2V7.6a1.45 1.45 0 0 1 2.9 0v2.1-4a1.5 1.5 0 0 1 3 0v3.7-2.8a1.45 1.45 0 0 1 2.9 0v3.3-1.7a1.4 1.4 0 0 1 2.8 0v5.3c0 4.5-2.7 7.1-6.8 7.1-2.6 0-4.2-1.2-5.5-3.1l-2.3-3.4a1.55 1.55 0 0 1 2.4-1.9Z" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/></svg>';}
@@ -580,7 +599,18 @@ function markup() {
       <aside class="an-side"><div class="an-side-inner">
         <nav class="an-tabs"><button class="an-tab on" data-panel="clip">Clip</button><button class="an-tab" data-panel="text">Text</button><button class="an-tab" data-panel="audio">Audio</button><button class="an-tab" data-panel="draw">Draw</button><button class="an-tab" data-panel="view">View</button></nav>
         <div class="an-panel on" data-panel-body="clip"><h3 class="an-section-title" id="anClipSelectionTitle">Selected clip</h3><div class="an-split"><label class="an-field">Seconds<input id="anDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><h3 class="an-section-title" id="anFramingTitle">16:9 framing</h3><div class="an-frame-actions"><button class="an-tool-btn" id="anFrameFit">Fit</button><button class="an-tool-btn" id="anFrameFill">Fill</button><button class="an-tool-btn" id="anFrameReset">Reset</button></div><label class="an-field">Scale<div class="an-scale-row"><input id="anFrameScale" type="range" min="25" max="800" value="100"><output id="anFrameScaleVal">100%</output></div></label><button class="an-tool-btn" id="anToggleClipVisibility" title="Enable or disable selected visual clips (Ctrl+H)" aria-pressed="false">Disable selected</button><div class="an-split"><button class="an-tool-btn" id="anSplit">Split at playhead</button><button class="an-tool-btn" id="anDeleteClip">Delete selected</button></div></div>
-        <div class="an-panel" data-panel-body="text"><h3 class="an-section-title">Text overlay layer</h3><label class="an-field">Content<textarea id="anText" placeholder="Add a title or annotation…"></textarea></label><div class="an-split"><label class="an-field">Font size<input id="anTextSize" type="number" min="8" max="300" value="42"></label><label class="an-field">Color<input id="anTextColor" type="color" value="#ffffff"></label></div><label class="an-field">Scale<div class="an-scale-row"><input id="anTextScale" type="range" min="25" max="400" value="100"><output id="anTextScaleVal">100%</output></div></label><div class="an-split"><label class="an-field">Rotation<input id="anTextRotation" type="number" min="-180" max="180" step="1" value="0"></label><label class="an-field">Duration (sec)<input id="anTextDuration" type="number" min="0.017" max="600" step="0.1" value="3"></label></div><button class="an-tool-btn" id="anAddText">Add text layer</button><button class="an-tool-btn" id="anClearText">Delete selected text</button></div>
+        <div class="an-panel" data-panel-body="text">
+          <h3 class="an-section-title">Text overlay layer</h3>
+          <label class="an-field">Content<textarea id="anText" placeholder="Add a title or annotation…"></textarea></label>
+          <label class="an-field">Font family<select id="anTextFont"><option value="Segoe UI">Segoe UI</option><option value="Arial">Arial</option><option value="Helvetica">Helvetica</option><option value="Times New Roman">Times New Roman</option><option value="Georgia">Georgia</option><option value="Courier New">Courier New</option><option value="Verdana">Verdana</option><option value="Trebuchet MS">Trebuchet MS</option><option value="Impact">Impact</option><option value="Comic Sans MS">Comic Sans MS</option></select></label>
+          <div class="an-split"><button type="button" class="an-tool-btn" id="anTextBold" aria-pressed="false">Bold</button><button type="button" class="an-tool-btn" id="anTextItalic" aria-pressed="false">Italic</button></div>
+          <button type="button" class="an-tool-btn" id="anTextBackground" aria-pressed="false">Background</button>
+          <div class="an-field">Alignment<div class="an-frame-actions" role="group" aria-label="Text alignment"><button type="button" class="an-tool-btn" data-an-text-align="left" aria-pressed="false">Left</button><button type="button" class="an-tool-btn on" data-an-text-align="center" aria-pressed="true">Center</button><button type="button" class="an-tool-btn" data-an-text-align="right" aria-pressed="false">Right</button></div></div>
+          <div class="an-split"><label class="an-field">Font size<input id="anTextSize" type="number" min="8" max="300" value="42"></label><label class="an-field">Color<input id="anTextColor" type="color" value="#ffffff"></label></div>
+          <label class="an-field">Scale<div class="an-scale-row"><input id="anTextScale" type="range" min="25" max="400" value="100"><output id="anTextScaleVal">100%</output></div></label>
+          <div class="an-split"><label class="an-field">Rotation<input id="anTextRotation" type="number" min="-180" max="180" step="1" value="0"></label><label class="an-field">Duration (sec)<input id="anTextDuration" type="number" min="0.017" max="600" step="0.1" value="3"></label></div>
+          <button class="an-tool-btn" id="anAddText">Add text layer</button><button class="an-tool-btn" id="anClearText">Delete selected text</button>
+        </div>
         <div class="an-panel" data-panel-body="audio"><h3 class="an-section-title" id="anAudioSelectionTitle">Selected audio</h3><div class="an-split"><label class="an-field">Seconds<input id="anAudioDuration" type="number" min="0.017" max="600" step="0.1" placeholder="Mixed"></label><label class="an-field">Frames<input id="anAudioDurationFrames" type="number" min="1" max="36000" step="1" placeholder="Mixed"></label></div><label class="an-field">Volume<div class="an-scale-row"><input id="anAudioVolume" type="range" min="0" max="400" step="1" value="100"><output id="anAudioVolumeVal">100%</output></div></label><button class="an-tool-btn" id="anAudioGain">Audio Gain (G)</button><button class="an-tool-btn" id="anAudioMute">Mute selected</button><div class="an-fade-controls"><div class="an-fade-card"><h4>Fade in</h4><label class="an-field">Seconds<input id="anFadeInDuration" type="number" min="0" max="600" step="0.033"></label><label class="an-field">Curve<select id="anFadeInCurve"><option value="constant-gain">Constant Gain</option><option value="constant-power">Constant Power</option><option value="exponential">Exponential Fade</option><option value="custom">Custom</option></select></label><label class="an-field an-fade-custom" id="anFadeInCustom">Custom shape<input id="anFadeInShape" type="range" min="-100" max="100" step="1" value="0"></label></div><div class="an-fade-card"><h4>Fade out</h4><label class="an-field">Seconds<input id="anFadeOutDuration" type="number" min="0" max="600" step="0.033"></label><label class="an-field">Curve<select id="anFadeOutCurve"><option value="constant-gain">Constant Gain</option><option value="constant-power">Constant Power</option><option value="exponential">Exponential Fade</option><option value="custom">Custom</option></select></label><label class="an-field an-fade-custom" id="anFadeOutCustom">Custom shape<input id="anFadeOutShape" type="range" min="-100" max="100" step="1" value="0"></label></div></div><div class="an-split"><button class="an-tool-btn" id="anAudioSplit">Split at playhead</button><button class="an-tool-btn" id="anAudioDelete">Delete selected</button></div></div>
         <div class="an-panel" data-panel-body="draw"><h3 class="an-section-title">Draw on shot</h3><button class="an-tool-btn" id="anDrawToggle" title="Toggle drawing (D)">Start drawing (D)</button><div class="an-draw-tool-row"><button class="an-draw-tool on" id="anDrawPen" aria-expanded="false" aria-controls="anDrawBrushes"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Pen</span></button><button class="an-draw-tool" id="anDrawEraser" title="Eraser (E)"><svg viewBox="0 0 24 24"><path d="m4 15 8-10 8 7-7 8H8Z"/><path d="m9 12 7 6M8 20h12"/></svg><span>Eraser</span><kbd>E</kbd></button></div><div class="an-draw-brushes" id="anDrawBrushes"><button class="an-draw-brush on" data-an-brush="pen"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>Pen</span></button><button class="an-draw-brush" data-an-brush="soft"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="6" opacity=".45"/></svg><span>Soft</span></button><button class="an-draw-brush" data-an-brush="marker"><svg viewBox="0 0 24 24"><path d="M6 18h12" stroke-width="3" opacity=".55"/><path d="m7 14 9-7 2.5 2.5-9 7H7Z"/></svg><span>Marker</span></button><button class="an-draw-brush" data-an-brush="pencil"><svg viewBox="0 0 24 24"><path d="m14.5 3.5 6 6L9 21l-5 1 1-5ZM13 5l6 6"/></svg><span>Pencil</span></button></div><button class="an-draw-color-btn" id="anDrawColorButton" aria-expanded="false" aria-controls="anDrawColorPop"><span class="an-draw-color-swatch" id="anDrawColorSwatch"></span><span>Color</span></button><div class="an-draw-color-pop" id="anDrawColorPop" aria-hidden="true"><div class="an-draw-cp-sv" id="anDrawCpSv"><div class="an-draw-cp-white"></div><div class="an-draw-cp-black"></div><div class="an-draw-cp-dot" id="anDrawCpDot"></div></div><input class="an-draw-cp-hue" id="anDrawCpHue" type="range" min="0" max="360" value="0" aria-label="Drawing hue"><div class="an-draw-cp-row"><span class="an-draw-cp-preview" id="anDrawCpPreview"></span><input class="an-draw-cp-hex" id="anDrawCpHex" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Drawing color hex"></div><div class="an-draw-cp-presets" id="anDrawCpPresets"></div></div><div class="an-draw-size-row"><button class="an-draw-size-btn" id="anDrawWidthDown" title="Thinner ([)">−</button><output class="an-draw-size-value" id="anDrawWidthVal">2 <kbd>[ ]</kbd></output><button class="an-draw-size-btn" id="anDrawWidthUp" title="Thicker (])">+</button></div><button class="an-tool-btn" id="anClearDraw">Clear drawing</button></div>
         <div class="an-panel" data-panel-body="view"><h3 class="an-section-title">Viewer</h3><div class="an-split"><label class="an-field">Playback counter<select id="anCounterMode"><option value="timecode">Timecode</option><option value="frames">Frames</option><option value="seconds">Seconds</option></select></label><label class="an-field">Project rate<select id="anProjectFps"><option value="24">24 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></label></div><button class="an-tool-btn" id="anTcToggle">Show counter in picture</button><label class="an-field">Background<select id="anBackground"><option value="#000000">Black</option><option value="#181a20">Charcoal</option><option value="#ffffff">White</option></select></label></div>
@@ -609,6 +639,9 @@ export function createAnimaticsEditor(options) {
 
   const root = document.querySelector('#animaticsWorkspace');
   root.querySelector('.an-edit-tools')?.insertAdjacentHTML('beforeend',`<button class="an-edit-tool" data-an-tool="hand" title="Hand tool (H)" aria-label="Hand tool">${handToolIcon()}</button><span class="an-edit-divider" aria-hidden="true"></span><button class="an-edit-tool" id="anLink" title="Link selected clips (Ctrl+L)" aria-label="Link selected clips" aria-pressed="false">${linkToolIcon()}</button>`);
+  root.querySelector('#anViewer')?.insertAdjacentHTML('afterend','<div class="an-safe-guides" id="anSafeGuides" aria-hidden="true"><i class="an-safe-guide action"></i><i class="an-safe-guide title"></i><i class="an-safe-center"></i></div>');
+  root.querySelector('.an-transport')?.insertAdjacentHTML('afterbegin',`<button class="an-icon" id="anGuides" type="button" title="Toggle title/action safe guides" aria-label="Toggle title and action safe guides" aria-pressed="false">${icon('<rect x="3" y="4" width="18" height="16"/><rect x="7" y="7" width="10" height="10"/>')}</button>`);
+  root.querySelector('.an-transport')?.insertAdjacentHTML('beforeend',`<button class="an-icon" id="anPreviewMute" type="button" title="Mute timeline preview" aria-label="Mute timeline preview" aria-pressed="false">${previewVolumeIcon(false)}</button>`);
   const canonicalBrandMark=document.querySelector('#landingBrandIcon')?.currentSrc||document.querySelector('#landingBrandIcon')?.src||document.querySelector('#titlebarIcon')?.currentSrc||document.querySelector('#titlebarIcon')?.src||'';
   if(canonicalBrandMark)root.querySelector('#anBrandMark').src=canonicalBrandMark;
   const canvas = root.querySelector('#anViewer');
@@ -707,6 +740,8 @@ export function createAnimaticsEditor(options) {
   let previewPanDrag = null;
   let previewZoomHudTimer = 0;
   let previewShotKey = '';
+  let safeGuidesVisible = false;
+  let previewMuted = false;
   let marqueeDrag = null;
   let gapPress = null;
   let audioPlayers = [];
@@ -960,6 +995,7 @@ export function createAnimaticsEditor(options) {
   function hasSoloAudioTrack(){return project.audioTrackSolo?.some(Boolean)===true;}
   function isAudioTrackAudible(track){return project.audioTrackMuted?.[track]!==true&&(!hasSoloAudioTrack()||project.audioTrackSolo?.[track]===true);}
   function effectiveAudioVolume(clip){return isAudioTrackAudible(Number(clip?.track)||0)?clamp(Number.isFinite(Number(clip?.volume))?Number(clip.volume):1,0,MAX_AUDIO_GAIN):0;}
+  function previewAudioVolume(clip){return previewMuted?0:effectiveAudioVolume(clip);}
   function isVisualClipEnabled(clip){return clip?.enabled!==false;}
   function isVisualClipVisible(clip){return isVisualClipEnabled(clip)&&isVideoTrackEnabled(Number(clip?.track)||0);}
 
@@ -1117,12 +1153,13 @@ export function createAnimaticsEditor(options) {
     base.texts=(Array.isArray(raw.texts)?raw.texts:[]).map(t=>({
       id:String(t.id||uid()),track:0,start:Math.max(0,Number(t.start)||0),duration:clamp(Number(t.duration)||DEFAULT_SHOT_SECONDS,MIN_SHOT_SECONDS,600),
       content:String(t.content||''),size:clamp(Number(t.size)||42,8,300),color:/^#[0-9a-f]{6}$/i.test(t.color)?t.color:'#ffffff',
+      fontFamily:normalizeTextFontFamily(t.fontFamily),bold:t.bold===true,italic:t.italic===true,align:normalizeTextAlign(t.align),background:t.background===true,
       scale:clamp(finiteOr(t.scale,1),.25,4),rotation:Math.round(clamp(finiteOr(t.rotation,0),-180,180)),x:clamp(finiteOr(t.x,.5),0,1),y:clamp(finiteOr(t.y,.82),0,1),
     })).filter(t=>t.content);
     for(const rawClip of Array.isArray(raw.clips)?raw.clips:[]){
       if(!rawClip?.text?.content)continue;
       const clip=base.clips.find(c=>c.id===String(rawClip.id));if(!clip)continue;
-      base.texts.push({id:uid(),track:0,start:clip.start,duration:clip.duration,content:String(rawClip.text.content),size:clamp(Number(rawClip.text.size)||42,8,300),color:String(rawClip.text.color||'#ffffff'),scale:1,rotation:0,x:.5,y:.82});
+      base.texts.push({id:uid(),track:0,start:clip.start,duration:clip.duration,content:String(rawClip.text.content),size:clamp(Number(rawClip.text.size)||42,8,300),color:String(rawClip.text.color||'#ffffff'),fontFamily:DEFAULT_TEXT_FONT_FAMILY,bold:false,italic:false,align:'center',background:false,scale:1,rotation:0,x:.5,y:.82});
     }
     base.audio = (Array.isArray(raw.audio) ? raw.audio : []).map(a => {
       const mediaId = String(a.mediaId || a.id || uid());
@@ -1478,31 +1515,44 @@ export function createAnimaticsEditor(options) {
   }
 
   function textLayout(targetCtx,text,w,h){
-    const scale=clamp(Number(text.scale)||1,.25,4),size=clamp(Number(text.size)||42,8,300)*scale*(w/1280);
-    const lines=String(text.content??'').split(/\r?\n/).slice(0,12),lineH=size*1.18,pad=14*(w/1280)*scale;
-    targetCtx.save();targetCtx.font=`600 ${size}px "Segoe UI",sans-serif`;
-    const maxWidth=Math.max(...lines.map(line=>targetCtx.measureText(line||' ').width));targetCtx.restore();
-    const boxH=lineH*Math.max(1,lines.length);
-    return {scale,size,lines,lineH,maxWidth,boxH,pad,cx:clamp(finiteOr(text.x,.5),0,1)*w,cy:clamp(finiteOr(text.y,.82),0,1)*h,rotation:clamp(finiteOr(text.rotation,0),-180,180)*Math.PI/180,halfW:maxWidth/2+pad*1.3,halfH:boxH/2+pad};
+    const scale=clamp(Number(text.scale)||1,.25,4),align=normalizeTextAlign(text.align),design=sequenceDimensions(TEXT_DESIGN_SHORT_EDGE,project.aspect),projection=w/Math.max(1,design.width),designSize=clamp(Number(text.size)||42,8,300)*scale*(design.width/TEXT_COORDINATE_WIDTH),size=designSize*projection;
+    const lines=String(text.content??'').split(/\r?\n/).slice(0,12),designLineH=designSize*1.2,lineH=designLineH*projection,pad=14*(design.width/TEXT_COORDINATE_WIDTH)*scale*projection;
+    targetCtx.save();targetCtx.font=textCanvasFont(text,designSize);targetCtx.textAlign=align;targetCtx.textBaseline='alphabetic';
+    const measured=lines.map(line=>targetCtx.measureText(line||' ')),probe=targetCtx.measureText('Mg'),maxAdvance=Math.max(designSize*.18,...measured.map(metric=>metric.width));
+    const fallbackAscent=Math.max(1,probe.actualBoundingBoxAscent||probe.fontBoundingBoxAscent||designSize*.78),fallbackDescent=Math.max(0,probe.actualBoundingBoxDescent||probe.fontBoundingBoxDescent||designSize*.22),rawLineX=align==='left'?-maxAdvance/2:align==='right'?maxAdvance/2:0;
+    let left=-maxAdvance/2,right=maxAdvance/2,top=Infinity,bottom=-Infinity;
+    const rawBaselines=measured.map((metric,index)=>{
+      const baseline=index*designLineH,ascent=metric.actualBoundingBoxAscent>0?metric.actualBoundingBoxAscent:fallbackAscent,descent=metric.actualBoundingBoxDescent>0?metric.actualBoundingBoxDescent:fallbackDescent;
+      const fallbackLeft=align==='left'?0:align==='right'?metric.width:metric.width/2,fallbackRight=align==='left'?metric.width:align==='right'?0:metric.width/2,inkLeft=Number.isFinite(metric.actualBoundingBoxLeft)?metric.actualBoundingBoxLeft:fallbackLeft,inkRight=Number.isFinite(metric.actualBoundingBoxRight)?metric.actualBoundingBoxRight:fallbackRight;
+      left=Math.min(left,rawLineX-inkLeft);right=Math.max(right,rawLineX+inkRight);top=Math.min(top,baseline-ascent);bottom=Math.max(bottom,baseline+descent);return baseline;
+    });
+    targetCtx.restore();
+    if(!Number.isFinite(top)||!Number.isFinite(bottom)){top=-fallbackAscent;bottom=fallbackDescent;}
+    const centerX=(left+right)/2,centerY=(top+bottom)/2,lineX=(rawLineX-centerX)*projection,lineYs=rawBaselines.map(baseline=>(baseline-centerY)*projection),halfW=Math.max(.5,(right-left)*projection/2),halfH=Math.max(.5,(bottom-top)*projection/2),maxWidth=maxAdvance*projection,boxH=(bottom-top)*projection,backgroundX=-centerX*projection;
+    return {scale,size,lines,lineH,lineX,lineYs,maxWidth,boxH,backgroundX,pad,align,cx:clamp(finiteOr(text.x,.5),0,1)*w,cy:clamp(finiteOr(text.y,.82),0,1)*h,rotation:clamp(finiteOr(text.rotation,0),-180,180)*Math.PI/180,halfW,halfH};
   }
 
   function textUiMetrics(layout,w){
     const rect=canvas.getBoundingClientRect(),uiScale=w/Math.max(1,rect.width);
-    return {handle:8*uiScale,hit:12*uiScale,rotateOffset:30*uiScale,anchor:6*uiScale};
+    return {handle:8*uiScale,hit:12*uiScale,rotateOffset:30*uiScale,anchor:6*uiScale,selectionPad:2*uiScale};
   }
 
+  function textControlBounds(layout,w){const {selectionPad}=textUiMetrics(layout,w);return {halfW:layout.halfW+selectionPad,halfH:layout.halfH+selectionPad};}
+
   function drawTextOverlay(targetCtx,text,w,h,selected=false){
-    const layout=textLayout(targetCtx,text,w,h),{size,lines,lineH,maxWidth,boxH,pad,cx,cy,rotation,halfW,halfH}=layout;
+    const layout=textLayout(targetCtx,text,w,h),{size,lines,lineX,lineYs,maxWidth,boxH,backgroundX,pad,align,cx,cy,rotation}=layout;
     targetCtx.save();targetCtx.translate(cx,cy);targetCtx.rotate(rotation);
-    targetCtx.font=`600 ${size}px "Segoe UI",sans-serif`;targetCtx.textAlign='center';targetCtx.textBaseline='middle';
-    targetCtx.fillStyle='rgba(0,0,0,.58)';targetCtx.fillRect(-maxWidth/2-pad,-boxH/2-pad*.65,maxWidth+pad*2,boxH+pad*1.3);
-    targetCtx.fillStyle=text.color||'#fff';lines.forEach((line,index)=>targetCtx.fillText(line,0,(index-(lines.length-1)/2)*lineH));
+    targetCtx.font=textCanvasFont(text,size);targetCtx.textAlign=align;targetCtx.textBaseline='alphabetic';
+    if(text.background===true){
+      targetCtx.fillStyle='rgba(0,0,0,.58)';targetCtx.fillRect(backgroundX-maxWidth/2-pad,-boxH/2-pad*.65,maxWidth+pad*2,boxH+pad*1.3);
+    }
+    targetCtx.fillStyle=text.color||'#fff';lines.forEach((line,index)=>targetCtx.fillText(line,lineX,lineYs[index]));
     if(selected){
-      const {handle,rotateOffset,anchor}=textUiMetrics(layout,w);
-      targetCtx.strokeStyle='#69aaff';targetCtx.lineWidth=Math.max(1,2*(w/1280));targetCtx.setLineDash([7*(w/1280),5*(w/1280)]);targetCtx.strokeRect(-halfW,-halfH,halfW*2,halfH*2);targetCtx.setLineDash([]);
+      const {handle,rotateOffset,anchor}=textUiMetrics(layout,w),{halfW,halfH}=textControlBounds(layout,w);
+      targetCtx.strokeStyle='#69aaff';targetCtx.lineWidth=Math.max(1,2*(w/TEXT_COORDINATE_WIDTH));targetCtx.setLineDash([]);targetCtx.strokeRect(-halfW,-halfH,halfW*2,halfH*2);
       targetCtx.beginPath();targetCtx.moveTo(0,-halfH);targetCtx.lineTo(0,-halfH-rotateOffset);targetCtx.stroke();
       targetCtx.fillStyle='#0f1723';targetCtx.strokeStyle='#8bc1ff';
-      for(const [x,y] of [[-halfW,-halfH],[halfW,-halfH],[-halfW,halfH],[halfW,halfH]]){targetCtx.beginPath();targetCtx.rect(x-handle/2,y-handle/2,handle,handle);targetCtx.fill();targetCtx.stroke();}
+      for(const [x,y] of [[-halfW,-halfH],[0,-halfH],[halfW,-halfH],[-halfW,0],[halfW,0],[-halfW,halfH],[0,halfH],[halfW,halfH]]){targetCtx.beginPath();targetCtx.rect(x-handle/2,y-handle/2,handle,handle);targetCtx.fill();targetCtx.stroke();}
       targetCtx.beginPath();targetCtx.arc(0,-halfH-rotateOffset,handle*.65,0,Math.PI*2);targetCtx.fill();targetCtx.stroke();
       targetCtx.beginPath();targetCtx.arc(0,0,anchor,0,Math.PI*2);targetCtx.fill();targetCtx.stroke();targetCtx.beginPath();targetCtx.moveTo(-anchor*1.7,0);targetCtx.lineTo(anchor*1.7,0);targetCtx.moveTo(0,-anchor*1.7);targetCtx.lineTo(0,anchor*1.7);targetCtx.stroke();
     }
@@ -1517,25 +1567,25 @@ export function createAnimaticsEditor(options) {
     const point=viewerPoint(event),active=textsAt(project.playhead),ordered=[];
     const selected=active.find(text=>text.id===selectedTextId);if(selected)ordered.push(selected);for(const text of [...active].reverse())if(text.id!==selectedTextId)ordered.push(text);
     for(const text of ordered){
-      const layout=textLayout(ctx,text,canvas.width,canvas.height),local=textLocalPoint(layout,point),{hit,rotateOffset}=textUiMetrics(layout,canvas.width);
+      const layout=textLayout(ctx,text,canvas.width,canvas.height),local=textLocalPoint(layout,point),{hit,rotateOffset}=textUiMetrics(layout,canvas.width),{halfW,halfH}=textControlBounds(layout,canvas.width);
       if(text.id===selectedTextId){
-        if(Math.hypot(local.x,local.y+layout.halfH+rotateOffset)<=hit)return {text,layout,point,mode:'rotate'};
-        for(const corner of [[-layout.halfW,-layout.halfH],[layout.halfW,-layout.halfH],[-layout.halfW,layout.halfH],[layout.halfW,layout.halfH]])if(Math.hypot(local.x-corner[0],local.y-corner[1])<=hit)return {text,layout,point,mode:'scale'};
+        if(Math.hypot(local.x,local.y+halfH+rotateOffset)<=hit)return {text,layout,point,mode:'rotate'};
+        for(const handlePoint of [[-halfW,-halfH],[0,-halfH],[halfW,-halfH],[-halfW,0],[halfW,0],[-halfW,halfH],[0,halfH],[halfW,halfH]])if(Math.hypot(local.x-handlePoint[0],local.y-handlePoint[1])<=hit)return {text,layout,point,mode:'scale'};
       }
-      if(Math.abs(local.x)<=layout.halfW&&Math.abs(local.y)<=layout.halfH)return {text,layout,point,mode:'move'};
+      if(Math.abs(local.x)<=halfW&&Math.abs(local.y)<=halfH)return {text,layout,point,mode:'move'};
     }
     return null;
   }
 
   function positionInlineTextEditor(){
     const text=project.texts.find(item=>item.id===inlineTextId);if(!text||!inlineTextEditor.classList.contains('open'))return;
-    const layout=textLayout(ctx,text,canvas.width,canvas.height),rect=canvas.getBoundingClientRect(),displayW=rect.width/Math.max(.001,previewZoom),displayH=rect.height/Math.max(.001,previewZoom),width=clamp(layout.halfW*2*displayW/canvas.width+28,120,Math.max(120,displayW*.9)),height=clamp(layout.halfH*2*displayH/canvas.height+18,42,Math.max(42,displayH*.72));
-    inlineTextEditor.style.left=`${text.x*100}%`;inlineTextEditor.style.top=`${text.y*100}%`;inlineTextEditor.style.width=`${width}px`;inlineTextEditor.style.height=`${height}px`;inlineTextEditor.style.fontSize=`${Math.max(14,layout.size*displayH/canvas.height)}px`;inlineTextEditor.style.color=text.color||'#fff';inlineTextEditor.style.transform=`translate(-50%,-50%) rotate(${clamp(finiteOr(text.rotation,0),-180,180)}deg)`;
+    const layout=textLayout(ctx,text,canvas.width,canvas.height),rect=canvas.getBoundingClientRect(),displayW=rect.width/Math.max(.001,previewZoom),displayH=rect.height/Math.max(.001,previewZoom),width=clamp(layout.halfW*2*displayW/canvas.width+6,24,Math.max(24,displayW*.95)),height=clamp(Math.max(layout.boxH,layout.lineH*Math.max(1,layout.lines.length))*displayH/canvas.height+4,24,Math.max(24,displayH*.9));
+    inlineTextEditor.style.left=`${text.x*100}%`;inlineTextEditor.style.top=`${text.y*100}%`;inlineTextEditor.style.width=`${width}px`;inlineTextEditor.style.height=`${height}px`;inlineTextEditor.style.fontSize=`${Math.max(1,layout.size*displayH/canvas.height)}px`;inlineTextEditor.style.lineHeight='1.2';inlineTextEditor.style.fontFamily=normalizeTextFontFamily(text.fontFamily);inlineTextEditor.style.fontWeight=text.bold===true?'700':'400';inlineTextEditor.style.fontStyle=text.italic===true?'italic':'normal';inlineTextEditor.style.textAlign=normalizeTextAlign(text.align);inlineTextEditor.style.color=text.color||'#fff';inlineTextEditor.style.transform=`translate(-50%,-50%) rotate(${clamp(finiteOr(text.rotation,0),-180,180)}deg)`;
   }
 
   function beginInlineTextEdit(text){
     if(isTrackLocked('text')){notify('T1 is locked');return;}
-    inlineTextId=text.id;inlineTextOriginal=text.content;inlineTextEditor.value=text.content;inlineTextEditor.classList.add('open');positionInlineTextEditor();inlineTextEditor.focus();inlineTextEditor.select();
+    inlineTextId=text.id;inlineTextOriginal=text.content;inlineTextEditor.value=text.content;drawViewerLive();inlineTextEditor.classList.add('open');positionInlineTextEditor();inlineTextEditor.focus();inlineTextEditor.select();
   }
 
   function finishInlineTextEdit(cancel=false){
@@ -1552,7 +1602,7 @@ export function createAnimaticsEditor(options) {
       if(mainViewer&&clip.id===activeDrawingClipId&&activeDrawingOverlay){targetCtx.drawImage(activeDrawingOverlay,0,0,w,h);if(activeStroke?.tool!=='eraser'&&activeDrawingStrokeCanvas){const brush=DRAW_BRUSHES[activeStroke.brush]||DRAW_BRUSHES.pen;targetCtx.save();targetCtx.globalAlpha=brush.alpha;targetCtx.drawImage(activeDrawingStrokeCanvas,0,0,w,h);targetCtx.restore();}}
       else drawClipDrawings(targetCtx,clip,w,h);
     }
-    for(const text of activeTexts)drawTextOverlay(targetCtx,text,w,h,mainViewer&&text.id===selectedTextId);
+    for(const text of activeTexts){if(mainViewer&&text.id===inlineTextId)continue;drawTextOverlay(targetCtx,text,w,h,mainViewer&&text.id===selectedTextId);}
     if(burnTc){
       const fs=Math.max(14,22*(w/1280)); targetCtx.font=`600 ${fs}px ui-monospace,Consolas,monospace`; targetCtx.textAlign='left'; targetCtx.textBaseline='top';
       const label=counterLabel(t),pad=10*(w/1280); const tw=targetCtx.measureText(label).width;
@@ -1646,6 +1696,9 @@ export function createAnimaticsEditor(options) {
       $('#anText').value=text.content;$('#anTextSize').value=String(text.size);$('#anTextColor').value=text.color;
       $('#anTextScale').value=String(Math.round(text.scale*100));$('#anTextScaleVal').value=`${Math.round(text.scale*100)}%`;$('#anTextScaleVal').textContent=`${Math.round(text.scale*100)}%`;
       $('#anTextRotation').value=String(Math.round(text.rotation));$('#anTextDuration').value=String(Number(text.duration.toFixed(3)));
+      $('#anTextFont').value=normalizeTextFontFamily(text.fontFamily);
+      for(const [selector,on] of [['#anTextBold',text.bold===true],['#anTextItalic',text.italic===true],['#anTextBackground',text.background===true]]){$(selector).classList.toggle('on',on);$(selector).setAttribute('aria-pressed',String(on));}
+      const align=normalizeTextAlign(text.align);root.querySelectorAll('[data-an-text-align]').forEach(button=>{const on=button.dataset.anTextAlign===align;button.classList.toggle('on',on);button.setAttribute('aria-pressed',String(on));});
     }
     $('#anAddText').textContent=text?'Update text layer':'Add text layer';$('#anClearText').disabled=!text;
     const audioPercent=uniformValue(audios,item=>Math.round((item.volume??1)*100),0),audioFallback=Math.round((audios[0]?.volume??1)*100),allMuted=audios.length&&audios.every(item=>item.volume===0);$('#anAudioVolume').value=String(audioPercent??audioFallback);$('#anAudioVolume').disabled=!audios.length;$('#anAudioVolumeVal').value=audioPercent===null?'Mixed':`${audioPercent}%`;$('#anAudioVolumeVal').textContent=audioPercent===null?'Mixed':`${audioPercent}%`;
@@ -1770,6 +1823,14 @@ export function createAnimaticsEditor(options) {
 
   function renderAll(){ applyTimelineHeight();applyInspectorWidth();applyPreviewQuality(); renderTimeline(); syncInspector(); renderTransport(); drawViewer(); }
 
+  function setSafeGuidesVisible(visible){
+    safeGuidesVisible=!!visible;const guides=$('#anSafeGuides'),button=$('#anGuides');guides.classList.toggle('show',safeGuidesVisible);guides.setAttribute('aria-hidden',String(!safeGuidesVisible));button.classList.toggle('on',safeGuidesVisible);button.setAttribute('aria-pressed',String(safeGuidesVisible));
+  }
+
+  function setPreviewMuted(muted){
+    previewMuted=!!muted;const button=$('#anPreviewMute');button.classList.toggle('on',previewMuted);button.setAttribute('aria-pressed',String(previewMuted));button.title=previewMuted?'Unmute timeline preview':'Mute timeline preview';button.setAttribute('aria-label',button.title);button.innerHTML=previewVolumeIcon(previewMuted);for(const clip of project.audio)updateActiveAudioGain(clip);
+  }
+
   function setPlayhead(value){ project.playhead=clamp(value,0,duration()); renderTransport();followPlayhead();drawViewer(); }
 
   function scheduleScrubPreview(){
@@ -1795,11 +1856,11 @@ export function createAnimaticsEditor(options) {
   }
 
   function scheduleClipGain(parameter,clip,localTime=0,contextTime=0){
-    if(!parameter)return;const start=clamp(Number(localTime)||0,0,clip.duration),base=effectiveAudioVolume(clip),points=audioEnvelopePoints(clip,{start,end:clip.duration,samplesPerFade:32});parameter.cancelScheduledValues?.(contextTime);const first=points[0]||{time:start,gain:audioFadeGainAt(clip,start)};parameter.setValueAtTime?.(base*first.gain,contextTime);for(const point of points.slice(1))parameter.linearRampToValueAtTime?.(base*point.gain,contextTime+Math.max(0,point.time-start));if(!parameter.setValueAtTime)parameter.value=base*first.gain;
+    if(!parameter)return;const start=clamp(Number(localTime)||0,0,clip.duration),base=previewAudioVolume(clip),points=audioEnvelopePoints(clip,{start,end:clip.duration,samplesPerFade:32});parameter.cancelScheduledValues?.(contextTime);const first=points[0]||{time:start,gain:audioFadeGainAt(clip,start)};parameter.setValueAtTime?.(base*first.gain,contextTime);for(const point of points.slice(1))parameter.linearRampToValueAtTime?.(base*point.gain,contextTime+Math.max(0,point.time-start));if(!parameter.setValueAtTime)parameter.value=base*first.gain;
   }
 
   function updateActiveAudioGain(clip){
-    const value=effectiveAudioVolume(clip);
+    const value=previewAudioVolume(clip);
     for(const entry of audioPlayers)if(entry.clipId===clip?.id){const local=Math.max(0,(entry.player.currentTime||0)-(Number(clip.sourceIn)||0));if(entry.gain)scheduleClipGain(entry.gain.gain,clip,local,entry.context?.currentTime||0);else entry.player.volume=Math.min(1,value*audioFadeGainAt(clip,local));}
     redrawTimelineWaveforms(clip?[clip]:[]);
   }
@@ -1810,12 +1871,12 @@ export function createAnimaticsEditor(options) {
       if(!clip.url||!isAudioTrackAudible(Number(clip.track)||0)||project.playhead>=clip.start+clip.duration)continue;
       const launch=()=>{
         if(!playing)return;
-        const player=new Audio(clip.url),volume=effectiveAudioVolume(clip),context=ensurePlaybackAudioContext();let source=null,gain=null;
+        const player=new Audio(clip.url),volume=previewAudioVolume(clip),context=ensurePlaybackAudioContext();let source=null,gain=null;
         if(context){void context.resume().catch(()=>{});source=context.createMediaElementSource(player);gain=context.createGain();gain.gain.value=volume;source.connect(gain).connect(context.destination);}else player.volume=Math.min(1,volume);
         const offset=Math.max(0,project.playhead-clip.start),sourceIn=Number(clip.sourceIn)||0,sourceOut=Number(clip.sourceOut)||sourceIn+clip.duration;
         player.currentTime=sourceIn+offset;
         if(gain)scheduleClipGain(gain.gain,clip,offset,context.currentTime);else player.volume=Math.min(1,volume*audioFadeGainAt(clip,offset));
-        player.ontimeupdate=()=>{const local=Math.max(0,player.currentTime-sourceIn);if(!gain)player.volume=Math.min(1,effectiveAudioVolume(clip)*audioFadeGainAt(clip,local));if(player.currentTime>=sourceOut-.005)player.pause();};
+        player.ontimeupdate=()=>{const local=Math.max(0,player.currentTime-sourceIn);if(!gain)player.volume=Math.min(1,previewAudioVolume(clip)*audioFadeGainAt(clip,local));if(player.currentTime>=sourceOut-.005)player.pause();};
         player.play().catch(()=>{}); audioPlayers.push({player,source,gain,context,clipId:clip.id});
         const remaining=Math.max(0,(sourceOut-player.currentTime)*1000);
         audioTimers.push(setTimeout(()=>player.pause(),remaining+20));
@@ -1994,7 +2055,7 @@ export function createAnimaticsEditor(options) {
 
   function addTextAtTime(start,{x=.5,y=.82}={}){
     if(isTrackLocked('text')){notify('T1 is locked');return null;}
-    start=Math.round(Math.max(0,start)*project.fps)/project.fps;const textDuration=durationWithinSequence(start,DEFAULT_SHOT_SECONDS,DEFAULT_SHOT_SECONDS);if(!textDuration){notify('The fixed sequence has no room for a text layer here');return null;}const text={id:uid(),track:0,start,duration:textDuration,content:'Text',size:42,color:'#ffffff',scale:1,rotation:0,x:clamp(x,0,1),y:clamp(y,0,1)};
+    start=Math.round(Math.max(0,start)*project.fps)/project.fps;const textDuration=durationWithinSequence(start,DEFAULT_SHOT_SECONDS,DEFAULT_SHOT_SECONDS);if(!textDuration){notify('The fixed sequence has no room for a text layer here');return null;}const text={id:uid(),track:0,start,duration:textDuration,content:'Text',size:42,color:'#ffffff',fontFamily:DEFAULT_TEXT_FONT_FAMILY,bold:false,italic:false,align:'center',background:false,scale:1,rotation:0,x:clamp(x,0,1),y:clamp(y,0,1)};
     project.texts.push(text);project.playhead=text.start;setTimelineSelection([text.id],text.id);root.querySelector('[data-panel="text"]')?.click();markDirty();renderAll();requestAnimationFrame(()=>beginInlineTextEdit(text));
   }
 
@@ -2040,14 +2101,14 @@ export function createAnimaticsEditor(options) {
     if(isTrackLocked('text')){notify('T1 is locked');return;}
     const content=$('#anText').value.trim();if(!content){notify('Enter some text first');return;}
     let text=selectedText();
-    if(!text){const clip=selectedClip(),start=clip?.start??project.playhead,requested=Number($('#anTextDuration').value)||clip?.duration||DEFAULT_SHOT_SECONDS,textDuration=durationWithinSequence(start,requested,600);if(!textDuration){notify('The fixed sequence has no room for a text layer here');return;}text={id:uid(),track:0,start,duration:textDuration,content,size:42,color:'#ffffff',scale:1,rotation:0,x:.5,y:.82};project.texts.push(text);setTimelineSelection([text.id],text.id);}
-    text.content=content;text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;text.x=clamp(finiteOr(text.x,.5),0,1);text.y=clamp(finiteOr(text.y,.82),0,1);
+    if(!text){const clip=selectedClip(),start=clip?.start??project.playhead,requested=Number($('#anTextDuration').value)||clip?.duration||DEFAULT_SHOT_SECONDS,textDuration=durationWithinSequence(start,requested,600);if(!textDuration){notify('The fixed sequence has no room for a text layer here');return;}text={id:uid(),track:0,start,duration:textDuration,content,size:42,color:'#ffffff',fontFamily:DEFAULT_TEXT_FONT_FAMILY,bold:false,italic:false,align:'center',background:false,scale:1,rotation:0,x:.5,y:.82};project.texts.push(text);setTimelineSelection([text.id],text.id);}
+    text.content=content;text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.fontFamily=normalizeTextFontFamily($('#anTextFont').value);text.bold=$('#anTextBold').classList.contains('on');text.italic=$('#anTextItalic').classList.contains('on');text.align=normalizeTextAlign(root.querySelector('[data-an-text-align].on')?.dataset.anTextAlign);text.background=$('#anTextBackground').classList.contains('on');text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;text.x=clamp(finiteOr(text.x,.5),0,1);text.y=clamp(finiteOr(text.y,.82),0,1);
     project.playhead=clamp(project.playhead,text.start,text.start+text.duration-MIN_SHOT_SECONDS);markDirty();renderAll();root.querySelector('[data-panel="text"]')?.click();
   }
 
   function updateSelectedTextFromControls(){
     const text=selectedText();if(!text)return;
-    text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;
+    text.size=clamp(Number($('#anTextSize').value)||42,8,300);text.color=$('#anTextColor').value;text.fontFamily=normalizeTextFontFamily($('#anTextFont').value);text.bold=$('#anTextBold').classList.contains('on');text.italic=$('#anTextItalic').classList.contains('on');text.align=normalizeTextAlign(root.querySelector('[data-an-text-align].on')?.dataset.anTextAlign);text.background=$('#anTextBackground').classList.contains('on');text.scale=clamp(Number($('#anTextScale').value)/100,.25,4);text.rotation=Math.round(clamp(Number($('#anTextRotation').value)||0,-180,180));text.duration=durationWithinSequence(text.start,Number($('#anTextDuration').value)||DEFAULT_SHOT_SECONDS,600)||text.duration;
     const label=`${Math.round(text.scale*100)}%`;$('#anTextScaleVal').value=label;$('#anTextScaleVal').textContent=label;drawViewerLive();positionInlineTextEditor();
   }
 
@@ -2380,12 +2441,6 @@ export function createAnimaticsEditor(options) {
       if(spaceHand)spaceHand.used=true;canvas.parentElement.classList.add('preview-panning');canvas.style.cursor='grabbing';canvas.setPointerCapture(e.pointerId);revealPreviewZoomHud();e.preventDefault();return;
     }
     const clip=drawMode?drawingTargetClip():selectedClip();
-    if(activeTool==='text'&&!drawMode&&!framingMode){
-      const hit=hitTextControl(e);
-      if(hit){if(isTrackLocked('text')){notify('T1 is locked');e.preventDefault();return;}if(inlineTextId)finishInlineTextEdit(false);setTimelineSelection([hit.text.id],hit.text.id);root.querySelector('[data-panel="text"]')?.click();syncInspector();drawViewer();beginInlineTextEdit(hit.text);}
-      else{const rect=canvas.getBoundingClientRect();addTextAtTime(project.playhead,{x:(e.clientX-rect.left)/Math.max(1,rect.width),y:(e.clientY-rect.top)/Math.max(1,rect.height)});}
-      e.preventDefault();return;
-    }
     if(!drawMode&&!framingMode){
       const hit=hitTextControl(e);
       if(hit){
@@ -2396,11 +2451,17 @@ export function createAnimaticsEditor(options) {
         canvas.setPointerCapture(e.pointerId);syncInspector();drawViewer();e.preventDefault();return;
       }
     }
+    if(activeTool==='text'&&!drawMode&&!framingMode){
+      const rect=canvas.getBoundingClientRect();
+      addTextAtTime(project.playhead,{x:(e.clientX-rect.left)/Math.max(1,rect.width),y:(e.clientY-rect.top)/Math.max(1,rect.height)});
+      e.preventDefault();return;
+    }
     if(framingMode&&clip&&!drawMode){
       const framing=clip.framing||(clip.framing={fit:'contain',scale:1,x:0,y:0});
       framingDrag={startX:e.clientX,startY:e.clientY,x:framing.x,y:framing.y};
       canvas.setPointerCapture(e.pointerId);e.preventDefault();return;
     }
+    if(!drawMode&&!framingMode){setTimelineSelection([]);syncInspector();drawViewer();return;}
     if(!drawMode)return;const target=validateDrawingTarget();if(!target)return;const r=canvas.getBoundingClientRect(),x=clamp((e.clientX-r.left)/r.width,0,1),y=clamp((e.clientY-r.top)/r.height,0,1);drawPointer={x,y,inside:true};prepareActiveDrawing(target);activeStroke={tool:drawTool,brush:drawBrushType,color:drawColor,width:drawWidth,points:[{x,y}]};target.strokes.push(activeStroke);appendActiveDrawingSegment(activeStroke.points[0],activeStroke.points[0]);canvas.setPointerCapture(e.pointerId);scheduleActiveDrawingPaint();e.preventDefault();
   });
   canvas.addEventListener('pointermove',e=>{
@@ -2422,7 +2483,15 @@ export function createAnimaticsEditor(options) {
   canvas.addEventListener('pointerenter',e=>{const r=canvas.getBoundingClientRect();drawPointer={x:clamp((e.clientX-r.left)/Math.max(1,r.width),0,1),y:clamp((e.clientY-r.top)/Math.max(1,r.height),0,1),inside:true};if(drawMode)showDrawSizePreview();});
   canvas.addEventListener('pointerleave',()=>{drawPointer.inside=false;hideDrawSizePreview();});
   canvas.addEventListener('dblclick',e=>{
-    if(!drawMode&&!framingMode){const hit=hitTextControl(e);if(hit){if(isTrackLocked('text')){notify('T1 is locked');e.preventDefault();return;}setTimelineSelection([hit.text.id],hit.text.id);root.querySelector('[data-panel="text"]')?.click();syncInspector();drawViewer();beginInlineTextEdit(hit.text);e.preventDefault();return;}}
+    if(!drawMode&&!framingMode){
+      const hit=hitTextControl(e);
+      if(hit){
+        e.preventDefault();
+        if(hit.mode!=='move')return;
+        if(isTrackLocked('text')){notify('T1 is locked');return;}
+        setTimelineSelection([hit.text.id],hit.text.id);root.querySelector('[data-panel="text"]')?.click();syncInspector();drawViewer();beginInlineTextEdit(hit.text);return;
+      }
+    }
     const clip=clipsAt(project.playhead).at(-1)||selectedClip();
     if(clip&&isTrackLocked('video',Number(clip.track)||0)){notify(`V${(Number(clip.track)||0)+1} is locked`);return;}
     if(clip)setTimelineSelection([clip.id],clip.id);
@@ -2439,16 +2508,22 @@ export function createAnimaticsEditor(options) {
     const rect=canvas.parentElement.getBoundingClientRect(),clientX=clamp(e.clientX,rect.left,rect.right),clientY=clamp(e.clientY,rect.top,rect.bottom);
     setPreviewZoom(previewZoom*Math.exp(-e.deltaY*.0012),{clientX,clientY,show:true});
   },{passive:false});
-  inlineTextEditor.addEventListener('input',()=>{const text=project.texts.find(item=>item.id===inlineTextId);if(!text||isTrackLocked('text'))return;text.content=inlineTextEditor.value;$('#anText').value=text.content;drawViewerLive();positionInlineTextEditor();});
+  inlineTextEditor.addEventListener('input',()=>{const text=project.texts.find(item=>item.id===inlineTextId);if(!text||isTrackLocked('text'))return;text.content=inlineTextEditor.value;$('#anText').value=text.content;positionInlineTextEditor();});
   inlineTextEditor.addEventListener('blur',()=>finishInlineTextEdit(false));
   inlineTextEditor.addEventListener('keydown',e=>{e.stopPropagation();if(e.key==='Escape'){finishInlineTextEdit(true);canvas.focus();e.preventDefault();}else if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){finishInlineTextEdit(false);canvas.focus();e.preventDefault();}});
   document.addEventListener('pointerdown',e=>{
     if(e.button!==0||!inlineTextId||inlineTextEditor.contains(e.target))return;
-    if(e.target===canvas)inlineTextDismissEvents.add(e);
+    if(e.target===canvas){
+      const hit=hitTextControl(e);finishInlineTextEdit(false);
+      if(!hit){inlineTextDismissEvents.add(e);setTimelineSelection([]);syncInspector();drawViewer();}
+      return;
+    }
     finishInlineTextEdit(false);
   },true);
 
   $('#anBack').onclick=closeEditor;
+  $('#anGuides').onclick=()=>setSafeGuidesVisible(!safeGuidesVisible);
+  $('#anPreviewMute').onclick=()=>setPreviewMuted(!previewMuted);
   $('#anPlay').onclick=()=>setPlaying(!playing);
   $('#anPrev').onclick=()=>setPlayhead(project.playhead-1/project.fps);
   $('#anNext').onclick=()=>setPlayhead(project.playhead+1/project.fps);
@@ -2502,9 +2577,13 @@ export function createAnimaticsEditor(options) {
   $('#anClearText').onclick=()=>{if(selectedText())deleteSelected();};
   for(const id of ['anTextSize','anTextColor','anTextScale','anTextRotation','anTextDuration'])$('#'+id).addEventListener('input',()=>{updateSelectedTextFromControls();if(selectedText())deferMarkDirty();});
   $('#anTextDuration').addEventListener('input',()=>{if(selectedText())renderTimeline();});
-  $('#anText').addEventListener('input',()=>{const text=selectedText();if(text){text.content=$('#anText').value;if(text.id===inlineTextId)inlineTextEditor.value=text.content;drawViewerLive();positionInlineTextEditor();deferMarkDirty();}});
+  $('#anText').addEventListener('input',()=>{const text=selectedText();if(text){text.content=$('#anText').value;if(text.id===inlineTextId){inlineTextEditor.value=text.content;positionInlineTextEditor();}else drawViewerLive();deferMarkDirty();}});
   $('#anText').addEventListener('change',()=>{if(selectedText()){flushDeferredHistory();renderTimeline();drawViewer();}});
   for(const id of ['anTextSize','anTextColor','anTextScale','anTextRotation','anTextDuration'])$('#'+id).addEventListener('change',()=>{if(selectedText()){flushDeferredHistory();drawViewer();}});
+  const commitTextStyleControls=()=>{if(!selectedText())return;updateSelectedTextFromControls();markDirty();syncInspector();drawViewer();};
+  $('#anTextFont').addEventListener('change',commitTextStyleControls);
+  for(const id of ['anTextBold','anTextItalic','anTextBackground'])$('#'+id).onclick=e=>{e.currentTarget.classList.toggle('on');commitTextStyleControls();};
+  root.querySelectorAll('[data-an-text-align]').forEach(button=>button.onclick=()=>{root.querySelectorAll('[data-an-text-align]').forEach(candidate=>candidate.classList.toggle('on',candidate===button));commitTextStyleControls();});
   $('#anDrawToggle').onclick=()=>setDrawMode(!drawMode);
   $('#anDrawPen').onclick=()=>{setDrawTool('pen');setDrawBrushesOpen(!drawBrushesOpen);};
   $('#anDrawEraser').onclick=()=>setDrawTool('eraser');
