@@ -279,5 +279,28 @@
       ],
       "fixed": []
     }
+  },
+  "2.0.1": {
+    "headline": "Faster saves and export fixes",
+    "summary": "This update makes saving large boards much faster and fixes Premiere Pro export, plus a few polish touches.",
+    "sections": {
+      "new": [],
+      "improved": [
+        {
+          "title": "Faster board saving",
+          "description": "Large boards now save noticeably faster."
+        },
+        {
+          "title": "Save indicator",
+          "description": "A subtle indicator now confirms when your board has been saved."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Premiere Pro export",
+          "description": "Fixed an issue where exported timelines could fail to import into Premiere Pro."
+        }
+      ]
+    }
   }
 }
