@@ -1451,6 +1451,31 @@ body.board-active #whatsNewNotice{ display:none; }
 #savingOverlay.done .save-check{ display:block; }
 #savingOverlay.done .save-check-tick{ animation:save-tick .38s .05s forwards ease-out; }
 #savingOverlay.done .save-check circle{ animation:save-pop .3s cubic-bezier(.2,.9,.3,1.25); }
+#saveToast{
+  position:fixed; left:50%; bottom:24px; z-index:150;
+  display:flex; align-items:center; gap:8px;
+  min-height:34px; padding:6px 13px;
+  background:var(--card); border:1px solid var(--line); border-radius:999px;
+  box-shadow:0 10px 28px color-mix(in srgb, var(--txt) 18%, transparent);
+  color:var(--txt); pointer-events:none;
+  opacity:0; visibility:hidden; transform:translate(-50%, 10px);
+  transition:opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
+}
+#saveToast.show{
+  opacity:1; visibility:visible; transform:translate(-50%, 0);
+  transition:opacity .18s ease, transform .18s ease, visibility 0s;
+}
+#saveToast .save-spinner{ width:16px; height:16px; border-width:2px; flex:0 0 16px; }
+#saveToast .save-check{ width:18px; height:18px; flex:0 0 18px; }
+#saveToast.done .save-spinner{ display:none; }
+#saveToast.done .save-check{ display:block; }
+#saveToast.done .save-check-tick{ animation:save-tick .38s .05s forwards ease-out; }
+#saveToast.done .save-check circle{ animation:save-pop .3s cubic-bezier(.2,.9,.3,1.25); }
+#saveToast .save-status-label{ color:var(--txt); white-space:nowrap; }
+@media (prefers-reduced-motion:reduce){
+  #saveToast{ transition:none; }
+  #saveToast .save-spinner, #saveToast .save-check-tick, #saveToast .save-check circle{ animation:none; }
+}
 #openingOverlay{
   position:fixed; inset:0; z-index:210;
   display:flex; align-items:center; justify-content:center;
@@ -2628,6 +2653,15 @@ body.board-active #whatsNewNotice{ display:none; }
       </div>
     </div>
   </div>
+</div>
+
+<div id="saveToast" role="status" aria-live="polite" aria-atomic="true">
+  <div class="save-spinner" aria-hidden="true"></div>
+  <svg class="save-check" width="18" height="18" viewBox="0 0 40 40" fill="none" aria-hidden="true">
+    <circle cx="20" cy="20" r="18" stroke="var(--acc)" stroke-width="2.5" opacity=".4"/>
+    <path class="save-check-tick" d="M12 20.5 L17.5 26 L28 14" stroke="var(--acc)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div class="save-status-label" id="saveToastLabel">Saving&hellip;</div>
 </div>
 
 <div id="savingOverlay">
@@ -13969,8 +14003,8 @@ function showMenu(x, y, hitItem) {
     { sep: true },
     { cat: 'Files' },
     { l: 'Export board PNG', k: 'Ctrl+E', f: openExport },
-    { l: 'Save board file', k: 'Ctrl+S', f: saveBoardFile },
-    { l: 'Save board as…', k: 'Ctrl+Shift+S', f: () => saveBoardFile({ saveAs: true }) },
+    { l: 'Save board file', k: 'Ctrl+S', f: () => manualSaveBoardFile(() => saveBoardFile()) },
+    { l: 'Save board as…', k: 'Ctrl+Shift+S', f: () => manualSaveBoardFile(() => saveBoardFile({ saveAs: true })) },
     { l: 'Open board file', k: 'Ctrl+O', f: () => openBoardFromDialog() },
     { sep: true },
     { cat: 'Settings' },
@@ -14560,7 +14594,7 @@ window.addEventListener('keydown', e => {
   else if (mod && k === 'a') { e.preventDefault(); selectAll(); }
   else if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (mod && k === 'y') { e.preventDefault(); redo(); }
-  else if (mod && k === 's') { e.preventDefault(); saveBoardFile({ saveAs: e.shiftKey }); }
+  else if (mod && k === 's') { e.preventDefault(); manualSaveBoardFile(() => saveBoardFile({ saveAs: e.shiftKey })); }
   else if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
   else if (mod && k === 'e') { e.preventDefault(); openExport(); }
   else if (mod && e.shiftKey && k === 'i') { e.preventDefault(); exportOriginals(); }
@@ -14641,6 +14675,38 @@ const confirmModal = $('#confirmModal');
 const noteLinkModal = $('#noteLinkModal');
 const unsavedModal = $('#unsavedModal');
 const whatsNewModal = $('#whatsNewModal');
+const saveToast = $('#saveToast');
+const saveToastLabel = $('#saveToastLabel');
+let saveToastTimer = 0;
+let saveToastRun = 0;
+function showSaveToast() {
+  const run = ++saveToastRun;
+  clearTimeout(saveToastTimer);
+  saveToast.classList.remove('done');
+  saveToastLabel.textContent = 'Saving\u2026';
+  saveToast.classList.add('show');
+  return run;
+}
+function finishSaveToast(ok, run = saveToastRun) {
+  if (run !== saveToastRun) return;
+  clearTimeout(saveToastTimer);
+  saveToastLabel.textContent = ok ? 'Saved' : 'Save failed';
+  saveToast.classList.add('done');
+  saveToastTimer = setTimeout(() => {
+    if (run === saveToastRun) saveToast.classList.remove('show');
+  }, 1500);
+}
+async function manualSaveBoardFile(save = saveBoardFile) {
+  const run = showSaveToast();
+  try {
+    const ok = await save();
+    finishSaveToast(ok === true, run);
+    return ok;
+  } catch (error) {
+    finishSaveToast(false, run);
+    throw error;
+  }
+}
 const savingOverlay = $('#savingOverlay');
 function showSavingOverlay(text) {
   savingOverlay.classList.remove('done');
@@ -14992,7 +15058,7 @@ $('#btnArrange').addEventListener('click', arrangeAll);
 $('#btnFit').addEventListener('click', () => fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i))));
 $('#btnAnimatics').addEventListener('click', () => animaticsEditor.open());
 $('#btnExport').addEventListener('click', openExport);
-$('#btnSave').addEventListener('click', saveBoardFile);
+$('#btnSave').addEventListener('click', () => manualSaveBoardFile(() => saveBoardFile()));
 $('#btnOpen').addEventListener('click', () => openBoardFromDialog());
 $('#btnClear').addEventListener('click', clearBoard);
 $('#sidebarHome').addEventListener('click', () => goHome());
