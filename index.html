@@ -10376,7 +10376,7 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
   }
   let preview = null;
   if (snapshot.core.items.length) {
-    try { preview = await captureBoardFilePreviewBase64(1440); } catch { /* ignore */ }
+    try { preview = await captureBoardFilePreviewBase64(720); } catch { /* ignore */ }
   }
   const core = { ...snapshot.core, images: imgs };
   return preview ? { preview, ...core } : core;
@@ -10396,11 +10396,9 @@ async function performBoardSave(opts = {}) {
 
   if (window.RefBoardAPI?.beginBoardSave) {
     let token = null;
-    let preview = null;
     try {
-      preview = await captureBoardFilePreviewBase64(1440);
       const begin = await window.RefBoardAPI.beginBoardSave(
-        defaultName, currentBoardPath || undefined, snapshot.core, preview, saveAs,
+        defaultName, currentBoardPath || undefined, snapshot.core, null, saveAs,
       );
       if (!begin?.started) return false;
       token = begin.token;
@@ -10465,7 +10463,7 @@ function boardTitleFromPath(filePath) {
   return base.replace(/\.refboard$/i, '') || base || 'Untitled';
 }
 
-async function captureBoardThumbnailBase64(maxPx = 1440) {
+async function captureBoardThumbnailBase64(maxPx = 720) {
   if (!state.items.length) return null;
   try {
     const c = await boundedCompositeCanvas(state.items, {
@@ -10483,7 +10481,7 @@ async function captureBoardThumbnailBase64(maxPx = 1440) {
   }
 }
 
-async function captureBoardFilePreviewBase64(maxPx = 1440) {
+async function captureBoardFilePreviewBase64(maxPx = 720) {
   if (!state.items.length) return null;
   try {
     const c = await boundedCompositeCanvas(state.items, {

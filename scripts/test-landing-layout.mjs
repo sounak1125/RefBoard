@@ -60,8 +60,18 @@ assert.doesNotMatch(source, /--ff-blur|filter:\s*blur\(var\(--ff/, 'card hierarc
 assert.doesNotMatch(source, /ff-orb|ffAmbient|ff-parallax/, 'the landing background should not use moving colored blobs or parallax');
 assert.match(
   source,
-  /async function captureBoardThumbnailBase64\(maxPx = 1440\)[\s\S]*?toBlob\(r, 'image\/jpeg', 0\.94\)/,
-  'new recent-board thumbnails should be generated at premium resolution and quality',
+  /async function captureBoardThumbnailBase64\(maxPx = 720\)[\s\S]*?toBlob\(r, 'image\/jpeg', 0\.94\)/,
+  'new recent-board thumbnails should be generated at the save-preview resolution and quality',
+);
+assert.match(
+  source,
+  /async function captureBoardFilePreviewBase64\(maxPx = 720\)[\s\S]*?toBlob\(r, 'image\/jpeg', 0\.94\)/,
+  'legacy board previews should use the reduced save-preview resolution without lowering quality',
+);
+assert.match(
+  source,
+  /window\.RefBoardAPI\.beginBoardSave\([\s\S]*?snapshot\.core, null, saveAs,/,
+  'streamed saves should not wait for or embed a blocking preview',
 );
 assert.match(
   source,
