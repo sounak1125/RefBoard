@@ -151,4 +151,35 @@ assert.match(legacyOutput, /<parameterid>fontname<\/parameterid><name>Font<\/nam
 assert.match(legacyOutput, /<parameterid>fontstyle<\/parameterid>[\s\S]*?<value>1<\/value>/, 'older Premiere text must default to plain style enum 1');
 assert.match(legacyOutput, /<parameterid>fontalign<\/parameterid>[\s\S]*?<value>2<\/value>/, 'older Premiere text must default to centered alignment enum 2');
 
+const trimmedClipProject = {
+  ...project,
+  videoTracks:1,
+  videoTrackEnabled:[true],
+  videoTrackLocked:[false],
+  audioTracks:0,
+  audioTrackMuted:[],
+  audioTrackSolo:[],
+  audioTrackLocked:[],
+  textTrackLocked:false,
+  clips:[{ id:'trimmed', itemId:'image-1', sourceAssetKey:'trimmed-image', mediaKind:'image', track:0, start:0, duration:70 / 24, name:'Trimmed Source.png', strokes:[] }],
+  texts:[],
+  audio:[],
+};
+const trimmedClipAssets = new Map([
+  ['image:trimmed-image', { id:'trimmed-image-1', kind:'image', category:'image', name:'Trimmed Source.png', filePath:'C:\\Export\\Media\\Images\\Trimmed Source.png', durationFrames:72, width:1920, height:1080 }],
+]);
+const trimmedClipOutput = createPremiereXml(buildPremiereTimeline({ project:trimmedClipProject, name:'Trimmed Clip', fps:24, width:1920, height:1080, exportStart:0, exportEnd:70 / 24, assets:trimmedClipAssets }));
+const trimmedClipitem = trimmedClipOutput.match(/<clipitem id="clipitem-trimmed-[^"]+">([\s\S]*?)<\/clipitem>/);
+assert.ok(trimmedClipitem, 'trimmed fixture must produce a timeline clipitem');
+const trimmedDuration = Number(trimmedClipitem[1].match(/<duration>(\d+)<\/duration>/)?.[1]);
+const trimmedStart = Number(trimmedClipitem[1].match(/<start>(\d+)<\/start>/)?.[1]);
+const trimmedEnd = Number(trimmedClipitem[1].match(/<end>(\d+)<\/end>/)?.[1]);
+const trimmedIn = Number(trimmedClipitem[1].match(/<in>(\d+)<\/in>/)?.[1]);
+const trimmedOut = Number(trimmedClipitem[1].match(/<out>(\d+)<\/out>/)?.[1]);
+assert.equal(trimmedEnd - trimmedStart, 70, 'trimmed clip must place a 70-frame span on the timeline');
+assert.equal(trimmedOut - trimmedIn, 70, 'trimmed clip must use a 70-frame source range');
+assert.equal(trimmedDuration, trimmedEnd - trimmedStart, 'clipitem duration must equal end - start for trimmed clips');
+assert.equal(trimmedDuration, trimmedOut - trimmedIn, 'clipitem duration must equal out - in for trimmed clips');
+assert.match(trimmedClipOutput, /<clip id="masterclip-trimmed-image-1"><name>Trimmed Source\.png<\/name><duration>72<\/duration>/, 'masterclip duration must still reflect the full asset');
+
 console.log('animatics Premiere export tests passed');
