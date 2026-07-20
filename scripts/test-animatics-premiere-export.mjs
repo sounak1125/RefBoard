@@ -66,6 +66,20 @@ const output = createPremiereXml(timeline);
 assert.match(output, /^<\?xml version="1\.0" encoding="UTF-8"\?>/);
 assert.match(output, /<xmeml version="5">/);
 assert.match(output, /<name>Animatic &amp; Cut<\/name>/);
+const sparseTrackOutput = createPremiereXml({
+  ...timeline,
+  videoTracks:[[], timeline.videoTracks[0]],
+  videoTrackEnabled:[false, true],
+  videoTrackLocked:[true, false],
+  audioTracks:[[], timeline.audioTracks[0], []],
+  audioTrackEnabled:[true, false, true],
+  audioTrackLocked:[false, true, false],
+});
+const sparseTracks = [...sparseTrackOutput.matchAll(/<track>([\s\S]*?)<\/track>/g)].map(match => match[1]);
+assert.doesNotMatch(sparseTrackOutput, /<track><enabled>(?:TRUE|FALSE)<\/enabled><locked>(?:TRUE|FALSE)<\/locked><\/track>/, 'Premiere XML must not contain empty tracks');
+assert.equal(sparseTracks.length, 2, 'only tracks containing clips should be emitted');
+assert.match(sparseTracks.find(track => track.includes('Board &amp; Shot.png')) || '', /<enabled>TRUE<\/enabled><locked>FALSE<\/locked>$/, 'a filtered video track must retain enabled and locked state from its original index');
+assert.match(sparseTracks.find(track => track.includes('Music.wav')) || '', /<enabled>FALSE<\/enabled><locked>TRUE<\/locked>$/, 'a filtered audio track must retain enabled and locked state from its original index');
 for (const bin of ['Images','Videos','Audio','Drawings','Sequences']) assert.match(output, new RegExp(`<bin><name>${bin}<\\/name><children>`), `${bin} must import into its own Premiere bin`);
 assert.match(output, /<clip id="masterclip-image-1">[\s\S]*?<ismasterclip>TRUE<\/ismasterclip>/, 'collected media must be represented as organized master clips');
 assert.match(output, /<masterclipid>masterclip-video-1<\/masterclipid>/, 'timeline clips must link back to their organized master clips');
