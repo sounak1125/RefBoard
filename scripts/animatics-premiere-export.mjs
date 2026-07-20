@@ -184,7 +184,7 @@ function masterClipXml(asset, fps, emitted) {
 function clipXml(clip, index, fps, width, height, emitted) {
   const id = `clipitem-${xml(clip.id)}-${index}`;
   const still = clip.still ? '<stillframe>TRUE</stillframe>' : '';
-  return `<clipitem id="${id}"><name>${xml(clip.name)}</name><enabled>${clip.enabled === false ? 'FALSE' : 'TRUE'}</enabled><duration>${Math.max(1, clip.asset.durationFrames || clip.out)}</duration>${rateXml(fps)}<start>${clip.start}</start><end>${clip.end}</end><in>${clip.in}</in><out>${clip.out}</out><masterclipid>${xml(masterClipId(clip.asset))}</masterclipid>${still}${fileXml(clip.asset, fps, emitted)}${transformXml(clip, width, height)}${volumeXml(clip)}</clipitem>`;
+  return `<clipitem id="${id}"><name>${xml(clip.asset.name)}</name><enabled>${clip.enabled === false ? 'FALSE' : 'TRUE'}</enabled><duration>${Math.max(1, clip.asset.durationFrames || clip.out)}</duration>${rateXml(fps)}<start>${clip.start}</start><end>${clip.end}</end><in>${clip.in}</in><out>${clip.out}</out><masterclipid>${xml(masterClipId(clip.asset))}</masterclipid>${still}${fileXml(clip.asset, fps, emitted)}${transformXml(clip, width, height)}${volumeXml(clip)}</clipitem>`;
 }
 
 function textColor(value) {

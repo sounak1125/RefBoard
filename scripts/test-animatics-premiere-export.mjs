@@ -97,6 +97,34 @@ assert.match(output, /<parameterid>rotation<\/parameterid>[\s\S]*?<value>12\.000
 assert.doesNotMatch(output, /Title\.png/, 'editable text must not be rasterized into collected PNG media');
 assert.equal((output.match(/<file id="file-image-1"><name>/g) || []).length, 1, 'reused media must be described once');
 
+const convertedImageProject = {
+  ...project,
+  videoTracks:1,
+  videoTrackEnabled:[true],
+  videoTrackLocked:[false],
+  audioTracks:0,
+  audioTrackMuted:[],
+  audioTrackSolo:[],
+  audioTrackLocked:[],
+  textTrackLocked:false,
+  clips:[{ ...project.clips[0], name:'Converted Source.jpeg', strokes:[] }],
+  texts:[],
+  audio:[],
+};
+const convertedImageAssets = new Map([
+  ['image:image-1-transformed', { id:'converted-image-1', kind:'image', category:'image', name:'Converted Source.png', filePath:'C:\\Export\\Media\\Images\\Converted Source.png', durationFrames:72, width:1920, height:1080 }],
+]);
+const convertedImageOutput = createPremiereXml(buildPremiereTimeline({ project:convertedImageProject, name:'Converted Image', fps:24, width:1920, height:1080, exportStart:0, exportEnd:3, assets:convertedImageAssets }));
+const convertedImageMasterNames = new Map(
+  [...convertedImageOutput.matchAll(/<clip id="(masterclip-[^"]+)"><name>([^<]*)<\/name>/g)].map(match => [match[1], match[2]]),
+);
+const convertedImageClipitems = [...convertedImageOutput.matchAll(/<clipitem id="[^"]+"><name>([^<]*)<\/name>[\s\S]*?<masterclipid>([^<]+)<\/masterclipid>/g)];
+assert.ok(convertedImageClipitems.length > 0, 'converted-image fixture must produce an image clipitem');
+for (const [, clipitemName, masterclipId] of convertedImageClipitems) {
+  assert.equal(clipitemName, convertedImageMasterNames.get(masterclipId), 'each image clipitem name must exactly match its referenced master clip name');
+}
+assert.doesNotMatch(convertedImageOutput, /<clipitem id="[^"]+"><name>Converted Source\.jpeg<\/name>/, 'converted image clipitems must not retain the pre-conversion extension');
+
 const legacyProject = {
   ...project,
   texts:[{ ...project.texts[0], fontFamily:undefined, fontStyle:undefined, fontWeight:undefined, fontFullName:undefined, fontPostscriptName:undefined, bold:undefined, italic:undefined, align:undefined, background:undefined }],
