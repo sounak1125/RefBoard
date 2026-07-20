@@ -1453,10 +1453,12 @@ body.board-active #whatsNewNotice{ display:none; }
 #savingOverlay.done .save-check circle{ animation:save-pop .3s cubic-bezier(.2,.9,.3,1.25); }
 #saveToast{
   position:fixed; left:50%; bottom:24px; z-index:150;
-  display:flex; align-items:center; gap:8px;
-  min-height:34px; padding:6px 13px;
-  background:var(--card); border:1px solid var(--line); border-radius:999px;
-  box-shadow:0 10px 28px color-mix(in srgb, var(--txt) 18%, transparent);
+  display:flex; align-items:center; gap:9px;
+  min-height:38px; padding:8px 15px;
+  background:color-mix(in srgb, var(--card) 94%, transparent);
+  border:1px solid var(--line); border-radius:999px;
+  box-shadow:0 14px 38px var(--shadow);
+  backdrop-filter:blur(18px);
   color:var(--txt); pointer-events:none;
   opacity:0; visibility:hidden; transform:translate(-50%, 10px);
   transition:opacity .18s ease, transform .18s ease, visibility 0s linear .18s;
@@ -1471,7 +1473,7 @@ body.board-active #whatsNewNotice{ display:none; }
 #saveToast.done .save-check{ display:block; }
 #saveToast.done .save-check-tick{ animation:save-tick .38s .05s forwards ease-out; }
 #saveToast.done .save-check circle{ animation:save-pop .3s cubic-bezier(.2,.9,.3,1.25); }
-#saveToast .save-status-label{ color:var(--txt); white-space:nowrap; }
+#saveToast .save-status-label{ color:var(--txt); font-size:12.5px; font-weight:600; letter-spacing:.01em; white-space:nowrap; }
 @media (prefers-reduced-motion:reduce){
   #saveToast{ transition:none; }
   #saveToast .save-spinner, #saveToast .save-check-tick, #saveToast .save-check circle{ animation:none; }
@@ -10381,11 +10383,12 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
 }
 
 let activeBoardSave = null;
+let manualSaveToastActive = 0;
 
 async function performBoardSave(opts = {}) {
   const silent = !!opts.silent;
   const saveAs = !!opts.saveAs;
-  if (!state.items.length) { if (!silent) toast('Board is empty'); return false; }
+  if (!state.items.length) { if (!silent && !manualSaveToastActive) toast('Board is empty'); return false; }
   const snapshot = boardSaveSnapshot();
   const defaultName = currentBoardTitle
     ? `${currentBoardTitle}.refboard`
@@ -10427,7 +10430,7 @@ async function performBoardSave(opts = {}) {
     } catch (err) {
       if (token) await window.RefBoardAPI.abortBoardSave(token).catch(() => {});
       console.error('[save] streamed board save failed:', err);
-      if (!silent) toast('Save failed — the previous board file was kept');
+      if (!silent && !manualSaveToastActive) toast('Save failed — the previous board file was kept');
       return false;
     }
   } else {
@@ -10445,8 +10448,8 @@ async function performBoardSave(opts = {}) {
 
   if (boardChangeVersion === snapshot.changeVersion) boardFileDirty = false;
   scheduleSavedRecentWork(snapshot, currentBoardPath, currentBoardTitle);
-  if (!silent) toast(saveAs ? 'Board saved as a new file (originals embedded)' : 'Board file saved (originals embedded)');
-  else toast('Autosaved');
+  if (silent) toast('Autosaved');
+  else if (!manualSaveToastActive) toast(saveAs ? 'Board saved as a new file (originals embedded)' : 'Board file saved (originals embedded)');
   return true;
 }
 
@@ -14698,6 +14701,7 @@ function finishSaveToast(ok, run = saveToastRun) {
 }
 async function manualSaveBoardFile(save = saveBoardFile) {
   const run = showSaveToast();
+  manualSaveToastActive++;
   try {
     const ok = await save();
     finishSaveToast(ok === true, run);
@@ -14705,6 +14709,8 @@ async function manualSaveBoardFile(save = saveBoardFile) {
   } catch (error) {
     finishSaveToast(false, run);
     throw error;
+  } finally {
+    manualSaveToastActive = Math.max(0, manualSaveToastActive - 1);
   }
 }
 const savingOverlay = $('#savingOverlay');
