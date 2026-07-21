@@ -80,9 +80,10 @@ assert.doesNotMatch(sparseTrackOutput, /<track><enabled>(?:TRUE|FALSE)<\/enabled
 assert.equal(sparseTracks.length, 2, 'only tracks containing clips should be emitted');
 assert.match(sparseTracks.find(track => track.includes('Board &amp; Shot.png')) || '', /<enabled>TRUE<\/enabled><locked>FALSE<\/locked>$/, 'a filtered video track must retain enabled and locked state from its original index');
 assert.match(sparseTracks.find(track => track.includes('Music.wav')) || '', /<enabled>FALSE<\/enabled><locked>TRUE<\/locked>$/, 'a filtered audio track must retain enabled and locked state from its original index');
-for (const bin of ['Images','Videos','Audio','Drawings','Sequences']) assert.match(output, new RegExp(`<bin><name>${bin}<\\/name><children>`), `${bin} must import into its own Premiere bin`);
-assert.match(output, /<clip id="masterclip-image-1">[\s\S]*?<ismasterclip>TRUE<\/ismasterclip>/, 'collected media must be represented as organized master clips');
-assert.match(output, /<masterclipid>masterclip-video-1<\/masterclipid>/, 'timeline clips must link back to their organized master clips');
+assert.match(output, /<bin><name>Sequences<\/name><children>/, 'Sequences bin must remain');
+assert.doesNotMatch(output, /<bin><name>(?:Images|Videos|Audio|Drawings)<\/name>/, 'Premiere XML must not emit media masterclip bins');
+assert.doesNotMatch(output, /<masterclipid>/, 'timeline clips must not link to masterclip bins');
+assert.doesNotMatch(output, /<ismasterclip>/, 'Premiere XML must not emit ismasterclip markers');
 assert.match(output, /<clipitem id="clipitem-still-[^"]+">[\s\S]*?<enabled>FALSE<\/enabled>/, 'Premiere clipitems must preserve individual visibility');
 assert.match(output, /<track>[\s\S]*?Take &lt;1&gt;\.mp4[\s\S]*?<enabled>FALSE<\/enabled><locked>TRUE<\/locked><\/track>/, 'Premiere video tracks must preserve visibility and locks');
 assert.match(output, /<track>[\s\S]*?Music\.wav[\s\S]*?<enabled>FALSE<\/enabled><locked>TRUE<\/locked><\/track>/, 'Premiere audio tracks must preserve effective mute and locks');
@@ -129,13 +130,10 @@ const convertedImageAssets = new Map([
   ['image:image-1-transformed', { id:'converted-image-1', kind:'image', category:'image', name:'Converted Source.png', filePath:'C:\\Export\\Media\\Images\\Converted Source.png', durationFrames:72, width:1920, height:1080 }],
 ]);
 const convertedImageOutput = createPremiereXml(buildPremiereTimeline({ project:convertedImageProject, name:'Converted Image', fps:24, width:1920, height:1080, exportStart:0, exportEnd:3, assets:convertedImageAssets }));
-const convertedImageMasterNames = new Map(
-  [...convertedImageOutput.matchAll(/<clip id="(masterclip-[^"]+)"><name>([^<]*)<\/name>/g)].map(match => [match[1], match[2]]),
-);
-const convertedImageClipitems = [...convertedImageOutput.matchAll(/<clipitem id="[^"]+"><name>([^<]*)<\/name>[\s\S]*?<masterclipid>([^<]+)<\/masterclipid>/g)];
+const convertedImageClipitems = [...convertedImageOutput.matchAll(/<clipitem id="[^"]+"><name>([^<]*)<\/name>/g)];
 assert.ok(convertedImageClipitems.length > 0, 'converted-image fixture must produce an image clipitem');
-for (const [, clipitemName, masterclipId] of convertedImageClipitems) {
-  assert.equal(clipitemName, convertedImageMasterNames.get(masterclipId), 'each image clipitem name must exactly match its referenced master clip name');
+for (const [, clipitemName] of convertedImageClipitems) {
+  assert.equal(clipitemName, 'Converted Source.png', 'each image clipitem name must match the collected asset name');
 }
 assert.doesNotMatch(convertedImageOutput, /<clipitem id="[^"]+"><name>Converted Source\.jpeg<\/name>/, 'converted image clipitems must not retain the pre-conversion extension');
 
@@ -180,6 +178,37 @@ assert.equal(trimmedEnd - trimmedStart, 70, 'trimmed clip must place a 70-frame 
 assert.equal(trimmedOut - trimmedIn, 70, 'trimmed clip must use a 70-frame source range');
 assert.equal(trimmedDuration, trimmedEnd - trimmedStart, 'clipitem duration must equal end - start for trimmed clips');
 assert.equal(trimmedDuration, trimmedOut - trimmedIn, 'clipitem duration must equal out - in for trimmed clips');
-assert.match(trimmedClipOutput, /<clip id="masterclip-trimmed-image-1"><name>Trimmed Source\.png<\/name><duration>72<\/duration>/, 'masterclip duration must still reflect the full asset');
+assert.match(trimmedClipOutput, /<file id="file-trimmed-image-1"><name>Trimmed Source\.png<\/name>[\s\S]*?<duration>72<\/duration>/, 'inline file duration must still reflect the full asset');
+
+const sharedStillProject = {
+  ...project,
+  videoTracks:1,
+  videoTrackEnabled:[true],
+  videoTrackLocked:[false],
+  audioTracks:0,
+  audioTrackMuted:[],
+  audioTrackSolo:[],
+  audioTrackLocked:[],
+  textTrackLocked:false,
+  clips:[
+    { id:'still-a', itemId:'image-1', sourceAssetKey:'shared-still', mediaKind:'image', track:0, start:0, duration:1, name:'Shared Still.png', strokes:[] },
+    { id:'still-b', itemId:'image-1', sourceAssetKey:'shared-still', mediaKind:'image', track:0, start:1, duration:1, name:'Shared Still.png', strokes:[] },
+  ],
+  texts:[],
+  audio:[],
+};
+const sharedStillAssets = new Map([
+  ['image:shared-still', { id:'shared-still-1', kind:'image', category:'image', name:'Shared Still.png', filePath:'C:\\Export\\Media\\Images\\Shared Still.png', durationFrames:48, width:1920, height:1080 }],
+]);
+const sharedStillOutput = createPremiereXml(buildPremiereTimeline({ project:sharedStillProject, name:'Shared Still', fps:24, width:1920, height:1080, exportStart:0, exportEnd:2, assets:sharedStillAssets }));
+assert.doesNotMatch(sharedStillOutput, /<masterclipid>/, 'Premiere XML must not emit masterclipid linkage');
+assert.doesNotMatch(sharedStillOutput, /<ismasterclip>/, 'Premiere XML must not emit ismasterclip markers');
+assert.doesNotMatch(sharedStillOutput, /<clip id="masterclip-/, 'Premiere XML must not emit masterclip bin clips');
+assert.doesNotMatch(sharedStillOutput, /<bin><name>(?:Images|Videos|Audio|Drawings)<\/name>/, 'Premiere XML must not emit media masterclip bins');
+assert.match(sharedStillOutput, /<bin><name>Sequences<\/name><children>/, 'Sequences bin must remain');
+assert.equal((sharedStillOutput.match(/<file id="file-shared-still-1"><name>/g) || []).length, 1, 'full file definition with path must appear exactly once per asset');
+assert.equal((sharedStillOutput.match(/<file id="file-shared-still-1"\/>/g) || []).length, 1, 'subsequent clipitems must reuse the file as an empty id reference');
+assert.match(sharedStillOutput, /<clipitem id="clipitem-still-a-[^"]+">[\s\S]*?<file id="file-shared-still-1"><name>Shared Still\.png<\/name>[\s\S]*?<pathurl>/, 'first clipitem must carry the full inline file definition');
+assert.match(sharedStillOutput, /<clipitem id="clipitem-still-b-[^"]+">[\s\S]*?<file id="file-shared-still-1"\/>/, 'later clipitem must reference the same file id without repeating pathurl');
 
 console.log('animatics Premiere export tests passed');

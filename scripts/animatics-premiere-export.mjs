@@ -161,30 +161,10 @@ function fileXml(asset, fps, emitted) {
   return `<file id="${id}"><name>${xml(asset.name)}</name><pathurl>${xml(premiereFileUrl(asset.filePath))}</pathurl>${rateXml(fps)}<duration>${duration}</duration><media>${sample}</media></file>`;
 }
 
-function premiereAssetCategory(asset) {
-  const requested = String(asset?.category || asset?.kind || 'image').toLowerCase();
-  if (requested === 'video') return 'Videos';
-  if (requested === 'audio') return 'Audio';
-  if (requested === 'drawing' || requested === 'stroke') return 'Drawings';
-  return 'Images';
-}
-
-function masterClipId(asset) {
-  return `masterclip-${String(asset.id)}`;
-}
-
-function masterClipXml(asset, fps, emitted) {
-  const id = masterClipId(asset);
-  const duration = Math.max(1, Number(asset.durationFrames) || 1);
-  const still = asset.kind === 'image' ? '<stillframe>TRUE</stillframe>' : '';
-  const mediaType = asset.kind === 'audio' ? 'audio' : 'video';
-  return `<clip id="${xml(id)}"><name>${xml(asset.name)}</name><duration>${duration}</duration>${rateXml(fps)}<in>0</in><out>${duration}</out><masterclipid>${xml(id)}</masterclipid><ismasterclip>TRUE</ismasterclip>${still}${fileXml(asset, fps, emitted)}<sourcetrack><mediatype>${mediaType}</mediatype></sourcetrack></clip>`;
-}
-
 function clipXml(clip, index, fps, width, height, emitted) {
   const id = `clipitem-${xml(clip.id)}-${index}`;
   const still = clip.still ? '<stillframe>TRUE</stillframe>' : '';
-  return `<clipitem id="${id}"><name>${xml(clip.asset.name)}</name><enabled>${clip.enabled === false ? 'FALSE' : 'TRUE'}</enabled><duration>${Math.max(1, clip.out - clip.in)}</duration>${rateXml(fps)}<start>${clip.start}</start><end>${clip.end}</end><in>${clip.in}</in><out>${clip.out}</out><masterclipid>${xml(masterClipId(clip.asset))}</masterclipid>${still}${fileXml(clip.asset, fps, emitted)}${transformXml(clip, width, height)}${volumeXml(clip)}</clipitem>`;
+  return `<clipitem id="${id}"><name>${xml(clip.asset.name)}</name><enabled>${clip.enabled === false ? 'FALSE' : 'TRUE'}</enabled><duration>${Math.max(1, clip.out - clip.in)}</duration>${rateXml(fps)}<start>${clip.start}</start><end>${clip.end}</end><in>${clip.in}</in><out>${clip.out}</out>${still}${fileXml(clip.asset, fps, emitted)}${transformXml(clip, width, height)}${volumeXml(clip)}</clipitem>`;
 }
 
 function textColor(value) {
@@ -228,18 +208,9 @@ function textGeneratorXml(clip, index, fps, sequenceWidth) {
 export function createPremiereXml(sequence) {
   const { name = 'RefBoard Animatic', fps = 30, width = 1920, height = 1080, durationFrames = 1 } = sequence;
   const emitted = new Set();
-  const assets = new Map();
-  for (const track of [...sequence.videoTracks, ...sequence.audioTracks]) {
-    for (const clip of track) if (clip.asset && !assets.has(clip.asset.id)) assets.set(clip.asset.id, clip.asset);
-  }
-  const categoryOrder = ['Images', 'Videos', 'Audio', 'Drawings'];
-  const mediaBins = categoryOrder.map(category => {
-    const entries = [...assets.values()].filter(asset => premiereAssetCategory(asset) === category);
-    return entries.length ? `<bin><name>${category}</name><children>${entries.map(asset => masterClipXml(asset, fps, emitted)).join('')}</children></bin>` : '';
-  }).join('');
   let clipIndex = 0;
   const video = sequence.videoTracks.map((track, index) => ({ track, index })).filter(({ track }) => track.length).map(({ track, index }) => `<track>${track.map(clip => clip.kind === 'text' ? textGeneratorXml(clip, ++clipIndex, fps, width) : clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>${sequence.videoTrackEnabled?.[index] === false ? 'FALSE' : 'TRUE'}</enabled><locked>${sequence.videoTrackLocked?.[index] === true ? 'TRUE' : 'FALSE'}</locked></track>`).join('');
   const audio = sequence.audioTracks.map((track,index) => ({ track, index })).filter(({ track }) => track.length).map(({ track, index }) => `<track>${track.map(clip => clipXml(clip, ++clipIndex, fps, width, height, emitted)).join('')}<enabled>${sequence.audioTrackEnabled?.[index] === false ? 'FALSE' : 'TRUE'}</enabled><locked>${sequence.audioTrackLocked?.[index] === true ? 'TRUE' : 'FALSE'}</locked></track>`).join('');
   const sequenceXml = `<sequence id="sequence-1"><name>${xml(name)}</name><duration>${durationFrames}</duration>${rateXml(fps)}<timecode>${rateXml(fps)}<string>00:00:00:00</string><frame>0</frame><displayformat>NDF</displayformat></timecode><media><video><format><samplecharacteristics>${rateXml(fps)}<width>${width}</width><height>${height}</height><anamorphic>FALSE</anamorphic><pixelaspectratio>square</pixelaspectratio><fielddominance>none</fielddominance><colordepth>24</colordepth></samplecharacteristics></format>${video}</video><audio><format><samplecharacteristics><depth>16</depth><samplerate>48000</samplerate></samplecharacteristics></format><outputs><group><index>1</index><numchannels>2</numchannels><downmix>0</downmix><channel><index>1</index></channel><channel><index>2</index></channel></group></outputs>${audio}</audio></media></sequence>`;
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="5"><project><name>${xml(name)}</name><children>${mediaBins}<bin><name>Sequences</name><children>${sequenceXml}</children></bin></children></project></xmeml>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE xmeml>\n<xmeml version="5"><project><name>${xml(name)}</name><children><bin><name>Sequences</name><children>${sequenceXml}</children></bin></children></project></xmeml>`;
 }

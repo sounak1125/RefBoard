@@ -134,8 +134,8 @@ assert.match(editor, /appendAfterEffectsExportAsset/, 'After Effects assets must
 assert.match(premiere, /<xmeml version=\"5\">/, 'Premiere export must generate an XMEML interchange document');
 assert.match(premiere, /function buildPremiereTimeline/, 'Premiere timing must use a dedicated export model');
 assert.match(premiere, /item\.sourceAssetKey \|\| item\.itemId/, 'Premiere must resolve transformed board-image assets');
-assert.match(premiere, /<bin><name>\$\{category\}<\/name><children>/, 'Premiere media must import into categorized project bins');
-assert.match(premiere, /masterclipid/, 'Premiere timeline media must link to organized master clips');
+assert.match(premiere, /<bin><name>Sequences<\/name><children>/, 'Premiere export must keep a Sequences bin');
+assert.doesNotMatch(premiere, /masterclipid/, 'Premiere export must not emit masterclipid linkage');
 assert.match(premiere, /Basic Motion/, 'Premiere XML must preserve clip framing through Basic Motion');
 assert.match(premiere, /generatoritem/, 'Premiere XML must preserve text as editable title generators');
 assert.match(premiere, /parameterid>str/, 'Premiere editable titles must carry their source text');
