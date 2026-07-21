@@ -87,6 +87,22 @@ export function snappedMoveDelta({ moving = [], stationary = [], proposedDelta =
     : { delta: proposedDelta, guide: null, snapped: false };
 }
 
+/** Snap a single timeline time (e.g. IN/OUT marker) to the nearest candidate edge. */
+export function snappedTime({ time = 0, candidates = [], threshold = 0, enabled = true } = {}) {
+  const raw = finite(time);
+  if (!enabled) return { time: raw, guide: null, snapped: false };
+  const limit = Math.max(0, finite(threshold));
+  let best = null;
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate)) continue;
+    if (Math.abs(candidate - raw) > limit) continue;
+    if (best === null || Math.abs(candidate - raw) < Math.abs(best - raw)) best = candidate;
+  }
+  return best !== null
+    ? { time: best, guide: best, snapped: true }
+    : { time: raw, guide: null, snapped: false };
+}
+
 function segmentFrom(item, localStart, localEnd, id, suffix = '') {
   const result = {
     ...item,

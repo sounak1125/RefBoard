@@ -12,6 +12,7 @@ import {
   reorderTimelineTracks,
   resolveOverwrite,
   snappedMoveDelta,
+  snappedTime,
   splitLinkedTimelineItems,
   splitTimelineItem,
   filterClipsInTimeRange,
@@ -2634,7 +2635,16 @@ export function createAnimaticsEditor(options) {
     if(trackReorder){const hit=document.elementFromPoint(e.clientX,e.clientY)?.closest?.(`.an-track-row[data-track-kind="${trackReorder.kind}"]`);if(hit)trackReorder.to=Number(hit.dataset.trackIndex);for(const row of grid.querySelectorAll(`.an-track-row[data-track-kind="${trackReorder.kind}"]`)){const index=Number(row.dataset.trackIndex);row.classList.toggle('reorder-source',index===trackReorder.from);row.classList.toggle('reorder-target',index===trackReorder.to&&index!==trackReorder.from);}return;}
     if(activeTool==='razor'&&!sequenceMarkerDrag&&!scrubbing&&!marqueeDrag&&!dragging)updateRazorGuide(e);
     if(gapPress){if(Math.hypot(e.clientX-gapPress.startX,e.clientY-gapPress.startY)<=3)return;const state=gapPress;gapPress=null;beginMarquee(e,state.lane,state.bounds,grid,{x:state.startX,y:state.startY});updateMarquee(e);return;}
-    if(sequenceMarkerDrag){setSequenceMarkerValue(sequenceMarkerDrag.kind,pointerTime(e,grid.querySelector('.an-ruler')));return;}
+    if(sequenceMarkerDrag){
+      const px=Number($('#anZoom').value)||90;
+      let time=pointerTime(e,grid.querySelector('.an-ruler'));
+      if(project.timelineSnap){
+        const snap=snappedTime({time,candidates:timelineMediaEdgeTimes(),threshold:8/px,enabled:true});
+        time=snap.time;showSnapGuide(snap.guide);
+      }else showSnapGuide(null);
+      setSequenceMarkerValue(sequenceMarkerDrag.kind,time);
+      return;
+    }
     if(scrubbing){scrubTo(pointerTime(e,scrubbing.target));return;}
     if(marqueeDrag){updateMarquee(e);return;}
     if(!dragging)return; const px=Number($('#anZoom').value)||90; const step=e.shiftKey?1/project.fps:.05;

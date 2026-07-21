@@ -15,6 +15,7 @@ import {
   reorderTimelineTracks,
   resolveOverwrite,
   snappedMoveDelta,
+  snappedTime,
   splitLinkedTimelineItems,
   splitTimelineItem,
   timelineTrackGaps,
@@ -65,6 +66,30 @@ assert.deepEqual(snappedMoveDelta({
   moving: [{ start: 2, duration: 3 }], stationary: [{ start: 8, duration: 2 }], proposedDelta: 2.92, threshold: .1,
 }), { delta: 3, guide: 8, snapped: true });
 assert.equal(snappedMoveDelta({ moving: [{ start: 2, duration: 3 }], stationary: [], proposedDelta: 1, threshold: .1, extraTimes: [10] }).snapped, false);
+assert.deepEqual(snappedTime({
+  time: 4.95,
+  candidates: [0, 5, 8, 12],
+  threshold: .1,
+  enabled: true,
+}), { time: 5, guide: 5, snapped: true }, 'IN/OUT drag must snap to a nearby clip edge when snapping is enabled');
+assert.deepEqual(snappedTime({
+  time: 4.95,
+  candidates: [0, 5, 8, 12],
+  threshold: .1,
+  enabled: false,
+}), { time: 4.95, guide: null, snapped: false }, 'IN/OUT drag must keep the raw position when snapping is disabled');
+assert.deepEqual(snappedTime({
+  time: 7.92,
+  candidates: [0, 5, 8, 12],
+  threshold: .1,
+  enabled: true,
+}), { time: 8, guide: 8, snapped: true }, 'range markers must snap to clip end edges as well as starts');
+assert.equal(snappedTime({
+  time: 6,
+  candidates: [0, 5, 8, 12],
+  threshold: .1,
+  enabled: true,
+}).snapped, false, 'positions outside the shared snap threshold must not snap');
 assert.equal(constrainedTrackDelta([{ track:0 },{ track:1 }],-1,3),0,'a linked group at V1 must not collapse upward');
 assert.equal(constrainedTrackDelta([{ track:0 },{ track:1 }],1,3),1,'a linked V1/V2 group may move intact to V2/V3');
 assert.equal(constrainedTrackDelta([{ track:0 },{ track:1 }],1,2),0,'a linked group must stop when no complete destination span exists');
