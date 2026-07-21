@@ -196,6 +196,17 @@ function css() {
   body.animatics-open #toolbar, body.animatics-open #selbar, body.animatics-open #empty,
   body.animatics-open #status, body.animatics-open #board,
   body.animatics-open #drawPanelWrap, body.animatics-open #addPanelWrap { visibility:hidden !important; pointer-events:none !important; }
+  /* Keep the real titlebar drag strip + window controls above Animatics.
+     Do not put -webkit-app-region:drag on .an-top (that covered markers/controls). */
+  body.animatics-open.board-active #titlebar,
+  body.animatics-open.board-active:not(.titlebar-revealed) #titlebar {
+    transform:translateY(0);
+    opacity:1;
+    pointer-events:auto;
+    border-bottom-color:var(--line);
+  }
+  body.animatics-open.board-active #titlebarPeek { display:none; }
+  body.animatics-open #animaticsWorkspace { top:var(--titlebar-h); }
   #animaticsWorkspace { --an-timeline-h:286px; --an-inspector-w:${DEFAULT_INSPECTOR_WIDTH}px; --an-track-label-w:${TRACK_LABEL_WIDTH}px; position:fixed; inset:0; z-index:80; display:none; color:#eef0f5; color-scheme:dark; background:#0c0d10; font:12px/1.35 "Segoe UI",sans-serif; user-select:none; }
   #animaticsWorkspace.open { display:grid; grid-template-rows:52px minmax(0,1fr) var(--an-timeline-h); }
   .an-top { display:flex; align-items:center; gap:8px; min-width:0; padding:0 14px; border-bottom:1px solid #272a33; background:#15171d; -webkit-app-region:no-drag; }
