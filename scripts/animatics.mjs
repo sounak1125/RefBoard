@@ -2639,7 +2639,7 @@ export function createAnimaticsEditor(options) {
       const px=Number($('#anZoom').value)||90;
       let time=pointerTime(e,grid.querySelector('.an-ruler'));
       if(project.timelineSnap){
-        const snap=snappedTime({time,candidates:timelineMediaEdgeTimes(),threshold:8/px,enabled:true});
+        const snap=snappedTime({time,candidates:timelineMediaEdgeTimes(),threshold:8/px,enabled:project.timelineSnap ?? true});
         time=snap.time;showSnapGuide(snap.guide);
       }else showSnapGuide(null);
       setSequenceMarkerValue(sequenceMarkerDrag.kind,time);
