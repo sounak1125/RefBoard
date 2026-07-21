@@ -10384,6 +10384,7 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
 
 let activeBoardSave = null;
 let manualSaveToastActive = 0;
+let boardPreviewBackfillSeq = 0;
 
 async function performBoardSave(opts = {}) {
   const silent = !!opts.silent;
@@ -10396,6 +10397,8 @@ async function performBoardSave(opts = {}) {
 
   if (window.RefBoardAPI?.beginBoardSave) {
     let token = null;
+    // Invalidate any in-flight preview backfill before rewriting the board file.
+    boardPreviewBackfillSeq++;
     try {
       const begin = await window.RefBoardAPI.beginBoardSave(
         defaultName, currentBoardPath || undefined, snapshot.core, null, saveAs,
@@ -10425,6 +10428,8 @@ async function performBoardSave(opts = {}) {
       if (!result?.saved) return false;
       currentBoardPath = result.filePath;
       currentBoardTitle = boardTitleFromPath(result.filePath);
+      // Keep the streamed save non-blocking: embed Explorer preview asynchronously.
+      scheduleBoardPreviewBackfill(result.filePath);
     } catch (err) {
       if (token) await window.RefBoardAPI.abortBoardSave(token).catch(() => {});
       console.error('[save] streamed board save failed:', err);
@@ -10498,6 +10503,27 @@ async function captureBoardFilePreviewBase64(maxPx = 720) {
   } catch {
     return null;
   }
+}
+
+/** Non-blocking: capture a 720px preview and splice it into a saved .refboard header. */
+function scheduleBoardPreviewBackfill(filePath) {
+  if (!filePath || !window.RefBoardAPI?.writeBoardPreview) return;
+  const seq = ++boardPreviewBackfillSeq;
+  const pathToFill = filePath;
+  void (async () => {
+    try {
+      if (!state.items.length) return;
+      const preview = await captureBoardFilePreviewBase64(720);
+      if (!preview || seq !== boardPreviewBackfillSeq) return;
+      await window.RefBoardAPI.writeBoardPreview(pathToFill, preview);
+      if (seq !== boardPreviewBackfillSeq) return;
+      if (sameFilePath(currentBoardPath, pathToFill)) {
+        cachedCurrentBoardThumb = preview;
+      }
+    } catch (err) {
+      console.warn('[preview] board preview backfill failed:', err);
+    }
+  })();
 }
 
 async function getRecentWorksList() {
@@ -11453,6 +11479,10 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
   toast(`Opened board — ${state.items.length} item${state.items.length === 1 ? '' : 's'}`);
   if (droppedImageItems) {
     setTimeout(() => toast('Opened board with some missing images'), 2500);
+  }
+  // Self-heal boards saved without an embedded Explorer preview (e.g. 2.0.1 regression).
+  if (meta.path && !cachedCurrentBoardThumb) {
+    scheduleBoardPreviewBackfill(meta.path);
   }
   return 'ok';
 }

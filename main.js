@@ -1,7 +1,7 @@
 'use strict';
 const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
-const { scanBoardFile, readBoardImageBytes, readBoardPreview } = require('./scripts/board-open-stream');
+const { scanBoardFile, readBoardImageBytes, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -935,6 +935,19 @@ function setupIpc() {
     } catch {
       return null;
     }
+  });
+
+  ipcMain.handle('write-board-preview', async (_, { filePath, preview } = {}) => {
+    if (!filePath || typeof preview !== 'string' || !preview.length) return { written: false };
+    const target = path.resolve(String(filePath));
+    for (const session of boardSaveSessions.values()) {
+      if (path.resolve(session.target) === target) {
+        throw new Error('Board save in progress');
+      }
+    }
+    const result = await rewriteBoardFilePreview(target, preview);
+    refreshShellIcons(target);
+    return result;
   });
 
   ipcMain.handle('clipboard-read-image', async () => {
