@@ -281,8 +281,8 @@
     }
   },
   "2.0.1": {
-    "headline": "Faster saves and export fixes",
-    "summary": "This update makes saving large boards much faster and fixes Premiere Pro export, plus a few polish touches.",
+    "headline": "Faster saves, smoother animatics, and export fixes",
+    "summary": "This update fixes Premiere Pro export, speeds up saving large boards, and adds timeline polish.",
     "sections": {
       "new": [],
       "improved": [
@@ -292,13 +292,21 @@
         },
         {
           "title": "Save indicator",
-          "description": "A subtle indicator now confirms when your board has been saved."
+          "description": "A subtle indicator confirms when your board has been saved."
+        },
+        {
+          "title": "Snap timeline markers",
+          "description": "In and out points now snap to clip edges when snapping is on."
         }
       ],
       "fixed": [
         {
           "title": "Premiere Pro export",
-          "description": "Fixed an issue where exported timelines could fail to import into Premiere Pro."
+          "description": "Fixed exported timelines failing to import into Premiere Pro."
+        },
+        {
+          "title": "Window dragging in animatics",
+          "description": "The app window can now be moved while in the animatics editor."
         }
       ]
     }
