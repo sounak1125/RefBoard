@@ -914,6 +914,36 @@ body.board-active #recentWorks{ display:none; }
   background:#5eacff;
   box-shadow:0 1px 0 rgba(255,255,255,.15) inset, 0 4px 12px rgba(90,162,255,.22);
 }
+.rw-restore{
+  display:flex; justify-content:space-between; align-items:center; gap:16px;
+  margin:0 0 16px;
+  padding:14px 16px;
+  border-radius:12px;
+  border:1px solid var(--line);
+  background:var(--surface-2);
+}
+.rw-restore[hidden]{ display:none !important; }
+.rw-restore-copy{
+  display:flex; flex-direction:column; gap:4px; min-width:0;
+}
+.rw-restore-title{
+  font-size:13.5px; font-weight:600; color:var(--txt); letter-spacing:-.01em;
+}
+.rw-restore-sub{
+  font-size:12.5px; line-height:1.4; color:var(--mut);
+}
+.rw-restore-actions{
+  display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:8px;
+  flex:0 0 auto;
+}
+.rw-restore-actions .rw-btn{
+  padding:8px 14px;
+  font-size:12.5px;
+}
+@media (max-width:520px){
+  .rw-restore{ flex-direction:column; align-items:stretch; }
+  .rw-restore-actions{ align-self:flex-end; }
+}
 
 /* ---------- focus flow landing ---------- */
 #recentWorks.layout-focus{
@@ -936,6 +966,11 @@ body.board-active #recentWorks{ display:none; }
 #recentWorks.layout-focus .rw-header{
   width:min(1120px, calc(100vw - 56px));
   margin:0 auto 2px;
+  flex:0 0 auto;
+}
+#recentWorks.layout-focus .rw-restore{
+  width:min(1120px, calc(100vw - 56px));
+  margin:0 auto 16px;
   flex:0 0 auto;
 }
 #recentWorks.layout-focus .rw-brand{ margin-bottom:12px; }
@@ -2171,6 +2206,16 @@ body.board-active #whatsNewNotice{ display:none; }
         </div>
       </div>
     </header>
+    <div class="rw-restore" id="rwRestore" hidden>
+      <div class="rw-restore-copy">
+        <span class="rw-restore-title">Unsaved session found</span>
+        <span class="rw-restore-sub">You had a board open last time. Restore it?</span>
+      </div>
+      <div class="rw-restore-actions">
+        <button type="button" class="rw-btn" id="rwRestoreDismiss">Dismiss</button>
+        <button type="button" class="rw-btn primary" id="rwRestoreConfirm">Restore</button>
+      </div>
+    </div>
     <div class="rw-grid hide" id="recentGrid"></div>
     <section class="ff-flow" id="focusFlow" aria-label="Recent boards carousel" hidden>
       <div class="ff-stage" id="focusStage" tabindex="0" role="group" aria-roledescription="carousel" aria-label="Recent boards. Use arrow keys or drag to browse.">
@@ -4168,6 +4213,7 @@ let onLanding = true;
 let currentBoardPath = null;
 let currentBoardTitle = null;
 let restoredSessionPendingOpen = false;
+let pendingSessionRestore = false;
 const RECENT_LOCAL_KEY = 'refboard.recentWorks';
 
 const AUTOSAVE_INTERVALS = [5, 10, 15, 20, 30];
@@ -5323,8 +5369,8 @@ async function restoreSession() {
     drawActive = false;
     cancelDrawSession();
     cachedCurrentBoardThumb = null;
-    currentBoardPath = null;
-    currentBoardTitle = null;
+    currentBoardPath = meta.path || null;
+    currentBoardTitle = meta.title || (meta.path ? boardTitleFromPath(meta.path) : null);
     restoredSessionPendingOpen = true;
     closeDrawFeatures();
     boardFileDirty = false;
@@ -5375,6 +5421,9 @@ async function persistBoardNow() {
   return dbPut('meta', 'board', {
     items: state.items.map(i => ({ ...i })),
     view: { ...state.view },
+    path: currentBoardPath || null,
+    title: currentBoardTitle || null,
+    dirty: boardFileDirty,
     boardGray: state.boardGray,
     snapEnabled: state.snapEnabled,
     gridAppearance: state.gridAppearance,
@@ -10449,7 +10498,10 @@ async function performBoardSave(opts = {}) {
     }
   }
 
-  if (boardChangeVersion === snapshot.changeVersion) boardFileDirty = false;
+  if (boardChangeVersion === snapshot.changeVersion) {
+    boardFileDirty = false;
+    void persistBoardNow();
+  }
   scheduleSavedRecentWork(snapshot, currentBoardPath, currentBoardTitle);
   if (silent) toast('Autosaved');
   else if (!manualSaveToastActive) toast(saveAs ? 'Board saved as a new file (originals embedded)' : 'Board file saved (originals embedded)');
@@ -11273,9 +11325,42 @@ async function openCurrentWhatsNew() {
   }
 }
 
+let restoreCardWired = false;
+
+function showRestoreCardIfPending() {
+  const card = $('#rwRestore');
+  if (!card) return;
+  if (!restoreCardWired) {
+    restoreCardWired = true;
+    $('#rwRestoreDismiss')?.addEventListener('click', () => {
+      pendingSessionRestore = false;
+      card.hidden = true;
+    });
+    $('#rwRestoreConfirm')?.addEventListener('click', () => {
+      void restorePendingSession();
+    });
+  }
+  if (pendingSessionRestore) card.hidden = false;
+  else card.hidden = true;
+}
+
+async function restorePendingSession() {
+  pendingSessionRestore = false;
+  const card = $('#rwRestore');
+  if (card) card.hidden = true;
+  const result = await restoreSession();
+  if (result && result.restored) {
+    await enterBoard();
+    if (result.missingImages) toast('Restored session with some missing images');
+  } else {
+    toast('Nothing to restore');
+  }
+}
+
 async function showLanding() {
   await transitionToLanding();
   await refreshWhatsNew();
+  showRestoreCardIfPending();
 }
 
 async function enterBoard(opts = {}) {
@@ -11305,6 +11390,8 @@ async function openNewBoardImpl() {
     const result = await resolveUnsavedChanges('leave');
     if (result !== 'proceed') return;
   }
+  pendingSessionRestore = false;
+  showRestoreCardIfPending();
   suppressBoardDirty = true;
   animaticsEditor?.clear?.();
   releaseAllImages();
@@ -11480,6 +11567,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
   if (droppedImageItems) {
     setTimeout(() => toast('Opened board with some missing images'), 2500);
   }
+  pendingSessionRestore = false;
   // Self-heal boards saved without an embedded Explorer preview (e.g. 2.0.1 regression).
   if (meta.path && !cachedCurrentBoardThumb) {
     scheduleBoardPreviewBackfill(meta.path);
@@ -15523,29 +15611,34 @@ async function init() {
   db = await openDB();
   if (db) await dbClear('historyBlobs');
   if (!db) toast('Autosave unavailable in this browser — use Save board (Ctrl+S) to keep your work');
-  const restoreResult = db
-    ? await restoreSession()
-    : { restored: false, missingImages: false };
-
-  if (!restoreResult.restored) {
-    suppressBoardDirty = true;
-    centerViewOnWorkspace();
-    boardFileDirty = false;
-    updateEmpty();
-    syncDrawUi();
-    invalidate();
-    suppressBoardDirty = false;
+  if (db) {
+    try {
+      const meta = await dbGet('meta', 'board');
+      pendingSessionRestore = isValidSessionMeta(meta) && !!(meta.items && meta.items.length) && !!meta.dirty;
+    } catch {
+      pendingSessionRestore = false;
+    }
   }
+
+  suppressBoardDirty = true;
+  centerViewOnWorkspace();
+  boardFileDirty = false;
+  updateEmpty();
+  syncDrawUi();
+  invalidate();
+  suppressBoardDirty = false;
   tick();
 
   const startupBoardPath = await window.RefBoardAPI?.getPendingOpenPath?.();
-  if (startupBoardPath) await openBoardFromPath(startupBoardPath);
+  if (startupBoardPath) {
+    await openBoardFromPath(startupBoardPath);
+    if (sameFilePath(startupBoardPath, currentBoardPath)) pendingSessionRestore = false;
+  }
   if (!startupBoardPath || !sameFilePath(startupBoardPath, currentBoardPath)) {
     await showLanding();
   } else {
     await refreshWhatsNew();
   }
-  if (restoreResult.missingImages) toast('Restored session with some missing images');
 
   const info = await window.RefBoardAPI?.getAppInfo?.();
   if (info) setPerfOverlayPackaged(!!info.isPackaged);
