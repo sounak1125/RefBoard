@@ -11441,7 +11441,13 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
     const result = await resolveUnsavedChanges('leave');
     if (result !== 'proceed') return 'cancelled';
   } else if (!onLanding && state.items.length) {
-    if (!confirm('Opening this board replaces the current one. Continue?')) return 'cancelled';
+    const ok = await showConfirm({
+      title: 'Open board',
+      message: 'Opening this board replaces the current one. Continue?',
+      confirmLabel: 'Open',
+      danger: false,
+    });
+    if (!ok) return 'cancelled';
   }
   showOpeningOverlay();
   // Keep the current board recoverable through its Blobs, but release decoded
@@ -14961,13 +14967,15 @@ function hideUnsavedModal(action) {
 }
 
 let confirmResolve = null;
-function showConfirm({ title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel' }) {
+function showConfirm({ title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', danger = true }) {
   return new Promise(resolve => {
     confirmResolve = resolve;
     $('#confirmTitle').textContent = title;
     $('#confirmMsg').textContent = message;
     $('#confirmOk').textContent = confirmLabel;
     $('#confirmCancel').textContent = cancelLabel;
+    $('#confirmOk').classList.toggle('confirm-danger', danger);
+    $('#confirmOk').classList.toggle('primary', !danger);
     confirmModal.classList.add('show');
   });
 }
