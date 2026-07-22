@@ -8,6 +8,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const os = require('os');
+const { pathToFileURL } = require('url');
 const ffmpegStaticPath = require('ffmpeg-static');
 const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-format');
 const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
@@ -261,6 +262,78 @@ function setupIpc() {
     return String(ffmpegStaticPath || '').replace('app.asar', 'app.asar.unpacked');
   }
 
+  function previewCacheSettingsPath() {
+    return path.join(app.getPath('userData'), 'animatics-preview-cache.json');
+  }
+
+  function normalizedPreviewCacheSettings(raw = {}) {
+    const fallbackLocation = path.join(app.getPath('userData'), 'cache');
+    const requestedLocation = typeof raw.location === 'string' && raw.location.trim() ? path.resolve(raw.location.trim()) : fallbackLocation;
+    return {
+      location: requestedLocation,
+      diskLimitGB: Math.max(1, Math.min(500, Number(raw.diskLimitGB) || 20)),
+      ramLimitMB: Math.max(64, Math.min(2048, Math.round(Number(raw.ramLimitMB) || 256))),
+      previewResolution: [270, 540, 1080].includes(Number(raw.previewResolution)) ? Number(raw.previewResolution) : 540,
+      autoClean: raw.autoClean !== false,
+      autoCache: raw.autoCache === true,
+    };
+  }
+
+  async function loadPreviewCacheSettings() {
+    try { return normalizedPreviewCacheSettings(JSON.parse(await fs.readFile(previewCacheSettingsPath(), 'utf8'))); }
+    catch { return normalizedPreviewCacheSettings(); }
+  }
+
+  async function savePreviewCacheSettings(raw) {
+    const settings = normalizedPreviewCacheSettings(raw);
+    await fs.mkdir(path.dirname(previewCacheSettingsPath()), { recursive: true });
+    await fs.writeFile(previewCacheSettingsPath(), JSON.stringify(settings, null, 2), 'utf8');
+    return settings;
+  }
+
+  function previewCacheRoot(settings) {
+    return path.join(path.resolve(settings.location), 'RefBoard Animatics Cache');
+  }
+
+  async function previewCacheEntries(settings) {
+    const root = previewCacheRoot(settings);
+    let names = [];
+    try { names = await fs.readdir(root); } catch { return []; }
+    const entries = [];
+    for (const name of names) {
+      if (!/^[a-f0-9]{8,64}\.mp4$/i.test(name)) continue;
+      const filePath = path.join(root, name);
+      try { const stat = await fs.stat(filePath); entries.push({ name, filePath, size:stat.size, mtimeMs:stat.mtimeMs }); } catch { /* removed concurrently */ }
+    }
+    return entries;
+  }
+
+  async function previewCacheStats(settings = null) {
+    settings = settings || await loadPreviewCacheSettings();
+    const entries = await previewCacheEntries(settings), bytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+    return { cachePath:previewCacheRoot(settings), bytes, files:entries.length, limitBytes:Math.round(settings.diskLimitGB * 1024 ** 3) };
+  }
+
+  async function cleanupPreviewCache(settings, preserveName = '') {
+    if (!settings.autoClean) return previewCacheStats(settings);
+    const limit = Math.round(settings.diskLimitGB * 1024 ** 3), entries = (await previewCacheEntries(settings)).sort((a,b)=>a.mtimeMs-b.mtimeMs);
+    let total = entries.reduce((sum, entry) => sum + entry.size, 0);
+    for (const entry of entries) {
+      if (total <= limit) break;
+      if (entry.name === preserveName) continue;
+      await fs.rm(entry.filePath, { force:true }).catch(()=>{});
+      await fs.rm(entry.filePath.replace(/\.mp4$/i, '.json'), { force:true }).catch(()=>{});
+      total -= entry.size;
+    }
+    return previewCacheStats(settings);
+  }
+
+  function normalizedPreviewFingerprint(value) {
+    const fingerprint = String(value || '').toLowerCase();
+    if (!/^[a-f0-9]{8,64}$/.test(fingerprint)) throw new Error('Invalid preview cache fingerprint');
+    return fingerprint;
+  }
+
   async function discardAnimaticExportSession(session) {
     if (!session) return;
     clearTimeout(session.timer);
@@ -406,6 +479,44 @@ function setupIpc() {
     }));
   });
 
+  ipcMain.handle('get-animatics-preview-cache-settings', async () => {
+    const settings = await loadPreviewCacheSettings();
+    return { ...settings, ...(await previewCacheStats(settings)) };
+  });
+
+  ipcMain.handle('set-animatics-preview-cache-settings', async (_event, raw = {}) => {
+    const settings = await savePreviewCacheSettings(raw);
+    await fs.mkdir(previewCacheRoot(settings), { recursive:true });
+    return { ...settings, ...(await cleanupPreviewCache(settings)) };
+  });
+
+  ipcMain.handle('choose-animatics-preview-cache-folder', async () => {
+    const settings = await loadPreviewCacheSettings();
+    const picked = await dialog.showOpenDialog(win, { title:'Choose Animatics cache drive or folder', defaultPath:settings.location, properties:['openDirectory','createDirectory'] });
+    if (picked.canceled || !picked.filePaths.length) return null;
+    const next = await savePreviewCacheSettings({ ...settings, location:picked.filePaths[0] });
+    await fs.mkdir(previewCacheRoot(next), { recursive:true });
+    return { ...next, ...(await previewCacheStats(next)) };
+  });
+
+  ipcMain.handle('clear-animatics-preview-cache', async () => {
+    const settings = await loadPreviewCacheSettings(), root = path.resolve(previewCacheRoot(settings)), parsed = path.parse(root);
+    if (root === parsed.root || path.basename(root) !== 'RefBoard Animatics Cache') throw new Error('Unsafe preview cache location');
+    await fs.rm(root, { recursive:true, force:true });
+    await fs.mkdir(root, { recursive:true });
+    return previewCacheStats(settings);
+  });
+
+  ipcMain.handle('get-animatics-preview-cache', async (_event, rawFingerprint) => {
+    const fingerprint = normalizedPreviewFingerprint(rawFingerprint), settings = await loadPreviewCacheSettings(), filePath = path.join(previewCacheRoot(settings), `${fingerprint}.mp4`);
+    try {
+      const stat = await fs.stat(filePath);await fs.utimes(filePath,new Date(),new Date()).catch(()=>{});
+      return { cached:true, fingerprint, filePath, url:pathToFileURL(filePath).href, size:stat.size, mtimeMs:stat.mtimeMs };
+    } catch { return { cached:false, fingerprint }; }
+  });
+
+  ipcMain.handle('get-animatics-preview-cache-stats', async () => previewCacheStats());
+
   ipcMain.handle('begin-animatic-export', async (event, settings = {}) => {
     const fps = [24, 30, 60].includes(Number(settings.fps)) ? Number(settings.fps) : 30;
     const requestedWidth = Number(settings.width);
@@ -432,6 +543,27 @@ function setupIpc() {
       }, 30 * 60 * 1000),
     });
     return { started: true, token };
+  });
+
+  ipcMain.handle('begin-animatics-preview-cache', async (event, raw = {}) => {
+    const fingerprint = normalizedPreviewFingerprint(raw.fingerprint), settings = await loadPreviewCacheSettings();
+    const fps = [24, 30, 60].includes(Number(raw.fps)) ? Number(raw.fps) : 30;
+    const width = Math.max(2, Math.min(4096, Math.round((Number(raw.width) || 960) / 2) * 2));
+    const height = Math.max(2, Math.min(4096, Math.round((Number(raw.height) || 540) / 2) * 2));
+    const root = previewCacheRoot(settings), finalOutput = path.join(root, `${fingerprint}.mp4`);
+    await fs.mkdir(root, { recursive:true });
+    try {
+      const stat = await fs.stat(finalOutput);
+      await fs.utimes(finalOutput,new Date(),new Date()).catch(()=>{});
+      return { started:false, cached:true, fingerprint, filePath:finalOutput, url:pathToFileURL(finalOutput).href, size:stat.size };
+    } catch { /* build below */ }
+    const token = crypto.randomUUID(), dir = await fs.mkdtemp(path.join(os.tmpdir(), 'refboard-preview-cache-'));
+    animaticExportSessions.set(token, {
+      token, ownerId:event.sender.id, dir, output:path.join(dir, 'preview.mp4'), finalOutput, fingerprint, cachePreview:true, fps, width, height,
+      timeInterpolation:raw.timeInterpolation === 'optical-flow' ? 'optical-flow' : 'sampling', frames:[], audio:[],
+      timer:setTimeout(()=>{const stale=animaticExportSessions.get(token);animaticExportSessions.delete(token);discardAnimaticExportSession(stale);},30*60*1000),
+    });
+    return { started:true, token, fingerprint };
   });
 
   ipcMain.handle('append-animatic-frame', async (event, { token, frame } = {}) => {
@@ -522,13 +654,24 @@ function setupIpc() {
         args.push('-map', '0:v:0');
       }
       args.push(
-        '-r', String(session.fps), '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+        '-r', String(session.fps), '-c:v', 'libx264', '-preset', session.cachePreview?'veryfast':'medium', '-crf', session.cachePreview?'20':'18',
         '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-t', totalDuration.toFixed(6),
       );
+      if (session.cachePreview) args.splice(args.indexOf('-pix_fmt'), 0, '-g', String(session.fps), '-keyint_min', String(session.fps), '-sc_threshold', '0');
       if (session.timeInterpolation === 'optical-flow') args.splice(args.indexOf('-c:v'), 0, '-vf', `minterpolate=fps=${session.fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bilat`);
       if (session.audio.length) args.push('-c:a', 'aac', '-b:a', '192k');
       args.push(session.output);
       await runFfmpeg(args, session.dir);
+      if (session.cachePreview) {
+        await fs.mkdir(path.dirname(session.finalOutput), { recursive:true });
+        await fs.rm(session.finalOutput, { force:true }).catch(()=>{});
+        await fs.rename(session.output, session.finalOutput);
+        await fs.writeFile(session.finalOutput.replace(/\.mp4$/i,'.json'), JSON.stringify({fingerprint:session.fingerprint,fps:session.fps,width:session.width,height:session.height,createdAt:new Date().toISOString()},null,2),'utf8');
+        const settings = await loadPreviewCacheSettings();
+        await cleanupPreviewCache(settings, path.basename(session.finalOutput));
+        const stat = await fs.stat(session.finalOutput);
+        return { cached:true, fingerprint:session.fingerprint, filePath:session.finalOutput, url:pathToFileURL(session.finalOutput).href, size:stat.size };
+      }
       return { saved: true, filePath: session.output };
     } finally {
       await discardAnimaticExportSession(session);

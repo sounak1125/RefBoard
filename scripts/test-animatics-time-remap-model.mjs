@@ -10,6 +10,7 @@ import {
   reverseTimeRemap,
   setTimeRemapInterpolation,
   timeRemapHandleInfo,
+  timeRemapStateAt,
   timeRemapSourceAt,
   timeRemapSpeedAt,
   timeRemapValueAt,
@@ -25,6 +26,11 @@ const identity = normalizeTimeRemap(clip);
 assert.equal(identity.enabled, false, 'legacy clips must migrate as disabled identity remaps');
 close(timeRemapSourceAt({...clip,timeRemap:identity}, 4), 14, 'identity remap must preserve 1:1 source time');
 close(timeRemapSpeedAt({...clip,timeRemap:identity}, 4), 1, 'identity remap must report 100% speed');
+const compiledItem={...clip,timeRemap:identity},compiledState=timeRemapStateAt(compiledItem,4),compiledAgain=timeRemapStateAt(compiledItem,6);
+close(compiledState.source,timeRemapSourceAt(compiledItem,4),'compiled remap state must share the public source mapping');
+close(compiledState.speed,timeRemapSpeedAt(compiledItem,4),'compiled remap state must share the public speed mapping');
+assert.strictEqual(compiledState.remap,compiledAgain.remap,'repeated frame evaluation must reuse the compiled normalized curve');
+close(timeRemapStateAt({sourceIn:-4,sourceOut:2,duration:2},0).source,0,'compiled evaluation must preserve non-negative source bounds');
 
 const doubled = {...clip,...constantTimeRemap(clip, 2)};
 close(doubled.duration, 5, '200% speed must halve duration');
@@ -106,6 +112,25 @@ assert.equal(handled.timeRemap.keyframes[1].continuous,true,'Continuous Bézier 
 handled.timeRemap=updateTimeRemapHandle(handled,1,'out',{speed:.8,influence:28});
 handleInfo=timeRemapHandleInfo(handled,1);
 close(handleInfo.in.speed,.8,'joined handle edits must preserve equal incoming and outgoing slopes');
+
+let directional={...clip,timeRemap:addTimeRemapKeyframe(clip,5)};
+directional.timeRemap=updateTimeRemapHandle(directional,1,'out',{dt:-1,dv:-2,split:true});
+assert.ok(directional.timeRemap.keyframes[1].outHandle.dt>0&&directional.timeRemap.keyframes[1].outHandle.dt<.02,'an outgoing handle dragged across its keyframe must pin instead of reflecting');
+directional.timeRemap=updateTimeRemapHandle(directional,1,'in',{dt:1,dv:2,split:true});
+assert.ok(directional.timeRemap.keyframes[1].inHandle.dt<0&&directional.timeRemap.keyframes[1].inHandle.dt>-.02,'an incoming handle dragged across its keyframe must pin instead of reflecting');
+
+let unclipped={...clip,timeRemap:addTimeRemapKeyframe(clip,5)};
+unclipped.timeRemap=updateTimeRemapKeyframe(unclipped,1,{value:10});
+unclipped.timeRemap=updateTimeRemapHandle(unclipped,1,'out',{dt:.01,dv:-12,split:true});
+close(unclipped.timeRemap.keyframes[1].outHandle.dv,-12,'Value Graph control points must remain draggable beyond the source-value boundary');
+assert.ok(timeRemapSourceAt(unclipped,7)>=clip.sourceIn&&timeRemapSourceAt(unclipped,7)<=clip.sourceOut,'playback evaluation must remain clamped even when a control point leaves the visible source range');
+
+let authoritative={...clip,timeRemap:addTimeRemapKeyframe(clip,5)};
+authoritative.timeRemap=updateTimeRemapHandle(authoritative,2,'in',{influence:80,speed:1,split:true});
+authoritative.timeRemap=updateTimeRemapHandle(authoritative,1,'out',{influence:80,speed:1,split:true});
+const draggedInfo=timeRemapHandleInfo(authoritative,1),opposingInfo=timeRemapHandleInfo(authoritative,2);
+close(draggedInfo.out.influence,80,'the actively dragged handle must retain its requested influence');
+close(opposingInfo.in.influence,18,'only the opposing segment handle should shrink when temporal controls would cross');
 
 const reversedCurve={...handled,timeRemap:reverseTimeRemap(handled)};
 for(let index=0;index<=20;index++)close(timeRemapSourceAt(reversedCurve,index/2),30-timeRemapSourceAt(handled,index/2),'reverse shortcut must mirror the unified Value Graph',1e-5);

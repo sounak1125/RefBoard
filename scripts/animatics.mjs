@@ -66,6 +66,7 @@ import {
   setTimeRemapInterpolation,
   timeRemapHandleInfo,
   timeRemapSamples,
+  timeRemapStateAt,
   timeRemapSourceAt,
   timeRemapSpeedAt,
   updateTimeRemapHandle,
@@ -539,6 +540,18 @@ function css() {
   .an-export-card h2 { margin:0 0 5px; font-size:17px; }
   .an-export-card p { margin:0 0 17px; color:#8f96a4; }
   .an-export-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:17px; }
+  .an-cache-button { position:relative; }
+  .an-cache-button::before { content:""; width:7px; height:7px; margin-right:6px; border-radius:50%; background:#747d8c; box-shadow:0 0 0 1px rgba(0,0,0,.35); }
+  .an-cache-button.ready::before { background:#63cf85; box-shadow:0 0 7px rgba(99,207,133,.65); }
+  .an-cache-button.building::before { background:#65aaff; box-shadow:0 0 7px rgba(101,170,255,.7); }
+  .an-cache-button.stale::before { background:#e2b35d; }
+  .an-cache-card { width:min(590px,calc(100vw - 44px)); }
+  .an-cache-location { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:end; }
+  .an-cache-location input { text-overflow:ellipsis; }
+  .an-cache-usage { display:flex; justify-content:space-between; gap:12px; margin-top:10px; color:#8f96a4; font-size:11px; }
+  .an-cache-progress { display:none; height:5px; margin-top:10px; overflow:hidden; border-radius:999px; background:#292c35; }
+  .an-cache-progress.show { display:block; }
+  .an-cache-progress i { display:block; width:0; height:100%; background:#65aaff; transition:width .12s linear; }
   .an-context-menu { position:fixed; z-index:75; display:none; min-width:214px; padding:5px; border:1px solid #343844; border-radius:9px; background:#191b22; box-shadow:0 18px 50px rgba(0,0,0,.58); }
   .an-context-menu.open { display:block; }
   .an-context-menu button { display:flex; align-items:center; justify-content:space-between; width:100%; height:31px; padding:0 9px; border:0; border-radius:6px; color:#d7dbe4; background:transparent; font:12px "Segoe UI",sans-serif; text-align:left; cursor:pointer; }
@@ -672,7 +685,7 @@ function markup() {
   return `<section id="animaticsWorkspace" aria-hidden="true">
     <header class="an-top">
       <div class="an-brand"><button class="an-back" id="anBack" title="Back to board">${icon('<path d="m15 18-6-6 6-6"/>')}</button><div class="an-brand-lockup"><img class="an-brand-mark" id="anBrandMark" alt="" aria-hidden="true"><span class="an-brand-name">RefBoard</span><span class="an-title">Animatics</span></div></div>
-      <div class="an-top-actions"><button class="an-btn" id="anInspector">Tools</button><button class="an-btn primary" id="anExport">Export</button></div>
+      <div class="an-top-actions"><button class="an-btn an-cache-button" id="anCachePreview" title="Build or play the optimized preview cache">Cache Preview</button><button class="an-btn" id="anCacheSettings" title="Preview cache settings">Cache Settings</button><button class="an-btn" id="anInspector">Tools</button><button class="an-btn primary" id="anExport">Export</button></div>
     </header>
     <div class="an-stage-row">
       <aside class="an-side"><div class="an-side-inner">
@@ -702,7 +715,8 @@ function markup() {
     <div class="an-export-modal" id="anSequenceModal"><div class="an-export-card"><h2>Sequence settings</h2><p>Enter a custom timeline duration or let the sequence follow its content.</p><div class="an-split"><label class="an-field">Timeline length<select id="anSequenceMode"><option value="fixed">Custom duration</option><option value="auto">Auto — fit content</option></select></label><label class="an-field">Timeline display<select id="anTimelineDisplay"><option value="timecode">Timecode</option><option value="frames">Frames</option></select></label></div><label class="an-field">Custom duration<input id="anSequenceDuration" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="00:03:00:00" aria-describedby="anSequenceFormat anSequenceMinimum"></label><div class="an-sequence-hint"><span id="anSequenceFormat">HH:MM:SS:FF · typing switches to Custom</span><span id="anSequenceMinimum"></span></div><div class="an-export-actions"><button class="an-btn" id="anSequenceCancel">Cancel</button><button class="an-btn primary" id="anSequenceApply">Apply</button></div></div></div>
     <div class="an-export-modal" id="anExportModal"><div class="an-export-card"><h2>Export animatic</h2><p id="anExportDescription">MP4 · H.264 · stereo audio · <span id="anExportAspect">16:9</span></p><label class="an-field">Format<select id="anExportFormat"><option value="mp4">MP4 video</option><option value="premiere">Premiere Pro 2025–2026 timeline (.xml)</option><option value="after-effects">After Effects project builder (.jsx → .aep)</option></select></label><div class="an-split"><label class="an-field">Resolution<select id="anExportRes"><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option></select></label><label class="an-field">Frame rate<select id="anExportFps"><option value="24">24 fps</option><option value="30" selected>30 fps</option><option value="60">60 fps</option></select></label></div><label class="an-field">Export range<select id="anExportRange"><option value="full">Full sequence</option><option value="inout">Sequence In to Out</option></select></label><label class="an-field" id="anExportCounterField">Counter overlay<select id="anExportTc"><option value="project">Use viewer setting</option><option value="on">Burn selected counter</option><option value="off">No counter</option></select></label><div class="an-progress" id="anExportProgress"><i></i></div><div class="an-export-actions"><button class="an-btn" id="anExportCancel">Cancel</button><button class="an-btn primary" id="anExportGo">Export MP4</button></div></div></div>
     <div class="an-export-modal" id="anGainModal"><div class="an-export-card"><h2>Audio Gain</h2><p id="anGainScope">Selected audio clips</p><label class="an-field">Operation<select id="anGainMode"><option value="set">Set Gain To</option><option value="adjust">Adjust Gain By</option></select></label><label class="an-field">Gain (dB)<input id="anGainDb" type="number" min="-96" max="12" step="0.1" value="0"></label><p class="an-sequence-hint"><span id="anGainCurrent">Current gain 0 dB</span><span>-96 dB to +12 dB</span></p><div class="an-export-actions"><button class="an-btn" id="anGainCancel">Cancel</button><button class="an-btn primary" id="anGainApply">Apply Gain</button></div></div></div>
-    <div class="an-export-modal" id="anSpeedModal"><div class="an-export-card an-speed-card"><div class="an-speed-card-header"><div><h2>Clip speed / duration</h2><p id="anSpeedScope">Selected media clip</p></div><button class="an-speed-close" id="anSpeedClose" aria-label="Close">×</button></div><div class="an-speed-primary"><label class="an-field">Speed (%)<input id="anSpeedPercent" type="number" min="1" max="10000" step="1" value="100"></label><button class="an-speed-link on" id="anSpeedLink" title="Link speed and duration" aria-pressed="true">↔</button><label class="an-field">Duration<input id="anSpeedDuration" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" value="00:00:03:00"></label></div><div class="an-speed-options"><label class="an-speed-check"><input id="anSpeedReverse" type="checkbox">Reverse speed</label><label class="an-speed-check"><input id="anSpeedPitch" type="checkbox" checked>Maintain audio pitch</label><label class="an-speed-check"><input id="anSpeedRipple" type="checkbox">Ripple edit trailing clips</label><label class="an-speed-check"><input id="anSpeedEnableGraph" type="checkbox">Enable graph remapping</label></div><label class="an-speed-interpolation"><span>Time interpolation</span><select id="anSpeedInterpolation"><option value="sampling">Frame sampling</option><option value="blending">Frame blending</option><option value="optical-flow">Optical flow</option></select></label><div class="an-remap-graph"><div class="an-remap-toolbar"><span class="group"><button id="anGraphSpeed" class="on">Speed Graph</button><button id="anGraphValue">Value Graph</button><button id="anGraphReference" class="on" title="Show the other graph as a reference">Reference</button></span><span class="group"><select id="anGraphCurve" aria-label="Selected keyframe interpolation"><option value="bezier">Bézier</option><option value="continuous">Continuous Bézier</option><option value="auto">Auto Bézier</option><option value="linear">Linear</option><option value="hold">Hold</option></select><button id="anGraphJoin" title="Join or split incoming and outgoing handles">Join handles</button></span><span class="group"><button id="anGraphEaseIn">Easy Ease In</button><button id="anGraphEase">Easy Ease</button><button id="anGraphEaseOut">Easy Ease Out</button></span><span class="spacer"></span><button id="anGraphAdd">Add keyframe</button><button id="anGraphRemove">Remove</button><button id="anGraphReset">Reset</button></div><canvas id="anTimeRemapGraph" width="900" height="360" tabindex="0" aria-label="Time remapping graph"></canvas><div class="an-remap-readout"><span id="anGraphReadout"><b>100%</b> at 00:00:00:00</span><span>Drag handles · Alt-drag to split · double-click to add · Delete removes</span></div></div><p class="an-speed-warning" id="anSpeedWarning"></p><div class="an-export-actions"><button class="an-btn" id="anSpeedCancel">Cancel</button><button class="an-btn primary" id="anSpeedApply">Apply</button></div></div></div>
+    <div class="an-export-modal" id="anSpeedModal"><div class="an-export-card an-speed-card"><div class="an-speed-card-header"><div><h2>Clip speed / duration</h2><p id="anSpeedScope">Selected media clip</p></div><button class="an-speed-close" id="anSpeedClose" aria-label="Close">×</button></div><div class="an-speed-primary"><label class="an-field">Speed (%)<input id="anSpeedPercent" type="number" min="1" max="10000" step="1" value="100"></label><button class="an-speed-link on" id="anSpeedLink" title="Link speed and duration" aria-pressed="true">↔</button><label class="an-field">Duration<input id="anSpeedDuration" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" value="00:00:03:00"></label></div><div class="an-speed-options"><label class="an-speed-check"><input id="anSpeedReverse" type="checkbox">Reverse speed</label><label class="an-speed-check"><input id="anSpeedPitch" type="checkbox" checked>Maintain audio pitch</label><label class="an-speed-check"><input id="anSpeedRipple" type="checkbox">Ripple edit trailing clips</label><label class="an-speed-check"><input id="anSpeedEnableGraph" type="checkbox">Enable graph remapping</label></div><label class="an-speed-interpolation"><span>Time interpolation</span><select id="anSpeedInterpolation"><option value="sampling">Frame sampling</option><option value="blending">Frame blending</option><option value="optical-flow">Optical flow</option></select></label><div class="an-remap-graph"><div class="an-remap-toolbar"><span class="group"><button id="anGraphSpeed" class="on">Speed Graph</button><button id="anGraphValue">Value Graph</button><button id="anGraphReference" class="on" title="Show the other graph as a reference">Reference</button></span><span class="group"><select id="anGraphCurve" aria-label="Selected keyframe interpolation"><option value="bezier">Bezier</option><option value="continuous">Continuous Bezier</option><option value="auto">Auto Bezier</option><option value="linear">Linear</option><option value="hold">Hold</option></select><button id="anGraphJoin" title="Join or split incoming and outgoing handles">Join handles</button></span><span class="group"><button id="anGraphEaseIn">Easy Ease In</button><button id="anGraphEase">Easy Ease</button><button id="anGraphEaseOut">Easy Ease Out</button></span><span class="spacer"></span><button id="anGraphAdd">Add keyframe</button><button id="anGraphRemove">Remove</button><button id="anGraphReset">Reset</button></div><canvas id="anTimeRemapGraph" width="900" height="360" tabindex="0" aria-label="Time remapping graph"></canvas><div class="an-remap-readout"><span id="anGraphReadout"><b>100%</b> at 00:00:00:00</span><span>Drag handles · Alt-drag to split · double-click to add · Delete removes</span></div></div><p class="an-speed-warning" id="anSpeedWarning"></p><div class="an-export-actions"><button class="an-btn" id="anSpeedCancel">Cancel</button><button class="an-btn primary" id="anSpeedApply">Apply</button></div></div></div>
+    <div class="an-export-modal" id="anCacheModal"><div class="an-export-card an-cache-card"><h2>Animatics preview cache</h2><p>Store optimized, frame-accurate previews on a fast disk for smooth time-remapped playback.</p><div class="an-cache-location"><label class="an-field">Cache location<input id="anCacheLocation" type="text" readonly></label><button class="an-btn" id="anCacheBrowse">Browse…</button></div><div class="an-split"><label class="an-field">Disk limit (GB)<input id="anCacheDiskLimit" type="number" min="1" max="500" step="1" value="20"></label><label class="an-field">RAM frame cache (MB)<input id="anCacheRamLimit" type="number" min="64" max="2048" step="64" value="256"></label></div><label class="an-field">Cached preview resolution<select id="anCacheResolution"><option value="270">Draft 270p</option><option value="540" selected>Preview 540p</option><option value="1080">Full 1080p</option></select></label><div class="an-speed-options"><label class="an-speed-check"><input id="anCacheAutoClean" type="checkbox" checked>Automatically remove least-recently-used previews</label><label class="an-speed-check"><input id="anCacheAutoBuild" type="checkbox">Build cache automatically after edits</label></div><div class="an-cache-usage"><span id="anCacheUsage">Calculating cache usage…</span><span id="anCacheStateText">No preview cached</span></div><div class="an-cache-progress" id="anCacheProgress"><i></i></div><div class="an-export-actions"><button class="an-btn" id="anCacheClear">Clear cache</button><span style="flex:1"></span><button class="an-btn" id="anCacheCancel">Cancel</button><button class="an-btn primary" id="anCacheSave">Save settings</button></div></div></div>
     <div class="an-context-menu" id="anContextMenu" role="menu" aria-hidden="true"><button id="anContextSpeed" role="menuitem">Speed and Duration…<span>Ctrl+R</span></button><button id="anContextGraph" role="menuitem">Edit Time Remap Graph…</button><button id="anContextReset" role="menuitem">Reset Time Remapping</button><div class="an-context-divider"></div><button id="anContextSplit" role="menuitem">Split at playhead</button><button id="anContextDelete" role="menuitem">Delete</button></div>
     <div class="an-audio-trim-modal" id="anAudioTrimModal"><div class="an-audio-trim-card"><h2>Trim audio</h2><p class="an-audio-trim-name" id="anTrimName">Audio</p><div class="an-wave-shell" id="anTrimWaveShell"><canvas id="anTrimWave" width="1200" height="260"></canvas><span class="an-trim-readout" id="anTrimReadout">00:00:00:00</span></div><audio id="anTrimPlayer" controls preload="metadata"></audio><div class="an-trim-points"><div class="an-trim-point"><h4>In point</h4><label class="an-field">Frame<input id="anTrimInFrames" type="number" min="0" step="1"></label><button class="an-tool-btn" id="anTrimSetIn">Set In at playhead</button></div><div class="an-trim-point"><h4>Out point</h4><label class="an-field">Frame<input id="anTrimOutFrames" type="number" min="1" step="1"></label><button class="an-tool-btn" id="anTrimSetOut">Set Out at playhead</button></div></div><div class="an-trim-summary"><span>Selected range</span><b id="anTrimSummary">0 frames · 0.00s</b></div><div class="an-trim-actions"><button class="an-btn" id="anTrimPlaySelection">Play selection</button><button class="an-btn" id="anTrimCancel">Cancel</button><button class="an-btn primary" id="anTrimUse">Use audio</button></div></div></div>
   </section>`;
@@ -924,6 +938,21 @@ export function createAnimaticsEditor(options) {
   const videoElements = new Map();
   const videoBlendElements = new Map();
   const videoBlendCanvases = new Map();
+  const videoSeekStates = new WeakMap();
+  const videoFrameCache = new Map();
+  let videoFrameCacheBytes = 0;
+  let videoFrameCacheTouch = 0;
+  const DEFAULT_PREVIEW_CACHE_SETTINGS = {location:'',diskLimitGB:20,ramLimitMB:256,previewResolution:540,autoClean:true,autoCache:false};
+  let previewCacheSettings = {...DEFAULT_PREVIEW_CACHE_SETTINGS};
+  let previewCacheRecord = null;
+  let previewCacheFingerprintValue = '';
+  let previewCacheBuild = null;
+  let previewCacheLookupTimer = 0;
+  let previewCacheAutoTimer = 0;
+  let cachedPreviewRaf = 0;
+  let playingCachedPreview = false;
+  const cachedPreviewVideo = document.createElement('video');
+  cachedPreviewVideo.preload = 'auto';cachedPreviewVideo.playsInline = true;cachedPreviewVideo.muted = false;
   let playheadEl = null;
   let scrubSettleTimer = 0;
   // Interactive-preview proxies: downscaled decodes reused while scrubbing/dragging
@@ -998,6 +1027,7 @@ export function createAnimaticsEditor(options) {
 
   function markDirty() {
     rememberProjectMedia();timelineHistory.commit(captureHistoryState());pruneMediaResources();
+    invalidatePreviewCache();
     onDirty();
   }
 
@@ -1010,7 +1040,7 @@ export function createAnimaticsEditor(options) {
     clearActiveDrawingSession();activeStroke=null;project=cloneProjectForHistory(state.project);drawingOverlayCache.clear();
     for(const entry of [...project.audio,...project.clips.filter(isVideoClip)]){const resource=mediaResources.get(entry.mediaId);if(resource){entry.blob=resource.blob;entry.url=resource.url;}}
     syncActiveTrackTargets();
-    setTimelineSelection(state.selection||[],state.primaryId);renderAll();pruneMediaResources();onDirty();notify(label);return true;
+    setTimelineSelection(state.selection||[],state.primaryId);renderAll();pruneMediaResources();invalidatePreviewCache();onDirty();notify(label);return true;
   }
 
   function undoAnimatics(){
@@ -1034,6 +1064,47 @@ export function createAnimaticsEditor(options) {
   function automaticSequenceEnd(){return automaticTimelineDuration(contentDuration());}
 
   function duration() { return fixedSequenceEnd() ?? automaticSequenceEnd(); }
+
+  function hashPreviewCacheText(value,seed=2166136261){let hash=seed>>>0;for(let index=0;index<value.length;index++){hash^=value.charCodeAt(index);hash=Math.imul(hash,16777619)>>>0;}return hash.toString(16).padStart(8,'0');}
+
+  function currentPreviewCacheFingerprint(){
+    const cleanEntry=entry=>{const {blob,url,...clean}=entry;const resource=blob||mediaResources.get(entry.mediaId)?.blob;return {...clean,mediaSize:Number(resource?.size)||0,mediaModified:Number(resource?.lastModified)||0};};
+    const payload=JSON.stringify({cacheVersion:2,fps:project.fps,aspect:project.aspect,background:project.background,timecode:project.timecode,counterMode:project.counterMode,sequenceDuration:project.sequenceDuration,videoTrackEnabled:project.videoTrackEnabled,audioTrackMuted:project.audioTrackMuted,audioTrackSolo:project.audioTrackSolo,clips:project.clips.map(cleanEntry),texts:project.texts,audio:project.audio.map(cleanEntry)});
+    return hashPreviewCacheText(payload)+hashPreviewCacheText(payload,0x9e3779b9);
+  }
+
+  function formatCacheBytes(bytes){const value=Math.max(0,Number(bytes)||0);if(value<1024**2)return `${Math.round(value/1024)} KB`;if(value<1024**3)return `${(value/1024**2).toFixed(value<10*1024**2?1:0)} MB`;return `${(value/1024**3).toFixed(1)} GB`;}
+
+  function syncPreviewCacheStatus(state='stale',message='Preview needs caching'){
+    const button=$('#anCachePreview'),label=$('#anCacheStateText');if(!button)return;
+    button.classList.toggle('ready',state==='ready');button.classList.toggle('building',state==='building');button.classList.toggle('stale',state==='stale');button.textContent=state==='building'?'Cancel Cache':state==='ready'?'Cached Preview':'Cache Preview';button.title=state==='building'?'Cancel the preview cache build':state==='ready'?'Play the optimized cached preview':'Build an optimized preview cache';if(label)label.textContent=message;
+  }
+
+  function clearCachedPreviewRecord(){
+    if(playing&&playingCachedPreview)setPlaying(false);previewCacheRecord=null;previewCacheFingerprintValue='';playingCachedPreview=false;cancelAnimationFrame(cachedPreviewRaf);cachedPreviewRaf=0;cachedPreviewVideo.pause();cachedPreviewVideo.removeAttribute('src');cachedPreviewVideo.load();
+  }
+
+  function setCachedPreviewRecord(record){
+    if(!record?.cached||!record.url)return clearCachedPreviewRecord();
+    previewCacheRecord=record;previewCacheFingerprintValue=record.fingerprint||currentPreviewCacheFingerprint();cachedPreviewVideo.src=record.url;cachedPreviewVideo.load();cachedPreviewVideo.muted=previewMuted;syncPreviewCacheStatus('ready',`Cached preview ready · ${formatCacheBytes(record.size)}`);
+  }
+
+  function canUseCachedPreview(){return !!previewCacheRecord?.cached&&previewCacheFingerprintValue===currentPreviewCacheFingerprint()&&cachedPreviewVideo.src&&!inlineTextId;}
+
+  async function refreshPreviewCacheAvailability(){
+    const api=window.RefBoardAPI;if(!api?.getAnimaticsPreviewCache)return false;
+    const fingerprint=currentPreviewCacheFingerprint();
+    try{const record=await api.getAnimaticsPreviewCache(fingerprint);if(fingerprint!==currentPreviewCacheFingerprint())return false;if(record?.cached){setCachedPreviewRecord(record);return true;}if(previewCacheFingerprintValue===fingerprint)clearCachedPreviewRecord();syncPreviewCacheStatus('stale',project.clips.length?'Preview needs caching':'No preview cached');return false;}catch(err){console.warn('[animatics] preview cache lookup failed',err);syncPreviewCacheStatus('stale','Preview cache unavailable');return false;}
+  }
+
+  function invalidatePreviewCache({lookup=true}={}){
+    const fingerprint=currentPreviewCacheFingerprint();
+    if(previewCacheBuild&&previewCacheBuild.fingerprint!==fingerprint)void cancelPreviewCacheBuild({quiet:true});
+    if(previewCacheFingerprintValue&&previewCacheFingerprintValue!==fingerprint)clearCachedPreviewRecord();
+    syncPreviewCacheStatus('stale',project.clips.length?'Preview needs caching':'No preview cached');clearTimeout(previewCacheLookupTimer);clearTimeout(previewCacheAutoTimer);
+    if(lookup)previewCacheLookupTimer=setTimeout(()=>{previewCacheLookupTimer=0;void refreshPreviewCacheAvailability();},220);
+    if(previewCacheSettings.autoCache&&project.clips.length)previewCacheAutoTimer=setTimeout(()=>{previewCacheAutoTimer=0;if(open&&!playing&&!previewCacheBuild)void buildPreviewCache({automatic:true});},900);
+  }
 
   function durationWithinSequence(start, requested, maximum=600){
     const limit=fixedSequenceEnd(),available=limit===null?maximum:Math.max(0,limit-start);
@@ -1151,27 +1222,27 @@ export function createAnimaticsEditor(options) {
   function resetSelectedTimeRemap(){const targets=timeRemapTargets(contextClipId||primarySelectionId());if(!targets.length)return false;for(const entry of targets){const item=entry.item,span=mediaSourceSpan(item),result=constantTimeRemap(item,1,{duration:span,enabled:false});item.duration=span;item.timeRemap=result.timeRemap;if(entry.kind==='audio')applyNormalizedAudioFades(item);}closeAnimaticsContextMenu();markDirty();renderAll();notify('Time remapping reset');return true;}
   function graphLayout(canvas,draft){
     const rect=canvas.getBoundingClientRect(),dpr=Math.min(2,devicePixelRatio||1),width=Math.max(420,Math.round(rect.width*dpr)),height=Math.max(220,Math.round(rect.height*dpr));if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
-    const pad={left:62*dpr,right:18*dpr,top:18*dpr,bottom:30*dpr},innerW=width-pad.left-pad.right,innerH=height-pad.top-pad.bottom,remap=normalizeTimeRemap(draft),samples=timeRemapSamples(draft,240),handleSpeeds=remap.keyframes.flatMap((_,index)=>{const info=timeRemapHandleInfo(draft,index);return info?[info.in.speed,info.out.speed]:[];}),computedSpeedMax=Math.max(1.25,...samples.map(sample=>Math.abs(sample.speed)*1.2),...handleSpeeds.map(speed=>Math.abs(speed)*1.2)),speedMax=graphPointerDrag&&speedDialogState?.graphScale?.speedMax?speedDialogState.graphScale.speedMax:computedSpeedMax,valueMax=Math.max(1e-8,mediaSourceSpan(draft));
-    return {dpr,width,height,pad,innerW,innerH,remap,samples,speedMax,valueMax};
+    const pad={left:62*dpr,right:18*dpr,top:18*dpr,bottom:30*dpr},innerW=width-pad.left-pad.right,innerH=height-pad.top-pad.bottom,remap=normalizeTimeRemap(draft),samples=timeRemapSamples(draft,240),handleSpeeds=remap.keyframes.flatMap((_,index)=>{const info=timeRemapHandleInfo(draft,index);return info?[info.in.speed,info.out.speed]:[];}),computedSpeedMax=Math.max(1.25,...samples.map(sample=>Math.abs(sample.speed)*1.2),...handleSpeeds.map(speed=>Math.abs(speed)*1.2)),sourceSpan=Math.max(1e-8,mediaSourceSpan(draft)),controlValues=remap.keyframes.flatMap(point=>[point.value,point.value+point.inHandle.dv,point.value+point.outHandle.dv]),rawValueMin=Math.min(0,...controlValues),rawValueMax=Math.max(sourceSpan,...controlValues),valuePadding=Math.max(.01,sourceSpan*.08,(rawValueMax-rawValueMin)*.06),computedValueMin=Math.min(-sourceSpan*.08,rawValueMin-valuePadding),computedValueMax=Math.max(sourceSpan*1.08,rawValueMax+valuePadding),stable=graphPointerDrag&&speedDialogState?.graphScale,speedMax=stable?.speedMax||computedSpeedMax,valueMin=Number.isFinite(stable?.valueMin)?stable.valueMin:computedValueMin,valueMax=Number.isFinite(stable?.valueMax)?stable.valueMax:computedValueMax;
+    return {dpr,width,height,pad,innerW,innerH,remap,samples,speedMax,sourceSpan,valueMin,valueMax};
   }
   function graphX(layout,draft,time){return layout.pad.left+time/Math.max(1e-8,draft.duration)*layout.innerW;}
-  function graphY(layout,value,mode=layout.remap.graphMode){return mode==='speed'?layout.pad.top+(layout.speedMax-value)/(layout.speedMax*2)*layout.innerH:layout.pad.top+(1-value/layout.valueMax)*layout.innerH;}
-  function graphValueAtY(layout,y,mode=layout.remap.graphMode){return mode==='speed'?layout.speedMax-(y-layout.pad.top)/layout.innerH*layout.speedMax*2:(1-(y-layout.pad.top)/layout.innerH)*layout.valueMax;}
+  function graphY(layout,value,mode=layout.remap.graphMode){return mode==='speed'?layout.pad.top+(layout.speedMax-value)/(layout.speedMax*2)*layout.innerH:layout.pad.top+(layout.valueMax-value)/(layout.valueMax-layout.valueMin)*layout.innerH;}
+  function graphValueAtY(layout,y,mode=layout.remap.graphMode){return mode==='speed'?layout.speedMax-(y-layout.pad.top)/layout.innerH*layout.speedMax*2:layout.valueMax-(y-layout.pad.top)/layout.innerH*(layout.valueMax-layout.valueMin);}
   function graphPoint(layout,draft,point,index){const info=timeRemapHandleInfo(draft,index),speed=index===0?info?.out.speed:index===layout.remap.keyframes.length-1?info?.in.speed:(info?.in.speed+info?.out.speed)/2;return {x:graphX(layout,draft,point.time),y:graphY(layout,layout.remap.graphMode==='speed'?speed:point.value),index,kind:'point'};}
   function scheduleTimeRemapGraphPaint(){if(graphPaintRaf)return;graphPaintRaf=requestAnimationFrame(()=>{graphPaintRaf=0;paintTimeRemapGraph();});}
   function paintTimeRemapGraph(){
     const draft=speedDialogDraft(),canvas=$('#anTimeRemapGraph');if(!draft||!canvas.offsetParent)return;const g=canvas.getContext('2d'),layout=graphLayout(canvas,draft),{dpr,width,height,pad,innerW,innerH,remap}=layout;g.clearRect(0,0,width,height);g.fillStyle='#0d1016';g.fillRect(0,0,width,height);g.lineWidth=dpr;
-    g.strokeStyle='#242a35';g.fillStyle='#7f8998';g.font=`${10*dpr}px ui-monospace,Consolas,monospace`;g.textAlign='right';g.textBaseline='middle';for(let row=0;row<=4;row++){const y=pad.top+innerH*row/4;g.beginPath();g.moveTo(pad.left,y);g.lineTo(pad.left+innerW,y);g.stroke();const label=remap.graphMode==='speed'?layout.speedMax*(1-row/2)*100:layout.valueMax*(1-row/4);g.fillText(remap.graphMode==='speed'?`${Math.round(label)}%`:`${label.toFixed(2)}s`,pad.left-7*dpr,y);}g.textAlign='center';g.textBaseline='top';for(let col=0;col<=4;col++){const x=pad.left+innerW*col/4;g.beginPath();g.moveTo(x,pad.top);g.lineTo(x,pad.top+innerH);g.stroke();g.fillText(speedDurationText(draft.duration*col/4),x,pad.top+innerH+7*dpr);}
+    g.strokeStyle='#242a35';g.fillStyle='#7f8998';g.font=`${10*dpr}px ui-monospace,Consolas,monospace`;g.textAlign='right';g.textBaseline='middle';for(let row=0;row<=4;row++){const y=pad.top+innerH*row/4;g.beginPath();g.moveTo(pad.left,y);g.lineTo(pad.left+innerW,y);g.stroke();const label=remap.graphMode==='speed'?layout.speedMax*(1-row/2)*100:layout.valueMax-(layout.valueMax-layout.valueMin)*row/4;g.fillText(remap.graphMode==='speed'?`${Math.round(label)}%`:`${label.toFixed(2)}s`,pad.left-7*dpr,y);}g.textAlign='center';g.textBaseline='top';for(let col=0;col<=4;col++){const x=pad.left+innerW*col/4;g.beginPath();g.moveTo(x,pad.top);g.lineTo(x,pad.top+innerH);g.stroke();g.fillText(speedDurationText(draft.duration*col/4),x,pad.top+innerH+7*dpr);}
     const drawCurve=(mode,color,width,alpha=1)=>{const plotted=layout.samples.map(sample=>({x:graphX(layout,draft,sample.time),y:graphY(layout,mode==='speed'?sample.speed:sample.value,mode)}));g.save();g.globalAlpha=alpha;g.strokeStyle=color;g.lineWidth=width*dpr;g.beginPath();plotted.forEach((point,index)=>index?g.lineTo(point.x,point.y):g.moveTo(point.x,point.y));g.stroke();g.restore();};
     if(remap.showReferenceGraph)drawCurve(remap.graphMode==='speed'?'value':'speed','#737d8c',1,.34);drawCurve(remap.graphMode,'#6bb0ff',2,1);
     const points=remap.keyframes.map((point,index)=>graphPoint(layout,draft,point,index)),handles=[],selected=remap.keyframes[graphSelectedKeyframe],anchor=points[graphSelectedKeyframe];
     if(selected&&anchor){const info=timeRemapHandleInfo(draft,graphSelectedKeyframe);for(const side of ['in','out']){const offset=side==='in'?-1:1,neighbor=remap.keyframes[graphSelectedKeyframe+offset];if(!neighbor)continue;let hx,hy,ax=anchor.x,ay=anchor.y;if(remap.graphMode==='value'){const handle=selected[`${side}Handle`];hx=graphX(layout,draft,selected.time+handle.dt);hy=graphY(layout,selected.value+handle.dv);ay=graphY(layout,selected.value);}else{const speed=info[side].speed;hx=graphX(layout,draft,selected.time+offset*Math.abs(neighbor.time-selected.time)*info[side].influence/100);hy=graphY(layout,speed);ay=hy;}g.strokeStyle='#aeb9c9';g.lineWidth=1*dpr;g.beginPath();g.moveTo(ax,ay);g.lineTo(hx,hy);g.stroke();g.fillStyle='#8ebff4';g.fillRect(ax-2*dpr,ay-2*dpr,4*dpr,4*dpr);g.beginPath();g.arc(hx,hy,5*dpr,0,Math.PI*2);g.fillStyle=graphPointerDrag?.side===side?'#fff2b8':'#dce7f5';g.fill();g.strokeStyle='#4f91d7';g.stroke();handles.push({x:hx,y:hy,index:graphSelectedKeyframe,side,kind:'handle'});}}
     for(const point of points){const isSelected=point.index===graphSelectedKeyframe,size=(isSelected?6:4.5)*dpr;g.save();g.translate(point.x,point.y);g.rotate(Math.PI/4);g.fillStyle=isSelected?'#dceeff':'#5aa6fa';g.fillRect(-size/1.4,-size/1.4,size*1.4,size*1.4);g.strokeStyle=isSelected?'#4c94e3':'#b9dcff';g.lineWidth=1.5*dpr;g.strokeRect(-size/1.4,-size/1.4,size*1.4,size*1.4);g.restore();}
     const info=selected?timeRemapHandleInfo(draft,graphSelectedKeyframe):null;$('#anGraphReadout').innerHTML=selected?`<b>${selected.value.toFixed(3)}s</b> at ${speedDurationText(selected.time)} · In ${(info.in.speed*100).toFixed(1)}% / ${info.in.influence.toFixed(1)}% · Out ${(info.out.speed*100).toFixed(1)}% / ${info.out.influence.toFixed(1)}%`:'No keyframe';
-    speedDialogState.graphLayout={...layout,points,handles};if(!graphPointerDrag)speedDialogState.graphScale={speedMax:layout.speedMax};
+    speedDialogState.graphLayout={...layout,points,handles};if(!graphPointerDrag)speedDialogState.graphScale={speedMax:layout.speedMax,valueMin:layout.valueMin,valueMax:layout.valueMax};
   }
   function graphHit(event){const state=speedDialogState,layout=state?.graphLayout;if(!layout)return null;const rect=$('#anTimeRemapGraph').getBoundingClientRect(),sx=layout.width/Math.max(1,rect.width),sy=layout.height/Math.max(1,rect.height),x=(event.clientX-rect.left)*sx,y=(event.clientY-rect.top)*sy;let best=null;for(const target of [...layout.handles,...layout.points]){const distance=Math.hypot(target.x-x,target.y-y),radius=(target.kind==='handle'?14:11)*layout.dpr;if(distance<=radius&&(!best||distance<best.distance))best={...target,distance};}return best?{...best,x,y}:null;}
-  function graphValuesAtPointer(event){const state=speedDialogState,layout=state?.graphLayout,draft=state?.draft,rect=$('#anTimeRemapGraph').getBoundingClientRect();if(!layout||!draft)return null;const x=(event.clientX-rect.left)*layout.width/Math.max(1,rect.width),y=clamp((event.clientY-rect.top)*layout.height/Math.max(1,rect.height),layout.pad.top,layout.pad.top+layout.innerH);let time=clamp((x-layout.pad.left)/layout.innerW,0,1)*draft.duration;if(normalizeTimeRemap(draft).snapToFrames&&!event.altKey)time=Math.round(time*project.fps)/project.fps;return {time,value:clamp(graphValueAtY(layout,y,'value'),0,layout.valueMax),speed:clamp(graphValueAtY(layout,y,'speed'),-MAX_TIME_REMAP_SPEED,MAX_TIME_REMAP_SPEED)};}
+  function graphValuesAtPointer(event){const state=speedDialogState,layout=state?.graphLayout,draft=state?.draft,rect=$('#anTimeRemapGraph').getBoundingClientRect();if(!layout||!draft)return null;const x=(event.clientX-rect.left)*layout.width/Math.max(1,rect.width),rawY=(event.clientY-rect.top)*layout.height/Math.max(1,rect.height),handleDrag=graphPointerDrag?.kind==='handle',y=handleDrag?rawY:clamp(rawY,layout.pad.top,layout.pad.top+layout.innerH);let time=clamp((x-layout.pad.left)/layout.innerW,0,1)*draft.duration;if(!handleDrag&&normalizeTimeRemap(draft).snapToFrames&&!event.altKey)time=Math.round(time*project.fps)/project.fps;return {time,value:graphValueAtY(layout,y,'value'),speed:clamp(graphValueAtY(layout,y,'speed'),-MAX_TIME_REMAP_SPEED,MAX_TIME_REMAP_SPEED)};}
   function addGraphKeyframeAt(time=project.playhead-(speedDialogState?.targets[0]?.item.start||0)){const draft=speedDialogDraft();if(!draft)return;draft.timeRemap=addTimeRemapKeyframe(draft,clamp(time,0,draft.duration));graphSelectedKeyframe=draft.timeRemap.keyframes.findIndex(point=>Math.abs(point.time-clamp(time,0,draft.duration))<1e-4);syncSpeedDialogFields();}
   function removeSelectedGraphKeyframe(){const draft=speedDialogDraft();if(!draft)return;const before=normalizeTimeRemap(draft).keyframes.length;draft.timeRemap=removeTimeRemapKeyframe(draft,graphSelectedKeyframe);if(draft.timeRemap.keyframes.length===before)return;graphSelectedKeyframe=clamp(graphSelectedKeyframe-1,0,draft.timeRemap.keyframes.length-1);syncSpeedDialogFields();}
   function timelineMediaItems(){return [...project.clips,...project.audio];}
@@ -1466,7 +1537,22 @@ export function createAnimaticsEditor(options) {
 
   function releaseVideoElements(){
     for(const video of [...videoElements.values(),...videoBlendElements.values()]){video.pause();video.removeAttribute('src');video.load();}
-    videoElements.clear();videoBlendElements.clear();videoBlendCanvases.clear();
+    videoElements.clear();videoBlendElements.clear();videoBlendCanvases.clear();clearVideoFrameCache();
+  }
+
+  function clearVideoFrameCache(){for(const entry of videoFrameCache.values()){entry.canvas.width=0;entry.canvas.height=0;}videoFrameCache.clear();videoFrameCacheBytes=0;}
+
+  function trimVideoFrameCache(){
+    const limit=Math.max(64,Number(previewCacheSettings.ramLimitMB)||256)*1024**2;
+    while(videoFrameCacheBytes>limit&&videoFrameCache.size>1){let oldestKey='',oldest=Infinity;for(const [key,entry] of videoFrameCache)if(entry.touch<oldest){oldest=entry.touch;oldestKey=key;}const entry=videoFrameCache.get(oldestKey);videoFrameCache.delete(oldestKey);videoFrameCacheBytes-=entry.bytes;entry.canvas.width=0;entry.canvas.height=0;}
+  }
+
+  function videoFrameCacheKey(clip,sourceTime,interpolation='sampling'){return `${clip.mediaId||clip.id}:${Math.round(sourceTime*project.fps)}:${project.fps}:${interpolation}`;}
+
+  function cachedVideoFrame(key){const entry=videoFrameCache.get(key);if(!entry)return null;entry.touch=++videoFrameCacheTouch;return entry.canvas;}
+
+  function rememberVideoFrame(key,source){
+    if(!source||!source.width&&!source.videoWidth)return source;const nativeWidth=Math.max(2,source.videoWidth||source.width||2),nativeHeight=Math.max(2,source.videoHeight||source.height||2),edge=Math.max(480,Math.min(1920,Number(previewCacheSettings.previewResolution||540)*16/9)),scale=Math.min(1,edge/Math.max(nativeWidth,nativeHeight)),width=Math.max(2,Math.round(nativeWidth*scale)),height=Math.max(2,Math.round(nativeHeight*scale)),canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const frameCtx=canvas.getContext('2d');frameCtx.imageSmoothingEnabled=true;frameCtx.imageSmoothingQuality='high';try{frameCtx.drawImage(source,0,0,width,height);}catch{return source;}const bytes=width*height*4,existing=videoFrameCache.get(key);if(existing){videoFrameCacheBytes-=existing.bytes;existing.canvas.width=0;existing.canvas.height=0;}videoFrameCache.set(key,{canvas,bytes,touch:++videoFrameCacheTouch});videoFrameCacheBytes+=bytes;trimVideoFrameCache();return canvas;
   }
 
   function getVideoElement(clip){
@@ -1482,26 +1568,29 @@ export function createAnimaticsEditor(options) {
     if(!isVideoClip(clip)||!clip.url)return null;let video=videoBlendElements.get(clip.id);if(video&&video.dataset.source===clip.url)return video;if(video){video.pause();video.removeAttribute('src');video.load();}video=document.createElement('video');video.preload='auto';video.playsInline=true;video.muted=true;video.dataset.source=clip.url;video.src=clip.url;videoBlendElements.set(clip.id,video);return video;
   }
 
+  async function performVideoSeek(video,target){
+    if(video.readyState<1)await new Promise(resolve=>{let timer=0,settled=false;const done=()=>{if(settled)return;settled=true;clearTimeout(timer);video.removeEventListener('loadedmetadata',done);video.removeEventListener('error',done);resolve();};video.addEventListener('loadedmetadata',done,{once:true});video.addEventListener('error',done,{once:true});timer=setTimeout(done,1200);});
+    const mediaDuration=Number.isFinite(video.duration)?video.duration:Math.max(0,target),clamped=clamp(target,0,Math.max(0,mediaDuration-.001));
+    if(video.readyState>=2&&Math.abs((video.currentTime||0)-clamped)<=.45/project.fps)return;
+    await new Promise(resolve=>{let timer=0,settled=false;const done=()=>{if(settled)return;settled=true;clearTimeout(timer);video.removeEventListener('seeked',done);video.removeEventListener('error',done);resolve();};video.addEventListener('seeked',done,{once:true});video.addEventListener('error',done,{once:true});timer=setTimeout(done,900);try{video.currentTime=clamped;}catch{done();}});
+  }
+
   async function seekVideo(video,time){
-    if(!video)return null;
-    if(video.readyState<1)await new Promise(resolve=>{const done=()=>{video.removeEventListener('loadedmetadata',done);video.removeEventListener('error',done);resolve();};video.addEventListener('loadedmetadata',done,{once:true});video.addEventListener('error',done,{once:true});setTimeout(done,2500);});
-    const duration=Number.isFinite(video.duration)?video.duration:Math.max(0,time);
-    const target=clamp(time,0,Math.max(0,duration-.001));
-    if(video.readyState>=2&&Math.abs(video.currentTime-target)<=1/project.fps)return video;
-    await new Promise(resolve=>{let timer=0;const done=()=>{clearTimeout(timer);video.removeEventListener('seeked',done);video.removeEventListener('error',done);resolve();};video.addEventListener('seeked',done,{once:true});video.addEventListener('error',done,{once:true});timer=setTimeout(done,2500);try{video.currentTime=target;}catch{done();}});
-    return video;
+    if(!video)return null;let state=videoSeekStates.get(video);if(!state){state={target:0,version:0,promise:null};videoSeekStates.set(video,state);}state.target=Math.max(0,Number(time)||0);state.version++;
+    if(!state.promise)state.promise=(async()=>{let completed=-1;while(completed!==state.version){completed=state.version;await performVideoSeek(video,state.target);}})().finally(()=>{state.promise=null;});
+    await state.promise;return video;
   }
 
   async function videoSourceAt(clip,t,exact=false){
     const video=getVideoElement(clip);if(!video)return null;
-    const local=clamp(t-clip.start,0,clip.duration),desired=timeRemapSourceAt(clip,local),remap=normalizeTimeRemap(clip);
+    const local=clamp(t-clip.start,0,clip.duration),state=timeRemapStateAt(clip,local),desired=state.source,remap=state.remap,frameKey=videoFrameCacheKey(clip,desired,remap.frameInterpolation),cached=!exact?cachedVideoFrame(frameKey):null;if(cached)return cached;
     if((exact||!playing)&&remap.enabled&&remap.frameInterpolation!=='sampling'){
-      const peer=getVideoBlendElement(clip),frame=1/project.fps,direction=timeRemapSpeedAt(clip,local)<0?-1:1,sourceIn=Number(clip.sourceIn)||0,sourceOut=Math.max(sourceIn,Number(clip.sourceOut)||sourceIn),low=clamp(desired-direction*frame*.5,sourceIn,sourceOut),high=clamp(desired+direction*frame*.5,sourceIn,sourceOut);await Promise.all([seekVideo(video,low),seekVideo(peer,high)]);const width=Math.max(2,video.videoWidth||clip.videoWidth||2),height=Math.max(2,video.videoHeight||clip.videoHeight||2);let blend=videoBlendCanvases.get(clip.id);if(!blend){blend=document.createElement('canvas');videoBlendCanvases.set(clip.id,blend);}if(blend.width!==width||blend.height!==height){blend.width=width;blend.height=height;}const bg=blend.getContext('2d');bg.clearRect(0,0,width,height);bg.globalAlpha=.5;bg.drawImage(video,0,0,width,height);bg.drawImage(peer,0,0,width,height);bg.globalAlpha=1;return blend;
+      const peer=getVideoBlendElement(clip),frame=1/project.fps,direction=state.speed<0?-1:1,sourceIn=Number(clip.sourceIn)||0,sourceOut=Math.max(sourceIn,Number(clip.sourceOut)||sourceIn),low=clamp(desired-direction*frame*.5,sourceIn,sourceOut),high=clamp(desired+direction*frame*.5,sourceIn,sourceOut);await Promise.all([seekVideo(video,low),seekVideo(peer,high)]);const width=Math.max(2,video.videoWidth||clip.videoWidth||2),height=Math.max(2,video.videoHeight||clip.videoHeight||2);let blend=videoBlendCanvases.get(clip.id);if(!blend){blend=document.createElement('canvas');videoBlendCanvases.set(clip.id,blend);}if(blend.width!==width||blend.height!==height){blend.width=width;blend.height=height;}const bg=blend.getContext('2d');bg.clearRect(0,0,width,height);bg.globalAlpha=.5;bg.drawImage(video,0,0,width,height);bg.drawImage(peer,0,0,width,height);bg.globalAlpha=1;return exact?blend:rememberVideoFrame(frameKey,blend);
     }
-    if(exact||!playing)await seekVideo(video,desired);
+    if(exact||!playing||state.speed<=1e-5)await seekVideo(video,desired);
     else if(video.readyState<2)await seekVideo(video,desired);
     if(!playing||exact)video.pause();
-    return video.readyState>=2?video:null;
+    return video.readyState>=2?(exact?video:rememberVideoFrame(frameKey,video)):null;
   }
 
   function stopVideoPlayback(){
@@ -1524,9 +1613,9 @@ export function createAnimaticsEditor(options) {
       if(!clip.url||project.playhead>=clip.start+clip.duration)continue;
       const launch=async()=>{
         if(!playing)return;const video=getVideoElement(clip);if(!video)return;
-        const offset=clamp(project.playhead-clip.start,0,clip.duration),remap=normalizeTimeRemap(clip),desired=timeRemapSourceAt(clip,offset),speed=Math.max(.01,Math.abs(timeRemapSpeedAt(clip,offset))||Math.abs(averageTimeRemapSpeed(clip))||1);
+        const offset=clamp(project.playhead-clip.start,0,clip.duration),state=timeRemapStateAt(clip,offset),desired=state.source,speed=Math.max(.01,Math.abs(state.speed)||Math.abs(averageTimeRemapSpeed(clip))||1);
         await seekVideo(video,desired);if(!playing)return;video.playbackRate=clamp(speed,.0625,16);
-        if(timeRemapSpeedAt(clip,offset)>1e-5){await video.play().catch(()=>{});scheduleVideoFrameDraw(video);}else video.pause();
+        if(state.speed>1e-5){await video.play().catch(()=>{});scheduleVideoFrameDraw(video);}else video.pause();
         videoTimers.push(setTimeout(()=>video.pause(),Math.max(0,clip.duration-offset)*1000+25));
       };
       const delay=Math.max(0,(clip.start-project.playhead)*1000);if(delay>0)videoTimers.push(setTimeout(launch,delay));else launch();
@@ -2255,14 +2344,20 @@ export function createAnimaticsEditor(options) {
   }
 
   function setPreviewMuted(muted){
-    previewMuted=!!muted;const button=$('#anPreviewMute');button.classList.toggle('on',previewMuted);button.setAttribute('aria-pressed',String(previewMuted));button.title=previewMuted?'Unmute timeline preview':'Mute timeline preview';button.setAttribute('aria-label',button.title);button.innerHTML=previewVolumeIcon(previewMuted);for(const clip of project.audio)updateActiveAudioGain(clip);
+    previewMuted=!!muted;cachedPreviewVideo.muted=previewMuted;const button=$('#anPreviewMute');button.classList.toggle('on',previewMuted);button.setAttribute('aria-pressed',String(previewMuted));button.title=previewMuted?'Unmute timeline preview':'Mute timeline preview';button.setAttribute('aria-label',button.title);button.innerHTML=previewVolumeIcon(previewMuted);for(const clip of project.audio)updateActiveAudioGain(clip);
   }
 
-  function setPlayhead(value){ project.playhead=clamp(value,0,duration()); renderTransport();followPlayhead();drawViewer(); }
+  function drawCachedPreviewFrame(){
+    if(!canUseCachedPreview()||cachedPreviewVideo.readyState<2)return false;viewerDrawToken++;ctx.save();ctx.fillStyle=project.background;ctx.fillRect(0,0,canvas.width,canvas.height);try{ctx.drawImage(cachedPreviewVideo,0,0,canvas.width,canvas.height);}catch{ctx.restore();return false;}ctx.restore();textOverlayCtx.clearRect(0,0,textOverlay.width,textOverlay.height);textControlCtx.clearRect(0,0,textControlOverlay.width,textControlOverlay.height);paintViewerTextControls(textsAt(project.playhead));$('#anEmpty')?.classList.add('hide');return true;
+  }
+
+  async function drawCachedPreviewAt(time){if(!canUseCachedPreview())return drawViewer();await seekVideo(cachedPreviewVideo,time);if(!playingCachedPreview)drawCachedPreviewFrame();}
+
+  function setPlayhead(value){ project.playhead=clamp(value,0,duration()); renderTransport();followPlayhead();if(canUseCachedPreview())void drawCachedPreviewAt(project.playhead);else drawViewer(); }
 
   function scheduleScrubPreview(){
     scrubPreviewQueued=true;if(scrubPreviewRaf||scrubPreviewBusy)return;
-    scrubPreviewRaf=requestAnimationFrame(async()=>{scrubPreviewRaf=0;if(!open){scrubPreviewQueued=false;return;}scrubPreviewQueued=false;scrubPreviewBusy=true;try{await drawViewer();}finally{scrubPreviewBusy=false;if(scrubPreviewQueued)scheduleScrubPreview();}});
+    scrubPreviewRaf=requestAnimationFrame(async()=>{scrubPreviewRaf=0;if(!open){scrubPreviewQueued=false;return;}scrubPreviewQueued=false;scrubPreviewBusy=true;try{if(canUseCachedPreview())await drawCachedPreviewAt(project.playhead);else await drawViewer();}finally{scrubPreviewBusy=false;if(scrubPreviewQueued)scheduleScrubPreview();}});
   }
 
   function scrubTo(value){project.playhead=clamp(value,0,duration());renderTransport();followPlayhead();scheduleScrubPreview();scheduleScrubSettle();}
@@ -2326,9 +2421,13 @@ export function createAnimaticsEditor(options) {
   function setPlaying(on){
     if(on && duration()<=0) return;
     playing=on;
-    if(on){const restart=hasSequenceRange()&&project.playhead>=project.outPoint?project.inPoint:(project.playhead>=duration()?0:project.playhead);playStartedAt=performance.now(); playStartedTime=restart; project.playhead=restart; startAudioPlayback();startVideoPlayback();tick(); }
-    else { cancelAnimationFrame(raf); stopAudioPlayback();stopVideoPlayback(); }
+    if(on){const restart=hasSequenceRange()&&project.playhead>=project.outPoint?project.inPoint:(project.playhead>=duration()?0:project.playhead);playStartedAt=performance.now(); playStartedTime=restart; project.playhead=restart;if(canUseCachedPreview()){playingCachedPreview=true;stopAudioPlayback();stopVideoPlayback();cachedPreviewVideo.muted=previewMuted;try{cachedPreviewVideo.currentTime=restart;}catch{}cachedPreviewVideo.play().then(()=>tickCachedPreview()).catch(()=>{if(!playing)return;playingCachedPreview=false;startAudioPlayback();startVideoPlayback();tick();});}else{playingCachedPreview=false;startAudioPlayback();startVideoPlayback();tick();} }
+    else { cancelAnimationFrame(raf);cancelAnimationFrame(cachedPreviewRaf);cachedPreviewRaf=0;playingCachedPreview=false;cachedPreviewVideo.pause();stopAudioPlayback();stopVideoPlayback(); }
     renderTransport();
+  }
+
+  function tickCachedPreview(){
+    if(!playing||!playingCachedPreview)return;const stopAt=hasSequenceRange()?Math.min(duration(),project.outPoint):duration(),next=clamp(cachedPreviewVideo.currentTime||project.playhead,0,duration());if(next>=stopAt-.5/project.fps||cachedPreviewVideo.ended){project.playhead=stopAt;renderTransport();drawCachedPreviewFrame();setPlaying(false);return;}project.playhead=next;renderTransport();followPlayhead();drawCachedPreviewFrame();cachedPreviewRaf=requestAnimationFrame(tickCachedPreview);
   }
 
   function tick(){
@@ -2337,7 +2436,7 @@ export function createAnimaticsEditor(options) {
     const stopAt=hasSequenceRange()?Math.min(duration(),project.outPoint):duration();
     if(next>=stopAt){setPlayhead(stopAt);setPlaying(false);return;}
     project.playhead=clamp(next,0,duration());renderTransport();followPlayhead();const activeVideos=clipsAt(next).filter(isVideoClip);let seekDriven=false;
-    for(const clip of activeVideos){const video=videoElements.get(clip.id),local=clamp(next-clip.start,0,clip.duration),remap=normalizeTimeRemap(clip),desired=timeRemapSourceAt(clip,local),signed=timeRemapSpeedAt(clip,local),speed=clamp(Math.abs(signed)||.01,.0625,16);if(!video)continue;if(remap.enabled&&signed<=1e-5){seekDriven=true;video.pause();if(Math.abs((video.currentTime||0)-desired)>1/project.fps)try{video.currentTime=desired;}catch{}}else if(remap.enabled){video.playbackRate=speed;if(video.paused){try{video.currentTime=desired;}catch{}video.play().then(()=>scheduleVideoFrameDraw(video)).catch(()=>{});}else if(Math.abs((video.currentTime||0)-desired)>.12)try{video.currentTime=desired;}catch{}}}
+    for(const clip of activeVideos){const video=videoElements.get(clip.id),local=clamp(next-clip.start,0,clip.duration),state=timeRemapStateAt(clip,local),remap=state.remap,desired=state.source,signed=state.speed,speed=clamp(Math.abs(signed)||.01,.0625,16);if(!video)continue;if(remap.enabled&&signed<=1e-5){seekDriven=true;video.pause();}else if(remap.enabled){video.playbackRate=speed;if(video.paused){void seekVideo(video,desired).then(()=>{if(playing&&!playingCachedPreview)return video.play().then(()=>scheduleVideoFrameDraw(video)).catch(()=>{});});}else if(Math.abs((video.currentTime||0)-desired)>.12)void seekVideo(video,desired);}}
     for(const entry of audioPlayers){if(entry.buffer||!entry.player)continue;const clip=project.audio.find(item=>item.id===entry.clipId);if(!clip)continue;const local=clamp(next-clip.start,0,clip.duration),remap=normalizeTimeRemap(clip),signed=timeRemapSpeedAt(clip,local);if(remap.enabled&&signed>1e-5){const desired=timeRemapSourceAt(clip,local),speed=clamp(signed,.0625,16);entry.player.playbackRate=speed;if(entry.player.paused)entry.player.play().catch(()=>{});if(Math.abs(entry.player.currentTime-desired)>.14)try{entry.player.currentTime=desired;}catch{}}else if(remap.enabled)entry.player.pause();}
     if(seekDriven)scheduleScrubPreview();else if(!activeVideos.length)drawViewer();raf=requestAnimationFrame(tick);
   }
@@ -2346,13 +2445,13 @@ export function createAnimaticsEditor(options) {
     if(!open){try{onOpen();}catch(err){console.error('[animatics] board view capture failed',err);}}
     open=true; document.body.classList.add('animatics-open'); root.classList.add('open','panel-open'); root.setAttribute('aria-hidden','false');
     syncActiveTrackTargets();setActiveTool('select');if(!previewZoomLocked)fitPreviewZoom({show:false});
-    if(items.length) addItems(items,{append:project.clips.length>0}); else renderAll();
+    if(items.length) addItems(items,{append:project.clips.length>0}); else renderAll();void refreshPreviewCacheAvailability();
     resizeViewer();
   }
 
   function closeEditor(){
     if(!open)return;
-    if(audioTrimState)finishAudioTrimmer(false);if(speedDialogState)closeSpeedDialog();closeAnimaticsContextMenu();if(inlineTextId)finishInlineTextEdit(false);flushDeferredHistory();open=false;setPlaying(false);
+    if(audioTrimState)finishAudioTrimmer(false);if(speedDialogState)closeSpeedDialog();closeAnimaticsContextMenu();if(inlineTextId)finishInlineTextEdit(false);flushDeferredHistory();open=false;setPlaying(false);void cancelPreviewCacheBuild({quiet:true});$('#anCacheModal').classList.remove('open');
     cancelAnimationFrame(scrubPreviewRaf);scrubPreviewRaf=0;scrubPreviewQueued=false;clearTimeout(scrubSettleTimer);scrubSettleTimer=0;releaseScrubProxies();clearTimeout(previewRasterTimer);previewRasterTimer=0;previewRasterEpoch++;if(textOverlayRaf)cancelAnimationFrame(textOverlayRaf);textOverlayRaf=0;if(textControlRaf)cancelAnimationFrame(textControlRaf);textControlRaf=0;cancelFramingPreview();viewerDrawToken++;
     if(timelineResizeRaf)cancelAnimationFrame(timelineResizeRaf);timelineResizeRaf=0;timelineResize=null;
     drawMode=false;drawBrushesOpen=false;drawColorOpen=false;drawWidthMenuOpen=false;activeStroke=null;clearActiveDrawingSession();hideDrawSizePreview();framingMode=false;framingDrag=null;textDrag=null;marqueeDrag=null;viewerTextMarquee=null;handPan=null;spaceHand=null;finishPreviewPan();inspectorResize=null;clearTimeout(previewZoomHudTimer);previewZoomHudTimer=0;root.classList.remove('hand-panning','inspector-resizing');$('#anInspectorResizer')?.classList.remove('dragging');$('#anTimelineResizer')?.classList.remove('dragging');$('#anMarquee').classList.remove('show');if(dragging)clearTimelineDrag(true);document.body.classList.remove('animatics-open');root.classList.remove('open');root.setAttribute('aria-hidden','true');canvas.parentElement.classList.remove('framing');
@@ -3029,7 +3128,7 @@ export function createAnimaticsEditor(options) {
   $('#anGraphSpeed').onclick=()=>{const draft=speedDialogDraft();if(!draft)return;draft.timeRemap=normalizeTimeRemap(draft,{...draft.timeRemap,graphMode:'speed',enabled:true});syncSpeedDialogFields();};$('#anGraphValue').onclick=()=>{const draft=speedDialogDraft();if(!draft)return;draft.timeRemap=normalizeTimeRemap(draft,{...draft.timeRemap,graphMode:'value',enabled:true});syncSpeedDialogFields();};
   $('#anGraphReference').onclick=()=>{const draft=speedDialogDraft();if(!draft)return;const remap=normalizeTimeRemap(draft);draft.timeRemap=normalizeTimeRemap(draft,{...remap,showReferenceGraph:!remap.showReferenceGraph});syncSpeedDialogFields();};$('#anGraphJoin').onclick=()=>{const draft=speedDialogDraft(),point=normalizeTimeRemap(draft).keyframes[graphSelectedKeyframe];if(!draft||!point)return;draft.timeRemap=updateTimeRemapKeyframe(draft,graphSelectedKeyframe,{continuous:!point.continuous,autoBezier:false});syncSpeedDialogFields();};$('#anGraphEaseIn').onclick=()=>{const draft=speedDialogDraft();if(draft){draft.timeRemap=applyTimeRemapEase(draft,graphSelectedKeyframe,'in');syncSpeedDialogFields();}};$('#anGraphEase').onclick=()=>{const draft=speedDialogDraft();if(draft){draft.timeRemap=applyTimeRemapEase(draft,graphSelectedKeyframe,'both');syncSpeedDialogFields();}};$('#anGraphEaseOut').onclick=()=>{const draft=speedDialogDraft();if(draft){draft.timeRemap=applyTimeRemapEase(draft,graphSelectedKeyframe,'out');syncSpeedDialogFields();}};
   $('#anGraphAdd').onclick=()=>addGraphKeyframeAt();$('#anGraphRemove').onclick=removeSelectedGraphKeyframe;$('#anGraphReset').onclick=()=>{const draft=speedDialogDraft();if(!draft)return;const speed=Math.abs(averageTimeRemapSpeed(draft))||1,result=constantTimeRemap(draft,speed,{duration:draft.duration,enabled:true,reverse:draft.timeRemap.reverse,preservePitch:draft.timeRemap.preservePitch,ripple:draft.timeRemap.ripple,frameInterpolation:draft.timeRemap.frameInterpolation,graphMode:draft.timeRemap.graphMode});draft.timeRemap=result.timeRemap;graphSelectedKeyframe=0;syncSpeedDialogFields();};
-  const remapGraph=$('#anTimeRemapGraph');remapGraph.addEventListener('pointerdown',e=>{const hit=graphHit(e);if(!hit)return;graphSelectedKeyframe=hit.index;graphPointerDrag={pointerId:e.pointerId,index:hit.index,kind:hit.kind,side:hit.side,split:e.altKey};speedDialogState.graphScale={speedMax:speedDialogState.graphLayout.speedMax};remapGraph.setPointerCapture?.(e.pointerId);scheduleTimeRemapGraphPaint();e.preventDefault();});remapGraph.addEventListener('pointermove',e=>{if(!graphPointerDrag||graphPointerDrag.pointerId!==e.pointerId)return;const draft=speedDialogDraft(),values=graphValuesAtPointer(e),remap=normalizeTimeRemap(draft),mode=remap.graphMode,drag=graphPointerDrag,point=remap.keyframes[drag.index];if(!draft||!values||!point)return;if(drag.kind==='handle'){const neighbor=remap.keyframes[drag.index+(drag.side==='in'?-1:1)];if(!neighbor)return;if(mode==='speed'){const influence=Math.abs(values.time-point.time)/Math.max(1e-8,Math.abs(neighbor.time-point.time))*100;draft.timeRemap=updateTimeRemapHandle(draft,drag.index,drag.side,{speed:values.speed,influence,split:drag.split||e.altKey});}else draft.timeRemap=updateTimeRemapHandle(draft,drag.index,drag.side,{dt:values.time-point.time,dv:values.value-point.value,split:drag.split||e.altKey});}else if(mode==='value')draft.timeRemap=updateTimeRemapKeyframe(draft,drag.index,{time:values.time,value:values.value});else draft.timeRemap=updateTimeRemapKeyframe(draft,drag.index,{time:values.time,speed:values.speed});draft.timeRemap.enabled=true;$('#anSpeedEnableGraph').checked=true;scheduleTimeRemapGraphPaint();});const finishGraphDrag=e=>{if(graphPointerDrag&&(!e||graphPointerDrag.pointerId===e.pointerId)){graphPointerDrag=null;if(speedDialogState)speedDialogState.graphScale=null;syncSpeedDialogFields();}};remapGraph.addEventListener('pointerup',finishGraphDrag);remapGraph.addEventListener('pointercancel',finishGraphDrag);remapGraph.addEventListener('dblclick',e=>{const values=graphValuesAtPointer(e);if(values)addGraphKeyframeAt(values.time);});remapGraph.addEventListener('keydown',e=>{if(e.key==='Delete'||e.key==='Backspace'){removeSelectedGraphKeyframe();e.preventDefault();}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){const draft=speedDialogDraft(),remap=normalizeTimeRemap(draft),point=remap.keyframes[graphSelectedKeyframe],step=1/project.fps;if(!point)return;const info=timeRemapHandleInfo(draft,graphSelectedKeyframe),speed=(info.in.speed+info.out.speed)/2,patch=remap.graphMode==='speed'?{speed:speed+(e.key==='ArrowUp'?step:e.key==='ArrowDown'?-step:0),time:point.time+(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0)}:{value:point.value+(e.key==='ArrowUp'?step:e.key==='ArrowDown'?-step:0),time:point.time+(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0)};draft.timeRemap=updateTimeRemapKeyframe(draft,graphSelectedKeyframe,patch);syncSpeedDialogFields();e.preventDefault();}});
+  const remapGraph=$('#anTimeRemapGraph');remapGraph.addEventListener('pointerdown',e=>{const hit=graphHit(e);if(!hit)return;graphSelectedKeyframe=hit.index;graphPointerDrag={pointerId:e.pointerId,index:hit.index,kind:hit.kind,side:hit.side,split:e.altKey};const layout=speedDialogState.graphLayout;speedDialogState.graphScale={speedMax:layout.speedMax,valueMin:layout.valueMin,valueMax:layout.valueMax};remapGraph.setPointerCapture?.(e.pointerId);scheduleTimeRemapGraphPaint();e.preventDefault();});remapGraph.addEventListener('pointermove',e=>{if(!graphPointerDrag||graphPointerDrag.pointerId!==e.pointerId)return;const draft=speedDialogDraft(),values=graphValuesAtPointer(e),remap=normalizeTimeRemap(draft),mode=remap.graphMode,drag=graphPointerDrag,point=remap.keyframes[drag.index];if(!draft||!values||!point)return;if(drag.kind==='handle'){const neighbor=remap.keyframes[drag.index+(drag.side==='in'?-1:1)];if(!neighbor)return;if(mode==='speed'){const influence=(values.time-point.time)*(drag.side==='in'?-1:1)/Math.max(1e-8,Math.abs(neighbor.time-point.time))*100;draft.timeRemap=updateTimeRemapHandle(draft,drag.index,drag.side,{speed:values.speed,influence,split:drag.split||e.altKey});}else draft.timeRemap=updateTimeRemapHandle(draft,drag.index,drag.side,{dt:values.time-point.time,dv:values.value-point.value,split:drag.split||e.altKey});}else if(mode==='value')draft.timeRemap=updateTimeRemapKeyframe(draft,drag.index,{time:values.time,value:values.value});else draft.timeRemap=updateTimeRemapKeyframe(draft,drag.index,{time:values.time,speed:values.speed});draft.timeRemap.enabled=true;$('#anSpeedEnableGraph').checked=true;scheduleTimeRemapGraphPaint();});const finishGraphDrag=e=>{if(graphPointerDrag&&(!e||graphPointerDrag.pointerId===e.pointerId)){graphPointerDrag=null;if(speedDialogState)speedDialogState.graphScale=null;syncSpeedDialogFields();}};remapGraph.addEventListener('pointerup',finishGraphDrag);remapGraph.addEventListener('pointercancel',finishGraphDrag);remapGraph.addEventListener('dblclick',e=>{const values=graphValuesAtPointer(e);if(values)addGraphKeyframeAt(values.time);});remapGraph.addEventListener('keydown',e=>{if(e.key==='Delete'||e.key==='Backspace'){removeSelectedGraphKeyframe();e.preventDefault();}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){const draft=speedDialogDraft(),remap=normalizeTimeRemap(draft),point=remap.keyframes[graphSelectedKeyframe],step=1/project.fps;if(!point)return;const info=timeRemapHandleInfo(draft,graphSelectedKeyframe),speed=(info.in.speed+info.out.speed)/2,patch=remap.graphMode==='speed'?{speed:speed+(e.key==='ArrowUp'?step:e.key==='ArrowDown'?-step:0),time:point.time+(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0)}:{value:point.value+(e.key==='ArrowUp'?step:e.key==='ArrowDown'?-step:0),time:point.time+(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0)};draft.timeRemap=updateTimeRemapKeyframe(draft,graphSelectedKeyframe,patch);syncSpeedDialogFields();e.preventDefault();}});
   $('#anSetIn').onclick=setSequenceIn;$('#anSetOut').onclick=setSequenceOut;$('#anClearRange').onclick=clearSequenceRange;
   const inspectorResizer=$('#anInspectorResizer');
   inspectorResizer.addEventListener('pointerdown',e=>{if(!root.classList.contains('panel-open'))return;inspectorResize={startX:e.clientX,startWidth:project.inspectorWidth};root.classList.add('inspector-resizing');inspectorResizer.classList.add('dragging');inspectorResizer.setPointerCapture?.(e.pointerId);e.preventDefault();});
@@ -3111,6 +3210,7 @@ export function createAnimaticsEditor(options) {
   root.addEventListener('scroll',()=>{if(drawWidthMenuOpen)positionDrawWidthMenu();},true);
   applyDrawColor(drawColor);
   applyTextColor($('#anTextColor').value);
+  void loadPreviewCacheSettings();
   $('#anTcToggle').onclick=()=>{project.timecode=!project.timecode;markDirty();syncInspector();drawViewer();};
   $('#anCounterMode').onchange=e=>{project.counterMode=e.target.value;markDirty();renderAll();};
   $('#anProjectFps').onchange=e=>{project.fps=Number(e.target.value);markDirty();renderAll();updateAudioTrimUi();};
@@ -3148,6 +3248,12 @@ export function createAnimaticsEditor(options) {
   root.querySelectorAll('.an-tab').forEach(tab=>tab.onclick=()=>{setDrawWidthMenuOpen(false);root.querySelectorAll('.an-tab,.an-panel').forEach(el=>el.classList.remove('on'));tab.classList.add('on');root.querySelector(`[data-panel-body="${tab.dataset.panel}"]`).classList.add('on');syncInspector();});
   root.querySelectorAll('[data-an-tool]').forEach(button=>button.onclick=()=>setActiveTool(button.dataset.anTool));
   $('#anSnap').onclick=()=>{project.timelineSnap=!project.timelineSnap;markDirty();renderTimeline();notify(project.timelineSnap?'Timeline snapping on':'Timeline snapping off');};
+  $('#anCachePreview').onclick=()=>{if(canUseCachedPreview()){setPlaying(!playing);return;}if(previewCacheBuild){void cancelPreviewCacheBuild();return;}void buildPreviewCache();};
+  $('#anCacheSettings').onclick=()=>{applyPreviewCacheSettingsToModal(previewCacheSettings);$('#anCacheModal').classList.add('open');void refreshPreviewCacheStats();};
+  $('#anCacheCancel').onclick=()=>$('#anCacheModal').classList.remove('open');
+  $('#anCacheSave').onclick=()=>void savePreviewCacheSettings();
+  $('#anCacheBrowse').onclick=async()=>{const api=window.RefBoardAPI;if(!api?.chooseAnimaticsPreviewCacheFolder)return;try{const selected=await api.chooseAnimaticsPreviewCacheFolder();if(!selected)return;previewCacheSettings={...previewCacheSettings,...selected};applyPreviewCacheSettingsToModal(previewCacheSettings);clearCachedPreviewRecord();await refreshPreviewCacheAvailability();}catch{notify('Could not select the cache folder');}};
+  $('#anCacheClear').onclick=async()=>{const api=window.RefBoardAPI;if(!api?.clearAnimaticsPreviewCache)return;try{await cancelPreviewCacheBuild({quiet:true});const stats=await api.clearAnimaticsPreviewCache();clearCachedPreviewRecord();clearVideoFrameCache();previewCacheSettings={...previewCacheSettings,...stats};applyPreviewCacheSettingsToModal(previewCacheSettings);syncPreviewCacheStatus('stale','No preview cached');notify('Animatics preview cache cleared');}catch(err){console.error('[animatics] clear cache failed',err);notify('Could not clear preview cache');}};
   function syncExportFormatUi(){
     const format=$('#anExportFormat').value,premiere=format==='premiere',afterEffects=format==='after-effects';
     $('#anExportDescription').textContent=premiere?`Premiere timeline · collected original media · ${project.aspect}`:afterEffects?`After Effects editable project · collected original media · ${project.aspect}`:`MP4 · H.264 · stereo audio · ${project.aspect}`;
@@ -3170,7 +3276,7 @@ export function createAnimaticsEditor(options) {
     else if(!form&&mod&&key==='c'){copyTimelineSelection(false);e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='x'){copyTimelineSelection(true);e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='v'){pasteTimelineSelection();e.preventDefault();e.stopImmediatePropagation();}
-    else if(e.key==='Escape'){if(root.querySelector('.an-view-select.open'))closeAnimaticsSelectMenus();else if($('#anContextMenu').classList.contains('open'))closeAnimaticsContextMenu();else if($('#anSpeedModal').classList.contains('open'))closeSpeedDialog();else if(textColorOpen)setTextColorOpen(false);else if(e.target===drawWidthInput){drawWidthInput.value=String(drawWidth);drawWidthInput.blur();}else if(inlineTextId)finishInlineTextEdit(true);else if($('#anGainModal').classList.contains('open'))closeAudioGainDialog();else if($('#anAudioTrimModal').classList.contains('open'))finishAudioTrimmer(false);else if($('#anSequenceModal').classList.contains('open'))$('#anSequenceModal').classList.remove('open');else if($('#anExportModal').classList.contains('open'))$('#anExportModal').classList.remove('open');else if(drawWidthMenuOpen)setDrawWidthMenuOpen(false);else if(drawColorOpen)setDrawColorOpen(false);else if(drawBrushesOpen)setDrawBrushesOpen(false);else if(drawMode)setDrawMode(false);else if(selectedGap){selectedGap=null;renderTimeline();}else if(activeTool!=='select')setActiveTool('select');else closeEditor();e.preventDefault();e.stopImmediatePropagation();}
+    else if(e.key==='Escape'){if(root.querySelector('.an-view-select.open'))closeAnimaticsSelectMenus();else if($('#anContextMenu').classList.contains('open'))closeAnimaticsContextMenu();else if($('#anSpeedModal').classList.contains('open'))closeSpeedDialog();else if(textColorOpen)setTextColorOpen(false);else if(e.target===drawWidthInput){drawWidthInput.value=String(drawWidth);drawWidthInput.blur();}else if(inlineTextId)finishInlineTextEdit(true);else if($('#anGainModal').classList.contains('open'))closeAudioGainDialog();else if($('#anAudioTrimModal').classList.contains('open'))finishAudioTrimmer(false);else if($('#anSequenceModal').classList.contains('open'))$('#anSequenceModal').classList.remove('open');else if($('#anCacheModal').classList.contains('open'))$('#anCacheModal').classList.remove('open');else if($('#anExportModal').classList.contains('open'))$('#anExportModal').classList.remove('open');else if(drawWidthMenuOpen)setDrawWidthMenuOpen(false);else if(drawColorOpen)setDrawColorOpen(false);else if(drawBrushesOpen)setDrawBrushesOpen(false);else if(drawMode)setDrawMode(false);else if(selectedGap){selectedGap=null;renderTimeline();}else if(activeTool!=='select')setActiveTool('select');else closeEditor();e.preventDefault();e.stopImmediatePropagation();}
     else if(e.code==='Space'&&inspectorSpacePlaybackAllowed(e.target)){if(!spaceHand){flushInspectorEditsForPlayback(e.target);spaceHand={startedAt:Date.now(),used:false};setActiveTool('hand');if(previewZoom>1&&!previewZoomLocked&&!framingMode&&!drawMode)canvas.style.cursor='grab';}e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='a'){setTimelineSelection([...project.clips,...project.texts,...project.audio].map(item=>item.id),primarySelectionId());renderTimeline();syncInspector();e.preventDefault();e.stopImmediatePropagation();}
     else if(!form&&mod&&key==='l'){toggleLinkSelection();e.preventDefault();e.stopImmediatePropagation();}
@@ -3192,6 +3298,44 @@ export function createAnimaticsEditor(options) {
     const start=clamp(localStart,0,clip.duration),end=clamp(localEnd,start,clip.duration),uniform=hasVariableTimeRemap(clip)?Math.min(96,Math.max(16,Math.ceil((end-start)*10))):1,times=new Set([start,end,...remap.keyframes.map(point=>point.time).filter(time=>time>start&&time<end)]);for(let index=1;index<uniform;index++)times.add(start+(end-start)*index/uniform);const ordered=[...times].sort((a,b)=>a-b),segments=[];
     for(let index=0;index<ordered.length-1;index++){const a=ordered[index],b=ordered[index+1],duration=b-a;if(duration<=1e-6)continue;const sourceStart=timeRemapSourceAt(clip,a),sourceEnd=timeRemapSourceAt(clip,b),freeze=Math.abs(sourceEnd-sourceStart)<=1e-8,speed=freeze?0:Math.max(.01,Math.abs(sourceEnd-sourceStart)/duration);segments.push({sourceStart,sourceEnd,duration,speed,reverse:sourceEnd<sourceStart,freeze});}
     return segments;
+  }
+
+  function cacheAudioEntries(cacheEnd){return project.audio.map(a=>{const clipStart=Math.max(a.start,0),clipEnd=Math.min(a.start+a.duration,cacheEnd);if(clipEnd<=clipStart)return null;const localStart=clipStart-a.start,clipDuration=clipEnd-clipStart,remap=normalizeTimeRemap(a);return {...a,start:clipStart,sourceIn:remap.enabled?0:(a.sourceIn||0)+localStart,duration:clipDuration,volume:effectiveAudioVolume(a),preservePitch:remap.preservePitch,remapSegments:exportAudioRemapSegments(a,localStart,localStart+clipDuration),envelope:audioEnvelopePoints(a,{start:localStart,end:localStart+clipDuration,samplesPerFade:32}).map(point=>({time:point.time-localStart,gain:point.gain}))};}).filter(Boolean);}
+
+  async function cancelPreviewCacheBuild({quiet=false}={}){
+    const build=previewCacheBuild;if(!build)return false;build.cancelled=true;previewCacheBuild=null;if(build.token)await window.RefBoardAPI?.abortAnimaticExport?.(build.token).catch(()=>{});$('#anCacheProgress').classList.remove('show');$('#anCacheProgress i').style.width='0';syncPreviewCacheStatus('stale','Preview cache canceled');if(!quiet)notify('Preview cache canceled');return true;
+  }
+
+  async function buildPreviewCache({automatic=false}={}){
+    const api=window.RefBoardAPI;if(!api?.beginAnimaticsPreviewCache){if(!automatic)notify('Preview cache is available in the desktop build');return false;}if(previewCacheBuild){if(!automatic)await cancelPreviewCacheBuild();return false;}if(!project.clips.length){if(!automatic)notify('Add at least one clip');return false;}if(playing)setPlaying(false);
+    const fingerprint=currentPreviewCacheFingerprint();if(await refreshPreviewCacheAvailability())return true;
+    const fps=project.fps,cacheEnd=duration(),{width,height}=sequenceDimensions(previewCacheSettings.previewResolution,project.aspect),timeInterpolation=project.clips.some(clip=>clip.timeRemap?.enabled===true&&normalizeTimeRemap(clip).frameInterpolation==='optical-flow')?'optical-flow':'sampling',progress=$('#anCacheProgress'),bar=progress.querySelector('i'),build={fingerprint,token:null,cancelled:false};previewCacheBuild=build;progress.classList.add('show');bar.style.width='0';syncPreviewCacheStatus('building','Rendering optimized preview…');
+    try{
+      const begun=await api.beginAnimaticsPreviewCache({fingerprint,fps,width,height,timeInterpolation});if(build.cancelled)return false;if(begun?.cached){setCachedPreviewRecord(begun);return true;}if(!begun?.started)throw new Error('Could not start preview cache');build.token=begun.token;
+      const frameDuration=1/fps,segments=[],hasVideo=project.clips.some(c=>isVideoClip(c)&&isVisualClipVisible(c));
+      if(hasVideo||project.timecode){for(let start=0;start<cacheEnd-1e-8;start+=frameDuration)segments.push({start,duration:Math.min(frameDuration,cacheEnd-start)});}else{const boundaries=[...new Set([0,cacheEnd,...project.clips.flatMap(c=>[c.start,c.start+c.duration]),...project.texts.flatMap(c=>[c.start,c.start+c.duration])])].filter(t=>t>=0&&t<=cacheEnd).sort((a,b)=>a-b);for(let index=0;index<boundaries.length-1;index++)if(boundaries[index+1]>boundaries[index])segments.push({start:boundaries[index],duration:boundaries[index+1]-boundaries[index]});}
+      const audio=cacheAudioEntries(cacheEnd),target=document.createElement('canvas');target.width=width;target.height=height;const targetCtx=target.getContext('2d'),total=Math.max(1,segments.length+audio.length);
+      for(let index=0;index<segments.length;index++){if(build.cancelled||fingerprint!==currentPreviewCacheFingerprint())throw new DOMException('Canceled','AbortError');await drawViewer(targetCtx,width,height,segments[index].start,project.timecode,true);const blob=await new Promise(resolve=>target.toBlob(resolve,'image/png'));if(!blob)throw new Error('Could not render preview frame');await api.appendAnimaticFrame(build.token,{duration:segments[index].duration,data:await blob.arrayBuffer()});const ratio=(index+1)/total;bar.style.width=`${Math.round(ratio*88)}%`;$('#anCacheStateText').textContent=`Caching frame ${index+1} of ${segments.length}`;}
+      target.width=target.height=0;
+      for(let index=0;index<audio.length;index++){if(build.cancelled)throw new DOMException('Canceled','AbortError');const entry=audio[index];if(entry.blob)await api.appendAnimaticAudio(build.token,{name:entry.name,start:entry.start,sourceIn:entry.sourceIn||0,duration:entry.duration,volume:entry.volume,envelope:entry.envelope,preservePitch:entry.preservePitch,remapSegments:entry.remapSegments,data:await entry.blob.arrayBuffer()});bar.style.width=`${Math.round((segments.length+index+1)/total*88)}%`;}
+      bar.style.width='94%';$('#anCacheStateText').textContent='Encoding preview cache…';const result=await api.finishAnimaticExport(build.token);build.token=null;if(build.cancelled)return false;if(fingerprint===currentPreviewCacheFingerprint()){setCachedPreviewRecord(result);drawCachedPreviewAt(project.playhead);notify('Preview cache ready');}else syncPreviewCacheStatus('stale','Preview changed while caching');return true;
+    }catch(err){if(build.token)await api.abortAnimaticExport?.(build.token).catch(()=>{});build.token=null;if(err?.name!=='AbortError'){console.error('[animatics] preview cache failed',err);syncPreviewCacheStatus('stale','Preview cache failed');if(!automatic)notify('Preview cache failed — check disk space');}return false;}
+    finally{if(previewCacheBuild===build)previewCacheBuild=null;progress.classList.remove('show');bar.style.width='0';if(!canUseCachedPreview()&&!build.cancelled&&fingerprint===currentPreviewCacheFingerprint())syncPreviewCacheStatus('stale','Preview needs caching');void refreshPreviewCacheStats();}
+  }
+
+  function applyPreviewCacheSettingsToModal(settings=previewCacheSettings){$('#anCacheLocation').value=settings.cachePath||settings.location||'';$('#anCacheDiskLimit').value=String(settings.diskLimitGB);$('#anCacheRamLimit').value=String(settings.ramLimitMB);$('#anCacheResolution').value=String(settings.previewResolution);syncAnimaticsSelectControl($('#anCacheResolution'));$('#anCacheAutoClean').checked=settings.autoClean!==false;$('#anCacheAutoBuild').checked=settings.autoCache===true;$('#anCacheUsage').textContent=`${formatCacheBytes(settings.bytes)} used · ${Number(settings.files)||0} preview${Number(settings.files)===1?'':'s'}`;}
+
+  async function refreshPreviewCacheStats(){const api=window.RefBoardAPI;if(!api?.getAnimaticsPreviewCacheStats)return;try{const stats=await api.getAnimaticsPreviewCacheStats();previewCacheSettings={...previewCacheSettings,...stats};if($('#anCacheModal').classList.contains('open'))applyPreviewCacheSettingsToModal(previewCacheSettings);}catch{}}
+
+  async function loadPreviewCacheSettings(){
+    const api=window.RefBoardAPI;if(!api?.getAnimaticsPreviewCacheSettings){syncPreviewCacheStatus('stale','Desktop cache unavailable');return;}
+    try{previewCacheSettings={...DEFAULT_PREVIEW_CACHE_SETTINGS,...await api.getAnimaticsPreviewCacheSettings()};trimVideoFrameCache();applyPreviewCacheSettingsToModal(previewCacheSettings);await refreshPreviewCacheAvailability();}catch(err){console.warn('[animatics] cache settings unavailable',err);syncPreviewCacheStatus('stale','Preview cache unavailable');}
+  }
+
+  async function savePreviewCacheSettings(){
+    const api=window.RefBoardAPI;if(!api?.setAnimaticsPreviewCacheSettings)return;
+    const raw={location:previewCacheSettings.location,diskLimitGB:clamp(Number($('#anCacheDiskLimit').value)||20,1,500),ramLimitMB:clamp(Number($('#anCacheRamLimit').value)||256,64,2048),previewResolution:Number($('#anCacheResolution').value)||540,autoClean:$('#anCacheAutoClean').checked,autoCache:$('#anCacheAutoBuild').checked};
+    try{previewCacheSettings={...DEFAULT_PREVIEW_CACHE_SETTINGS,...await api.setAnimaticsPreviewCacheSettings(raw)};trimVideoFrameCache();$('#anCacheModal').classList.remove('open');await refreshPreviewCacheAvailability();notify('Preview cache settings saved');}catch(err){console.error('[animatics] cache settings failed',err);notify('Could not save cache settings');}
   }
 
   async function exportProject(){
@@ -3307,7 +3451,7 @@ export function createAnimaticsEditor(options) {
   }
 
   function releaseImportedMedia(){
-    releaseVideoElements();releaseAudioPlaybackContext();audioWaveformEpoch++;audioWaveformCache.clear();audioWaveformJobs.clear();reverseAudioBufferCache.clear();
+    releaseVideoElements();releaseAudioPlaybackContext();clearCachedPreviewRecord();clearTimeout(previewCacheLookupTimer);clearTimeout(previewCacheAutoTimer);audioWaveformEpoch++;audioWaveformCache.clear();audioWaveformJobs.clear();reverseAudioBufferCache.clear();
     const urls=new Set([...mediaResources.values()].map(resource=>resource.url).filter(Boolean));
     for(const url of [...project.audio.map(a=>a.url),...project.clips.filter(isVideoClip).map(c=>c.url)].filter(Boolean))urls.add(url);
     for(const url of urls)URL.revokeObjectURL(url);mediaResources.clear();
@@ -3333,7 +3477,7 @@ export function createAnimaticsEditor(options) {
     serialize:()=>({ ...structuredClone({...project,audio:[],clips:[]}), playhead:0, clips:project.clips.map(({blob,url,...c})=>({...c,needsRelink:isVideoClip(c)&&!blob})), audio:project.audio.map(({blob,url,...a})=>({...a,needsRelink:!blob})) }),
     mediaRefs:()=>mediaEntries().map(entry=>({id:entry.mediaId,type:entry.type||entry.blob.type||'application/octet-stream',name:entry.name,size:entry.blob.size})),
     getMediaBlob:mediaId=>mediaEntries().find(entry=>entry.mediaId===mediaId)?.blob||null,
-    load:(raw,mediaBlobs)=>{releaseImportedMedia();clearActiveDrawingSession();activeStroke=null;drawingOverlayCache.clear();timelineClipboard=null;timelineFitZoom=null;activeVideoTrack=0;activeAudioTrack=0;project=normalizeProject(raw,mediaBlobs);rememberProjectMedia();const first=project.clips[0]?.id||project.texts[0]?.id||project.audio[0]?.id||null;setTimelineSelection(first?[first]:[],first);resetAnimaticsHistory();renderAll();},
-    clear:()=>{releaseImportedMedia();clearActiveDrawingSession();activeStroke=null;drawingOverlayCache.clear();timelineClipboard=null;timelineFitZoom=null;activeVideoTrack=0;activeAudioTrack=0;project=freshProject();setTimelineSelection([]);resetAnimaticsHistory();renderAll();},
+    load:(raw,mediaBlobs)=>{releaseImportedMedia();clearActiveDrawingSession();activeStroke=null;drawingOverlayCache.clear();timelineClipboard=null;timelineFitZoom=null;activeVideoTrack=0;activeAudioTrack=0;project=normalizeProject(raw,mediaBlobs);rememberProjectMedia();const first=project.clips[0]?.id||project.texts[0]?.id||project.audio[0]?.id||null;setTimelineSelection(first?[first]:[],first);resetAnimaticsHistory();renderAll();invalidatePreviewCache();},
+    clear:()=>{releaseImportedMedia();clearActiveDrawingSession();activeStroke=null;drawingOverlayCache.clear();timelineClipboard=null;timelineFitZoom=null;activeVideoTrack=0;activeAudioTrack=0;project=freshProject();setTimelineSelection([]);resetAnimaticsHistory();renderAll();invalidatePreviewCache();},
   };
 }

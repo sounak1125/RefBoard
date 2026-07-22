@@ -7,6 +7,7 @@ export const MAX_TIME_REMAP_SPEED = 100;
 export const MAX_TIME_REMAP_KEYFRAMES = 64;
 
 const INTERPOLATIONS = new Set(['linear', 'bezier', 'continuous', 'auto', 'hold']);
+const evaluatorCache = new WeakMap();
 
 function mediaSpan(item) {
   const sourceIn = Math.max(0, finite(item?.sourceIn));
@@ -81,28 +82,26 @@ function autoSlope(points, index) {
   return (after.value - before.value) / Math.max(1e-8, after.time - before.time);
 }
 
-function normalizedHandle(point, side, neighbor, span, defaultSlope) {
+function normalizedHandle(point, side, neighbor, defaultSlope) {
   if (!neighbor) return { dt: 0, dv: 0 };
   const direction = side === 'in' ? -1 : 1;
   const segmentDuration = Math.max(1e-8, Math.abs(neighbor.time - point.time));
   const supplied = point[`${side}Handle`];
   let dt = supplied ? finite(supplied.dt) : direction * segmentDuration / 3;
-  dt = direction * clamp(Math.abs(dt), segmentDuration * .002, segmentDuration * .95);
+  dt = direction * clamp(dt * direction, segmentDuration * .002, segmentDuration * .95);
   const slope = point.legacySpeed ?? defaultSlope;
   let dv = supplied ? finite(supplied.dv) : slope * dt;
-  dv = clamp(dv, -MAX_TIME_REMAP_SPEED * Math.abs(dt), MAX_TIME_REMAP_SPEED * Math.abs(dt));
-  dv = clamp(point.value + dv, 0, span) - point.value;
   return { dt, dv };
 }
 
-function normalizeHandles(points, span) {
+function normalizeHandles(points) {
   for (let index = 0; index < points.length; index++) {
     const point = points[index];
     const slope = point.autoBezier ? autoSlope(points, index) : point.legacySpeed;
     const inDefault = slope ?? (index ? (point.value - points[index - 1].value) / Math.max(1e-8, point.time - points[index - 1].time) : autoSlope(points, index));
     const outDefault = slope ?? (index < points.length - 1 ? (points[index + 1].value - point.value) / Math.max(1e-8, points[index + 1].time - point.time) : autoSlope(points, index));
-    point.inHandle = normalizedHandle(point, 'in', points[index - 1], span, inDefault);
-    point.outHandle = normalizedHandle(point, 'out', points[index + 1], span, outDefault);
+    point.inHandle = normalizedHandle(point, 'in', points[index - 1], inDefault);
+    point.outHandle = normalizedHandle(point, 'out', points[index + 1], outDefault);
     if (point.autoBezier) {
       point.inInterpolation = point.inInterpolation === 'hold' ? 'hold' : 'auto';
       point.outInterpolation = point.outInterpolation === 'hold' ? 'hold' : 'auto';
@@ -122,7 +121,7 @@ function normalizeHandles(points, span) {
 }
 
 export function normalizeTimeRemap(item, raw = item?.timeRemap) {
-  const points = normalizeHandles(makeRawPoints(item, raw), mediaSpan(item));
+  const points = normalizeHandles(makeRawPoints(item, raw));
   const deltas = points.slice(1).map((point, index) => point.value - points[index].value);
   const reverse = deltas.some(delta => delta < -1e-8) && !deltas.some(delta => delta > 1e-8);
   return {
@@ -205,17 +204,33 @@ function segmentValueAndSpeed(remap, localTime) {
   return { value: cubic(controls[0].y, controls[1].y, controls[2].y, controls[3].y, u), speed: Math.abs(dx) < 1e-9 ? 0 : dy / dx, index, u };
 }
 
+function evaluatorFor(item) {
+  const raw = item?.timeRemap, duration = finite(item?.duration), sourceIn = Math.max(0, finite(item?.sourceIn)), sourceOut = Math.max(sourceIn, finite(item?.sourceOut));
+  if (raw && typeof raw === 'object') {
+    const cached = evaluatorCache.get(raw);
+    if (cached && cached.duration === duration && cached.sourceIn === sourceIn && cached.sourceOut === sourceOut) return cached;
+    const remap = normalizeTimeRemap(item, raw), evaluator = { duration, sourceIn, sourceOut, remap };
+    evaluatorCache.set(raw, evaluator);
+    return evaluator;
+  }
+  return { duration, sourceIn, sourceOut, remap: normalizeTimeRemap(item, raw) };
+}
+
+export function timeRemapStateAt(item, localTime) {
+  const evaluator = evaluatorFor(item), result = segmentValueAndSpeed(evaluator.remap, localTime), span = Math.max(0, evaluator.sourceOut - evaluator.sourceIn);
+  return { ...result, source: evaluator.sourceIn + clamp(result.value, 0, span), remap: evaluator.remap };
+}
+
 export function timeRemapValueAt(item, localTime) {
-  return segmentValueAndSpeed(normalizeTimeRemap(item), localTime).value;
+  return timeRemapStateAt(item, localTime).value;
 }
 
 export function timeRemapSpeedAt(item, localTime) {
-  return segmentValueAndSpeed(normalizeTimeRemap(item), localTime).speed;
+  return timeRemapStateAt(item, localTime).speed;
 }
 
 export function timeRemapSourceAt(item, localTime) {
-  const sourceIn = Math.max(0, finite(item?.sourceIn));
-  return sourceIn + clamp(timeRemapValueAt(item, localTime), 0, mediaSpan(item));
+  return timeRemapStateAt(item, localTime).source;
 }
 
 export function timeRemapHandleInfo(item, index) {
@@ -361,18 +376,23 @@ export function updateTimeRemapHandle(item, index, side, patch = {}) {
   const handle = { ...point[`${side}Handle`] }, segmentDuration = Math.abs(neighbor.time - point.time), direction = side === 'in' ? -1 : 1;
   const currentSpeed = Math.abs(handle.dt) > 1e-9 ? handle.dv / handle.dt : 0;
   if (Number.isFinite(Number(patch.influence))) handle.dt = direction * segmentDuration * clamp(Number(patch.influence), .2, 95) / 100;
-  if (Number.isFinite(Number(patch.dt))) handle.dt = direction * clamp(Math.abs(Number(patch.dt)), segmentDuration * .002, segmentDuration * .95);
+  if (Number.isFinite(Number(patch.dt))) handle.dt = direction * clamp(Number(patch.dt) * direction, segmentDuration * .002, segmentDuration * .95);
   const speed = Number.isFinite(Number(patch.speed)) ? clamp(Number(patch.speed), -MAX_TIME_REMAP_SPEED, MAX_TIME_REMAP_SPEED) : currentSpeed;
   handle.dv = Number.isFinite(Number(patch.dv)) ? Number(patch.dv) : speed * handle.dt;
-  handle.dv = clamp(point.value + handle.dv, 0, mediaSpan(item)) - point.value;
   point[`${side}Handle`] = handle;
   point[`${side}Interpolation`] = 'bezier'; point.autoBezier = false;
   if (patch.split === true) point.continuous = false;
   if (point.continuous && patch.split !== true) {
     const otherSide = side === 'in' ? 'out' : 'in', other = point[`${otherSide}Handle`];
-    if (other && Math.abs(other.dt) > 1e-9) other.dv = clamp(point.value + speed * other.dt, 0, mediaSpan(item)) - point.value;
+    if (other && Math.abs(other.dt) > 1e-9) other.dv = speed * other.dt;
     point[`${otherSide}Interpolation`] = 'continuous';
     point[`${side}Interpolation`] = 'continuous';
+  }
+  const opposingSide = side === 'in' ? 'out' : 'in', opposing = neighbor[`${opposingSide}Handle`], remaining = segmentDuration * .98 - Math.abs(handle.dt);
+  if (opposing && Math.abs(opposing.dt) > remaining) {
+    const length = Math.max(segmentDuration * .002, remaining), scale = length / Math.max(1e-9, Math.abs(opposing.dt));
+    opposing.dt *= scale;
+    opposing.dv *= scale;
   }
   return normalizeTimeRemap(item, { ...remap, enabled: true, keyframes: points });
 }
