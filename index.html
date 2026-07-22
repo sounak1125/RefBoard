@@ -11404,7 +11404,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
           type: blob.type || 'image/png',
           name: rec.name || '',
         }, imgId);
-        await ensureStableImageProxy(im, blob);
+        void ensureStableImageProxy(im, blob);
         await persistImageBlob(im, blob);
         nextImages.set(imgId, im);
       } catch (e) {
