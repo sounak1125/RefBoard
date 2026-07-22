@@ -97,6 +97,13 @@ assert.doesNotMatch(output, /<horiz>\d{3,}\./, 'Basic Motion must never place im
 assert.match(output, /<name>Audio Levels<\/name>/);
 assert.match(output, /<keyframe><when>0<\/when><value>0\.191342<\/value><interp>linear<\/interp><\/keyframe>/, 'Premiere must receive timeline Audio Levels keyframes for fades');
 assert.ok((output.match(/<keyframe>/g) || []).length > 10, 'curved fades must be represented with enough Premiere keyframes');
+const remappedProject=structuredClone(project);const remappedVideo=remappedProject.clips.find(clip=>clip.id==='video');remappedVideo.duration=2;remappedVideo.timeRemap={enabled:true,reverse:true,preservePitch:true,frameInterpolation:'optical-flow',curve:'linear',keyframes:[{time:0,value:0,speed:2},{time:2,value:4,speed:2}]};
+const remappedTimeline=buildPremiereTimeline({project:remappedProject,name:'Remapped Cut',fps:24,width:1920,height:1080,exportStart:0,exportEnd:5,assets}),remappedEntry=remappedTimeline.videoTracks.flat().find(clip=>clip.id==='video'),remappedXml=createPremiereXml(remappedTimeline);
+assert.equal(remappedEntry.timeRemap.reverse,true,'Premiere model must retain reverse playback');
+assert.equal(remappedEntry.timeRemap.speedPercent,200,'Premiere model must retain average remap speed');
+assert.match(remappedXml,/<effectid>timeremap<\/effectid>/,'Premiere XML must emit an editable Time Remap effect');
+assert.match(remappedXml,/<parameterid>reverse<\/parameterid>[\s\S]*?<value>TRUE<\/value>/,'Premiere XML must retain reverse playback');
+assert.match(remappedXml,/<parameterid>frameblending<\/parameterid>[\s\S]*?<value>TRUE<\/value>/,'Premiere XML must enable synthesized frames for blending or optical flow');
 assert.match(output, /<generatoritem id="generatoritem-title-/, 'text layers must export as editable title generators');
 assert.match(output, /<parameterid>str<\/parameterid><name>Text<\/name><value>Title &amp;&#13;Subtitle<\/value>/);
 assert.match(output, /<parameterid>fontname<\/parameterid><name>Font<\/name><value>Montserrat-SemiBoldItalic<\/value>/, 'Premiere text must prefer the exact selected PostScript font face');

@@ -99,6 +99,11 @@ assert.deepEqual(
   'older text layers must receive export-safe character and background defaults',
 );
 
+const remappedProject=structuredClone(project),remappedVideo=remappedProject.clips.find(clip=>clip.id==='video');remappedVideo.duration=2;remappedVideo.timeRemap={enabled:true,reverse:true,preservePitch:true,frameInterpolation:'sampling',curve:'bezier',keyframes:[{time:0,value:0,speed:2},{time:1,value:1,speed:.5},{time:2,value:4,speed:2}]};
+const remappedOutput=buildAfterEffectsProject({project:remappedProject,name:'Remapped Cut',fps:24,width:1920,height:1080,exportStart:0,exportEnd:5,assets}),remappedLayer=remappedOutput.layers.find(layer=>layer.id==='video');
+assert.ok(remappedLayer.timeRemap.length>=16,'After Effects variable ramps must be sampled into editable keyframes');
+assert.ok(remappedLayer.timeRemap[0].value>remappedLayer.timeRemap.at(-1).value,'After Effects reverse remaps must descend through source time');
+
 const script = createAfterEffectsScript(output, {
   mediaFolderName: 'Animatic & Cut_Media',
   projectFileName: 'Animatic & Cut.aep',
@@ -107,6 +112,7 @@ assert.match(script, /^#target aftereffects/);
 assert.match(script, /RefBoard After Effects Project Builder/);
 assert.match(script, /app\.project\.items\.addComp/);
 assert.match(script, /app\.project\.importFile\(new ImportOptions\(sourceFile\)\)/);
+const remappedScript=createAfterEffectsScript(remappedOutput,{mediaFolderName:'Remapped_Media',projectFileName:'Remapped.aep'});assert.match(remappedScript,/layer\.timeRemapEnabled = true/,'After Effects builder must enable layer time remapping');assert.match(remappedScript,/ADBE Time Remapping/,'After Effects builder must write editable remap keyframes');
 assert.match(script, /addFolder\("RefBoard Animatic"\)/, 'After Effects project items must live under a RefBoard root folder');
 assert.match(script, /categoryNames = \{ image:"Images", video:"Videos", audio:"Audio", drawing:"Drawings" \}/, 'After Effects media must be sorted into project-panel folders');
 assert.match(script, /asset\.relativePath/, 'the builder must import from categorized on-disk media folders');

@@ -16,7 +16,7 @@
   },
   "scripts": {
     "start": "electron .",
-    "test": "node scripts/check-build-files.mjs && node scripts/test-group-model.mjs && node scripts/test-group-marquee-selection.mjs && node scripts/test-export-order.mjs && node scripts/test-shell-integration.mjs && node scripts/test-thumbnail-preview.mjs && node scripts/test-landing-layout.mjs && node scripts/test-toolbar-mode.mjs && node scripts/test-theme-system.mjs && node scripts/test-draw-panel-contract.mjs && node scripts/test-selection-tools-contract.mjs && node scripts/test-note-roundtrip.mjs && node scripts/test-note-parsers.mjs && node scripts/test-image-decode-queue.mjs && node scripts/test-image-residency.mjs && node scripts/test-image-render-stability.mjs && node scripts/test-cropped-export.mjs && node scripts/test-clipboard-copy-order.mjs && node scripts/test-board-save-format.mjs && node scripts/test-board-save-as-contract.mjs && node scripts/test-board-preview-backfill.mjs && node scripts/test-board-open-stream.mjs && node scripts/test-navigation-guards.mjs && node scripts/test-animatics-timeline-model.mjs && node scripts/test-animatics-visual-transform.mjs && node scripts/test-animatics-audio-model.mjs && node scripts/test-animatics-premiere-export.mjs && node scripts/test-animatics-after-effects-export.mjs && node scripts/test-animatics-contract.mjs && node scripts/test-changelog-format.mjs",
+    "test": "node scripts/check-build-files.mjs && node scripts/test-group-model.mjs && node scripts/test-group-marquee-selection.mjs && node scripts/test-export-order.mjs && node scripts/test-shell-integration.mjs && node scripts/test-thumbnail-preview.mjs && node scripts/test-landing-layout.mjs && node scripts/test-toolbar-mode.mjs && node scripts/test-theme-system.mjs && node scripts/test-draw-panel-contract.mjs && node scripts/test-selection-tools-contract.mjs && node scripts/test-note-roundtrip.mjs && node scripts/test-note-parsers.mjs && node scripts/test-image-decode-queue.mjs && node scripts/test-image-residency.mjs && node scripts/test-image-render-stability.mjs && node scripts/test-cropped-export.mjs && node scripts/test-clipboard-copy-order.mjs && node scripts/test-board-save-format.mjs && node scripts/test-board-save-as-contract.mjs && node scripts/test-board-preview-backfill.mjs && node scripts/test-board-open-stream.mjs && node scripts/test-navigation-guards.mjs && node scripts/test-animatics-time-remap-model.mjs && node scripts/test-animatics-timeline-model.mjs && node scripts/test-animatics-visual-transform.mjs && node scripts/test-animatics-audio-model.mjs && node scripts/test-animatics-premiere-export.mjs && node scripts/test-animatics-after-effects-export.mjs && node scripts/test-animatics-contract.mjs && node scripts/test-changelog-format.mjs",
     "test:landing-smoke": "electron scripts/smoke-landing-layout.js",
     "test:theme-smoke": "node scripts/smoke-theme-system.mjs",
     "predist": "npm test && node scripts/sync-changelog.mjs",
@@ -24,7 +24,7 @@
     "dist:publish": "electron-builder --win --publish always",
     "gen:icon": "node scripts/gen-icon.js",
     "build:thumb-handler": "node scripts/build-thumb-handler.js",
-    "test:animatics-smoke": "node scripts/smoke-animatics-transform.mjs && node scripts/smoke-animatics-sequence.mjs && node scripts/smoke-animatics-linked-drag.mjs && node scripts/smoke-animatics-track-controls.mjs && node scripts/smoke-animatics-audio-workflow.mjs",
+    "test:animatics-smoke": "node scripts/smoke-animatics-transform.mjs && node scripts/smoke-animatics-sequence.mjs && node scripts/smoke-animatics-linked-drag.mjs && node scripts/smoke-animatics-track-controls.mjs && node scripts/smoke-animatics-audio-workflow.mjs && node scripts/smoke-animatics-time-remap.mjs",
     "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-local-dist.ps1 -ReplaceAssets",
     "release:ship": "powershell -ExecutionPolicy Bypass -File scripts/ship-release.ps1 -DistDir dist-release -Draft",
     "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0"
@@ -56,6 +56,7 @@
       "scripts/export-order.mjs",
       "scripts/navigation-guards.mjs",
       "scripts/animatics-timeline-model.mjs",
+      "scripts/animatics-time-remap-model.mjs",
       "scripts/animatics-visual-transform.mjs",
       "scripts/animatics-audio-model.mjs",
       "scripts/animatics-premiere-export.mjs",

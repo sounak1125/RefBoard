@@ -1,4 +1,5 @@
 import { MAX_AUDIO_GAIN, audioEnvelopePoints } from './animatics-audio-model.mjs';
+import { averageTimeRemapSpeed, normalizeTimeRemap, timeRemapSamples, timeRemapSourceAt } from './animatics-time-remap-model.mjs';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -46,8 +47,8 @@ function clippedTimelineItem(item, kind, fps, exportStart, exportEnd, asset) {
   const timelineStart = premiereFrame(visibleStart - exportStart, fps);
   const timelineEnd = Math.max(timelineStart + 1, premiereFrame(visibleEnd - exportStart, fps));
   const sourceOffset = visibleStart - (Number(item.start) || 0);
-  const sourceInSeconds = kind === 'video' || kind === 'audio' ? (Number(item.sourceIn) || 0) + sourceOffset : sourceOffset;
-  const sourceIn = premiereFrame(sourceInSeconds, fps);
+  const remappable=kind==='video'||kind==='audio',remap=remappable?normalizeTimeRemap(item):null,sourceInSeconds=remappable&&remap.enabled?timeRemapSourceAt(item,sourceOffset):remappable?(Number(item.sourceIn)||0)+sourceOffset:sourceOffset,sourceOutSeconds=remappable&&remap.enabled?timeRemapSourceAt(item,sourceOffset+visibleEnd-visibleStart):sourceInSeconds+visibleEnd-visibleStart;
+  const sourceIn = premiereFrame(Math.min(sourceInSeconds,sourceOutSeconds), fps),sourceOut=Math.max(sourceIn+1,premiereFrame(Math.max(sourceInSeconds,sourceOutSeconds),fps));
   const volume = kind === 'audio' ? clamp(Number.isFinite(Number(item.volume)) ? Number(item.volume) : 1, 0, MAX_AUDIO_GAIN) : 1;
   const audioEnvelope = kind === 'audio'
     ? audioEnvelopePoints(item, { start:sourceOffset, end:sourceOffset + (visibleEnd - visibleStart), samplesPerFade:24 }).map(point => ({
@@ -62,13 +63,19 @@ function clippedTimelineItem(item, kind, fps, exportStart, exportEnd, asset) {
     start: timelineStart,
     end: timelineEnd,
     in: sourceIn,
-    out: sourceIn + (timelineEnd - timelineStart),
+    out: remappable&&remap.enabled?sourceOut:sourceIn + (timelineEnd - timelineStart),
     asset,
     enabled: item.enabled !== false,
     still: kind === 'image' || kind === 'overlay',
     volume,
     audioEnvelope,
     framing: kind === 'image' || kind === 'video' ? item.framing || null : null,
+    timeRemap:remappable&&remap.enabled?{
+      reverse:remap.reverse,
+      speedPercent:Number((Math.abs(averageTimeRemapSpeed(item))*100).toFixed(6)),
+      interpolation:remap.frameInterpolation,
+      keyframes:timeRemapSamples(item,remap.keyframes.length>2?Math.min(64,Math.max(16,Math.ceil((visibleEnd-visibleStart)*8))):2).filter(point=>point.time>=sourceOffset-1e-8&&point.time<=sourceOffset+visibleEnd-visibleStart+1e-8).map(point=>({when:timelineStart+premiereFrame(point.time-sourceOffset,fps),value:premiereFrame(point.source,fps),speed:Number((point.speed*100).toFixed(6))})),
+    }:null,
     text: kind === 'text' ? {
       content: String(item.content ?? ''),
       size: clamp(Number(item.size) || 42, 8, 300),
@@ -150,6 +157,12 @@ function volumeXml(clip) {
   return `<filter><effect><name>Audio Levels</name><effectid>audiolevels</effectid><effectcategory>audiolevels</effectcategory><effecttype>audiolevels</effecttype><mediatype>audio</mediatype><parameter><parameterid>level</parameterid><name>Level</name><valuemin>0</valuemin><valuemax>${MAX_AUDIO_GAIN}</valuemax><value>${clip.volume.toFixed(6)}</value>${keyframes}</parameter></effect></filter>`;
 }
 
+function timeRemapXml(clip) {
+  const remap=clip.timeRemap;if(!remap)return '';
+  const keyframes=(remap.keyframes||[]).map(point=>`<keyframe><when>${point.when}</when><value>${point.value}</value><speedvirtualkf>TRUE</speedvirtualkf><speedkfstart>${point.speed.toFixed(6)}</speedkfstart><speedkfend>${point.speed.toFixed(6)}</speedkfend></keyframe>`).join('');
+  return `<filter><effect><name>Time Remap</name><effectid>timeremap</effectid><effectcategory>motion</effectcategory><effecttype>motion</effecttype><mediatype>${clip.kind==='audio'?'audio':'video'}</mediatype><parameter authoringApp="PremierePro"><parameterid>speed</parameterid><name>Speed</name><valuemin>-10000</valuemin><valuemax>10000</valuemax><value>${(remap.reverse?-remap.speedPercent:remap.speedPercent).toFixed(6)}</value>${keyframes}</parameter><parameter><parameterid>reverse</parameterid><name>Reverse</name><value>${remap.reverse?'TRUE':'FALSE'}</value></parameter><parameter><parameterid>frameblending</parameterid><name>Frame Blending</name><value>${remap.interpolation==='sampling'?'FALSE':'TRUE'}</value></parameter></effect></filter>`;
+}
+
 function fileXml(asset, fps, emitted) {
   const id = `file-${xml(asset.id)}`;
   if (emitted.has(id)) return `<file id="${id}"/>`;
@@ -164,7 +177,7 @@ function fileXml(asset, fps, emitted) {
 function clipXml(clip, index, fps, width, height, emitted) {
   const id = `clipitem-${xml(clip.id)}-${index}`;
   const still = clip.still ? '<stillframe>TRUE</stillframe>' : '';
-  return `<clipitem id="${id}"><name>${xml(clip.asset.name)}</name><enabled>${clip.enabled === false ? 'FALSE' : 'TRUE'}</enabled><duration>${Math.max(1, clip.out - clip.in)}</duration>${rateXml(fps)}<start>${clip.start}</start><end>${clip.end}</end><in>${clip.in}</in><out>${clip.out}</out>${still}${fileXml(clip.asset, fps, emitted)}${transformXml(clip, width, height)}${volumeXml(clip)}</clipitem>`;
+  return `<clipitem id="${id}"><name>${xml(clip.asset.name)}</name><enabled>${clip.enabled === false ? 'FALSE' : 'TRUE'}</enabled><duration>${Math.max(1, clip.out - clip.in)}</duration>${rateXml(fps)}<start>${clip.start}</start><end>${clip.end}</end><in>${clip.in}</in><out>${clip.out}</out>${still}${fileXml(clip.asset, fps, emitted)}${transformXml(clip, width, height)}${timeRemapXml(clip)}${volumeXml(clip)}</clipitem>`;
 }
 
 function textColor(value) {

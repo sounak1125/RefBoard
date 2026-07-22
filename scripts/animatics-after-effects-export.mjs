@@ -1,4 +1,5 @@
 import { audioEnvelopeDbPoints, gainToDb } from './animatics-audio-model.mjs';
+import { hasVariableTimeRemap, normalizeTimeRemap, timeRemapSourceAt } from './animatics-time-remap-model.mjs';
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -33,8 +34,9 @@ function clippedItem(item, kind, fps, exportStart, exportEnd, asset) {
   const start = afterEffectsTime(visibleStart - exportStart, fps);
   const end = Math.max(start + 1 / fps, afterEffectsTime(visibleEnd - exportStart, fps));
   const sourceOffset = visibleStart - itemStart;
-  const sourceIn = kind === 'video' || kind === 'audio'
-    ? afterEffectsTime(finite(item.sourceIn) + sourceOffset, fps)
+  const remappable=kind==='video'||kind==='audio',remap=remappable?normalizeTimeRemap(item):null;
+  const sourceIn = remappable
+    ? afterEffectsTime(remap.enabled?timeRemapSourceAt(item,sourceOffset):finite(item.sourceIn)+sourceOffset, fps)
     : 0;
   return {
     id: String(item.id || `${kind}-${start}`),
@@ -44,11 +46,17 @@ function clippedItem(item, kind, fps, exportStart, exportEnd, asset) {
     start,
     end,
     sourceIn,
+    sourceOffset,
+    visibleDuration:end-start,
     asset,
     enabled: item.enabled !== false,
     linkGroupId: typeof item.linkGroupId === 'string' ? item.linkGroupId : '',
     source: item,
   };
+}
+
+function remapPoints(item,entry,fps){
+  const remap=normalizeTimeRemap(item);if(!remap.enabled)return null;const start=entry.sourceOffset,end=start+entry.visibleDuration,count=hasVariableTimeRemap(item)?Math.min(96,Math.max(16,Math.ceil(entry.visibleDuration*8))):1,times=new Set([start,end,...remap.keyframes.map(point=>point.time).filter(time=>time>start&&time<end)]);for(let index=1;index<count;index++)times.add(start+(end-start)*index/count);return [...times].sort((a,b)=>a-b).map(time=>({time:afterEffectsTime(entry.start+time-start,fps),value:Number(timeRemapSourceAt(item,time).toFixed(6))}));
 }
 
 function visualTransform(item, asset, width, height) {
@@ -129,6 +137,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       start: entry.start,
       end: entry.end,
       sourceIn: entry.sourceIn,
+      timeRemap:remapPoints(item,entry,rate),
       assetId: registerAsset(entry.asset),
       audioDb: audioDecibels(item.volume),
       audioEnvelope,
@@ -150,6 +159,7 @@ export function buildAfterEffectsProject({ project, name, fps, width, height, ex
       start: entry.start,
       end: entry.end,
       sourceIn: entry.sourceIn,
+      timeRemap:remapPoints(item,entry,rate),
       enabled: entry.enabled && project.videoTrackEnabled?.[entry.track] !== false,
       locked: project.videoTrackLocked?.[entry.track] === true,
       assetId: registerAsset(entry.asset),
@@ -345,6 +355,15 @@ export function createAfterEffectsScript(project, { mediaFolderName, projectFile
       layer.startTime = spec.kind === "video" || spec.kind === "audio" ? spec.start - spec.sourceIn : spec.start;
       layer.inPoint = spec.start;
       layer.outPoint = spec.end;
+      if (spec.timeRemap && spec.timeRemap.length > 1 && (spec.kind === "video" || spec.kind === "audio")) {
+        layer.timeRemapEnabled = true;
+        var timeRemap = layer.property("ADBE Time Remapping");
+        while (timeRemap && timeRemap.numKeys > 0) timeRemap.removeKey(timeRemap.numKeys);
+        for (var remapIndex = 0; timeRemap && remapIndex < spec.timeRemap.length; remapIndex++) {
+          timeRemap.setValueAtTime(spec.timeRemap[remapIndex].time, spec.timeRemap[remapIndex].value);
+        }
+        layer.startTime = 0;
+      }
       if (spec.linkGroupId) layer.comment = "RefBoard linked group: " + spec.linkGroupId;
       setTransform(layer, spec.transform);
       if (spec.kind === "audio") {

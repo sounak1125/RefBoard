@@ -11,6 +11,7 @@ const afterEffects = fs.readFileSync(new URL('./animatics-after-effects-export.m
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 assert.ok(pkg.build.files.includes('scripts/animatics-visual-transform.mjs'), 'packaged builds must include the shared Animatics transform module');
 assert.ok(pkg.build.files.includes('scripts/animatics-audio-model.mjs'), 'packaged builds must include the shared Animatics audio automation model');
+assert.ok(pkg.build.files.includes('scripts/animatics-time-remap-model.mjs'), 'packaged builds must include the Animatics time remapping model');
 
 assert.match(html, /id="sAnimatics"/, 'selection toolbar must expose Animatics');
 assert.match(html, /id="btnAnimatics"/, 'board toolbar must reopen Animatics without a selection');
@@ -32,6 +33,17 @@ assert.match(editor, /value="24"/, '24 fps export option must exist');
 assert.match(editor, /value="30"/, '30 fps export option must exist');
 assert.match(editor, /value="60"/, '60 fps export option must exist');
 assert.match(editor, /id="anDurationFrames"/, 'clip duration must be editable in frames');
+assert.match(editor, /id="anContextSpeed"/, 'Animatics must expose Speed and Duration from its clip context menu');
+assert.match(editor, /id="anSpeedModal"/, 'Speed and Duration must use a dedicated settings dialog');
+assert.match(editor, /id="anTimeRemapGraph"/, 'the settings dialog must expose an interactive remap graph');
+assert.match(editor, /id="anGraphSpeed"[\s\S]*?id="anGraphValue"/, 'the graph must expose both Speed and Value views');
+assert.match(editor, /requestAnimationFrame\(\(\)=>\{graphPaintRaf=0;paintTimeRemapGraph\(\);\}\)/, 'graph painting must be frame-coalesced to avoid pointer jitter');
+assert.match(editor, /desired=timeRemapSourceAt\(clip,local\)/, 'video preview seeking must use the shared remap curve');
+assert.match(editor, /exportAudioRemapSegments/, 'MP4 audio export must build remap-aware source segments');
+assert.match(main, /rubberband=tempo=/, 'MP4 export must use bundled high-quality pitch-preserving time stretch');
+assert.match(main, /minterpolate=fps=\$\{session\.fps\}:mi_mode=mci/, 'MP4 optical-flow export must use motion-compensated interpolation');
+assert.match(premiere, /<effectid>timeremap<\/effectid>/, 'Premiere export must emit Time Remap metadata');
+assert.match(afterEffects, /layer\.timeRemapEnabled = true/, 'After Effects export must create editable Time Remap keyframes');
 assert.match(editor, /id="anTextFont"/, 'text inspector must expose font family');
 assert.match(editor, /id="anTextFontStyle"/, 'text inspector must expose a second dropdown for installed family styles');
 assert.match(editor, /id="anTextBold"/, 'text inspector must expose bold');
@@ -64,7 +76,7 @@ assert.match(editor, /function setSafeGuidesVisible\(visible\)\{[\s\S]*?guides\.
 assert.match(editor, /id="anPreviewMute"/, 'the viewer transport must expose a global preview-mute button');
 assert.match(editor, /function previewAudioVolume\(clip\)\{return previewMuted\?0:effectiveAudioVolume\(clip\);\}/, 'global preview mute must wrap rather than alter timeline audio gain');
 assert.match(editor, /function scheduleClipGain\([\s\S]*?base=previewAudioVolume\(clip\)/, 'active playback gain scheduling must honor global preview mute');
-assert.match(editor, /volume:effectiveAudioVolume\(a\),envelope:/, 'MP4 export audio must ignore the viewer-only preview mute');
+assert.match(editor, /volume:effectiveAudioVolume\(a\),[^\n]*envelope:/, 'MP4 export audio must ignore the viewer-only preview mute');
 assert.doesNotMatch(editor, /canvas\.addEventListener\('pointerdown'[\s\S]*?beginInlineTextEdit\(hit\.text\)[\s\S]*?canvas\.addEventListener\('pointermove'/, 'single-click canvas selection must not enter inline text editing');
 assert.match(editor, /canvas\.addEventListener\('dblclick'[\s\S]*?if\(hit\.mode!=='move'\)return;[\s\S]*?beginInlineTextEdit\(hit\.text\)/, 'only a text-body double click may enter inline editing');
 assert.match(editor, /if\(!drawMode&&!framingMode\)\{if\(activeTool==='select'\)\{beginViewerTextMarquee\(e\);return;\}/, 'empty selection-tool drags must begin preview text marquee selection');
@@ -111,7 +123,7 @@ assert.match(editor, /function fittedTimelineZoom\(total=duration\(\)\)/, 'timel
 assert.match(editor, /const available=scroll\.clientWidth-TRACK_LABEL_WIDTH/, 'fitted zoom must exclude the fixed track-label gutter');
 assert.match(editor, /zoom\.min=String\(fitZoom\?\?MIN_TIMELINE_ZOOM\)/, 'the furthest zoom-out position must fit the complete sequence');
 assert.match(editor, /if\(wasFitted\)project\.timelineZoom=fitZoom/, 'duration changes must remain fitted when the user was already at fitted view');
-assert.match(editor, /window\.addEventListener\('resize',\(\)=>\{if\(open\)\{applyInspectorWidth\(\);resizeViewer\(\);renderTimeline\(\);positionDrawWidthMenu\(\);\}\}\)/, 'window resizing must constrain the inspector, recalculate fitted timeline zoom, and reposition open popovers');
+assert.match(editor, /window\.addEventListener\('resize',\(\)=>\{if\(open\)\{applyInspectorWidth\(\);resizeViewer\(\);renderTimeline\(\);positionDrawWidthMenu\(\);[^\n]*\}\}\)/, 'window resizing must constrain the inspector, recalculate fitted timeline zoom, and reposition open popovers');
 assert.match(editor, /project\.playhead\*oldPx-scroll\.scrollLeft/, 'timeline zoom must preserve the red playhead position in the viewport');
 assert.match(editor, /project\.playhead\*project\.timelineZoom\+TRACK_LABEL_WIDTH-anchorX/, 'zoomed timeline scrolling must remain anchored to the fitted or requested playhead scale');
 assert.match(editor, /id="anAudioTrimModal"/, 'audio import must open a source trimmer');
@@ -162,7 +174,8 @@ assert.match(editor, /addVideoFiles\(videos,\{track:visualTrack,start:visualStar
 assert.match(editor, /mediaKind:'video'/, 'imported videos must use persisted media clips');
 assert.match(editor, /videoSourceAt\(clip,t,fullQuality\)/, 'viewer and export must render video frames at timeline time');
 assert.match(editor, /requestVideoFrameCallback/, 'video playback must render on decoded video-frame cadence');
-assert.match(editor, /if\(!clipsAt\(next\)\.some\(isVideoClip\)\)drawViewer\(\)/, 'the animation tick must not repeatedly seek and repaint active video');
+assert.match(editor, /if\(seekDriven\)scheduleScrubPreview\(\);else if\(!activeVideos\.length\)drawViewer\(\)/, 'the animation tick must repaint only reverse seek-driven video and otherwise follow decoded frame cadence');
+assert.match(editor, /Math\.abs\(\(video\.currentTime\|\|0\)-desired\)>\.12/, 'forward speed ramps must resync only after meaningful drift instead of seeking every frame');
 assert.match(editor, /onOpen\s*=\s*\(\)\s*=>\s*\{\}/, 'Animatics must expose a board-view capture callback');
 assert.match(editor, /onClose\s*=\s*\(\)\s*=>\s*\{\}/, 'Animatics must expose a board-return recovery callback');
 assert.match(editor, /if\(!open\)\{try\{onOpen\(\)/, 'Animatics must capture the board view once before opening');
@@ -330,8 +343,10 @@ assert.match(editor, /linkTimelineItems\(timelineMediaItems\(\),ids,uid\(\)\)/, 
 assert.match(editor, /linkedTimelineIds\(timelineMediaItems\(\),selectedTimelineIds\)/, 'timeline dragging must expand through linked partners');
 assert.match(editor, /constrainedTrackDelta\(sameKind\.map\(original=>original\.values\),requestedTrackDelta,trackCount\)/, 'linked clips must use one group-safe track delta');
 assert.match(editor, /targetTrack:\(original\.values\.track\|\|0\)\+\(original\.kind===dragging\.kind\?trackDelta:0\)/, 'group snapping must evaluate every linked edge on its destination track');
-assert.match(editor, /visuals\.push\(\{original,sourceEl:el,ghost\}\)/, 'each linked ghost must remain bound to its exact timeline item');
-assert.match(editor, /for\(const visual of dragging\.visuals\)/, 'linked ghost updates must iterate bound visual records together');
+assert.match(editor, /visuals\.push\(\{original,sourceEl:el\|\|null,ghost\}\)/, 'each linked ghost must remain bound to its exact timeline item, including virtualized partners');
+assert.match(editor, /function paintTimelineDragVisuals\(\)[\s\S]*?for\(const visual of state\.visuals\)/, 'linked ghost updates must iterate bound visual records together');
+assert.match(editor, /function scheduleTimelineDragVisuals[\s\S]*?requestAnimationFrame\(paintTimelineDragVisuals\)/, 'rapid timeline pointer movement must coalesce ghost paints through one animation frame');
+assert.match(editor, /function copyTimelineGhostRaster[\s\S]*?drawImage\(from,0,0\)/, 'audio drag ghosts must preserve their waveform canvas bitmap');
 assert.match(editor, /splitLinkedTimelineItems\(source,entry\.item\.id,at/, 'the cut tool must split linked visual and audio clips together');
 assert.match(editor, /typeof c\.linkGroupId==='string'/, 'saved visual link metadata must be restored');
 assert.match(editor, /typeof a\.linkGroupId==='string'/, 'saved audio link metadata must be restored');
@@ -380,6 +395,8 @@ assert.match(editor, /filterClipsInTimeRange\(/, 'timeline clip virtualization m
 assert.match(editor, /function timelineClipVirtualizationSuspended\(\)/, 'clip virtualization must expose an interaction suspend path');
 assert.match(editor, /dragging\|\|marqueeDrag\|\|audioFadeDrag/, 'clip virtualization must suspend during drag, marquee, and audio-fade interactions');
 assert.match(editor, /function syncVirtualizedTimelineClips\(\)/, 'scroll must re-sync mounted timeline clips without rebuilding the whole grid');
+assert.match(editor, /function syncVirtualizedTimelineClips\(\)[\s\S]*?if\(timelineClipVirtualizationSuspended\(\)\)return;/, 'active timeline interactions must freeze the mounted viewport instead of materializing every off-screen clip');
+assert.doesNotMatch(editor, /timelineClipVirtualizationSuspended\(\)\|\|!\(scroll\.clientWidth>TRACK_LABEL_WIDTH\)\)return \{start:-Infinity/, 'dragging must never expand the virtualized timeline range to every clip');
 assert.match(editor, /scheduleVirtualizedClipSync/, 'timeline scroll clip sync must coalesce through requestAnimationFrame');
 assert.match(editor, /scroll\.addEventListener\('scroll',\(\)=>\{syncPlayheadVisibility\(\);scheduleVirtualizedClipSync\(\);\}/, 'horizontal timeline scroll must refresh virtualized clips');
 assert.match(editor, /class="an-gap/, 'timeline gaps must render as dedicated selection targets');
@@ -464,7 +481,7 @@ assert.match(editor, /id="anAudioVolume"/, 'audio inspector must expose volume c
 assert.match(editor, /createGain\(\)/, 'preview audio must support gain above 100 percent');
 assert.match(editor, /canvas class="an-wave"/, 'audio clips must render real waveform canvases');
 assert.match(editor, /waveformPeaks\(/, 'waveform decoding must downsample real audio samples');
-assert.match(editor, /waveformWindow\(/, 'timeline waveforms must follow source In and Out points');
+assert.match(editor, /sourceA=timeRemapSourceAt\(clip,localA\),sourceB=timeRemapSourceAt\(clip,localB\)/, 'timeline waveforms must follow remapped source time in both directions');
 assert.match(editor, /const DRAW_BRUSHES\s*=\s*\{[\s\S]*?pen:[\s\S]*?soft:[\s\S]*?marker:[\s\S]*?pencil:/, 'Animatics Draw must provide the four board brush styles');
 assert.match(editor, /const drawToolWidths\s*=\s*\{\s*pen:\s*2,\s*eraser:\s*15\s*\}/, 'pen and eraser must retain independent sizes');
 assert.match(editor, /globalCompositeOperation=eraser\?'destination-out':'source-over'/, 'the eraser must remove drawing overlay pixels without changing source media');

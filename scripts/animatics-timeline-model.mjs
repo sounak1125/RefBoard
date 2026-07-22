@@ -1,3 +1,5 @@
+import { cropTimeRemappedItem, retimeCurveToDuration } from './animatics-time-remap-model.mjs';
+
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
 export function timelineEnd(item) {
@@ -104,13 +106,14 @@ export function snappedTime({ time = 0, candidates = [], threshold = 0, enabled 
 }
 
 function segmentFrom(item, localStart, localEnd, id, suffix = '') {
-  const result = {
+  const remapped = item?.timeRemap?.enabled === true && Number.isFinite(Number(item.sourceIn));
+  const result = remapped ? cropTimeRemappedItem(item, localStart, localEnd) : {
     ...item,
-    id,
-    start: finite(item.start) + localStart,
     duration: localEnd - localStart,
   };
-  if (Number.isFinite(Number(item.sourceIn))) {
+  result.id = id;
+  result.start = finite(item.start) + localStart;
+  if (!remapped && Number.isFinite(Number(item.sourceIn))) {
     result.sourceIn = finite(item.sourceIn) + localStart;
     result.sourceOut = result.sourceIn + result.duration;
   }
@@ -189,6 +192,7 @@ function cloneClipboardItem(item) {
   const copy = { ...item };
   if (item?.framing) copy.framing = { ...item.framing };
   if (Array.isArray(item?.strokes)) copy.strokes = structuredClone(item.strokes);
+  if (item?.timeRemap) copy.timeRemap = structuredClone(item.timeRemap);
   return copy;
 }
 
@@ -315,8 +319,10 @@ export function applyBatchTimelineDuration(items, ids, requestedDuration, {
     const duration = Math.max(minDuration, Math.min(wanted, sourceMax, sequenceMax));
     if (Math.abs(duration - wanted) > 1e-8) clampedIds.push(item.id);
     if (Math.abs(duration - finite(item.duration)) <= 1e-8) return item;
-    const next = { ...item, duration };
-    if (Number.isFinite(Number(item.sourceIn)) && Number.isFinite(Number(item.originalDuration))) next.sourceOut = finite(item.sourceIn) + duration;
+    const next = item?.timeRemap?.enabled === true
+      ? { ...item, ...retimeCurveToDuration(item, duration) }
+      : { ...item, duration };
+    if (item?.timeRemap?.enabled !== true && Number.isFinite(Number(item.sourceIn)) && Number.isFinite(Number(item.originalDuration))) next.sourceOut = finite(item.sourceIn) + duration;
     changedIds.push(item.id);
     return next;
   });

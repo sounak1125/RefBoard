@@ -366,6 +366,19 @@ function setupIpc() {
     return expression;
   }
 
+  function normalizedAnimaticRemapSegments(value, duration) {
+    const maximumDuration = Math.max(1e-6, Number(duration) || 0);
+    const segments = (Array.isArray(value) ? value : []).slice(0, 128).map(segment => ({
+      sourceStart: Math.max(0, Number(segment?.sourceStart) || 0),
+      sourceEnd: Math.max(0, Number(segment?.sourceEnd) || 0),
+      duration: Math.max(1e-6, Math.min(maximumDuration, Number(segment?.duration) || 0)),
+      speed: Math.max(.01, Math.min(100, Number(segment?.speed) || 1)),
+      reverse: segment?.reverse === true,
+      freeze: segment?.freeze === true || Math.abs((Number(segment?.sourceEnd) || 0) - (Number(segment?.sourceStart) || 0)) <= 1e-8,
+    })).filter(segment => Number.isFinite(segment.sourceStart) && Number.isFinite(segment.sourceEnd));
+    return segments;
+  }
+
   async function discardBoardSaveSession(session) {
     if (!session) return;
     try { await session.handle?.close(); } catch { /* already closed */ }
@@ -410,6 +423,7 @@ function setupIpc() {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'refboard-animatic-'));
     animaticExportSessions.set(token, {
       token, ownerId: event.sender.id, dir, output: picked.filePath, fps, width, height,
+      timeInterpolation: settings.timeInterpolation === 'optical-flow' ? 'optical-flow' : 'sampling',
       frames: [], audio: [],
       timer: setTimeout(() => {
         const stale = animaticExportSessions.get(token);
@@ -434,7 +448,7 @@ function setupIpc() {
   ipcMain.handle('append-animatic-audio', async (event, { token, audio } = {}) => {
     const session = animaticExportSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown animatic export session');
-    if (session.audio.length >= 5) return { appended: false };
+    if (session.audio.length >= 256) return { appended: false };
     const suppliedExt = path.extname(String(audio?.name || '')).toLowerCase();
     const ext = /^\.(wav|mp3|m4a|aac|ogg|flac|opus)$/i.test(suppliedExt) ? suppliedExt : '.audio';
     const name = `audio-${session.audio.length}${ext}`;
@@ -446,6 +460,8 @@ function setupIpc() {
       duration: Math.max(1 / session.fps, Math.min(3600, Number(audio?.duration) || 1 / session.fps)),
       volume: Number.isFinite(Number(audio?.volume)) ? Math.max(0, Math.min(3.981072, Number(audio.volume))) : 1,
       envelope: normalizedAnimaticAudioEnvelope(audio?.envelope, audio?.duration),
+      preservePitch: audio?.preservePitch !== false,
+      remapSegments: normalizedAnimaticRemapSegments(audio?.remapSegments, audio?.duration),
     });
     return { appended: true };
   });
@@ -466,15 +482,40 @@ function setupIpc() {
       concatLines.push(`file '${session.frames.at(-1).name}'`);
       await fs.writeFile(path.join(session.dir, 'frames.txt'), concatLines.join('\n'), 'utf8');
       const args = ['-y', '-f', 'concat', '-safe', '0', '-i', 'frames.txt'];
-      for (const audio of session.audio) args.push('-ss', audio.sourceIn.toFixed(6), '-t', audio.duration.toFixed(6), '-i', audio.name);
+      for (const audio of session.audio) {
+        if (audio.remapSegments.length) args.push('-i', audio.name);
+        else args.push('-ss', audio.sourceIn.toFixed(6), '-t', audio.duration.toFixed(6), '-i', audio.name);
+      }
       if (session.audio.length) {
-        const filters = session.audio.map((audio, index) => {
+        const filters = [];
+        for (let index = 0; index < session.audio.length; index++) {
+          const audio = session.audio[index];
           const delay = Math.round(audio.start * 1000);
           const envelope = animaticAudioEnvelopeExpression(audio.envelope);
           const volumeFilters = [`volume=${audio.volume}`];
           if (envelope) volumeFilters.push(`volume='${envelope}':eval=frame`);
-          return `[${index + 1}:a]${volumeFilters.join(',')},adelay=${delay}|${delay}[a${index}]`;
-        });
+          let input = `[${index + 1}:a]`;
+          if (audio.remapSegments.length) {
+            const segmentLabels = [];
+            const activeSegments = audio.remapSegments.map((segment, segmentIndex) => ({segment,segmentIndex})).filter(entry => !entry.segment.freeze);
+            const sourceLabels = new Map(activeSegments.map((entry, activeIndex) => [entry.segmentIndex, `ar${index}i${activeIndex}`]));
+            if (activeSegments.length > 1) filters.push(`${input}asplit=${activeSegments.length}${[...sourceLabels.values()].map(label => `[${label}]`).join('')}`);
+            audio.remapSegments.forEach((segment, segmentIndex) => {
+              const start = Math.min(segment.sourceStart, segment.sourceEnd).toFixed(8), end = Math.max(segment.sourceStart, segment.sourceEnd).toFixed(8), wanted = segment.duration.toFixed(8), label = `ar${index}s${segmentIndex}`;
+              if (segment.freeze) { filters.push(`anullsrc=r=48000:cl=stereo,atrim=duration=${wanted}[${label}]`); segmentLabels.push(`[${label}]`); return; }
+              const tempo = Math.abs(segment.speed - 1) < 1e-6 ? '' : audio.preservePitch
+                ? `,rubberband=tempo=${segment.speed.toFixed(8)}`
+                : `,aresample=48000,asetrate=${(48000 * segment.speed).toFixed(4)},aresample=48000`;
+              const segmentInput = activeSegments.length > 1 ? `[${sourceLabels.get(segmentIndex)}]` : input;
+              filters.push(`${segmentInput}atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS${segment.reverse?',areverse':''}${tempo},apad=whole_dur=${wanted},atrim=duration=${wanted}[${label}]`);
+              segmentLabels.push(`[${label}]`);
+            });
+            const remapped = `ar${index}`;
+            filters.push(`${segmentLabels.join('')}concat=n=${segmentLabels.length}:v=0:a=1[${remapped}]`);
+            input = `[${remapped}]`;
+          }
+          filters.push(`${input}${volumeFilters.join(',')},adelay=${delay}|${delay}[a${index}]`);
+        }
         filters.push(`${session.audio.map((_, i) => `[a${i}]`).join('')}amix=inputs=${session.audio.length}:duration=longest:dropout_transition=0[aout]`);
         args.push('-filter_complex', filters.join(';'), '-map', '0:v:0', '-map', '[aout]');
       } else {
@@ -484,6 +525,7 @@ function setupIpc() {
         '-r', String(session.fps), '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
         '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-t', totalDuration.toFixed(6),
       );
+      if (session.timeInterpolation === 'optical-flow') args.splice(args.indexOf('-c:v'), 0, '-vf', `minterpolate=fps=${session.fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bilat`);
       if (session.audio.length) args.push('-c:a', 'aac', '-b:a', '192k');
       args.push(session.output);
       await runFfmpeg(args, session.dir);

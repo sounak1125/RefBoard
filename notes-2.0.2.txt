@@ -1,0 +1,16 @@
+﻿# Cleaner starts, faster boards
+
+RefBoard opens large boards faster, starts fresh on launch, and restores your file previews.
+
+## New
+
+- **Choose when to restore** - RefBoard now opens to your home screen. If you left unsaved work, a card offers to restore it â?" so you start fresh unless you choose otherwise.
+
+## Improved
+
+- **Faster board opening** - Large boards open roughly twice as fast, showing your images sooner.
+
+## Fixed
+
+- **Board previews restored** - Saved boards again show their image preview as the file thumbnail in Explorer.
+- **Saving after restore** - A restored board now saves back to its original file instead of prompting for a new one.
