@@ -1,16 +1,16 @@
 {
-  "headline": "Introducing Animatics",
-  "summary": "RefBoard 2.0 turns your reference boards into motion, with a redesigned interface and a whole new way to work.",
+  "headline": "Cleaner starts, faster boards",
+  "summary": "RefBoard opens large boards faster, starts fresh on launch, and restores your file previews.",
   "sections": {
     "new": [
-      { "title": "Animatics timeline", "description": "Turn references into motion with a layered timeline, audio tracks, and precise in/out controls." },
-      { "title": "Export to Premiere & After Effects", "description": "Hand off your animatic straight to your editing and compositing workflow." },
-      { "title": "Themes", "description": "Personalize RefBoard's look with a refreshed, themeable interface." }
+      { "title": "Choose when to restore", "description": "RefBoard now opens to your home screen. If you left unsaved work, a card offers to restore it \u2014 so you start fresh unless you choose otherwise." }
     ],
     "improved": [
-      { "title": "Redesigned interface", "description": "A cleaner, more focused workspace across the board and landing screens." },
-      { "title": "Board Save As", "description": "Save a copy of any board without overwriting your original." }
+      { "title": "Faster board opening", "description": "Large boards open roughly twice as fast, showing your images sooner." }
     ],
-    "fixed": []
+    "fixed": [
+      { "title": "Board previews restored", "description": "Saved boards again show their image preview as the file thumbnail in Explorer." },
+      { "title": "Saving after restore", "description": "A restored board now saves back to its original file instead of prompting for a new one." }
+    ]
   }
 }

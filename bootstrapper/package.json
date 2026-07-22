@@ -1,6 +1,6 @@
 {
   "name": "refboard-bootstrapper",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Cinematic bootstrapper that runs the real RefBoard installer underneath a branded UI.",
   "author": "Sounak",
   "license": "MIT",
