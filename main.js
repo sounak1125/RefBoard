@@ -15,9 +15,25 @@ const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
-let win = null;
+const windows = new Set();
+const MAX_BOARD_WINDOWS = 4;
 let closing = false;
 let pendingOpenPath = null;
+
+function focusedWindow() {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (focused && windows.has(focused) && !focused.isDestroyed()) return focused;
+  for (const candidate of windows) {
+    if (candidate && !candidate.isDestroyed()) return candidate;
+  }
+  return null;
+}
+
+function windowForEvent(event) {
+  const fromSender = BrowserWindow.fromWebContents(event.sender);
+  if (fromSender && windows.has(fromSender) && !fromSender.isDestroyed()) return fromSender;
+  return focusedWindow();
+}
 
 const MAX_RECENT = 24;
 
@@ -227,9 +243,11 @@ async function getCurrentWhatsNew() {
 }
 
 function notifyRenderer(msg) {
-  if (!win) return;
   const safe = JSON.stringify(msg);
-  win.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
+  for (const candidate of windows) {
+    if (!candidate || candidate.isDestroyed()) continue;
+    candidate.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
+  }
 }
 
 let manualUpdateCheck = false;
@@ -458,8 +476,8 @@ function setupIpc() {
     await fs.unlink(session.tempPath).catch(() => {});
   }
 
-  ipcMain.handle('choose-folder', async () => {
-    const r = await dialog.showOpenDialog(win, {
+  ipcMain.handle('choose-folder', async event => {
+    const r = await dialog.showOpenDialog(windowForEvent(event), {
       title: 'Choose export folder',
       properties: ['openDirectory', 'createDirectory'],
     });
@@ -490,9 +508,9 @@ function setupIpc() {
     return { ...settings, ...(await cleanupPreviewCache(settings)) };
   });
 
-  ipcMain.handle('choose-animatics-preview-cache-folder', async () => {
+  ipcMain.handle('choose-animatics-preview-cache-folder', async event => {
     const settings = await loadPreviewCacheSettings();
-    const picked = await dialog.showOpenDialog(win, { title:'Choose Animatics cache drive or folder', defaultPath:settings.location, properties:['openDirectory','createDirectory'] });
+    const picked = await dialog.showOpenDialog(windowForEvent(event), { title:'Choose Animatics cache drive or folder', defaultPath:settings.location, properties:['openDirectory','createDirectory'] });
     if (picked.canceled || !picked.filePaths.length) return null;
     const next = await savePreviewCacheSettings({ ...settings, location:picked.filePaths[0] });
     await fs.mkdir(previewCacheRoot(next), { recursive:true });
@@ -524,7 +542,7 @@ function setupIpc() {
     const width = Math.max(2, Math.min(4096, Math.round((Number.isFinite(requestedWidth) ? requestedWidth : 1920) / 2) * 2));
     const height = Math.max(2, Math.min(4096, Math.round((Number.isFinite(requestedHeight) ? requestedHeight : 1080) / 2) * 2));
     const defaultName = path.basename(String(settings.defaultName || 'refboard-animatic.mp4')).replace(/[^\w. -]/g, '_');
-    const picked = await dialog.showSaveDialog(win, {
+    const picked = await dialog.showSaveDialog(windowForEvent(event), {
       title: 'Export RefBoard animatic',
       defaultPath: path.join(app.getPath('videos'), defaultName),
       filters: [{ name: 'H.264 video', extensions: ['mp4'] }],
@@ -688,7 +706,7 @@ function setupIpc() {
 
   ipcMain.handle('begin-premiere-export', async (event, settings = {}) => {
     const defaultName = path.basename(String(settings.defaultName || 'refboard-animatic.xml')).replace(/[^\w. -]/g, '_');
-    const picked = await dialog.showSaveDialog(win, {
+    const picked = await dialog.showSaveDialog(windowForEvent(event), {
       title: 'Export Premiere Pro timeline',
       defaultPath: path.join(app.getPath('videos'), defaultName),
       filters: [{ name: 'Premiere Pro XML timeline', extensions: ['xml'] }],
@@ -765,7 +783,7 @@ function setupIpc() {
 
   ipcMain.handle('begin-after-effects-export', async (event, settings = {}) => {
     const defaultName = path.basename(String(settings.defaultName || 'refboard-animatic-after-effects.jsx')).replace(/[^\w. -]/g, '_');
-    const picked = await dialog.showSaveDialog(win, {
+    const picked = await dialog.showSaveDialog(windowForEvent(event), {
       title: 'Export After Effects project builder',
       defaultPath: path.join(app.getPath('videos'), defaultName),
       filters: [{ name: 'After Effects project builder', extensions: ['jsx'] }],
@@ -873,10 +891,10 @@ function setupIpc() {
     return { count, dir };
   });
 
-  ipcMain.handle('save-board-file', async (_, { defaultName, data, filePath, forceDialog = false }) => {
+  ipcMain.handle('save-board-file', async (event, { defaultName, data, filePath, forceDialog = false }) => {
     let target = forceDialog ? null : filePath;
     if (!target) {
-      const r = await dialog.showSaveDialog(win, {
+      const r = await dialog.showSaveDialog(windowForEvent(event), {
         title: 'Save RefBoard board',
         defaultPath: filePath || path.join(app.getPath('documents'), defaultName),
         filters: [{ name: 'RefBoard board', extensions: ['refboard'] }],
@@ -892,7 +910,7 @@ function setupIpc() {
   ipcMain.handle('begin-board-save', async (event, { defaultName, filePath, forceDialog = false, core, preview }) => {
     let target = forceDialog ? null : filePath;
     if (!target) {
-      const r = await dialog.showSaveDialog(win, {
+      const r = await dialog.showSaveDialog(windowForEvent(event), {
         title: 'Save RefBoard board',
         defaultPath: filePath || path.join(app.getPath('documents'), defaultName),
         filters: [{ name: 'RefBoard board', extensions: ['refboard'] }],
@@ -964,8 +982,8 @@ function setupIpc() {
     return { aborted: true };
   });
 
-  ipcMain.handle('open-board-dialog', async () => {
-    const r = await dialog.showOpenDialog(win, {
+  ipcMain.handle('open-board-dialog', async event => {
+    const r = await dialog.showOpenDialog(windowForEvent(event), {
       title: 'Open RefBoard board',
       filters: [{ name: 'RefBoard board', extensions: ['refboard'] }],
       properties: ['openFile'],
@@ -1180,27 +1198,48 @@ function setupIpc() {
     return p || null;
   });
 
-  ipcMain.on('close-confirmed', () => {
+  ipcMain.handle('open-board-window', async (_, payload = {}) => {
+    const filePath = /\.refboard$/i.test(String(payload?.filePath || ''))
+      ? path.resolve(String(payload.filePath))
+      : null;
+    if (windows.size >= MAX_BOARD_WINDOWS) {
+      const owner = focusedWindow();
+      if (owner && !owner.isDestroyed()) {
+        if (owner.isMinimized()) owner.restore();
+        owner.focus();
+      }
+      return { opened: false, reason: 'window-limit', limit: MAX_BOARD_WINDOWS };
+    }
+    const boardWindow = await createWindow(filePath);
+    return { opened: !!boardWindow, limit: MAX_BOARD_WINDOWS };
+  });
+
+  ipcMain.on('close-confirmed', event => {
     closing = true;
-    if (win && !win.isDestroyed()) win.close();
+    const target = windowForEvent(event);
+    if (target && !target.isDestroyed()) target.close();
   });
 
-  ipcMain.on('window-minimize', () => {
-    if (win && !win.isDestroyed()) win.minimize();
+  ipcMain.on('window-minimize', event => {
+    const target = windowForEvent(event);
+    if (target && !target.isDestroyed()) target.minimize();
   });
 
-  ipcMain.on('window-maximize', () => {
-    if (!win || win.isDestroyed()) return;
-    if (win.isMaximized()) win.unmaximize();
-    else win.maximize();
+  ipcMain.on('window-maximize', event => {
+    const target = windowForEvent(event);
+    if (!target || target.isDestroyed()) return;
+    if (target.isMaximized()) target.unmaximize();
+    else target.maximize();
   });
 
-  ipcMain.on('window-close', () => {
-    if (win && !win.isDestroyed()) win.webContents.send('close-request');
+  ipcMain.on('window-close', event => {
+    const target = windowForEvent(event);
+    if (target && !target.isDestroyed()) target.webContents.send('close-request');
   });
 
-  ipcMain.handle('window-is-maximized', () => {
-    return !!(win && !win.isDestroyed() && win.isMaximized());
+  ipcMain.handle('window-is-maximized', event => {
+    const target = windowForEvent(event);
+    return !!(target && !target.isDestroyed() && target.isMaximized());
   });
 
   ipcMain.handle('install-update', () => {
@@ -1323,8 +1362,8 @@ function registerFileTypeIntegration() {
   });
 }
 
-async function createWindow() {
-  win = new BrowserWindow({
+async function createWindow(startupFilePath = null) {
+  const win = new BrowserWindow({
     width: 1360,
     height: 860,
     minWidth: 720,
@@ -1341,9 +1380,12 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+  windows.add(win);
 
   Menu.setApplicationMenu(null);
-  await win.loadFile('index.html');
+  await win.loadFile('index.html').catch(err => {
+    console.warn('RefBoard window initial load failed:', err?.message || err);
+  });
 
   win.webContents.on('will-navigate', e => e.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -1367,30 +1409,39 @@ async function createWindow() {
       e.preventDefault();
       const on = !win.isAlwaysOnTop();
       win.setAlwaysOnTop(on, 'floating');
-      notifyRenderer(on ? 'Pinned on top of other windows' : 'Unpinned');
+      const safe = JSON.stringify(on ? 'Pinned on top of other windows' : 'Unpinned');
+      win.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
     }
   });
 
-  win.on('closed', () => { win = null; });
+  win.on('closed', () => { windows.delete(win); });
 
   const sendMaximizeState = () => {
-    if (win && !win.isDestroyed()) {
+    if (!win.isDestroyed()) {
       win.webContents.send('window-maximize-changed', win.isMaximized());
     }
   };
   win.on('maximize', sendMaximizeState);
   win.on('unmaximize', sendMaximizeState);
-  win.webContents.on('did-finish-load', sendMaximizeState);
+  win.webContents.on('did-finish-load', () => {
+    sendMaximizeState();
+    if (startupFilePath && !win.isDestroyed()) {
+      win.webContents.send('open-board-path', startupFilePath);
+    }
+  });
 
   win.on('close', (e) => {
     if (closing) return;
     e.preventDefault();
     win.webContents.send('close-request');
   });
+
+  return win;
 }
 
 app.on('second-instance', (_e, argv) => {
   const filePath = extractArgvBoardPath(argv);
+  const win = focusedWindow();
   if (win) {
     if (win.isMinimized()) win.restore();
     win.focus();
@@ -1403,6 +1454,7 @@ app.on('second-instance', (_e, argv) => {
 app.on('open-file', (e, filePath) => {
   e.preventDefault();
   if (/\.refboard$/i.test(filePath)) {
+    const win = focusedWindow();
     if (win && !win.isDestroyed()) win.webContents.send('open-board-path', filePath);
     else pendingOpenPath = filePath;
   }

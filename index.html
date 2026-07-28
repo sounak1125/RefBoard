@@ -2201,6 +2201,7 @@ body.board-active #whatsNewNotice{ display:none; }
           <p class="rw-sub">Pick a board to continue, or start fresh</p>
         </div>
         <div class="rw-actions">
+          <button type="button" class="rw-btn" id="rwNewWindow" title="Open another RefBoard window (up to 4)">New window</button>
           <button type="button" class="rw-btn" id="rwOpenFile">Open board</button>
           <button type="button" class="rw-btn primary" id="rwNewBoard">New board</button>
         </div>
@@ -15280,6 +15281,17 @@ boardPick.addEventListener('change', async () => {
 
 $('#rwNewBoard').addEventListener('click', () => openNewBoard());
 $('#rwOpenFile').addEventListener('click', () => openBoardFromDialog());
+$('#rwNewWindow').addEventListener('click', async () => {
+  if (!window.RefBoardAPI?.openBoardInNewWindow) return;
+  try {
+    const r = await window.RefBoardAPI.openBoardInNewWindow();
+    if (!r?.opened && r?.reason === 'window-limit') {
+      toast(`Up to ${r.limit || 4} RefBoard windows can stay open at once`);
+    }
+  } catch {
+    toast('Could not open another window');
+  }
+});
 
 if (window.RefBoardAPI?.onOpenBoardPath) {
   window.RefBoardAPI.onOpenBoardPath(filePath => openBoardFromPath(filePath));
