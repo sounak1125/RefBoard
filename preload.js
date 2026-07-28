@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   dismissWhatsNew: () => ipcRenderer.invoke('whats-new-dismiss'),
   getAppIconDataUrl: () => ipcRenderer.invoke('get-app-icon-data-url'),
   openBoardInNewWindow: (filePath = null) => ipcRenderer.invoke('open-board-window', { filePath }),
+  getBoardWindowCount: () => ipcRenderer.invoke('get-board-window-count'),
   updaterInit: (opts) => ipcRenderer.invoke('updater-init', opts),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
 });

@@ -3172,7 +3172,9 @@ async function persistImageBlob(im, blob) {
   }
   const stored = await dbPut('blobs', im.id, blob);
   im.diskStored = !!stored;
-  if (stored && im.blob === blob) im.blob = null;
+  // Keep a resident copy whenever another board window is open: shared IndexedDB
+  // pruning / clears from the other window must not leave this image unsaveable.
+  if (stored && im.blob === blob && !(await isMultiBoardWindow())) im.blob = null;
   else im.blob = blob;
   return !!stored;
 }
@@ -4143,6 +4145,44 @@ function collectDrawSelection() {
 
 /* ================= persistence (IndexedDB) ================= */
 let db = null;
+// Each BrowserWindow gets a unique id so session meta does not collide when
+// multiple boards are open. Image blobs still share one store, so pruning must
+// stay multi-window aware (see isMultiBoardWindow / pruneDiskImageBlobs).
+const BOARD_WINDOW_ID = (() => {
+  try {
+    return new URLSearchParams(location.search).get('wid') || 'main';
+  } catch {
+    return 'main';
+  }
+})();
+const SESSION_META_KEY = `board:${BOARD_WINDOW_ID}`;
+
+async function boardWindowCount() {
+  if (!window.RefBoardAPI?.getBoardWindowCount) return 1;
+  try {
+    const n = await window.RefBoardAPI.getBoardWindowCount();
+    return Math.max(1, Number(n) || 1);
+  } catch {
+    return 1;
+  }
+}
+
+async function isMultiBoardWindow() {
+  return (await boardWindowCount()) > 1;
+}
+
+async function loadSessionMeta() {
+  let meta = await dbGet('meta', SESSION_META_KEY);
+  if (!meta && BOARD_WINDOW_ID === 'main') {
+    // Migrate pre-multi-window session records once.
+    meta = await dbGet('meta', 'board');
+    if (meta) {
+      await dbPut('meta', SESSION_META_KEY, meta);
+      await dbDel('meta', 'board');
+    }
+  }
+  return meta;
+}
 
 function openDB() {
   return new Promise(res => {
@@ -4194,6 +4234,8 @@ const dbClear = store => new Promise(res => {
 });
 async function pruneDiskImageBlobs(keepIds) {
   if (!db) return;
+  // Shared IndexedDB across windows: never delete another window's originals.
+  if (await isMultiBoardWindow()) return;
   const keep = keepIds instanceof Set ? keepIds : new Set(keepIds || []);
   const keys = await dbKeys('blobs');
   for (const key of keys) {
@@ -5321,7 +5363,7 @@ async function restoreSession() {
   suppressBoardDirty = true;
 
   try {
-    const meta = await dbGet('meta', 'board');
+    const meta = await loadSessionMeta();
     if (!isValidSessionMeta(meta) || !meta.items.length) {
       return { restored: false, missingImages: false };
     }
@@ -5443,10 +5485,13 @@ async function persistBoardNow() {
     keepMedia.add(ref.id);
     await dbPut('mediaBlobs', ref.id, blob);
   }
-  for (const key of await dbKeys('mediaBlobs')) {
-    if (!keepMedia.has(key)) await dbDel('mediaBlobs', key);
+  // Shared store: only reclaim media when this is the sole board window.
+  if (!(await isMultiBoardWindow())) {
+    for (const key of await dbKeys('mediaBlobs')) {
+      if (!keepMedia.has(key)) await dbDel('mediaBlobs', key);
+    }
   }
-  return dbPut('meta', 'board', {
+  return dbPut('meta', SESSION_META_KEY, {
     items: state.items.map(i => ({ ...i })),
     view: { ...state.view },
     path: currentBoardPath || null,
@@ -10553,6 +10598,53 @@ function blobToDataURL(blob) {
   return promise;
 }
 
+async function bitmapSourceToPngBlob(source) {
+  if (!source) return null;
+  const w = Math.max(1, source.width || 0);
+  const h = Math.max(1, source.height || 0);
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  try {
+    c.getContext('2d').drawImage(source, 0, 0);
+    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+    return blob?.size ? blob : null;
+  } finally {
+    c.width = 0;
+    c.height = 0;
+  }
+}
+
+/**
+ * Resolve the original bytes for a board save. If another window pruned the
+ * shared IndexedDB entry, rebuild from a still-resident full bitmap or proxy
+ * so "Save failed / Missing image data" cannot strand an otherwise healthy board.
+ */
+async function ensureImageBlobForSave(im) {
+  if (!im) return null;
+  let blob = await getImageBlob(im);
+  if (blob) return blob;
+  if (im.bitmap) {
+    try {
+      blob = await bitmapSourceToPngBlob(im.bitmap);
+      if (blob) {
+        await persistImageBlob(im, blob);
+        return blob;
+      }
+    } catch { /* try proxy next */ }
+  }
+  if (im.proxy) {
+    try {
+      blob = await bitmapSourceToPngBlob(im.proxy);
+      if (blob) {
+        await persistImageBlob(im, blob);
+        return blob;
+      }
+    } catch { /* give up */ }
+  }
+  return null;
+}
+
 function boardSaveSnapshot() {
   const items = JSON.parse(JSON.stringify(state.items));
   const used = [...new Set(items.filter(isImageItem).map(i => i.imgId))];
@@ -10584,7 +10676,7 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
   const imgs = [];
   for (const ref of snapshot.imageRefs) {
     const im = images.get(ref.id);
-    const blob = await getImageBlob(im);
+    const blob = await ensureImageBlobForSave(im);
     if (!blob) continue;
     imgs.push({ ...ref, data: await blobToDataURL(blob) });
   }
@@ -10626,11 +10718,11 @@ async function performBoardSave(opts = {}) {
       token = begin.token;
       for (const ref of snapshot.imageRefs) {
         const im = images.get(ref.id);
-        const blob = await getImageBlob(im);
+        const blob = await ensureImageBlobForSave(im);
         if (!blob) throw new Error(`Missing image data: ${ref.id}`);
         const data = await blob.arrayBuffer();
         await window.RefBoardAPI.appendBoardSaveImage(token, {
-          id: ref.id, type: ref.type, name: ref.name,
+          id: ref.id, type: ref.type || im?.type || blob.type || 'image/png', name: ref.name,
           w: ref.w, h: ref.h, size: blob.size,
         }, data);
       }
@@ -11564,6 +11656,7 @@ async function openNewBoardImpl() {
   showRestoreCardIfPending();
   suppressBoardDirty = true;
   animaticsEditor?.clear?.();
+  const ownedBlobIds = new Set(images.keys());
   releaseAllImages();
   state.items = [];
   invalidateWorkspaceBBox();
@@ -11579,7 +11672,7 @@ async function openNewBoardImpl() {
   closeDrawFeatures();
   currentBoardPath = null;
   currentBoardTitle = null;
-  await dbPut('meta', 'board', {
+  await dbPut('meta', SESSION_META_KEY, {
     items: [],
     view: { ...state.view },
     boardGray: false,
@@ -11588,9 +11681,14 @@ async function openNewBoardImpl() {
     animatics: animaticsEditor?.serialize?.() || null,
     savedAt: Date.now(),
   });
-  const keys = await dbKeys('blobs');
-  for (const k of keys) await dbDel('blobs', k);
-  await dbClear('mediaBlobs');
+  // With multiple windows, never wipe the shared blob store wholesale.
+  if (await isMultiBoardWindow()) {
+    for (const k of ownedBlobIds) await dbDel('blobs', k);
+  } else {
+    const keys = await dbKeys('blobs');
+    for (const k of keys) await dbDel('blobs', k);
+    await dbClear('mediaBlobs');
+  }
   suppressBoardDirty = false;
   boardFileDirty = false;
   clearUndoHistory();
@@ -15717,7 +15815,7 @@ async function init() {
   if (!db) toast('Autosave unavailable in this browser — use Save board (Ctrl+S) to keep your work');
   if (db) {
     try {
-      const meta = await dbGet('meta', 'board');
+      const meta = await loadSessionMeta();
       pendingSessionRestore = isValidSessionMeta(meta) && !!(meta.items && meta.items.length) && !!meta.dirty;
     } catch {
       pendingSessionRestore = false;

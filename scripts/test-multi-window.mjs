@@ -55,4 +55,14 @@ assert.match(html, /async function pasteItemsRehydratingImages\(payload, snap, p
 assert.match(html, /const info = payload\.images\?\.\[oldImgId\];/, 'paste must prefer each image\'s embedded original');
 assert.match(html, /if \(!registered\) registered = await ensureComposite\(\);/, 'paste must fall back to the composite PNG when an original is unavailable');
 
+// Shared IndexedDB must not delete another window's originals, and saves must recover.
+assert.match(main, /ipcMain\.handle\('get-board-window-count'/, 'renderer must be able to ask how many board windows are open');
+assert.match(preload, /getBoardWindowCount:/, 'bridge must expose the window count');
+assert.match(html, /async function isMultiBoardWindow\(\)/, 'renderer must detect multi-window mode');
+assert.match(html, /if \(await isMultiBoardWindow\(\)\) return;/, 'blob pruning must no-op while multiple windows share IndexedDB');
+assert.match(html, /SESSION_META_KEY/, 'each window must keep its own session meta key');
+assert.match(html, /async function ensureImageBlobForSave\(im\)/, 'saves must rebuild missing blobs from resident bitmaps');
+assert.match(html, /const blob = await ensureImageBlobForSave\(im\);/, 'streamed board saves must use the recovery path');
+assert.match(html, /if \(stored && im\.blob === blob && !\(await isMultiBoardWindow\(\)\)\) im\.blob = null;/, 'multi-window mode must keep resident originals for save');
+
 console.log('multi-window contract tests passed');

@@ -1214,6 +1214,9 @@ function setupIpc() {
     return { opened: !!boardWindow, limit: MAX_BOARD_WINDOWS };
   });
 
+  ipcMain.handle('get-board-window-count', () =>
+    [...windows].filter(candidate => candidate && !candidate.isDestroyed()).length);
+
   ipcMain.on('close-confirmed', event => {
     closing = true;
     const target = windowForEvent(event);
@@ -1363,6 +1366,9 @@ function registerFileTypeIntegration() {
 }
 
 async function createWindow(startupFilePath = null) {
+  // Keep the first window on the legacy "main" session slot so existing
+  // autosave/restore state continues to load after the multi-window change.
+  const windowId = [...windows].some(w => w && !w.isDestroyed()) ? crypto.randomUUID() : 'main';
   const win = new BrowserWindow({
     width: 1360,
     height: 860,
@@ -1378,12 +1384,13 @@ async function createWindow(startupFilePath = null) {
       nodeIntegration: false,
       spellcheck: false,
       preload: path.join(__dirname, 'preload.js'),
+      additionalArguments: [`--refboard-window-id=${windowId}`],
     },
   });
   windows.add(win);
 
   Menu.setApplicationMenu(null);
-  await win.loadFile('index.html').catch(err => {
+  await win.loadFile('index.html', { query: { wid: windowId } }).catch(err => {
     console.warn('RefBoard window initial load failed:', err?.message || err);
   });
 
