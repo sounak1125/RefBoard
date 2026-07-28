@@ -3004,7 +3004,6 @@ import {
   IMAGE_FULL_TIER,
   IMAGE_NAV_PREWARM_DELAY_MS,
   IMAGE_PROXY_TIER,
-  imageFocusTransition,
   imageTierPixelExtent,
   selectImageRenderDemand,
   selectScreenImageTier,
@@ -4280,8 +4279,8 @@ function applyRenderSmoothing(g) {
 }
 
 const IMAGE_LOD_MAX_PIXELS = 8_000_000; // ~31 MiB RGBA; disk-backed originals remain lossless
-const IMAGE_LOD_MAX_CONCURRENT = 1;
-const IMAGE_LOD_MAX_QUEUE = 8;
+const IMAGE_LOD_MAX_CONCURRENT = 2;
+const IMAGE_LOD_MAX_QUEUE = 16;
 const IMAGE_STABLE_PROXY_MAX_DIM = IMAGE_PROXY_TIER;
 let imageLodTotalPixels = 0;
 let imageLodClock = 0;
@@ -4303,8 +4302,6 @@ const imageDisplayTargets = new Map();
 const imageDesiredTargets = new Map();
 const imagePrewarmStates = new Map();
 const imagePrewarmTargets = new Map();
-const imageDisplayedSurfaces = new Map();
-const imageSurfaceTransitions = new Map();
 let imagePrewarmWakeTimer = 0;
 let activeImageLodDemand = new Set();
 
@@ -4337,16 +4334,10 @@ function imageTargetForItem(it) {
 function updateImageRenderDemandPlan(items) {
   const visibleImageIds = new Set((items || []).filter(isImageItem).map(it => it.id));
   const liveImageIds = new Set(state.items.filter(isImageItem).map(it => it.id));
-  for (const [itemId, transition] of imageSurfaceTransitions) {
-    if (visibleImageIds.has(itemId)) continue;
-    releaseImageSurfaceTransition(transition);
-    imageSurfaceTransitions.delete(itemId);
-  }
   for (const itemId of imagePrewarmTargets.keys()) {
     if (!visibleImageIds.has(itemId)) imagePrewarmTargets.delete(itemId);
   }
-  for (const map of [imageDisplayTargets, imageDesiredTargets, imagePrewarmStates,
-    imageDisplayedSurfaces]) {
+  for (const map of [imageDisplayTargets, imageDesiredTargets, imagePrewarmStates]) {
     for (const itemId of map.keys()) {
       if (!liveImageIds.has(itemId)) map.delete(itemId);
     }
@@ -5071,6 +5062,43 @@ async function warmVisibleImageProxies() {
   }
   imageResidency.evict();
   invalidate();
+  warmAllImageProxiesIdle();
+}
+
+let idleProxyWarmToken = 0;
+
+/**
+ * Decode stable proxies for off-screen images during idle time. Visible images
+ * are already warm by this point; without this, the first pan into a cold
+ * region of a large board (or a GPU context rebuild) stalls on proxy decodes.
+ */
+function warmAllImageProxiesIdle() {
+  const token = ++idleProxyWarmToken;
+  const targetImages = images;
+  const queue = [];
+  for (const im of targetImages.values()) {
+    if (!im.proxy && !im.proxyPromise) queue.push(im);
+  }
+  if (!queue.length) return;
+  const step = async deadline => {
+    if (token !== idleProxyWarmToken || images !== targetImages) return;
+    let warmed = 0;
+    while (queue.length && warmed < 4
+        && (!deadline || deadline.didTimeout || deadline.timeRemaining() > 6)) {
+      const im = queue.shift();
+      warmed += 1;
+      try { await ensureStableImageProxy(im); } catch (err) { /* proxy retried lazily on draw */ }
+    }
+    if (queue.length && token === idleProxyWarmToken && images === targetImages) schedule();
+  };
+  const schedule = () => {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(deadline => { void step(deadline); }, { timeout: 1500 });
+    } else {
+      setTimeout(() => { void step(null); }, 64);
+    }
+  };
+  schedule();
 }
 
 const SESSION_RESTORE_IMAGE_CONCURRENCY = 3;
@@ -5152,14 +5180,13 @@ function releaseAllImages() {
   releaseDrawSessionCanvases();
   clearTimeout(imagePrewarmWakeTimer);
   imagePrewarmWakeTimer = 0;
-  clearImageSurfaceTransitions();
+  idleProxyWarmToken++;
   closeImageRecordBitmaps(images);
   images.clear();
   imageDisplayTargets.clear();
   imageDesiredTargets.clear();
   imagePrewarmStates.clear();
   imagePrewarmTargets.clear();
-  imageDisplayedSurfaces.clear();
   activeImageLodDemand = new Set();
 }
 
@@ -11690,8 +11717,6 @@ function forceBoardCanvasRepaint() {
   canvas.height = Math.round(h * dpr);
   canvas.style.width = w + 'px';
   canvas.style.height = h + 'px';
-  clearImageSurfaceTransitions();
-  imageDisplayedSurfaces.clear();
   invalidate();
 }
 
@@ -11750,8 +11775,6 @@ canvas.addEventListener('contextrestored', () => {
   // ImageBitmaps backed by the previous GPU context may no longer be drawable.
   // Keep board/item records and their disk-backed Blobs, but rebuild surfaces.
   closeImageRecordBitmaps(images);
-  clearImageSurfaceTransitions();
-  imageDisplayedSurfaces.clear();
   recoverBoardAfterHeavyOverlay();
 });
 
@@ -12346,86 +12369,6 @@ function protectImageSurface(surface, it) {
   }
 }
 
-function releaseImageSurfaceTransition(transition) {
-  if (transition?.pinnedFull) imageResidency.unpin(transition.from?.im);
-}
-
-function clearImageSurfaceTransitions() {
-  for (const transition of imageSurfaceTransitions.values()) releaseImageSurfaceTransition(transition);
-  imageSurfaceTransitions.clear();
-}
-
-function isImageSurfaceCurrent(surface) {
-  if (!surface?.bitmap || !surface.im) return false;
-  if (surface.kind === 'proxy') return surface.im.proxy === surface.bitmap;
-  if (surface.kind === 'full') return surface.im.bitmap === surface.bitmap;
-  if (surface.kind === 'lod') return surface.im.lod?.entries?.get(surface.bucket)?.bitmap === surface.bitmap;
-  return surface.kind === 'draw';
-}
-
-function transitionImageSurface(it, candidate) {
-  const previous = imageDisplayedSurfaces.get(it.id);
-  if (!previous || previous.im !== candidate.im || !isImageSurfaceCurrent(previous)) {
-    const stale = imageSurfaceTransitions.get(it.id);
-    releaseImageSurfaceTransition(stale);
-    imageSurfaceTransitions.delete(it.id);
-    imageDisplayedSurfaces.set(it.id, candidate);
-    return { surface: candidate, blurPx: 0 };
-  }
-
-  let transition = imageSurfaceTransitions.get(it.id);
-  if (transition && transition.to.key !== candidate.key) {
-    releaseImageSurfaceTransition(transition);
-    imageSurfaceTransitions.delete(it.id);
-    transition = null;
-  }
-
-  if (!transition && previous.key !== candidate.key) {
-    const fromPixels = previous.extent;
-    const toPixels = candidate.extent;
-    const ratio = Math.max(fromPixels, toPixels) / Math.max(1, Math.min(fromPixels, toPixels));
-    if (ratio < 1.15) {
-      imageDisplayedSurfaces.set(it.id, candidate);
-      return { surface: candidate, blurPx: 0 };
-    }
-    transition = {
-      from: previous,
-      to: candidate,
-      startedAt: performance.now(),
-      pinnedFull: false,
-    };
-    // A downgrade draws the previous surface for a few more frames. Pin a
-    // full-resolution source so the residency timer cannot close it mid-pull.
-    if (toPixels < fromPixels && previous.kind === 'full') {
-      imageResidency.pin(previous.im);
-      transition.pinnedFull = true;
-    }
-    imageSurfaceTransitions.set(it.id, transition);
-  }
-
-  if (!transition) return { surface: candidate, blurPx: 0 };
-  if (!isImageSurfaceCurrent(transition.from) || !isImageSurfaceCurrent(transition.to)) {
-    releaseImageSurfaceTransition(transition);
-    imageSurfaceTransitions.delete(it.id);
-    imageDisplayedSurfaces.set(it.id, candidate);
-    return { surface: candidate, blurPx: 0 };
-  }
-  const focus = imageFocusTransition({
-    fromPixels: transition.from.extent,
-    toPixels: transition.to.extent,
-    elapsedMs: performance.now() - transition.startedAt,
-  });
-  if (focus.done) {
-    releaseImageSurfaceTransition(transition);
-    imageSurfaceTransitions.delete(it.id);
-    imageDisplayedSurfaces.set(it.id, transition.to);
-    return { surface: transition.to, blurPx: 0 };
-  }
-  const surface = focus.draw === 'from' ? transition.from : transition.to;
-  protectImageSurface(surface, it);
-  return { surface, blurPx: focus.blurPx };
-}
-
 function discardInvalidImageSurface(it, im, surface, err) {
   lastBoardRenderError = err?.stack || err?.message || String(err);
   console.warn('[board] discarded an invalid image surface:', it?.id, surface?.kind, err);
@@ -12440,10 +12383,6 @@ function discardInvalidImageSurface(it, im, surface, err) {
   } else if (surface?.kind === 'lod') {
     invalidateImageLods(im, { bumpVersion: true });
   }
-  const transition = imageSurfaceTransitions.get(it.id);
-  releaseImageSurfaceTransition(transition);
-  imageSurfaceTransitions.delete(it.id);
-  imageDisplayedSurfaces.delete(it.id);
   void ensureStableImageProxy(im).finally(() => invalidate());
 }
 
@@ -12573,16 +12512,9 @@ function drawBoardItem(g, it, opts = {}) {
     g.restore();
     return;
   }
-  let blurPx = 0;
-  if (!opts.noLod && surface.kind !== 'draw') {
-    const transitioned = transitionImageSurface(it, surface);
-    surface = transitioned.surface;
-    blurPx = transitioned.blurPx;
-  }
   protectImageSurface(surface, it);
   const filters = [];
   if (state.boardGray || it.gray) filters.push('grayscale(1)');
-  if (blurPx > 0.01) filters.push(`blur(${blurPx.toFixed(3)}px)`);
   if (filters.length) g.filter = filters.join(' ');
   g.scale(it.flipX ? -1 : 1, it.flipY ? -1 : 1);
   try {
@@ -12766,6 +12698,8 @@ function drawGroupLabel(g) {
   ctx.textBaseline = 'alphabetic';
 }
 
+let lastBoardStatusText = '';
+
 function draw() {
   const dpr = devicePixelRatio || 1;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -12786,8 +12720,13 @@ function draw() {
   ctx.save();
   ctx.translate(tx, ty);
   ctx.scale(s, s);
+  // Large surfaces redrawn every navigation frame: trade smoothing quality for
+  // a stable frame rate while moving, then restore full quality on settle.
+  const navigatingFrame = isNavigatingView();
   ctx.imageSmoothingEnabled = renderQuality !== 'fast';
-  ctx.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
+  ctx.imageSmoothingQuality = navigatingFrame
+    ? 'low'
+    : renderQuality === 'high' ? 'high' : 'medium';
   collectVisibleItems(viewport);
   updateImageRenderDemandPlan(drawVisibleItems);
   activeImageLodDemand = new Set();
@@ -12856,7 +12795,11 @@ function draw() {
   if (tool === 'eyedropper') bits.push('eyedropper');
   if (drawActive) bits.push('draw');
   if (arrowTool) bits.push(arrowTool === 'dotted' ? 'dotted arrow' : 'arrow');
-  statusEl.textContent = bits.join('  ·  ');
+  const statusText = bits.join('  ·  ');
+  if (statusText !== lastBoardStatusText) {
+    lastBoardStatusText = statusText;
+    statusEl.textContent = statusText;
+  }
 }
 
 let boardFrameRecoveryScheduled = false;
@@ -12872,7 +12815,6 @@ function scheduleBoardFrameRecovery() {
 
 function tick() {
   try {
-    if (imageSurfaceTransitions.size) invalidate();
     const navigating = isNavigatingView();
     if (navigating) wasNavigatingView = true;
     else if (wasNavigatingView) {
