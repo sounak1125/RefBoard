@@ -6639,7 +6639,10 @@ function pasteItemsFromClipboard(payload, pos) {
   const defs = payload?.items;
   if (!Array.isArray(defs) || !defs.length) return false;
   if (defs.some(it => isImageItem(it) && !images.has(it.imgId))) return false;
+  return placeClipboardItemDefs(defs, payload, pos);
+}
 
+function placeClipboardItemDefs(defs, payload, pos) {
   const ids = new Set(defs.map(it => it.id));
   if (ids.size !== defs.length) return false;
   const groupIds = new Set(defs.filter(isGroupItem).map(it => it.id));
@@ -6676,6 +6679,54 @@ function pasteItemsFromClipboard(payload, pos) {
   invalidateWorkspaceBBox();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
   return true;
+}
+
+/** Read the composite PNG written alongside a cross-window item clipboard. */
+async function clipboardCompositeImageBlob(snap) {
+  for (const f of snap?.imageFiles || []) {
+    if (f?.size) return f;
+  }
+  if (window.RefBoardAPI?.readClipboardImage) {
+    try {
+      const b64 = await window.RefBoardAPI.readClipboardImage();
+      if (b64) {
+        const bin = atob(b64);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return new Blob([arr], { type: 'image/png' });
+      }
+    } catch { /* native clipboard read failed */ }
+  }
+  try {
+    for (const ci of await navigator.clipboard.read()) {
+      const t = ci.types.find(x => x.startsWith('image/'));
+      if (t) {
+        const blob = await ci.getType(t);
+        if (blob?.size) return blob;
+      }
+    }
+  } catch { /* clipboard.read denied or unavailable */ }
+  return null;
+}
+
+/**
+ * Cross-window paste: the source window's image registry is not present here, so
+ * the copied image items reference imgIds we have never seen. Register the
+ * clipboard's composite PNG once and point every missing image item at it,
+ * then place the full structured selection (notes, arrows, groups) intact.
+ */
+async function pasteItemsRehydratingImages(payload, snap, pos) {
+  const defs = payload?.items;
+  if (!Array.isArray(defs) || !defs.length) return false;
+  if (!defs.some(it => isImageItem(it) && !images.has(it.imgId))) return false;
+  const blob = await clipboardCompositeImageBlob(snap);
+  if (!blob) return false;
+  let imgId;
+  try { imgId = await registerBlob(blob, blob.name); }
+  catch { return false; }
+  const remapped = defs.map(def =>
+    isImageItem(def) && !images.has(def.imgId) ? { ...def, imgId } : def);
+  return placeClipboardItemDefs(remapped, payload, pos);
 }
 
 /** Sync-drain a paste DataTransfer before any await (Chromium clears it after a macrotask). */
@@ -7098,7 +7149,8 @@ async function copySelection() {
 async function menuPaste(pos) {
   try {
     const itemPayload = await collectClipboardItems(null);
-    if (itemPayload && pasteItemsFromClipboard(itemPayload, pos)) {
+    if (itemPayload && (pasteItemsFromClipboard(itemPayload, pos)
+        || await pasteItemsRehydratingImages(itemPayload, null, pos))) {
       const count = itemPayload.items.filter(it => !isGroupItem(it)).length;
       toast(count > 1 ? `Pasted ${count} items` : 'Pasted');
       return;
@@ -7137,7 +7189,8 @@ window.addEventListener('paste', async e => {
   const pos = mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null;
 
   const itemPayload = await collectClipboardItems(snap);
-  if (itemPayload && pasteItemsFromClipboard(itemPayload, pos)) {
+  if (itemPayload && (pasteItemsFromClipboard(itemPayload, pos)
+      || await pasteItemsRehydratingImages(itemPayload, snap, pos))) {
     const count = itemPayload.items.filter(it => !isGroupItem(it)).length;
     toast(count > 1 ? `Pasted ${count} items` : 'Pasted');
     return;
