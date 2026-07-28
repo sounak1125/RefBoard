@@ -47,4 +47,12 @@ assert.match(html, /id="rwNewWindow"/, 'the landing screen must offer a New wind
 assert.match(html, /window\.RefBoardAPI\.openBoardInNewWindow\(\)/, 'the landing New window button must call the bridge');
 assert.match(html, /r\?\.reason === 'window-limit'/, 'the renderer must surface the 4-window limit');
 
+// Cross-window copy/paste must rebuild real image sources, not blank placeholders.
+assert.match(html, /async function captureItemClipboardImages\(payload\)/, 'copy must capture per-image original pixels');
+assert.match(html, /payload\.images = await captureItemClipboardImages\(payload\);/, 'copy must attach originals to the item payload');
+assert.match(html, /images: j\.images && typeof j\.images === 'object' \? j\.images : null/, 'the item payload parser must carry embedded originals');
+assert.match(html, /async function pasteItemsRehydratingImages\(payload, snap, pos\)/, 'cross-window paste must rehydrate missing images');
+assert.match(html, /const info = payload\.images\?\.\[oldImgId\];/, 'paste must prefer each image\'s embedded original');
+assert.match(html, /if \(!registered\) registered = await ensureComposite\(\);/, 'paste must fall back to the composite PNG when an original is unavailable');
+
 console.log('multi-window contract tests passed');

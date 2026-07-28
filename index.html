@@ -6577,6 +6577,65 @@ function buildItemClipboardPayload(roots) {
   };
 }
 
+const CLIPBOARD_IMAGE_DIM_LIMIT = 2048;
+
+function base64ToBytes(b64) {
+  const bin = atob(String(b64 || ''));
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+/** Base64 of `blob`, downsized when possible so large boards stay clipboard-safe. */
+async function clipboardImageData(blob, w, h) {
+  const maxDim = Math.max(1, Number(w) || 0, Number(h) || 0);
+  if (maxDim > CLIPBOARD_IMAGE_DIM_LIMIT) {
+    try {
+      const scale = CLIPBOARD_IMAGE_DIM_LIMIT / maxDim;
+      const bitmap = await createImageBitmap(blob, {
+        resizeWidth: Math.max(1, Math.round((Number(w) || maxDim) * scale)),
+        resizeHeight: Math.max(1, Math.round((Number(h) || maxDim) * scale)),
+        resizeQuality: 'high',
+      });
+      try {
+        const c = document.createElement('canvas');
+        c.width = bitmap.width;
+        c.height = bitmap.height;
+        c.getContext('2d').drawImage(bitmap, 0, 0);
+        const png = await new Promise(res => c.toBlob(res, 'image/png'));
+        c.width = 0; c.height = 0;
+        if (png && png.size < blob.size) return blobToBase64(png);
+      } finally {
+        try { bitmap.close?.(); } catch { /* ignore */ }
+      }
+    } catch { /* fall through to the untouched original */ }
+  }
+  return blobToBase64(blob);
+}
+
+/**
+ * Capture each copied image's original pixels (keyed by its current imgId) so a
+ * paste into another window — which has an empty image registry — can rebuild
+ * the real per-image sources instead of a flattened composite. Grayscale and
+ * opacity stay as live item attributes, so raw pixels are correct here.
+ */
+async function captureItemClipboardImages(payload) {
+  const out = {};
+  const seen = new Set();
+  for (const it of payload?.items || []) {
+    if (!isImageItem(it) || !it.imgId || seen.has(it.imgId)) continue;
+    seen.add(it.imgId);
+    const im = images.get(it.imgId);
+    if (!im) continue;
+    try {
+      const blob = await getImageBlob(im);
+      if (!blob) continue;
+      out[it.imgId] = { w: im.w, h: im.h, type: im.type || blob.type || 'image/png', data: await clipboardImageData(blob, im.w, im.h) };
+    } catch { /* leave this image to the composite fallback */ }
+  }
+  return out;
+}
+
 function parseItemClipboardPayload(raw) {
   if (!raw || !String(raw).trim()) return null;
   try {
@@ -6589,6 +6648,7 @@ function parseItemClipboardPayload(raw) {
     return {
       items: j.items,
       selectedIds: Array.isArray(j.selectedIds) ? j.selectedIds.filter(id => ids.has(id)) : [],
+      images: j.images && typeof j.images === 'object' ? j.images : null,
     };
   } catch {
     return null;
@@ -6711,21 +6771,47 @@ async function clipboardCompositeImageBlob(snap) {
 
 /**
  * Cross-window paste: the source window's image registry is not present here, so
- * the copied image items reference imgIds we have never seen. Register the
- * clipboard's composite PNG once and point every missing image item at it,
- * then place the full structured selection (notes, arrows, groups) intact.
+ * the copied image items reference imgIds we have never seen. Rebuild each from
+ * its embedded original when available; fall back to the clipboard's composite
+ * PNG otherwise. Then place the full structured selection (notes, arrows,
+ * groups) intact.
  */
 async function pasteItemsRehydratingImages(payload, snap, pos) {
   const defs = payload?.items;
   if (!Array.isArray(defs) || !defs.length) return false;
-  if (!defs.some(it => isImageItem(it) && !images.has(it.imgId))) return false;
-  const blob = await clipboardCompositeImageBlob(snap);
-  if (!blob) return false;
-  let imgId;
-  try { imgId = await registerBlob(blob, blob.name); }
-  catch { return false; }
+  const missingIds = [...new Set(
+    defs.filter(it => isImageItem(it) && !images.has(it.imgId)).map(it => it.imgId),
+  )];
+  if (!missingIds.length) return false;
+
+  const imgIdMap = new Map();
+  let compositeImgId = null;
+  const ensureComposite = async () => {
+    if (compositeImgId) return compositeImgId;
+    const blob = await clipboardCompositeImageBlob(snap);
+    if (!blob) return null;
+    try { compositeImgId = await registerBlob(blob, blob.name); }
+    catch { compositeImgId = null; }
+    return compositeImgId;
+  };
+
+  for (const oldImgId of missingIds) {
+    const info = payload.images?.[oldImgId];
+    let registered = null;
+    if (info?.data) {
+      try {
+        const type = String(info.type || 'image/png');
+        const blob = new Blob([base64ToBytes(info.data)], { type });
+        registered = await registerBlob(blob, '');
+      } catch { registered = null; }
+    }
+    if (!registered) registered = await ensureComposite();
+    if (!registered) return false;
+    imgIdMap.set(oldImgId, registered);
+  }
+
   const remapped = defs.map(def =>
-    isImageItem(def) && !images.has(def.imgId) ? { ...def, imgId } : def);
+    isImageItem(def) && imgIdMap.has(def.imgId) ? { ...def, imgId: imgIdMap.get(def.imgId) } : def);
   return placeClipboardItemDefs(remapped, payload, pos);
 }
 
@@ -7105,6 +7191,9 @@ async function copySelection() {
   try {
     // Snapshot metadata + board-order items immediately (payload already deep-clones).
     const payload = buildItemClipboardPayload(items);
+    if (!isCurrent()) return false;
+    // Attach original pixels so a cross-window paste can rebuild real sources.
+    payload.images = await captureItemClipboardImages(payload);
     const compositeItems = payload.items;
     if (!isCurrent()) return false;
 
