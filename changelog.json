@@ -338,5 +338,37 @@
         }
       ]
     }
+  },
+  "2.0.3": {
+    "headline": "Multiple boards, smoother canvas",
+    "summary": "Open up to four RefBoard windows at once, paste images between them correctly, and work large boards without the blur flicker.",
+    "sections": {
+      "new": [
+        {
+          "title": "Work on multiple boards at once",
+          "description": "Open up to four RefBoard windows from the home screen so you can compare and edit separate boards side by side."
+        }
+      ],
+      "improved": [
+        {
+          "title": "Smoother large boards",
+          "description": "Zooming and panning stay steadier on boards with hundreds of images, with faster quality catch-up when you stop navigating."
+        },
+        {
+          "title": "True cross-window paste",
+          "description": "Copying images from one board window into another now pastes each image's real pixels, not a flattened blank placeholder."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Zoom blur flicker removed",
+          "description": "Images no longer flash blurry on and off while zooming as resolution tiers change."
+        },
+        {
+          "title": "Saving with two windows open",
+          "description": "Saving one board while another window is open no longer fails after pasting images between them."
+        }
+      ]
+    }
   }
 }
