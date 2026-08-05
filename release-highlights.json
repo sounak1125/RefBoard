@@ -1,31 +1,35 @@
 {
-  "headline": "Multiple boards, smoother canvas",
-  "summary": "Open up to four RefBoard windows at once, paste images between them correctly, and work large boards without the blur flicker.",
+  "headline": "Reliable drawing, stable zoom",
+  "summary": "Draw and erase confidently on copied images, undo instantly, and keep every stroke visible while zooming even on image-heavy boards.",
   "sections": {
     "new": [
       {
-        "title": "Work on multiple boards at once",
-        "description": "Open up to four RefBoard windows from the home screen so you can compare and edit separate boards side by side."
+        "title": "Direct drawing shortcuts",
+        "description": "Press D to activate the pen or E to activate the eraser, even when drawing mode is not already open."
       }
     ],
     "improved": [
       {
-        "title": "Smoother large boards",
-        "description": "Zooming and panning stay steadier on boards with hundreds of images, with faster quality catch-up when you stop navigating."
-      },
-      {
-        "title": "True cross-window paste",
-        "description": "Copying images from one board window into another now pastes each image's real pixels, not a flattened blank placeholder."
+        "title": "Smoother image-heavy boards",
+        "description": "Zooming through boards with 100 or more images stays sharp and stable without severe blur jumps."
       }
     ],
     "fixed": [
       {
-        "title": "Zoom blur flicker removed",
-        "description": "Images no longer flash blurry on and off while zooming as resolution tiers change."
+        "title": "Independent drawing on copied images",
+        "description": "Painting or erasing a duplicated or pasted image no longer changes the original image or its other copies."
       },
       {
-        "title": "Saving with two windows open",
-        "description": "Saving one board while another window is open no longer fails after pasting images between them."
+        "title": "Reliable drawing undo and redo",
+        "description": "Ctrl+Z and redo now update the visible painted pixels immediately instead of leaving a stale stroke on the board."
+      },
+      {
+        "title": "Paint stays visible while zooming",
+        "description": "New strokes no longer disappear or flicker when the image switches between proxy, detail, and full-resolution rendering."
+      },
+      {
+        "title": "Safe interrupted strokes",
+        "description": "Pointer cancellation, window focus changes, and drawing-mode exit now finalize strokes without leaving drawing stuck."
       }
     ]
   }
