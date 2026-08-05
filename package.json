@@ -20,6 +20,7 @@
     "test:landing-smoke": "electron scripts/smoke-landing-layout.js",
     "test:image-zoom-smoke": "electron scripts/smoke-image-zoom.js",
     "test:image-edit-isolation-smoke": "electron scripts/smoke-image-edit-isolation.js",
+    "test:draw-zoom-smoke": "electron scripts/smoke-draw-zoom-continuity.js",
     "test:theme-smoke": "node scripts/smoke-theme-system.mjs",
     "predist": "npm test && node scripts/sync-changelog.mjs",
     "dist": "electron-builder --win",

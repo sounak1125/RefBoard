@@ -130,23 +130,33 @@ assert.match(
 );
 assert.match(
   html,
-  /\(highQualityDemandAllowed \|\| im\.historyRestoring\) && im\.bitmap/,
-  'history restoration should display the restored bitmap while its proxy is rebuilt',
+  /\(highQualityDemandAllowed \|\| imagePixelUpdateInProgress\(im\)\) && im\.bitmap/,
+  'pixel publication should display the current full bitmap while derived surfaces are rebuilt',
 );
 assert.match(
   html,
-  /function isImageLodJobStillNeeded\(job\)[\s\S]*?if \(job\.im\.historyRestoring\) return false;/,
-  'history restoration should cancel stale in-flight LOD work',
+  /function imagePixelUpdateInProgress\(im\)[\s\S]*?im\?\.historyRestoring \|\| im\?\.pixelUpdateInProgress/,
+  'history and drawing commits should share one derived-surface publication guard',
 );
 assert.match(
   html,
-  /function queueImageLod\(im, it, bucket\)[\s\S]*?if \(im\.historyRestoring\) return Promise\.resolve\(null\);/,
-  'history restoration should block new LOD work until restored pixels are persisted',
+  /function isImageLodJobStillNeeded\(job\)[\s\S]*?if \(imagePixelUpdateInProgress\(job\.im\)\) return false;/,
+  'pixel publication should cancel stale in-flight LOD work',
 );
 assert.match(
   html,
-  /function getImageLodForDraw\(im, it, cr\)[\s\S]*?if \(im\.historyRestoring\) return null;/,
-  'history restoration should not draw a stale LOD over its restored full bitmap',
+  /function queueImageLod\(im, it, bucket\)[\s\S]*?if \(imagePixelUpdateInProgress\(im\)\) return Promise\.resolve\(null\);/,
+  'pixel publication should block new LOD work until current pixels are persisted',
+);
+assert.match(
+  html,
+  /function getImageLodForDraw\(im, it, cr\)[\s\S]*?if \(imagePixelUpdateInProgress\(im\)\) return null;/,
+  'pixel publication should not draw a stale LOD over its current full bitmap',
+);
+assert.match(
+  html,
+  /function commitDrawSession\(\)[\s\S]*?im\.pixelUpdateInProgress = true;[\s\S]*?imageResidency\.pin\(im\);[\s\S]*?im\.blob = blob;[\s\S]*?invalidateImageLods\(im, \{ bumpVersion: true \}\);[\s\S]*?await persistImageBlob\(im, blob\);[\s\S]*?im\.pixelUpdateInProgress = false;[\s\S]*?imageResidency\.unpin\(im\);/,
+  'draw commit should publish source bytes atomically and retain the full bitmap until derived surfaces are safe',
 );
 
 console.log('draw panel contract tests passed');

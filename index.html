@@ -4925,6 +4925,10 @@ function imageLodDims(im, tier) {
   };
 }
 
+function imagePixelUpdateInProgress(im) {
+  return !!(im?.historyRestoring || im?.pixelUpdateInProgress);
+}
+
 function imageDisplayScale(it, im, cr) {
   const sourceW = Math.max(1, (cr.r - cr.l) * im.w);
   const sourceH = Math.max(1, (cr.b - cr.t) * im.h);
@@ -4940,7 +4944,7 @@ function currentLodViewport() {
 
 function isImageLodJobStillNeeded(job) {
   if (!job?.im?.lod || job.im.lod.pending.get(job.bucket) !== job) return false;
-  if (job.im.historyRestoring) return false;
+  if (imagePixelUpdateInProgress(job.im)) return false;
   if (ensureImageVersion(job.im) !== job.version) return false;
   const it = state.items.find(x => x.id === job.itemId && isImageItem(x) && images.get(x.imgId) === job.im);
   if (!it || !isItemVisible(it, currentLodViewport())) return false;
@@ -4965,7 +4969,7 @@ function dropOldestQueuedImageLodJob() {
 
 function queueImageLod(im, it, bucket) {
   if (!im || !it) return Promise.resolve(null);
-  if (im.historyRestoring) return Promise.resolve(null);
+  if (imagePixelUpdateInProgress(im)) return Promise.resolve(null);
   const lod = ensureImageLodState(im);
   if (lod.entries.has(bucket)) return Promise.resolve(lod.entries.get(bucket));
   if (lod.pending.has(bucket)) return lod.pending.get(bucket).promise;
@@ -5114,7 +5118,7 @@ function evictImageLods(protectIm = null, protectBucket = null) {
 
 function getImageLodForDraw(im, it, cr) {
   if (!im) return null;
-  if (im.historyRestoring) return null;
+  if (imagePixelUpdateInProgress(im)) return null;
   const target = imageTargetForItem(it);
   const lod = ensureImageLodState(im);
   const nearestLod = target => {
@@ -6129,6 +6133,8 @@ function commitDrawSession() {
       releaseDrawSessionCanvases(session);
       return;
     }
+    im.pixelUpdateInProgress = true;
+    imageResidency.pin(im);
     let nextBitmap = null;
     try {
       const blob = await new Promise(res => session.canvas.toBlob(res, im.type || 'image/png'));
@@ -6144,15 +6150,26 @@ function commitDrawSession() {
       im.bitmap = nextBitmap;
       nextBitmap = null;
       touchFullBitmap(im);
+      // Publish the new source bytes before advancing the pixel version. Zoom
+      // detail jobs read through getImageBlob(); without this atomic hand-off,
+      // a job started during proxy/IndexedDB work can cache the previous,
+      // unpainted pixels under the new version.
+      im.blob = blob;
+      im.blobSize = blob.size;
+      im.type = blob.type || im.type || 'image/png';
+      im.diskStored = false;
       invalidateImageLods(im, { bumpVersion: true });
       await replaceStableImageProxy(im, blob);
       await persistImageBlob(im, blob);
-      scheduleFullBitmapEviction();
     } catch (err) {
       console.error('[draw] failed to commit image:', err);
     } finally {
       try { nextBitmap?.close?.(); } catch (e) {}
+      im.pixelUpdateInProgress = false;
+      imageResidency.unpin(im);
+      scheduleFullBitmapEviction();
       releaseDrawSessionCanvases(session);
+      invalidate();
     }
   })().finally(() => {
     if (pendingDrawCommit === operation) pendingDrawCommit = null;
@@ -12897,7 +12914,7 @@ function drawBoardItem(g, it, opts = {}) {
       };
     }
   }
-  if (!surface && (highQualityDemandAllowed || im.historyRestoring) && im.bitmap) {
+  if (!surface && (highQualityDemandAllowed || imagePixelUpdateInProgress(im)) && im.bitmap) {
     touchFullBitmap(im);
     surface = {
       key: `full:${it.imgId}:${ensureImageVersion(im)}`,
