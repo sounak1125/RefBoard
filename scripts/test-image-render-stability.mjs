@@ -6,6 +6,7 @@ import {
   IMAGE_PROXY_TIER,
   selectImageRenderDemand,
   selectScreenImageTier,
+  shouldPromoteReadyImageTier,
   updateImagePrewarmState,
 } from './image-render-demand.mjs';
 
@@ -91,6 +92,31 @@ assert(selectScreenImageTier({ requiredPixels: 570, sourcePixels: 4000, previous
 assert(selectScreenImageTier({ requiredPixels: 300, sourcePixels: 400, previousTier: 256 }) === IMAGE_FULL_TIER,
   'small originals use full resolution instead of a pointless oversized LOD');
 
+assert(shouldPromoteReadyImageTier({
+  currentTier: IMAGE_PROXY_TIER,
+  desiredTier: 1024,
+  sourcePixels: 4000,
+  ready: true,
+}), 'a decoded sharper tier may replace the proxy during navigation');
+assert(!shouldPromoteReadyImageTier({
+  currentTier: IMAGE_PROXY_TIER,
+  desiredTier: 1024,
+  sourcePixels: 4000,
+  ready: false,
+}), 'an unfinished tier never replaces the currently drawable surface');
+assert(!shouldPromoteReadyImageTier({
+  currentTier: 1024,
+  desiredTier: IMAGE_PROXY_TIER,
+  sourcePixels: 4000,
+  ready: true,
+}), 'navigation never downgrades to a blurrier ready tier');
+assert(!shouldPromoteReadyImageTier({
+  currentTier: IMAGE_FULL_TIER,
+  desiredTier: 2048,
+  sourcePixels: 4000,
+  ready: true,
+}), 'navigation never replaces a full surface with a lower tier');
+
 const fit500 = Array.from({ length: 500 }, (_, i) => selectScreenImageTier({
   requiredPixels: 120,
   sourcePixels: 4000,
@@ -130,15 +156,23 @@ assert(html.includes('const IMAGE_STABLE_PROXY_MAX_DIM = IMAGE_PROXY_TIER;'), 's
 assert(html.includes('await ensureStableImageProxy(im, blob);'), 'image intake builds the stable proxy before completing');
 assert(html.includes('await ensureStableImageProxy(image, blob);'), 'session restore builds stable proxies while opening');
 assert(html.includes('if (!surface && im.proxy)'), 'renderer falls back to a stable proxy');
-const fullFallback = html.indexOf('if (!surface && highQualityDemandAllowed && im.bitmap)');
+const fullFallback = html.indexOf('if (!surface && (highQualityDemandAllowed || imagePixelUpdateInProgress(im)) && im.bitmap)');
 const proxyFallback = html.indexOf('if (!surface && im.proxy)');
 assert(fullFallback >= 0 && proxyFallback > fullFallback, 'full-resolution export/render paths remain ahead of proxy fallback');
+assert(html.includes('im.historyRestoring'), 'history restoration may temporarily prefer its restored full bitmap');
+assert(html.includes('im?.pixelUpdateInProgress'), 'drawing publication temporarily blocks stale derived surfaces');
 assert(html.includes('const highQualityDemandAllowed = opts.noLod'), 'noLod export paths always retain full-resolution demand');
 assert(html.includes('updateImageRenderDemandPlan(drawVisibleItems);'), 'each frame has a bounded high-quality demand plan');
 assert(html.includes('previousTier: imageDisplayTargets.get(it.id)'), 'screen-sized targets retain hysteresis state per item');
 assert(html.includes('const navigating = isNavigatingView();'), 'quality changes pause during navigation');
 assert(html.includes('imagePrewarmTargets.get(it.id) === job.bucket'), 'predictive LOD jobs survive only while still desired');
 assert(html.includes("imagePrewarmTargets.get(it.id) === IMAGE_FULL_TIER"), 'predictive full decodes remain visibility gated');
+assert(html.includes('shouldPromoteReadyImageTier({'), 'ready sharper surfaces can become visible during navigation');
+assert(html.includes('wheelFocusImageId = imageItemAt(cx, cy)?.id || null;'), 'wheel demand follows the image under the pointer');
+assert(html.includes('const wheelFocused = it?.id === wheelFocusImageId'), 'wheel-focused images outrank viewport-centre demand');
+assert(html.includes('wheelFocusPriorityUntil = 0;'), 'a new pointer interaction releases stale wheel-focus priority');
+assert(html.includes('applyRenderSmoothing(ctx);'), 'board smoothing stays at the configured quality during navigation');
+assert(!html.includes("navigatingFrame\n    ? 'low'"), 'wheel frames never force a blurry low-quality smoothing mode');
 assert(!html.includes('imageSurfaceTransitions'), 'resolution swaps stay instant; the flickering focus-blur transition must not return');
 assert(!html.includes('blurPx'), 'board image draws never animate through a canvas blur filter');
 assert(html.includes('protectImageSurface(surface, it);'), 'the drawn surface is still protected from same-frame eviction');

@@ -2768,8 +2768,8 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>G</kbd> / <kbd>Shift</kbd><kbd>G</kbd></span><span class="d">Toggle selected image grayscale / whole-board grayscale</span>
       <span class="ks"><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Add a text note — drag corners or edges to scale</span>
       <span class="ks"><kbd>I</kbd></span><span class="d">Eyedropper: copy pixel color as hex and RGB</span>
-      <span class="ks"><kbd>D</kbd></span><span class="d">Toggle draw mode — pen, brushes, eraser, color, stroke width on images</span>
-      <span class="ks"><kbd>E</kbd></span><span class="d">Select the eraser while drawing</span>
+      <span class="ks"><kbd>D</kbd></span><span class="d">Activate draw mode with the pen</span>
+      <span class="ks"><kbd>E</kbd></span><span class="d">Activate draw mode with the eraser</span>
       <span class="ks"><kbd>[</kbd> / <kbd>]</kbd></span><span class="d">Decrease / increase brush or eraser size; hold to resize continuously</span>
       <span class="ks">Draw panel → Annotate</span><span class="d">Solid or dotted arrow — drag to place; drag endpoints to adjust</span>
       <span class="ks">Drag image</span><span class="d">Selection rises to the front as soon as you start dragging</span>
@@ -3008,6 +3008,7 @@ import {
   imageTierPixelExtent,
   selectImageRenderDemand,
   selectScreenImageTier,
+  shouldPromoteReadyImageTier,
   updateImagePrewarmState,
 } from './scripts/image-render-demand.mjs';
 import {
@@ -3143,6 +3144,24 @@ async function memoryDiagnostics() {
   return { images: imageMemoryStats(), processes, lastBoardOpenError, lastBoardRenderError };
 }
 
+function imageRenderDiagnostics(itemId) {
+  const it = state.items.find(item => item.id === itemId && isImageItem(item));
+  if (!it) return null;
+  const displayTarget = imageTargetForItem(it);
+  const desiredTarget = imageDesiredTargets.get(it.id) || null;
+  return {
+    displayTarget,
+    desiredTarget,
+    prewarmState: imagePrewarmStates.get(it.id) || null,
+    prewarmTarget: imagePrewarmTargets.get(it.id) || null,
+    navigating: isNavigatingView(),
+    wheelFocused: it.id === wheelFocusImageId && Date.now() < wheelFocusPriorityUntil,
+    lodAllowed: displayTarget !== IMAGE_FULL_TIER
+      && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, displayTarget)),
+    fullAllowed: allowedImageFullDemand.has(imageFullDemandKey(it.imgId)),
+  };
+}
+
 async function getImageBlob(im) {
   if (!im) return null;
   if (im.blob instanceof Blob && im.blob.size) return im.blob;
@@ -3212,6 +3231,8 @@ function drawModeCursor() {
   return drawTool === 'eraser' ? DRAW_ERASER_CURSOR : 'crosshair';
 }
 let drawSession = null;         // active stroke bake session
+let drawPrepareSeq = 0;         // invalidates async bitmap preparation on a newer gesture/cancel
+let pendingDrawCommit = null;   // serializes bitmap baking with board undo/redo
 let spaceDown = false;
 let altDown = false;
 let marquee = null;
@@ -4246,7 +4267,11 @@ async function pruneDiskImageBlobs(keepIds) {
 let saveTimer = 0;
 let recentEditedTimer = 0;
 let autosaveTimer = null;
+const WHEEL_NAV_SETTLE_MS = 220;
+const WHEEL_FOCUS_PRIORITY_MS = 5000;
 let wheelNavUntil = 0;
+let wheelFocusImageId = null;
+let wheelFocusPriorityUntil = 0;
 let wasNavigatingView = false;
 let boardFileDirty = false;
 let boardChangeVersion = 0;
@@ -4351,11 +4376,26 @@ let activeImageLodDemand = new Set();
 const imageLodDemandKey = (imgId, bucket) => `lod:${imgId}:${bucket}`;
 const imageFullDemandKey = imgId => `full:${imgId}`;
 
+function imageTierIsReady(im, tier) {
+  if (!im) return false;
+  if (tier === IMAGE_PROXY_TIER) return !!im.proxy;
+  if (tier === IMAGE_FULL_TIER) return !!im.bitmap;
+  return !!im.lod?.entries?.has(tier);
+}
+
 function imageItemScreenDistance2(it) {
   const { w, h } = boardSize();
   const sx = (it.x + it.w / 2) * state.view.s + state.view.tx;
   const sy = (it.y + it.h / 2) * state.view.s + state.view.ty;
   return (sx - w / 2) ** 2 + (sy - h / 2) ** 2;
+}
+
+function imageDemandDistance(it, now = Date.now()) {
+  // Pointer-focused zoom must win over stale selection and viewport-centre
+  // heuristics, especially when many visible images compete for one full tier.
+  const wheelFocused = it?.id === wheelFocusImageId && now < wheelFocusPriorityUntil;
+  const priority = wheelFocused ? 2e15 : state.sel.has(it.id) ? 1e15 : 0;
+  return imageItemScreenDistance2(it) - priority;
 }
 
 function imageRequiredTexturePixels(it, im, cr) {
@@ -4390,6 +4430,7 @@ function updateImageRenderDemandPlan(items) {
   const prewarmRequests = [];
   const navigating = isNavigatingView();
   const now = performance.now();
+  const demandNow = Date.now();
   let prewarmWakeDelay = Number.POSITIVE_INFINITY;
   const addCandidate = (it, im, target, distance) => {
     if (target === IMAGE_FULL_TIER) {
@@ -4427,7 +4468,7 @@ function updateImageRenderDemandPlan(items) {
       navigating,
     });
     imageDisplayTargets.set(it.id, target);
-    const distance = imageItemScreenDistance2(it) - (state.sel.has(it.id) ? 1e15 : 0);
+    const distance = imageDemandDistance(it, demandNow);
     addCandidate(it, im, target, distance);
 
     const previousPrewarm = imagePrewarmStates.get(it.id);
@@ -4464,6 +4505,22 @@ function updateImageRenderDemandPlan(items) {
   allowedImageLodDemand = selectImageRenderDemand(lodCandidates, IMAGE_LOD_MAX_PIXELS).selected;
   allowedImageFullDemand = selectImageRenderDemand(fullCandidates, FULL_BITMAP_MAX_PIXELS).selected;
   for (const { it, im, target } of prewarmRequests) {
+    const demandAllowed = target === IMAGE_FULL_TIER
+      ? allowedImageFullDemand.has(imageFullDemandKey(it.imgId))
+      : allowedImageLodDemand.has(imageLodDemandKey(it.imgId, target));
+    const currentTarget = imageTargetForItem(it);
+    if (demandAllowed && shouldPromoteReadyImageTier({
+      currentTier: currentTarget,
+      desiredTier: target,
+      sourcePixels: Math.max(im.w, im.h),
+      ready: imageTierIsReady(im, target),
+    })) {
+      // The new surface is already resident and budgeted. Reveal it now instead
+      // of stretching the old proxy until the wheel-settle timeout.
+      imageDisplayTargets.set(it.id, target);
+      imagePrewarmTargets.delete(it.id);
+      continue;
+    }
     if (target === IMAGE_FULL_TIER) {
       if (allowedImageFullDemand.has(imageFullDemandKey(it.imgId))) requestImageDecode(im, it);
     } else if (target > IMAGE_PROXY_TIER
@@ -4868,6 +4925,10 @@ function imageLodDims(im, tier) {
   };
 }
 
+function imagePixelUpdateInProgress(im) {
+  return !!(im?.historyRestoring || im?.pixelUpdateInProgress);
+}
+
 function imageDisplayScale(it, im, cr) {
   const sourceW = Math.max(1, (cr.r - cr.l) * im.w);
   const sourceH = Math.max(1, (cr.b - cr.t) * im.h);
@@ -4883,6 +4944,7 @@ function currentLodViewport() {
 
 function isImageLodJobStillNeeded(job) {
   if (!job?.im?.lod || job.im.lod.pending.get(job.bucket) !== job) return false;
+  if (imagePixelUpdateInProgress(job.im)) return false;
   if (ensureImageVersion(job.im) !== job.version) return false;
   const it = state.items.find(x => x.id === job.itemId && isImageItem(x) && images.get(x.imgId) === job.im);
   if (!it || !isItemVisible(it, currentLodViewport())) return false;
@@ -4907,6 +4969,7 @@ function dropOldestQueuedImageLodJob() {
 
 function queueImageLod(im, it, bucket) {
   if (!im || !it) return Promise.resolve(null);
+  if (imagePixelUpdateInProgress(im)) return Promise.resolve(null);
   const lod = ensureImageLodState(im);
   if (lod.entries.has(bucket)) return Promise.resolve(lod.entries.get(bucket));
   if (lod.pending.has(bucket)) return lod.pending.get(bucket).promise;
@@ -5055,6 +5118,7 @@ function evictImageLods(protectIm = null, protectBucket = null) {
 
 function getImageLodForDraw(im, it, cr) {
   if (!im) return null;
+  if (imagePixelUpdateInProgress(im)) return null;
   const target = imageTargetForItem(it);
   const lod = ensureImageLodState(im);
   const nearestLod = target => {
@@ -5645,17 +5709,29 @@ async function restoreBitmapSnap(bitmapSnap) {
   if (!bitmapSnap) return;
   const im = images.get(bitmapSnap.imgId);
   if (!im) return;
-  const blob = await bitmapHistoryBlob(bitmapSnap);
-  if (!blob) return;
-  const bitmap = await decodeToBitmap(blob);
-  if (im.bitmap && im.bitmap.close) im.bitmap.close();
-  im.decodePromise = null;
-  im.decodeFailed = false;
-  im.bitmap = bitmap;
-  touchFullBitmap(im);
-  invalidateImageLods(im, { bumpVersion: true });
-  await replaceStableImageProxy(im, blob);
-  await persistImageBlob(im, blob);
+  im.historyRestoring = true;
+  imageResidency.pin(im);
+  try {
+    const blob = await bitmapHistoryBlob(bitmapSnap);
+    if (!blob) return;
+    const bitmap = await decodeToBitmap(blob);
+    if (im.bitmap && im.bitmap.close) im.bitmap.close();
+    im.decodePromise = null;
+    im.decodeFailed = false;
+    im.bitmap = bitmap;
+    touchFullBitmap(im);
+    invalidateImageLods(im, { bumpVersion: true });
+    // Render the restored full bitmap on the next frame. Proxy regeneration and
+    // IndexedDB persistence may take longer for large sources.
+    invalidate();
+    await replaceStableImageProxy(im, blob);
+    await persistImageBlob(im, blob);
+  } finally {
+    im.historyRestoring = false;
+    imageResidency.unpin(im);
+    scheduleFullBitmapEviction();
+    invalidate();
+  }
 }
 async function applyUndoEntry(entry) {
   const gen = ++historyApplySeq;
@@ -5689,6 +5765,7 @@ function pruneSel() {
 const boardHistoryQueue = createAsyncQueue();
 function undo() {
   return boardHistoryQueue.run(async () => {
+    await settleDrawCommitForHistory();
     if (!undoStack.length) {
       // A freshly opened board can enter crop mode before any history exists.
       // Ctrl+Z should still return to normal selection in that case.
@@ -5707,6 +5784,7 @@ function undo() {
 }
 function redo() {
   return boardHistoryQueue.run(async () => {
+    await settleDrawCommitForHistory();
     if (!redoStack.length) return;
     const entry = redoStack.pop();
     undoStack.push(await captureUndoState(entry));
@@ -5914,6 +5992,66 @@ function imageBitmapForDraw(it) {
   return im?.bitmap || null;
 }
 
+function imageItemReferenceCount(imgId) {
+  let count = 0;
+  for (const item of state.items) {
+    if (isImageItem(item) && item.imgId === imgId) count++;
+  }
+  return count;
+}
+
+/**
+ * Board duplicates may share immutable source pixels, but a destructive edit
+ * needs private ownership. Clone the current and pristine blobs lazily so
+ * Ctrl+D and paste stay cheap until one instance is actually painted.
+ */
+async function prepareExclusiveImageEdit(it) {
+  const sourceImgId = it?.imgId;
+  const source = images.get(sourceImgId);
+  if (!source) return null;
+  if (imageItemReferenceCount(sourceImgId) <= 1) {
+    return { im: source, sourceImgId, detached: false };
+  }
+
+  const currentBlob = await getImageBlob(source);
+  const pristineBlob = await ensurePristineBlob(source);
+  if (!currentBlob || !pristineBlob) return null;
+
+  let detachedImgId = null;
+  try {
+    detachedImgId = await registerBlob(currentBlob, source.name || it.name || '');
+    const detached = images.get(detachedImgId);
+    if (!detached) throw new Error('detached image record was not created');
+
+    const pristineStored = db
+      ? await dbPut('blobs', `pristine:${detachedImgId}`, pristineBlob)
+      : false;
+    detached.pristineStored = !!pristineStored;
+    detached.pristineBlob = pristineStored ? null : pristineBlob;
+    return { im: detached, sourceImgId, detachedImgId, detached: true };
+  } catch (err) {
+    if (detachedImgId) {
+      const detached = images.get(detachedImgId);
+      if (detached) closeImageRecordBitmaps([detached]);
+      images.delete(detachedImgId);
+      await dbDel('blobs', detachedImgId);
+      await dbDel('blobs', `pristine:${detachedImgId}`);
+    }
+    throw err;
+  }
+}
+
+async function discardDetachedImageEdit(prepared) {
+  if (!prepared?.detached || !prepared.detachedImgId) return;
+  const imgId = prepared.detachedImgId;
+  if (state.items.some(item => isImageItem(item) && item.imgId === imgId)) return;
+  const detached = images.get(imgId);
+  if (detached) closeImageRecordBitmaps([detached]);
+  images.delete(imgId);
+  await dbDel('blobs', imgId);
+  await dbDel('blobs', `pristine:${imgId}`);
+}
+
 function startDrawSession(it, pristineBitmap) {
   const im = images.get(it.imgId);
   if (!im || !im.bitmap || !pristineBitmap || drawSession) return false;
@@ -5983,37 +6121,80 @@ function drawStrokeSegment(it, px, py) {
   s.lastPy = py;
 }
 
-async function commitDrawSession() {
+function commitDrawSession() {
   const session = drawSession;
-  if (!session) return;
-  const im = images.get(session.imgId);
-  if (!im) {
-    releaseDrawSessionCanvases(session);
-    return;
-  }
-  let nextBitmap = null;
-  try {
-    const blob = await new Promise(res => session.canvas.toBlob(res, im.type || 'image/png'));
-    if (!blob || session.released || !session.canvas) return;
-    nextBitmap = await createImageBitmap(session.canvas);
-    if (session.released || images.get(session.imgId) !== im) {
-      try { nextBitmap?.close?.(); } catch (e) {}
+  if (!session) return pendingDrawCommit || Promise.resolve();
+  if (session.commitPromise) return session.commitPromise;
+
+  let operation = null;
+  operation = (async () => {
+    const im = images.get(session.imgId);
+    if (!im) {
+      releaseDrawSessionCanvases(session);
       return;
     }
-    if (im.bitmap?.close) im.bitmap.close();
-    im.decodePromise = null;
-    im.decodeFailed = false;
-    im.bitmap = nextBitmap;
-    nextBitmap = null;
-    touchFullBitmap(im);
-    invalidateImageLods(im, { bumpVersion: true });
-    await replaceStableImageProxy(im, blob);
-    await persistImageBlob(im, blob);
-    scheduleFullBitmapEviction();
-  } finally {
-    try { nextBitmap?.close?.(); } catch (e) {}
-    releaseDrawSessionCanvases(session);
-  }
+    im.pixelUpdateInProgress = true;
+    imageResidency.pin(im);
+    let nextBitmap = null;
+    try {
+      const blob = await new Promise(res => session.canvas.toBlob(res, im.type || 'image/png'));
+      if (!blob || session.released || !session.canvas) return;
+      nextBitmap = await createImageBitmap(session.canvas);
+      if (session.released || images.get(session.imgId) !== im) {
+        try { nextBitmap?.close?.(); } catch (e) {}
+        return;
+      }
+      if (im.bitmap?.close) im.bitmap.close();
+      im.decodePromise = null;
+      im.decodeFailed = false;
+      im.bitmap = nextBitmap;
+      nextBitmap = null;
+      touchFullBitmap(im);
+      // Publish the new source bytes before advancing the pixel version. Zoom
+      // detail jobs read through getImageBlob(); without this atomic hand-off,
+      // a job started during proxy/IndexedDB work can cache the previous,
+      // unpainted pixels under the new version.
+      im.blob = blob;
+      im.blobSize = blob.size;
+      im.type = blob.type || im.type || 'image/png';
+      im.diskStored = false;
+      invalidateImageLods(im, { bumpVersion: true });
+      await replaceStableImageProxy(im, blob);
+      await persistImageBlob(im, blob);
+    } catch (err) {
+      console.error('[draw] failed to commit image:', err);
+    } finally {
+      try { nextBitmap?.close?.(); } catch (e) {}
+      im.pixelUpdateInProgress = false;
+      imageResidency.unpin(im);
+      scheduleFullBitmapEviction();
+      releaseDrawSessionCanvases(session);
+      invalidate();
+    }
+  })().finally(() => {
+    if (pendingDrawCommit === operation) pendingDrawCommit = null;
+  });
+
+  session.commitPromise = operation;
+  pendingDrawCommit = operation;
+  return operation;
+}
+
+function commitDrawSessionAndSave() {
+  // Mark the board dirty immediately, including a dot-only stroke that ends in
+  // pointer cancellation or window blur. Persist again after the bitmap bake.
+  scheduleSave();
+  return commitDrawSession().then(() => {
+    scheduleSave(false);
+    invalidate();
+  });
+}
+
+async function settleDrawCommitForHistory() {
+  drawPrepareSeq++;
+  if (mode?.type === 'draw') mode = null;
+  const commit = drawSession ? commitDrawSession() : pendingDrawCommit;
+  if (commit) await commit;
 }
 
 function cancelDrawSession() {
@@ -6080,6 +6261,14 @@ function setDrawTool(tool) {
   drawTool = tool;
   drawWidth = drawToolWidths[tool];
   syncDrawUi();
+}
+
+function activateDrawShortcut(tool) {
+  if (!(tool in drawToolWidths)) return;
+  closeBrushDrawer();
+  if (!drawActive) setDrawActive(true);
+  setDrawTool(tool);
+  invalidate();
 }
 
 function setDrawBrush(type) {
@@ -6358,6 +6547,8 @@ function setArrowTool(style) {
     boardTool = 'select';
     syncBoardToolUi();
     setDrawActive(false);
+    // Annotation arrows share the pen width, never the much larger eraser size.
+    setDrawTool('pen');
     closeBrushDrawer();
     tool = null;
     exitCropMode();
@@ -6379,10 +6570,11 @@ function setDrawActive(on) {
     exitCropMode();
     finishNoteEdit();
   } else {
+    drawPrepareSeq++;
     hideDrawSizePreview();
     closeBrushDrawer();
     if (drawSession) {
-      commitDrawSession().then(() => { scheduleSave(); invalidate(); });
+      commitDrawSessionAndSave();
     } else {
       cancelDrawSession();
     }
@@ -12722,7 +12914,7 @@ function drawBoardItem(g, it, opts = {}) {
       };
     }
   }
-  if (!surface && highQualityDemandAllowed && im.bitmap) {
+  if (!surface && (highQualityDemandAllowed || imagePixelUpdateInProgress(im)) && im.bitmap) {
     touchFullBitmap(im);
     surface = {
       key: `full:${it.imgId}:${ensureImageVersion(im)}`,
@@ -12961,13 +13153,9 @@ function draw() {
   ctx.save();
   ctx.translate(tx, ty);
   ctx.scale(s, s);
-  // Large surfaces redrawn every navigation frame: trade smoothing quality for
-  // a stable frame rate while moving, then restore full quality on settle.
-  const navigatingFrame = isNavigatingView();
-  ctx.imageSmoothingEnabled = renderQuality !== 'fast';
-  ctx.imageSmoothingQuality = navigatingFrame
-    ? 'low'
-    : renderQuality === 'high' ? 'high' : 'medium';
+  // Keep the sampling mode stable across wheel frames. Toggling low -> high at
+  // settle reads as a blur flicker even when the decoded image tier is stable.
+  applyRenderSmoothing(ctx);
   collectVisibleItems(viewport);
   updateImageRenderDemandPlan(drawVisibleItems);
   activeImageLodDemand = new Set();
@@ -13111,6 +13299,19 @@ function itemAt(sx, sy) {
     if (lx >= 0 && lx <= r.w && ly >= 0 && ly <= r.h) return effectiveHitItem(it);
   }
   return groupAt(sx, sy);
+}
+
+function imageItemAt(sx, sy) {
+  const [bx, by] = toBoard(sx, sy);
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const it = state.items[i];
+    if (!isImageItem(it)) continue;
+    const r = itemUiRect(it);
+    const frame = { x: r.x, y: r.y, w: r.w, h: r.h, rot: it.rot || 0 };
+    const [lx, ly] = boardToLocalRect(frame, bx, by);
+    if (lx >= 0 && lx <= r.w && ly >= 0 && ly <= r.h) return it;
+  }
+  return null;
 }
 
 function arrowEndpointAt(sx, sy, it) {
@@ -13618,36 +13819,59 @@ canvas.addEventListener('pointerdown', async e => {
       const [bx, by] = toBoard(sx, sy);
       const pt = boardPointToBitmap(hit, bx, by);
       if (pt) {
-        const im = images.get(hit.imgId);
-        if (!im) return;
-        try {
-          await ensureFullBitmap(im);
-        } catch (err) {
-          console.error('[draw] failed to prepare image:', err);
-          return;
-        }
-        if (!im.bitmap) return;
-        const undoBlob = await getImageBlob(im);
-        const pristineBlob = await ensurePristineBlob(im);
-        if (!pristineBlob || !undoBlob) return;
+        const prepareSeq = ++drawPrepareSeq;
+        let prepared = null;
         let pristineBitmap = null;
         try {
+          prepared = await prepareExclusiveImageEdit(hit);
+          if (!prepared) return;
+          const im = prepared.im;
+          await ensureFullBitmap(im);
+          if (!im.bitmap) {
+            await discardDetachedImageEdit(prepared);
+            return;
+          }
+          const undoBlob = await getImageBlob(im);
+          const pristineBlob = await ensurePristineBlob(im);
+          if (!pristineBlob || !undoBlob) {
+            await discardDetachedImageEdit(prepared);
+            return;
+          }
           pristineBitmap = await decodeToBitmap(pristineBlob);
+          const gestureIsCurrent = prepareSeq === drawPrepareSeq
+            && state.items.includes(hit)
+            && hit.imgId === prepared.sourceImgId
+            && canvas.hasPointerCapture(e.pointerId);
+          if (!gestureIsCurrent) {
+            try { pristineBitmap?.close?.(); } catch (err) {}
+            pristineBitmap = null;
+            await discardDetachedImageEdit(prepared);
+            return;
+          }
+
+          if (prepared.detached) hit.imgId = prepared.detachedImgId;
+          if (!startDrawSession(hit, pristineBitmap)) {
+            if (prepared.detached) hit.imgId = prepared.sourceImgId;
+            try { pristineBitmap?.close?.(); } catch (err) {}
+            pristineBitmap = null;
+            await discardDetachedImageEdit(prepared);
+            return;
+          }
+          pristineBitmap = null; // The live draw session owns this bitmap.
+          pushUndo({ imgId: hit.imgId, blob: undoBlob });
+          drawStrokeSegment(hit, pt.x, pt.y);
+          mode = { type: 'draw', it: hit.id, sx, sy };
         } catch (err) {
           console.error('[draw] failed to prepare image:', err);
+          if (prepared?.detached
+              && hit.imgId === prepared.detachedImgId
+              && drawSession?.itemId !== hit.id) {
+            hit.imgId = prepared.sourceImgId;
+          }
+          try { pristineBitmap?.close?.(); } catch (closeErr) {}
+          await discardDetachedImageEdit(prepared);
           return;
         }
-        if (!canvas.hasPointerCapture(e.pointerId)) {
-          try { pristineBitmap?.close?.(); } catch (err) {}
-          return;
-        }
-        if (!startDrawSession(hit, pristineBitmap)) {
-          try { pristineBitmap?.close?.(); } catch (err) {}
-          return;
-        }
-        pushUndo({ imgId: hit.imgId, blob: undoBlob });
-        drawStrokeSegment(hit, pt.x, pt.y);
-        mode = { type: 'draw', it: hit.id, sx, sy };
       }
       return;
     }
@@ -13963,6 +14187,9 @@ window.addEventListener('pointermove', e => {
 });
 
 window.addEventListener('pointercancel', () => {
+  drawPrepareSeq++;
+  if (drawSession) commitDrawSessionAndSave();
+  else cancelDrawSession();
   mode = null;
   marquee = null;
   dropTargetGroupId = null;
@@ -14036,7 +14263,7 @@ window.addEventListener('pointerup', e => {
       updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
     }
   } else if (mode.type === 'draw') {
-    commitDrawSession().then(() => { scheduleSave(); invalidate(); });
+    commitDrawSessionAndSave();
   }
   mode = null;
   updateCursor(...clientToCanvas(e.clientX, e.clientY));
@@ -14044,10 +14271,11 @@ window.addEventListener('pointerup', e => {
 
 window.addEventListener('blur', () => {
   spaceDown = false; altDown = false;
+  drawPrepareSeq++;
   hideDrawSizePreview();
   hideNoteLinkPop();
   finishNoteEdit();
-  if (drawSession) commitDrawSession();
+  if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
   mode = null; marquee = null; dropTargetGroupId = null; invalidate();
 });
@@ -14140,9 +14368,13 @@ window.addEventListener('wheel', e => {
   if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop')) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
-  wheelNavUntil = Date.now() + 220;
+  const now = Date.now();
+  const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
+  wheelNavUntil = now + WHEEL_NAV_SETTLE_MS;
+  wheelFocusImageId = imageItemAt(cx, cy)?.id || null;
+  wheelFocusPriorityUntil = now + WHEEL_FOCUS_PRIORITY_MS;
   const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.004 : 0.0016));
-  zoomAt(...clientToCanvas(e.clientX, e.clientY), state.view.s * f);
+  zoomAt(cx, cy, state.view.s * f);
 }, { passive: false });
 
 $('#noteOverlay').addEventListener('wheel', e => {
@@ -14150,9 +14382,13 @@ $('#noteOverlay').addEventListener('wheel', e => {
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
   e.stopPropagation();
-  wheelNavUntil = Date.now() + 220;
+  const now = Date.now();
+  const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
+  wheelNavUntil = now + WHEEL_NAV_SETTLE_MS;
+  wheelFocusImageId = imageItemAt(cx, cy)?.id || null;
+  wheelFocusPriorityUntil = now + WHEEL_FOCUS_PRIORITY_MS;
   const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.004 : 0.0016));
-  zoomAt(...clientToCanvas(e.clientX, e.clientY), state.view.s * f);
+  zoomAt(cx, cy, state.view.s * f);
 }, { passive: false });
 
 canvas.addEventListener('dblclick', e => {
@@ -14632,8 +14868,8 @@ const SHORTCUTS = [
   { cat:'Editing', label:'Nudge selection', keys:['Arrows'] },
   { cat:'Tools', label:'Add text note', keys:['Shift','T'] },
   { cat:'Tools', label:'Eyedropper', keys:['I'] },
-  { cat:'Tools', label:'Draw mode', keys:['D'] },
-  { cat:'Tools', label:'Eraser while drawing', keys:['E'] },
+  { cat:'Tools', label:'Activate draw pen', keys:['D'] },
+  { cat:'Tools', label:'Activate draw eraser', keys:['E'] },
   { cat:'Tools', label:'Decrease draw size', keys:['['] },
   { cat:'Tools', label:'Increase draw size', keys:[']'] },
   { cat:'Tools', label:'Rotate', keys:['R'] },
@@ -14802,6 +15038,10 @@ function closeSettings() {
 }
 
 window.addEventListener('pointerdown', e => {
+  // A click or pan establishes a new interaction target; do not let the image
+  // from an earlier wheel gesture retain demand priority over it.
+  wheelFocusImageId = null;
+  wheelFocusPriorityUntil = 0;
   if (isAnimaticsInputActive()) return;
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
@@ -14927,13 +15167,14 @@ window.addEventListener('keydown', e => {
       createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null);
     }
     else if (k === 'i') startEyedropper();
-    else if (k === 'd') { e.preventDefault(); toggleDrawActive(); }
-    else if (drawActive && k === 'e') {
+    else if (k === 'd') {
       e.preventDefault();
-      if (drawTool !== 'eraser') {
-        closeBrushDrawer();
-        setDrawTool('eraser');
-      }
+      activateDrawShortcut('pen');
+      if (!e.repeat) toast('Draw pen');
+    }
+    else if (k === 'e') {
+      e.preventDefault();
+      activateDrawShortcut('eraser');
       if (!e.repeat) toast('Eraser');
     }
     else if (drawActive && (e.key === '[' || e.key === ']')) {
@@ -15885,7 +16126,15 @@ animaticsEditor = createAnimaticsEditor({
   toast,
 });
 
-window.RefBoard = { state, images, addImages, fitAll, animatics: animaticsEditor, memoryStats: memoryDiagnostics };
+window.RefBoard = {
+  state,
+  images,
+  addImages,
+  fitAll,
+  animatics: animaticsEditor,
+  memoryStats: memoryDiagnostics,
+  imageRenderState: imageRenderDiagnostics,
+};
 
 initPerfOverlay({
   getCounts() {

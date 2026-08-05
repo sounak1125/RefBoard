@@ -1,7 +1,7 @@
 {
   "name": "refboard",
   "productName": "RefBoard",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "A fast, clean moodboard and reference app. Made by Sounak.",
   "author": "Sounak",
   "license": "MIT",
@@ -18,6 +18,9 @@
     "start": "electron .",
     "test": "node scripts/check-build-files.mjs && node scripts/test-group-model.mjs && node scripts/test-group-marquee-selection.mjs && node scripts/test-export-order.mjs && node scripts/test-shell-integration.mjs && node scripts/test-thumbnail-preview.mjs && node scripts/test-landing-layout.mjs && node scripts/test-toolbar-mode.mjs && node scripts/test-theme-system.mjs && node scripts/test-draw-panel-contract.mjs && node scripts/test-selection-tools-contract.mjs && node scripts/test-note-roundtrip.mjs && node scripts/test-note-parsers.mjs && node scripts/test-image-decode-queue.mjs && node scripts/test-image-residency.mjs && node scripts/test-image-render-stability.mjs && node scripts/test-cropped-export.mjs && node scripts/test-clipboard-copy-order.mjs && node scripts/test-board-save-format.mjs && node scripts/test-board-save-as-contract.mjs && node scripts/test-board-preview-backfill.mjs && node scripts/test-board-open-stream.mjs && node scripts/test-navigation-guards.mjs && node scripts/test-multi-window.mjs && node scripts/test-animatics-time-remap-model.mjs && node scripts/test-animatics-timeline-model.mjs && node scripts/test-animatics-visual-transform.mjs && node scripts/test-animatics-audio-model.mjs && node scripts/test-animatics-premiere-export.mjs && node scripts/test-animatics-after-effects-export.mjs && node scripts/test-animatics-contract.mjs && node scripts/test-changelog-format.mjs",
     "test:landing-smoke": "electron scripts/smoke-landing-layout.js",
+    "test:image-zoom-smoke": "electron scripts/smoke-image-zoom.js",
+    "test:image-edit-isolation-smoke": "electron scripts/smoke-image-edit-isolation.js",
+    "test:draw-zoom-smoke": "electron scripts/smoke-draw-zoom-continuity.js",
     "test:theme-smoke": "node scripts/smoke-theme-system.mjs",
     "predist": "npm test && node scripts/sync-changelog.mjs",
     "dist": "electron-builder --win",
