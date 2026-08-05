@@ -156,9 +156,10 @@ assert(html.includes('const IMAGE_STABLE_PROXY_MAX_DIM = IMAGE_PROXY_TIER;'), 's
 assert(html.includes('await ensureStableImageProxy(im, blob);'), 'image intake builds the stable proxy before completing');
 assert(html.includes('await ensureStableImageProxy(image, blob);'), 'session restore builds stable proxies while opening');
 assert(html.includes('if (!surface && im.proxy)'), 'renderer falls back to a stable proxy');
-const fullFallback = html.indexOf('if (!surface && highQualityDemandAllowed && im.bitmap)');
+const fullFallback = html.indexOf('if (!surface && (highQualityDemandAllowed || im.historyRestoring) && im.bitmap)');
 const proxyFallback = html.indexOf('if (!surface && im.proxy)');
 assert(fullFallback >= 0 && proxyFallback > fullFallback, 'full-resolution export/render paths remain ahead of proxy fallback');
+assert(html.includes('im.historyRestoring'), 'history restoration may temporarily prefer its restored full bitmap');
 assert(html.includes('const highQualityDemandAllowed = opts.noLod'), 'noLod export paths always retain full-resolution demand');
 assert(html.includes('updateImageRenderDemandPlan(drawVisibleItems);'), 'each frame has a bounded high-quality demand plan');
 assert(html.includes('previousTier: imageDisplayTargets.get(it.id)'), 'screen-sized targets retain hysteresis state per item');
