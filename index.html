@@ -3008,6 +3008,7 @@ import {
   imageTierPixelExtent,
   selectImageRenderDemand,
   selectScreenImageTier,
+  shouldPromoteReadyImageTier,
   updateImagePrewarmState,
 } from './scripts/image-render-demand.mjs';
 import {
@@ -3141,6 +3142,24 @@ async function memoryDiagnostics() {
     ? await window.RefBoardAPI.getProcessMemoryInfo().catch(() => [])
     : [];
   return { images: imageMemoryStats(), processes, lastBoardOpenError, lastBoardRenderError };
+}
+
+function imageRenderDiagnostics(itemId) {
+  const it = state.items.find(item => item.id === itemId && isImageItem(item));
+  if (!it) return null;
+  const displayTarget = imageTargetForItem(it);
+  const desiredTarget = imageDesiredTargets.get(it.id) || null;
+  return {
+    displayTarget,
+    desiredTarget,
+    prewarmState: imagePrewarmStates.get(it.id) || null,
+    prewarmTarget: imagePrewarmTargets.get(it.id) || null,
+    navigating: isNavigatingView(),
+    wheelFocused: it.id === wheelFocusImageId && Date.now() < wheelFocusPriorityUntil,
+    lodAllowed: displayTarget !== IMAGE_FULL_TIER
+      && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, displayTarget)),
+    fullAllowed: allowedImageFullDemand.has(imageFullDemandKey(it.imgId)),
+  };
 }
 
 async function getImageBlob(im) {
@@ -4246,7 +4265,11 @@ async function pruneDiskImageBlobs(keepIds) {
 let saveTimer = 0;
 let recentEditedTimer = 0;
 let autosaveTimer = null;
+const WHEEL_NAV_SETTLE_MS = 220;
+const WHEEL_FOCUS_PRIORITY_MS = 5000;
 let wheelNavUntil = 0;
+let wheelFocusImageId = null;
+let wheelFocusPriorityUntil = 0;
 let wasNavigatingView = false;
 let boardFileDirty = false;
 let boardChangeVersion = 0;
@@ -4351,11 +4374,26 @@ let activeImageLodDemand = new Set();
 const imageLodDemandKey = (imgId, bucket) => `lod:${imgId}:${bucket}`;
 const imageFullDemandKey = imgId => `full:${imgId}`;
 
+function imageTierIsReady(im, tier) {
+  if (!im) return false;
+  if (tier === IMAGE_PROXY_TIER) return !!im.proxy;
+  if (tier === IMAGE_FULL_TIER) return !!im.bitmap;
+  return !!im.lod?.entries?.has(tier);
+}
+
 function imageItemScreenDistance2(it) {
   const { w, h } = boardSize();
   const sx = (it.x + it.w / 2) * state.view.s + state.view.tx;
   const sy = (it.y + it.h / 2) * state.view.s + state.view.ty;
   return (sx - w / 2) ** 2 + (sy - h / 2) ** 2;
+}
+
+function imageDemandDistance(it, now = Date.now()) {
+  // Pointer-focused zoom must win over stale selection and viewport-centre
+  // heuristics, especially when many visible images compete for one full tier.
+  const wheelFocused = it?.id === wheelFocusImageId && now < wheelFocusPriorityUntil;
+  const priority = wheelFocused ? 2e15 : state.sel.has(it.id) ? 1e15 : 0;
+  return imageItemScreenDistance2(it) - priority;
 }
 
 function imageRequiredTexturePixels(it, im, cr) {
@@ -4390,6 +4428,7 @@ function updateImageRenderDemandPlan(items) {
   const prewarmRequests = [];
   const navigating = isNavigatingView();
   const now = performance.now();
+  const demandNow = Date.now();
   let prewarmWakeDelay = Number.POSITIVE_INFINITY;
   const addCandidate = (it, im, target, distance) => {
     if (target === IMAGE_FULL_TIER) {
@@ -4427,7 +4466,7 @@ function updateImageRenderDemandPlan(items) {
       navigating,
     });
     imageDisplayTargets.set(it.id, target);
-    const distance = imageItemScreenDistance2(it) - (state.sel.has(it.id) ? 1e15 : 0);
+    const distance = imageDemandDistance(it, demandNow);
     addCandidate(it, im, target, distance);
 
     const previousPrewarm = imagePrewarmStates.get(it.id);
@@ -4464,6 +4503,22 @@ function updateImageRenderDemandPlan(items) {
   allowedImageLodDemand = selectImageRenderDemand(lodCandidates, IMAGE_LOD_MAX_PIXELS).selected;
   allowedImageFullDemand = selectImageRenderDemand(fullCandidates, FULL_BITMAP_MAX_PIXELS).selected;
   for (const { it, im, target } of prewarmRequests) {
+    const demandAllowed = target === IMAGE_FULL_TIER
+      ? allowedImageFullDemand.has(imageFullDemandKey(it.imgId))
+      : allowedImageLodDemand.has(imageLodDemandKey(it.imgId, target));
+    const currentTarget = imageTargetForItem(it);
+    if (demandAllowed && shouldPromoteReadyImageTier({
+      currentTier: currentTarget,
+      desiredTier: target,
+      sourcePixels: Math.max(im.w, im.h),
+      ready: imageTierIsReady(im, target),
+    })) {
+      // The new surface is already resident and budgeted. Reveal it now instead
+      // of stretching the old proxy until the wheel-settle timeout.
+      imageDisplayTargets.set(it.id, target);
+      imagePrewarmTargets.delete(it.id);
+      continue;
+    }
     if (target === IMAGE_FULL_TIER) {
       if (allowedImageFullDemand.has(imageFullDemandKey(it.imgId))) requestImageDecode(im, it);
     } else if (target > IMAGE_PROXY_TIER
@@ -12961,13 +13016,9 @@ function draw() {
   ctx.save();
   ctx.translate(tx, ty);
   ctx.scale(s, s);
-  // Large surfaces redrawn every navigation frame: trade smoothing quality for
-  // a stable frame rate while moving, then restore full quality on settle.
-  const navigatingFrame = isNavigatingView();
-  ctx.imageSmoothingEnabled = renderQuality !== 'fast';
-  ctx.imageSmoothingQuality = navigatingFrame
-    ? 'low'
-    : renderQuality === 'high' ? 'high' : 'medium';
+  // Keep the sampling mode stable across wheel frames. Toggling low -> high at
+  // settle reads as a blur flicker even when the decoded image tier is stable.
+  applyRenderSmoothing(ctx);
   collectVisibleItems(viewport);
   updateImageRenderDemandPlan(drawVisibleItems);
   activeImageLodDemand = new Set();
@@ -13111,6 +13162,19 @@ function itemAt(sx, sy) {
     if (lx >= 0 && lx <= r.w && ly >= 0 && ly <= r.h) return effectiveHitItem(it);
   }
   return groupAt(sx, sy);
+}
+
+function imageItemAt(sx, sy) {
+  const [bx, by] = toBoard(sx, sy);
+  for (let i = state.items.length - 1; i >= 0; i--) {
+    const it = state.items[i];
+    if (!isImageItem(it)) continue;
+    const r = itemUiRect(it);
+    const frame = { x: r.x, y: r.y, w: r.w, h: r.h, rot: it.rot || 0 };
+    const [lx, ly] = boardToLocalRect(frame, bx, by);
+    if (lx >= 0 && lx <= r.w && ly >= 0 && ly <= r.h) return it;
+  }
+  return null;
 }
 
 function arrowEndpointAt(sx, sy, it) {
@@ -14140,9 +14204,13 @@ window.addEventListener('wheel', e => {
   if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop')) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
-  wheelNavUntil = Date.now() + 220;
+  const now = Date.now();
+  const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
+  wheelNavUntil = now + WHEEL_NAV_SETTLE_MS;
+  wheelFocusImageId = imageItemAt(cx, cy)?.id || null;
+  wheelFocusPriorityUntil = now + WHEEL_FOCUS_PRIORITY_MS;
   const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.004 : 0.0016));
-  zoomAt(...clientToCanvas(e.clientX, e.clientY), state.view.s * f);
+  zoomAt(cx, cy, state.view.s * f);
 }, { passive: false });
 
 $('#noteOverlay').addEventListener('wheel', e => {
@@ -14150,9 +14218,13 @@ $('#noteOverlay').addEventListener('wheel', e => {
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
   e.stopPropagation();
-  wheelNavUntil = Date.now() + 220;
+  const now = Date.now();
+  const [cx, cy] = clientToCanvas(e.clientX, e.clientY);
+  wheelNavUntil = now + WHEEL_NAV_SETTLE_MS;
+  wheelFocusImageId = imageItemAt(cx, cy)?.id || null;
+  wheelFocusPriorityUntil = now + WHEEL_FOCUS_PRIORITY_MS;
   const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.004 : 0.0016));
-  zoomAt(...clientToCanvas(e.clientX, e.clientY), state.view.s * f);
+  zoomAt(cx, cy, state.view.s * f);
 }, { passive: false });
 
 canvas.addEventListener('dblclick', e => {
@@ -14802,6 +14874,10 @@ function closeSettings() {
 }
 
 window.addEventListener('pointerdown', e => {
+  // A click or pan establishes a new interaction target; do not let the image
+  // from an earlier wheel gesture retain demand priority over it.
+  wheelFocusImageId = null;
+  wheelFocusPriorityUntil = 0;
   if (isAnimaticsInputActive()) return;
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
@@ -15885,7 +15961,15 @@ animaticsEditor = createAnimaticsEditor({
   toast,
 });
 
-window.RefBoard = { state, images, addImages, fitAll, animatics: animaticsEditor, memoryStats: memoryDiagnostics };
+window.RefBoard = {
+  state,
+  images,
+  addImages,
+  fitAll,
+  animatics: animaticsEditor,
+  memoryStats: memoryDiagnostics,
+  imageRenderState: imageRenderDiagnostics,
+};
 
 initPerfOverlay({
   getCounts() {

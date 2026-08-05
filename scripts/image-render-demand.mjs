@@ -41,6 +41,22 @@ export function imageTierPixelExtent(tier, sourcePixels) {
     : Math.min(source, Math.max(1, Number(tier) || IMAGE_PROXY_TIER));
 }
 
+/**
+ * Navigation may reveal a sharper surface as soon as it is decoded, but must
+ * never switch to a softer tier mid-gesture. Downgrades remain deferred until
+ * the view settles, when their smaller on-screen size makes the swap harmless.
+ */
+export function shouldPromoteReadyImageTier({
+  currentTier = IMAGE_PROXY_TIER,
+  desiredTier = IMAGE_PROXY_TIER,
+  sourcePixels,
+  ready = false,
+} = {}) {
+  if (!ready) return false;
+  return imageTierPixelExtent(desiredTier, sourcePixels)
+    > imageTierPixelExtent(currentTier, sourcePixels);
+}
+
 /** Keep rapidly changing zoom targets from filling the decode queue with stale work. */
 export function updateImagePrewarmState({
   previousTier = null,
