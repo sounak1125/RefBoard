@@ -18,7 +18,7 @@
     "appId": "com.sounak.refboard.installer",
     "productName": "RefBoardInstaller",
     "directories": {
-      "output": "dist-installer"
+      "output": "../dist/bootstrapper"
     },
     "files": [
       "main.js",
