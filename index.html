@@ -4502,8 +4502,12 @@ function updateImageRenderDemandPlan(items) {
       invalidate();
     }, Math.max(1, Math.ceil(prewarmWakeDelay)));
   }
-  allowedImageLodDemand = selectImageRenderDemand(lodCandidates, IMAGE_LOD_MAX_PIXELS).selected;
-  allowedImageFullDemand = selectImageRenderDemand(fullCandidates, FULL_BITMAP_MAX_PIXELS).selected;
+  // Carry the prior frame's admissions forward so budget-boundary images stop
+  // oscillating as pointer-anchored zoom reorders them.
+  allowedImageLodDemand = selectImageRenderDemand(lodCandidates, IMAGE_LOD_MAX_PIXELS,
+    { previous: allowedImageLodDemand }).selected;
+  allowedImageFullDemand = selectImageRenderDemand(fullCandidates, FULL_BITMAP_MAX_PIXELS,
+    { previous: allowedImageFullDemand }).selected;
   for (const { it, im, target } of prewarmRequests) {
     const demandAllowed = target === IMAGE_FULL_TIER
       ? allowedImageFullDemand.has(imageFullDemandKey(it.imgId))
@@ -5135,9 +5139,10 @@ function getImageLodForDraw(im, it, cr) {
   };
   if (target === IMAGE_PROXY_TIER) return null;
   if (target === IMAGE_FULL_TIER) {
-    if (allowedImageFullDemand.has(imageFullDemandKey(it.imgId))) {
-      if (!im.bitmap) requestImageDecode(im, it);
-      else touchFullBitmap(im);
+    // Admission gates the decode only. A resident bitmap is returned as null so
+    // the caller draws it directly; the drawn surface is touched there.
+    if (!im.bitmap && allowedImageFullDemand.has(imageFullDemandKey(it.imgId))) {
+      requestImageDecode(im, it);
     }
     return im.bitmap ? null : nearestLod(Math.max(im.w, im.h));
   }
@@ -12882,12 +12887,6 @@ function drawBoardItem(g, it, opts = {}) {
   const cr = cropOf(it);
   const sx = cr.l * im.w, sy = cr.t * im.h;
   const sw = Math.max(1, (cr.r - cr.l) * im.w), sh = Math.max(1, (cr.b - cr.t) * im.h);
-  const displayTarget = opts.noLod ? IMAGE_FULL_TIER : imageTargetForItem(it);
-  const highQualityDemandAllowed = opts.noLod
-    || (displayTarget === IMAGE_FULL_TIER
-      ? allowedImageFullDemand.has(imageFullDemandKey(it.imgId))
-      : displayTarget > IMAGE_PROXY_TIER
-        && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, displayTarget)));
   let surface = null;
   if (drawSession?.itemId === it.id) {
     surface = {
@@ -12914,8 +12913,10 @@ function drawBoardItem(g, it, opts = {}) {
       };
     }
   }
-  if (!surface && (highQualityDemandAllowed || imagePixelUpdateInProgress(im)) && im.bitmap) {
-    touchFullBitmap(im);
+  // Pixel budgets bound how much is decoded, never what a frame may draw. A
+  // resident bitmap costs nothing extra to draw, and passing it over for the
+  // 256px proxy is what made an image pop blurry the moment it lost its slot.
+  if (!surface && im.bitmap) {
     surface = {
       key: `full:${it.imgId}:${ensureImageVersion(im)}`,
       kind: 'full',

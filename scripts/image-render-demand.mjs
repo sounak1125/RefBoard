@@ -1,9 +1,28 @@
 /**
+ * Screen distance an incumbent surface is worth. Demand distances are squared
+ * pixels, so this is squared before use. Ranking is recomputed every frame from
+ * a live view, and pointer-anchored zoom reshuffles it continuously; without a
+ * bias toward what was already admitted, images sitting on the budget boundary
+ * flip in and out frame to frame and visibly pop between tiers.
+ */
+export const IMAGE_DEMAND_STICKY_PX = 220;
+
+/**
  * Select the highest-priority decoded image surfaces that fit in a pixel budget.
  * The first candidate is always admitted so one oversized image can still sharpen.
+ *
+ * `previous` is the prior frame's selection. Its members rank as though they
+ * were `stickyPx` closer, so an incumbent yields only to a meaningfully nearer
+ * challenger. The bias is additive because callers encode selection and
+ * pointer-focus priority as large negative distances; a multiplier would invert
+ * those.
  */
-export function selectImageRenderDemand(candidates, maxPixels) {
+export function selectImageRenderDemand(candidates, maxPixels, {
+  previous = null,
+  stickyPx = IMAGE_DEMAND_STICKY_PX,
+} = {}) {
   const budget = Math.max(0, Number(maxPixels) || 0);
+  const sticky = previous?.size ? Math.max(0, Number(stickyPx) || 0) ** 2 : 0;
   const unique = new Map();
 
   for (const raw of candidates || []) {
@@ -15,8 +34,9 @@ export function selectImageRenderDemand(candidates, maxPixels) {
     if (!current || distance < current.distance) unique.set(key, { key, pixels, distance });
   }
 
+  const rank = c => (sticky && previous.has(c.key) ? c.distance - sticky : c.distance);
   const ordered = [...unique.values()].sort((a, b) =>
-    a.distance - b.distance || a.key.localeCompare(b.key));
+    rank(a) - rank(b) || a.key.localeCompare(b.key));
   const selected = new Set();
   let usedPixels = 0;
 
@@ -94,7 +114,10 @@ export function selectScreenImageTier({
     ? previousTier
     : null;
 
-  if (navigating) return validPrevious || proxy;
+  // The freeze exists to prevent a mid-gesture downgrade. An item with no
+  // displayed tier has nothing to protect, so pinning it to the proxy only
+  // delays its first real surface until the wheel settles.
+  if (navigating && validPrevious) return validPrevious;
 
   let nominal = tiers.find(tier => required <= tier) || IMAGE_FULL_TIER;
   if (nominal !== proxy && nominal !== IMAGE_FULL_TIER && nominal >= source) nominal = IMAGE_FULL_TIER;

@@ -45,6 +45,44 @@ const duplicates = selectImageRenderDemand([
 ], 10);
 assert(duplicates.selected.size === 1 && duplicates.selected.has('same'), 'duplicate image demand is charged once at nearest distance');
 
+// Demand distances are squared screen pixels and are recomputed every frame from
+// a live view. Zoom is anchored at the pointer, not the viewport centre, so the
+// ranking around the budget boundary churns continuously while the wheel turns.
+// Each eviction from the admitted set is a visible drop to a blurrier surface,
+// so admissions must survive reordering that does not change much.
+// 425k squared px is an image roughly 650 screen px from the viewport centre.
+// Neighbours sit 20k apart; the per-frame wobble swings up to 33k between any
+// adjacent pair, so the 8th and 9th images genuinely trade places mid-sweep.
+const sweepFrame = frame => Array.from({ length: 40 }, (_, i) => ({
+  key: `sweep-${i}`,
+  pixels: 1_000_000,
+  distance: 285_000 + i * 20_000 + Math.sin((i + frame) * 1.7) * 22_000,
+}));
+const countAdmissions = (before, after) =>
+  before ? [...after].filter(key => !before.has(key)).length : 0;
+let stickyPrevious = null;
+let plainPrevious = null;
+let stickyChurn = 0;
+let plainChurn = 0;
+for (let frame = 0; frame < 60; frame++) {
+  const frameCandidates = sweepFrame(frame);
+  const sticky = selectImageRenderDemand(frameCandidates, 8_000_000, { previous: stickyPrevious }).selected;
+  const plain = selectImageRenderDemand(frameCandidates, 8_000_000).selected;
+  stickyChurn += countAdmissions(stickyPrevious, sticky);
+  plainChurn += countAdmissions(plainPrevious, plain);
+  stickyPrevious = sticky;
+  plainPrevious = plain;
+}
+assert(plainChurn > 0, 'the zoom-sweep fixture must actually reorder demand across frames');
+assert(stickyChurn === 0, 'incumbent admissions survive frame-to-frame reordering');
+
+const displaced = selectImageRenderDemand([
+  { key: 'incumbent', pixels: 8_000_000, distance: 1_000_000 },
+  { key: 'challenger', pixels: 8_000_000, distance: 10_000 },
+], 8_000_000, { previous: new Set(['incumbent']) });
+assert(displaced.selected.has('challenger') && !displaced.selected.has('incumbent'),
+  'incumbency is a bias, not a lock: a much nearer image still takes the slot');
+
 // Exhaust the supported 0.4% -> 10000% zoom range in 2% multiplicative steps.
 const tierRank = tier => tier === IMAGE_FULL_TIER
   ? IMAGE_DYNAMIC_TIERS.length + 1
@@ -61,7 +99,12 @@ for (const zoom of zoomSamples) {
     previousTier,
     navigating: true,
   });
-  assert(frozen === (previousTier || IMAGE_PROXY_TIER), `navigation must freeze quality at zoom ${zoom}`);
+  if (previousTier) {
+    assert(frozen === previousTier, `navigation must freeze a displayed tier at zoom ${zoom}`);
+  } else {
+    assert(frozen === selectScreenImageTier({ requiredPixels, sourcePixels: 4000 }),
+      `an item with no displayed tier picks its real surface immediately at zoom ${zoom}`);
+  }
   const settled = selectScreenImageTier({ requiredPixels, sourcePixels: 4000, previousTier });
   assert(previousTier == null || tierRank(settled) >= tierRank(previousTier), `zoom-in quality must not regress at ${zoom}`);
   if (settled !== IMAGE_FULL_TIER) {
@@ -91,6 +134,16 @@ assert(selectScreenImageTier({ requiredPixels: 570, sourcePixels: 4000, previous
   'quality upgrades after crossing hysteresis');
 assert(selectScreenImageTier({ requiredPixels: 300, sourcePixels: 400, previousTier: 256 }) === IMAGE_FULL_TIER,
   'small originals use full resolution instead of a pointless oversized LOD');
+
+// An image revealed mid-gesture has no displayed tier to protect. Pinning it to
+// the proxy only delayed its first real surface until the wheel settled, which
+// on a large board is a visible band of blur behind the pointer.
+assert(selectScreenImageTier({
+  requiredPixels: 1800, sourcePixels: 4000, previousTier: null, navigating: true,
+}) === 2048, 'an item revealed mid-gesture requests its real tier instead of waiting for settle');
+assert(selectScreenImageTier({
+  requiredPixels: 1800, sourcePixels: 4000, previousTier: 512, navigating: true,
+}) === 512, 'a tier that is already displayed still never changes mid-gesture');
 
 assert(shouldPromoteReadyImageTier({
   currentTier: IMAGE_PROXY_TIER,
@@ -156,12 +209,18 @@ assert(html.includes('const IMAGE_STABLE_PROXY_MAX_DIM = IMAGE_PROXY_TIER;'), 's
 assert(html.includes('await ensureStableImageProxy(im, blob);'), 'image intake builds the stable proxy before completing');
 assert(html.includes('await ensureStableImageProxy(image, blob);'), 'session restore builds stable proxies while opening');
 assert(html.includes('if (!surface && im.proxy)'), 'renderer falls back to a stable proxy');
-const fullFallback = html.indexOf('if (!surface && (highQualityDemandAllowed || imagePixelUpdateInProgress(im)) && im.bitmap)');
+const fullFallback = html.indexOf('if (!surface && im.bitmap)');
 const proxyFallback = html.indexOf('if (!surface && im.proxy)');
 assert(fullFallback >= 0 && proxyFallback > fullFallback, 'full-resolution export/render paths remain ahead of proxy fallback');
+assert(!html.includes('highQualityDemandAllowed'),
+  'pixel budgets gate decoding only: a resident surface is never passed over for the 256px proxy');
+assert(html.includes('if (!im.bitmap && allowedImageFullDemand.has(imageFullDemandKey(it.imgId)))'),
+  'full-resolution decodes stay budget-admitted even though drawing them does not');
 assert(html.includes('im.historyRestoring'), 'history restoration may temporarily prefer its restored full bitmap');
 assert(html.includes('im?.pixelUpdateInProgress'), 'drawing publication temporarily blocks stale derived surfaces');
-assert(html.includes('const highQualityDemandAllowed = opts.noLod'), 'noLod export paths always retain full-resolution demand');
+assert(html.includes('if (opts.noLod) requestImageDecode(im, it);'), 'noLod export paths always drive a full-resolution decode');
+assert(html.includes('{ previous: allowedImageLodDemand }'), 'LOD admissions carry across frames');
+assert(html.includes('{ previous: allowedImageFullDemand }'), 'full-resolution admissions carry across frames');
 assert(html.includes('updateImageRenderDemandPlan(drawVisibleItems);'), 'each frame has a bounded high-quality demand plan');
 assert(html.includes('previousTier: imageDisplayTargets.get(it.id)'), 'screen-sized targets retain hysteresis state per item');
 assert(html.includes('const navigating = isNavigatingView();'), 'quality changes pause during navigation');
