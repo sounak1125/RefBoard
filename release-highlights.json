@@ -1,35 +1,22 @@
 {
-  "headline": "Reliable drawing, stable zoom",
-  "summary": "Draw and erase confidently on copied images, undo instantly, and keep every stroke visible while zooming even on image-heavy boards.",
+  "headline": "Steadier image quality on big boards",
+  "summary": "Boards with hundreds of images hold their sharpness better while you zoom, and images scrolling into view load detail right away instead of waiting for you to stop.",
   "sections": {
-    "new": [
-      {
-        "title": "Direct drawing shortcuts",
-        "description": "Press D to activate the pen or E to activate the eraser, even when drawing mode is not already open."
-      }
-    ],
+    "new": [],
     "improved": [
       {
-        "title": "Smoother image-heavy boards",
-        "description": "Zooming through boards with 100 or more images stays sharp and stable without severe blur jumps."
+        "title": "Sharp images stay sharp",
+        "description": "An image whose full detail is already loaded now always draws at that detail. Previously it could fall back to a low-resolution preview when the board was busy, even though the sharp version was ready to use."
+      },
+      {
+        "title": "Steadier quality while zooming",
+        "description": "The renderer now keeps its quality decisions from one frame to the next, so images no longer swap back and forth between detail levels as the view moves under the cursor."
       }
     ],
     "fixed": [
       {
-        "title": "Independent drawing on copied images",
-        "description": "Painting or erasing a duplicated or pasted image no longer changes the original image or its other copies."
-      },
-      {
-        "title": "Reliable drawing undo and redo",
-        "description": "Ctrl+Z and redo now update the visible painted pixels immediately instead of leaving a stale stroke on the board."
-      },
-      {
-        "title": "Paint stays visible while zooming",
-        "description": "New strokes no longer disappear or flicker when the image switches between proxy, detail, and full-resolution rendering."
-      },
-      {
-        "title": "Safe interrupted strokes",
-        "description": "Pointer cancellation, window focus changes, and drawing-mode exit now finalize strokes without leaving drawing stuck."
+        "title": "Images entering view during zoom",
+        "description": "An image scrolling into view while you zoom now loads its real detail immediately instead of staying on a low-resolution preview until the zoom stops."
       }
     ]
   }
