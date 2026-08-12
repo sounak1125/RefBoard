@@ -1,5 +1,5 @@
 param(
-  [string]$DistDir = 'dist-release',
+  [string]$DistDir = 'dist',
   [string]$Tag = '',
   [string]$Repo = 'sounak1125/RefBoard',
   [switch]$Draft,

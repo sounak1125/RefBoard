@@ -130,8 +130,13 @@ assert.match(
 );
 assert.match(
   html,
-  /\(highQualityDemandAllowed \|\| imagePixelUpdateInProgress\(im\)\) && im\.bitmap/,
+  /if \(!surface && im\.bitmap\) \{/,
   'pixel publication should display the current full bitmap while derived surfaces are rebuilt',
+);
+assert.match(
+  html,
+  /function getImageLodForDraw\(im, it, cr\)[\s\S]*?if \(imagePixelUpdateInProgress\(im\)\) return null;/,
+  'pixel publication should suppress stale derived surfaces so only the rebuilt bitmap draws',
 );
 assert.match(
   html,

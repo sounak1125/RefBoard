@@ -1,7 +1,7 @@
 {
   "name": "refboard",
   "productName": "RefBoard",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "A fast, clean moodboard and reference app. Made by Sounak.",
   "author": "Sounak",
   "license": "MIT",
@@ -21,6 +21,7 @@
     "test:image-zoom-smoke": "electron scripts/smoke-image-zoom.js",
     "test:image-edit-isolation-smoke": "electron scripts/smoke-image-edit-isolation.js",
     "test:draw-zoom-smoke": "electron scripts/smoke-draw-zoom-continuity.js",
+    "test:zoom-flicker-smoke": "electron scripts/smoke-zoom-flicker.js",
     "test:theme-smoke": "node scripts/smoke-theme-system.mjs",
     "predist": "npm test && node scripts/sync-changelog.mjs",
     "dist": "electron-builder --win",
@@ -29,7 +30,7 @@
     "build:thumb-handler": "node scripts/build-thumb-handler.js",
     "test:animatics-smoke": "node scripts/smoke-animatics-transform.mjs && node scripts/smoke-animatics-sequence.mjs && node scripts/smoke-animatics-linked-drag.mjs && node scripts/smoke-animatics-track-controls.mjs && node scripts/smoke-animatics-audio-workflow.mjs && node scripts/smoke-animatics-time-remap.mjs",
     "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-local-dist.ps1 -ReplaceAssets",
-    "release:ship": "powershell -ExecutionPolicy Bypass -File scripts/ship-release.ps1 -DistDir dist-release -Draft",
+    "release:ship": "powershell -ExecutionPolicy Bypass -File scripts/ship-release.ps1 -DistDir dist -Draft",
     "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0"
   },
   "dependencies": {

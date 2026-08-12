@@ -1,6 +1,6 @@
 {
   "name": "refboard-bootstrapper",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "Cinematic bootstrapper that runs the real RefBoard installer underneath a branded UI.",
   "author": "Sounak",
   "license": "MIT",
@@ -18,7 +18,7 @@
     "appId": "com.sounak.refboard.installer",
     "productName": "RefBoardInstaller",
     "directories": {
-      "output": "dist-installer"
+      "output": "../dist/bootstrapper"
     },
     "files": [
       "main.js",
