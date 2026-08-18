@@ -1,7 +1,8 @@
 'use strict';
 const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
-const { scanBoardFile, readBoardImageBytes, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
+const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
+const { replaceBoardFile, recoverBoardFileIfMissing } = require('./scripts/board-file-replace');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -12,6 +13,7 @@ const { pathToFileURL } = require('url');
 const ffmpegStaticPath = require('ffmpeg-static');
 const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-format');
 const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
+const zorder = require('./scripts/win32-zorder');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -33,6 +35,129 @@ function windowForEvent(event) {
   const fromSender = BrowserWindow.fromWebContents(event.sender);
   if (fromSender && windows.has(fromSender) && !fromSender.isDestroyed()) return fromSender;
   return focusedWindow();
+}
+
+const pinByWindow = new WeakMap();
+
+function nativeHwndId(win) {
+  try {
+    const buf = win.getNativeWindowHandle();
+    if (!buf) return '';
+    if (buf.length >= 8) return buf.readBigUInt64LE(0).toString();
+    return String(buf.readUInt32LE(0));
+  } catch {
+    return '';
+  }
+}
+
+function pinSnapshot(win) {
+  const state = pinByWindow.get(win);
+  if (!state || !win || win.isDestroyed()) {
+    return { mode: 'off', alwaysOnTop: false };
+  }
+  return {
+    mode: state.mode,
+    targetTitle: state.targetTitle || undefined,
+    targetId: state.targetId || undefined,
+    alwaysOnTop: !!win.isAlwaysOnTop(),
+  };
+}
+
+function sendPinState(win) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('pin-state-changed', pinSnapshot(win));
+}
+
+function toastPin(win, msg) {
+  if (!win || win.isDestroyed()) return;
+  const safe = JSON.stringify(msg);
+  win.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
+}
+
+function clearPinWatch(state) {
+  if (state?.timer) {
+    clearInterval(state.timer);
+    state.timer = null;
+  }
+}
+
+function unpinWindow(win, { silent = false } = {}) {
+  if (!win) return pinSnapshot(win);
+  const prev = pinByWindow.get(win);
+  clearPinWatch(prev);
+  if (process.platform === 'win32') {
+    const our = nativeHwndId(win);
+    if (our) zorder.detach(our);
+  }
+  if (!win.isDestroyed()) win.setAlwaysOnTop(false);
+  pinByWindow.set(win, { mode: 'off' });
+  sendPinState(win);
+  if (!silent) toastPin(win, 'Unpinned');
+  return pinSnapshot(win);
+}
+
+function pinAlways(win) {
+  if (!win || win.isDestroyed()) return { mode: 'off', alwaysOnTop: false };
+  const prev = pinByWindow.get(win);
+  if (prev?.mode === 'always') return unpinWindow(win);
+  clearPinWatch(prev);
+  if (process.platform === 'win32') {
+    const our = nativeHwndId(win);
+    if (our) zorder.detach(our);
+  }
+  win.setAlwaysOnTop(true, 'floating');
+  pinByWindow.set(win, { mode: 'always' });
+  sendPinState(win);
+  toastPin(win, 'Pinned on top of other windows');
+  return pinSnapshot(win);
+}
+
+function pinAbove(win, targetId) {
+  if (!win || win.isDestroyed()) return { mode: 'off', alwaysOnTop: false };
+  const prev = pinByWindow.get(win);
+  if (prev?.mode === 'above' && prev.targetId === String(targetId || '')) return unpinWindow(win);
+  if (process.platform !== 'win32') {
+    return { ...pinSnapshot(win), error: 'unsupported' };
+  }
+  const our = nativeHwndId(win);
+  const info = zorder.windowInfo(targetId);
+  if (!our || !info) return { ...pinSnapshot(win), error: 'missing-window' };
+  clearPinWatch(prev);
+  win.setAlwaysOnTop(false);
+  const attached = zorder.attach(our, info.id);
+  const state = {
+    mode: 'above',
+    targetId: info.id,
+    targetTitle: info.title,
+    attached,
+    timer: null,
+  };
+  state.timer = setInterval(() => {
+    if (win.isDestroyed()) {
+      clearPinWatch(state);
+      return;
+    }
+    if (!zorder.isWindow(info.id)) {
+      unpinWindow(win);
+      return;
+    }
+    if (!state.attached) zorder.restack(our, info.id);
+  }, 200);
+  pinByWindow.set(win, state);
+  sendPinState(win);
+  toastPin(win, `Pinned on top of ${info.title}`);
+  return pinSnapshot(win);
+}
+
+function listPinWindows(win) {
+  if (process.platform !== 'win32') return [];
+  const skip = [...windows]
+    .filter(candidate => candidate && !candidate.isDestroyed())
+    .map(nativeHwndId)
+    .filter(Boolean);
+  const ours = win && !win.isDestroyed() ? nativeHwndId(win) : '';
+  if (ours) skip.push(ours);
+  return zorder.listWindows(skip);
 }
 
 const MAX_RECENT = 24;
@@ -275,6 +400,22 @@ function setupIpc() {
   const animaticExportSessions = new Map();
   const premiereExportSessions = new Map();
   const afterEffectsExportSessions = new Map();
+
+  async function closeBoardOpenSession(session) {
+    if (!session) return;
+    clearTimeout(session.timer);
+    session.timer = null;
+    try { await session.handle?.close(); } catch { /* already closed */ }
+    session.handle = null;
+  }
+
+  async function appendBoardSaveImageParts(session, image, data) {
+    const parts = boardImageParts(image, data);
+    await session.handle.write((session.firstImage ? '' : ',') + parts.prefix);
+    await session.handle.write(parts.base64);
+    await session.handle.write(parts.suffix);
+    session.firstImage = false;
+  }
 
   function ffmpegPath() {
     return String(ffmpegStaticPath || '').replace('app.asar', 'app.asar.unpacked');
@@ -938,37 +1079,34 @@ function setupIpc() {
   ipcMain.handle('append-board-save-image', async (event, { token, image, data }) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
-    const parts = boardImageParts(image, data);
-    await session.handle.write((session.firstImage ? '' : ',') + parts.prefix);
-    await session.handle.write(parts.base64);
-    await session.handle.write(parts.suffix);
-    session.firstImage = false;
+    await appendBoardSaveImageParts(session, image, data);
     return { appended: true };
+  });
+
+  ipcMain.handle('append-board-save-images', async (event, { token, images }) => {
+    const session = boardSaveSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
+    const list = Array.isArray(images) ? images : [];
+    for (const entry of list) {
+      await appendBoardSaveImageParts(session, entry?.image, entry?.data);
+    }
+    return { appended: true, count: list.length };
   });
 
   ipcMain.handle('finish-board-save', async (event, token) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
     boardSaveSessions.delete(token);
-    let backupPath = null;
     try {
       await session.handle.write(']}');
       await session.handle.sync();
       await session.handle.close();
       session.handle = null;
 
-      if (fsSync.existsSync(session.target)) {
-        backupPath = `${session.target}.backup-${process.pid}-${session.token}`;
-        await fs.rename(session.target, backupPath);
-      }
-      await fs.rename(session.tempPath, session.target);
-      if (backupPath) await fs.unlink(backupPath).catch(() => {});
+      await replaceBoardFile(session.target, session.tempPath);
       refreshShellIcons(session.target);
       return { saved: true, filePath: session.target };
     } catch (err) {
-      if (backupPath && !fsSync.existsSync(session.target)) {
-        await fs.rename(backupPath, session.target).catch(() => {});
-      }
       await discardBoardSaveSession(session);
       throw err;
     }
@@ -994,19 +1132,37 @@ function setupIpc() {
   });
 
   ipcMain.handle('read-board-file', async (_, filePath) => {
-    const data = await fs.readFile(filePath, 'utf8');
-    return { filePath, data };
+    const resolved = path.resolve(String(filePath || ''));
+    await recoverBoardFileIfMissing(resolved);
+    const data = await fs.readFile(resolved, 'utf8');
+    return { filePath: resolved, data };
+  });
+
+  ipcMain.handle('recover-board-file', async (_, filePath) => {
+    return recoverBoardFileIfMissing(filePath);
   });
 
   ipcMain.handle('begin-board-open', async (event, filePath) => {
     const resolved = path.resolve(String(filePath || ''));
-    const scanned = await scanBoardFile(resolved);
-    const token = crypto.randomUUID();
-    boardOpenSessions.set(token, {
-      token, ownerId: event.sender.id, filePath: resolved, images: scanned.images,
-      timer: setTimeout(() => boardOpenSessions.delete(token), 5 * 60 * 1000),
-    });
-    return { token, core: scanned.core, images: scanned.images.map(({ dataStart, dataLength, ...meta }) => meta) };
+    await recoverBoardFileIfMissing(resolved);
+    const handle = await fs.open(resolved, 'r');
+    try {
+      const stat = await handle.stat();
+      const scanned = await scanBoardHandle(handle, stat.size);
+      const token = crypto.randomUUID();
+      const session = {
+        token, ownerId: event.sender.id, filePath: resolved, images: scanned.images, handle, timer: null,
+      };
+      session.timer = setTimeout(() => {
+        boardOpenSessions.delete(token);
+        void closeBoardOpenSession(session);
+      }, 5 * 60 * 1000);
+      boardOpenSessions.set(token, session);
+      return { token, core: scanned.core, images: scanned.images.map(({ dataStart, dataLength, ...meta }) => meta) };
+    } catch (err) {
+      await handle.close().catch(() => {});
+      throw err;
+    }
   });
 
   ipcMain.handle('read-board-open-image', async (event, { token, index }) => {
@@ -1014,18 +1170,37 @@ function setupIpc() {
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board open session');
     const image = session.images[index];
     if (!image) throw new Error('Unknown board image');
+    if (session.handle) return await readBoardImageBytesFromHandle(session.handle, image);
     return await readBoardImageBytes(session.filePath, image);
+  });
+
+  ipcMain.handle('read-board-open-images', async (event, { token, indexes }) => {
+    const session = boardOpenSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board open session');
+    const list = Array.isArray(indexes) ? indexes : [];
+    return await Promise.all(list.map(async (index) => {
+      const image = session.images[index];
+      if (!image) throw new Error('Unknown board image');
+      if (session.handle) return readBoardImageBytesFromHandle(session.handle, image);
+      return readBoardImageBytes(session.filePath, image);
+    }));
   });
 
   ipcMain.handle('finish-board-open', async (event, token) => {
     const session = boardOpenSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) return { finished: false };
-    clearTimeout(session.timer);
     boardOpenSessions.delete(token);
+    await closeBoardOpenSession(session);
     return { finished: true };
   });
 
-  ipcMain.handle('get-recent-works', async () => loadRecentWorks());
+  ipcMain.handle('get-recent-works', async () => {
+    const list = await loadRecentWorks();
+    for (const work of list) {
+      if (work?.path) await recoverBoardFileIfMissing(work.path).catch(() => {});
+    }
+    return list;
+  });
 
   ipcMain.handle('add-recent-work', async (_, entry) => {
     if (!entry?.path) return loadRecentWorks();
@@ -1245,6 +1420,12 @@ function setupIpc() {
     return !!(target && !target.isDestroyed() && target.isMaximized());
   });
 
+  ipcMain.handle('pin-get-state', event => pinSnapshot(windowForEvent(event)));
+  ipcMain.handle('pin-set-always', event => pinAlways(windowForEvent(event)));
+  ipcMain.handle('pin-set-above', (event, payload = {}) => pinAbove(windowForEvent(event), payload.id));
+  ipcMain.handle('pin-clear', event => unpinWindow(windowForEvent(event)));
+  ipcMain.handle('pin-list-windows', event => listPinWindows(windowForEvent(event)));
+
   ipcMain.handle('install-update', () => {
     if (!app.isPackaged) return { ok: false };
     closing = true;
@@ -1411,17 +1592,23 @@ async function createWindow(startupFilePath = null) {
   ses.setPermissionCheckHandler((_wc, perm) => !BLOCKED_PERMISSIONS.has(perm));
 
   win.webContents.on('before-input-event', (e, input) => {
-    if (input.type === 'keydown' && input.control && !input.alt && !input.shift
-        && input.key.toLowerCase() === 't') {
+    if (input.type !== 'keydown') return;
+    const key = String(input.key || '').toLowerCase();
+    if (input.control && !input.alt && !input.shift && key === 't') {
       e.preventDefault();
-      const on = !win.isAlwaysOnTop();
-      win.setAlwaysOnTop(on, 'floating');
-      const safe = JSON.stringify(on ? 'Pinned on top of other windows' : 'Unpinned');
-      win.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
+      pinAlways(win);
+      return;
+    }
+    if (input.control && input.alt && input.shift && key === 'a') {
+      e.preventDefault();
+      win.webContents.send('pin-open-above');
     }
   });
 
-  win.on('closed', () => { windows.delete(win); });
+  win.on('closed', () => {
+    unpinWindow(win, { silent: true });
+    windows.delete(win);
+  });
 
   const sendMaximizeState = () => {
     if (!win.isDestroyed()) {

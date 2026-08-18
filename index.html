@@ -29,15 +29,15 @@
   --danger:#ff858a; --grid-dot:rgba(255,255,255,.14);
   --scrim:rgba(5,7,9,.62); --shadow:rgba(0,0,0,.54);
 }
-[data-theme="graphite"]{
-  --bg:#15110f; --void:#100d0b; --workspace:#211a16;
-  --card:#1d1714; --panel:rgba(29,23,20,.94);
-  --surface-1:#1d1714; --surface-2:#27201c; --surface-3:#332921;
-  --line:rgba(255,244,235,.11); --line-strong:rgba(255,235,220,.20);
-  --txt:#f8f1ec; --mut:#c2ada0; --dim:#998375;
-  --acc:#f2a06f; --acc-hover:#ffb58a; --acc-contrast:#241006;
-  --danger:#ff817e; --grid-dot:rgba(255,239,226,.13);
-  --scrim:rgba(10,6,4,.64); --shadow:rgba(8,3,1,.58);
+[data-theme="black"]{
+  --bg:#000000; --void:#000000; --workspace:#0a0a0a;
+  --card:#141414; --panel:rgba(18,18,18,.96);
+  --surface-1:#141414; --surface-2:#1c1c1c; --surface-3:#2a2a2a;
+  --line:rgba(255,255,255,.10); --line-strong:rgba(255,255,255,.20);
+  --txt:#f4f4f4; --mut:#b3b3b3; --dim:#8f8f8f;
+  --acc:#ececec; --acc-hover:#ffffff; --acc-contrast:#121212;
+  --danger:#ff858a; --grid-dot:rgba(255,255,255,.12);
+  --scrim:rgba(0,0,0,.72); --shadow:rgba(0,0,0,.72);
 }
 [data-theme="pine"]{
   --bg:#0d1411; --void:#09100d; --workspace:#15221c;
@@ -49,15 +49,15 @@
   --danger:#ff858b; --grid-dot:rgba(235,255,245,.13);
   --scrim:rgba(3,9,6,.65); --shadow:rgba(0,7,3,.57);
 }
-[data-theme="plum"]{
-  --bg:#141018; --void:#0f0c12; --workspace:#21192a;
-  --card:#1d1624; --panel:rgba(29,22,36,.94);
-  --surface-1:#1d1624; --surface-2:#281f31; --surface-3:#352940;
-  --line:rgba(252,239,255,.10); --line-strong:rgba(247,226,255,.19);
-  --txt:#f7f1fa; --mut:#c3b2c9; --dim:#9886a1;
-  --acc:#d39aed; --acc-hover:#e1b1f4; --acc-contrast:#1a0d20;
-  --danger:#ff8496; --grid-dot:rgba(250,238,255,.14);
-  --scrim:rgba(7,3,10,.65); --shadow:rgba(7,1,10,.58);
+[data-theme="ocean"]{
+  --bg:#08141a; --void:#061015; --workspace:#0e1c24;
+  --card:#122028; --panel:rgba(16,30,38,.95);
+  --surface-1:#122028; --surface-2:#1a2c36; --surface-3:#243a46;
+  --line:rgba(210,240,248,.10); --line-strong:rgba(190,235,245,.20);
+  --txt:#eef6f8; --mut:#a9c0c8; --dim:#7f99a3;
+  --acc:#4fd4c8; --acc-hover:#73e0d6; --acc-contrast:#06201c;
+  --danger:#ff858b; --grid-dot:rgba(200,240,245,.13);
+  --scrim:rgba(2,8,12,.66); --shadow:rgba(0,4,8,.58);
 }
 [data-theme="dim"]{
   --bg:#242830; --void:#1e2229; --workspace:#303641;
@@ -165,13 +165,45 @@ body.board-active.titlebar-revealed #titlebar{
 .wc-btn:hover{ background:rgba(255,255,255,.07); color:#fff; }
 .wc-btn:active{ background:rgba(255,255,255,.04); }
 .wc-btn.close:hover{ background:#e81123; color:#fff; }
+.wc-btn.pinned{ color:var(--acc); }
+.wc-btn.pinned:hover{ color:var(--acc-hover); }
 .wc-btn svg{
   width:10px; height:10px; stroke:currentColor; stroke-width:1.15;
   fill:none; stroke-linecap:round; stroke-linejoin:round;
 }
+.wc-btn.pinned svg .pin-head{ fill:currentColor; }
 .wc-btn .icon-restore{ display:none; }
 .wc-btn.maximized .icon-max{ display:none; }
 .wc-btn.maximized .icon-restore{ display:block; }
+
+#titlebarPinMenu, #titlebarPinWindows{
+  position:fixed; z-index:120; display:none; min-width:208px;
+  background:var(--card); border:1px solid rgba(255,255,255,.09); border-radius:11px;
+  padding:5px; box-shadow:0 14px 44px rgba(0,0,0,.55); backdrop-filter:blur(16px);
+  -webkit-app-region:no-drag;
+}
+#titlebarPinMenu.show, #titlebarPinWindows.show{ display:block; }
+#titlebarPinWindows{
+  min-width:220px; max-width:280px; max-height:min(320px, calc(100vh - 48px));
+  overflow:auto;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(255,255,255,.16) transparent;
+}
+#titlebarPinWindows::-webkit-scrollbar{ width:8px; }
+#titlebarPinWindows::-webkit-scrollbar-track{ background:transparent; }
+#titlebarPinWindows::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,.14); border-radius:6px;
+  border:2px solid transparent; background-clip:padding-box;
+}
+#titlebarPinWindows::-webkit-scrollbar-thumb:hover{
+  background:rgba(255,255,255,.26); background-clip:padding-box;
+}
+#titlebarPinWindows .mi{
+  justify-content:flex-start; gap:10px;
+}
+#titlebarPinWindows .mi span{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
 
 /* ---------- floating left toolbar ---------- */
 #toolbar{
@@ -1576,10 +1608,11 @@ body.board-active #whatsNewNotice{ display:none; }
   transition:transform .16s cubic-bezier(.22,1,.36,1), border-color .16s ease,
     background .16s ease, box-shadow .16s ease;
 }
+.theme-swatch[data-theme="midnight"]{ --sw-bg:#0e1118; --sw-surface:#273141; --sw-acc:#6eabff; }
 .theme-swatch[data-theme="slate"]{ --sw-bg:#111315; --sw-surface:#293138; --sw-acc:#91b7dc; }
-.theme-swatch[data-theme="graphite"]{ --sw-bg:#15110f; --sw-surface:#332921; --sw-acc:#f2a06f; }
+.theme-swatch[data-theme="black"]{ --sw-bg:#000000; --sw-surface:#2a2a2a; --sw-acc:#ececec; }
 .theme-swatch[data-theme="pine"]{ --sw-bg:#0d1411; --sw-surface:#24372e; --sw-acc:#78d6aa; }
-.theme-swatch[data-theme="plum"]{ --sw-bg:#141018; --sw-surface:#352940; --sw-acc:#d39aed; }
+.theme-swatch[data-theme="ocean"]{ --sw-bg:#08141a; --sw-surface:#243a46; --sw-acc:#4fd4c8; }
 .theme-swatch[data-theme="dim"]{ --sw-bg:#242830; --sw-surface:#424a57; --sw-acc:#86bcff; }
 .theme-preview{
   position:relative; width:42px; height:42px; overflow:hidden; border-radius:8px;
@@ -2172,6 +2205,12 @@ body.board-active #whatsNewNotice{ display:none; }
     <span id="titlebarTitle">RefBoard</span>
   </div>
   <div id="titlebarControls">
+    <button type="button" class="wc-btn" id="titlebarPin" title="Pin window" aria-label="Pin window" aria-haspopup="menu" aria-expanded="false" aria-pressed="false">
+      <svg viewBox="0 0 10 10" aria-hidden="true">
+        <path class="pin-head" d="M3.3 1.3h3.4c.3 0 .5.2.5.5v.85L6.2 3.7v1.85l1.45.85v.7H2.35v-.7l1.45-.85V3.7L2.8 2.65v-.85c0-.3.2-.5.5-.5z"/>
+        <line x1="5" y1="7.15" x2="5" y2="8.7"/>
+      </svg>
+    </button>
     <button type="button" class="wc-btn" id="titlebarMin" title="Minimize" aria-label="Minimize">
       <svg viewBox="0 0 10 10" aria-hidden="true"><line x1="1" y1="5" x2="9" y2="5"/></svg>
     </button>
@@ -2209,8 +2248,8 @@ body.board-active #whatsNewNotice{ display:none; }
     </header>
     <div class="rw-restore" id="rwRestore" hidden>
       <div class="rw-restore-copy">
-        <span class="rw-restore-title">Unsaved session found</span>
-        <span class="rw-restore-sub">You had a board open last time. Restore it?</span>
+        <span class="rw-restore-title" id="rwRestoreTitle">Unsaved session found</span>
+        <span class="rw-restore-sub" id="rwRestoreSub">You had a board open last time. Restore it?</span>
       </div>
       <div class="rw-restore-actions">
         <button type="button" class="rw-btn" id="rwRestoreDismiss">Dismiss</button>
@@ -2293,6 +2332,9 @@ body.board-active #whatsNewNotice{ display:none; }
   <span class="sep"></span>
   <button class="tb" id="btnDraw" data-tip-title="Draw" aria-expanded="false" aria-controls="drawPanelWrap">
     <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+  </button>
+  <button class="tb" id="btnFill" data-tip-title="Content-aware fill" data-tip-sub="C" aria-expanded="false">
+    <svg viewBox="0 0 24 24"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>
   </button>
   <button class="tb" id="btnPaste" data-tip-title="Paste" data-tip-sub="Ctrl+V">
     <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3h6v2M9 12h6M9 16h4"/></svg>
@@ -2506,6 +2548,15 @@ body.board-active #whatsNewNotice{ display:none; }
 <div id="ctxmenu"></div>
 <div id="ctxAppear"></div>
 <div id="ctxSub"></div>
+<div id="titlebarPinMenu" role="menu" aria-labelledby="titlebarPin">
+  <div class="mi" id="titlebarPinAlways" role="menuitemcheckbox" aria-checked="false">
+    <span>Always on top</span><span class="k">Ctrl+T</span>
+  </div>
+  <div class="mi has-sub" id="titlebarPinAbove" role="menuitem">
+    <span>Always on top of…</span><span class="sub-arrow">›</span>
+  </div>
+</div>
+<div id="titlebarPinWindows" role="menu" aria-label="Windows to pin above"></div>
 <div id="noteLinkPop" class="note-link-pop" aria-hidden="true">
   <span class="note-link-pop-host"></span>
   <span class="note-link-pop-hint">Ctrl + Click to open</span>
@@ -2763,11 +2814,13 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>F</kbd></span><span class="d">Fit view (selection if any)</span>
       <span class="ks"><kbd>P</kbd></span><span class="d">Pack all images neatly</span>
       <span class="ks"><kbd>R</kbd> / <kbd>Shift</kbd><kbd>R</kbd></span><span class="d">Rotate selection clockwise / counter-clockwise</span>
+      <span class="ks">Drag outside a corner</span><span class="d">Rotate selected images or notes; hold Shift to snap 90°</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd> / <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>V</kbd></span><span class="d">Flip selected images horizontally / vertically</span>
       <span class="ks"><kbd>V</kbd></span><span class="d">Select tool — exit draw, arrow, crop, or eyedropper mode</span>
       <span class="ks"><kbd>G</kbd> / <kbd>Shift</kbd><kbd>G</kbd></span><span class="d">Toggle selected image grayscale / whole-board grayscale</span>
       <span class="ks"><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Add a text note — drag corners or edges to scale</span>
       <span class="ks"><kbd>I</kbd></span><span class="d">Eyedropper: copy pixel color as hex and RGB</span>
+      <span class="ks"><kbd>C</kbd></span><span class="d">Content-aware fill — drag a lasso on an image to erase and auto-fill</span>
       <span class="ks"><kbd>D</kbd></span><span class="d">Activate draw mode with the pen</span>
       <span class="ks"><kbd>E</kbd></span><span class="d">Activate draw mode with the eraser</span>
       <span class="ks"><kbd>[</kbd> / <kbd>]</kbd></span><span class="d">Decrease / increase brush or eraser size; hold to resize continuously</span>
@@ -2783,6 +2836,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks">Settings</span><span class="d">Right-click → Settings → General → enable object snapping</span>
       <span class="ks"><kbd>Ctrl</kbd> while drag</span><span class="d">Temporarily disable snapping when snap mode is on</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>T</kbd></span><span class="d">Keep window always on top (desktop app)</span>
+      <span class="ks"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Shift</kbd><kbd>A</kbd></span><span class="d">Pin above a chosen window (desktop app)</span>
     </div>
     <div style="margin-top:16px;text-align:center;font-size:11.5px;color:var(--dim);">
       RefBoard v1.0.1 &nbsp;·&nbsp; made with care by <b style="color:var(--acc);">Sounak</b>
@@ -2840,11 +2894,11 @@ body.board-active #whatsNewNotice{ display:none; }
             <div><div class="s2-label">Theme</div><div class="s2-sub">App colour scheme</div></div>
             <div class="s2-control">
               <div class="theme-row" role="group" aria-label="Theme">
-                <button class="theme-swatch" data-theme="midnight" type="button" aria-label="Midnight theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Midnight</strong><small>Deep blue</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+                <button class="theme-swatch" data-theme="midnight" type="button" aria-label="Midnight theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Midnight</strong><small>Deep navy</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
                 <button class="theme-swatch" data-theme="slate" type="button" aria-label="Carbon theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Carbon</strong><small>Neutral charcoal</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="graphite" type="button" aria-label="Ember theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Ember</strong><small>Warm graphite</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+                <button class="theme-swatch" data-theme="black" type="button" aria-label="Black theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Black</strong><small>True black</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
                 <button class="theme-swatch" data-theme="pine" type="button" aria-label="Forest theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Forest</strong><small>Deep green</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="plum" type="button" aria-label="Aubergine theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Aubergine</strong><small>Soft violet</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+                <button class="theme-swatch" data-theme="ocean" type="button" aria-label="Tide theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Tide</strong><small>Ocean teal</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
                 <button class="theme-swatch" data-theme="dim" type="button" aria-label="Studio theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Studio</strong><small>Lighter contrast</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
               </div>
             </div>
@@ -3207,6 +3261,10 @@ const drawVisibleSelectedItems = [];
 let mode = null;                // active pointer interaction
 let tool = null;                // one-shot tools, currently eyedropper
 let drawActive = false;
+let fillActive = false;
+let fillPrepareSeq = 0;
+let fillSession = null; // { it, im, undoBlob, canvas, ctx, worker, promise, pts }
+let fillPendingPts = null; // lasso points captured while the async edit prep is in flight
 let drawTool = 'pen';           // 'pen' | 'eraser'
 let drawBrushType = 'pen';      // 'pen' | 'soft' | 'marker' | 'pencil'
 let brushDrawerOpen = false;
@@ -4281,6 +4339,7 @@ let currentBoardPath = null;
 let currentBoardTitle = null;
 let restoredSessionPendingOpen = false;
 let pendingSessionRestore = false;
+let pendingSessionRestoreMissingFile = false;
 const RECENT_LOCAL_KEY = 'refboard.recentWorks';
 
 const AUTOSAVE_INTERVALS = [5, 10, 15, 20, 30];
@@ -5214,9 +5273,32 @@ function warmAllImageProxiesIdle() {
 }
 
 const SESSION_RESTORE_IMAGE_CONCURRENCY = 3;
+const BOARD_OPEN_IMAGE_CONCURRENCY = 4;
 
 function isValidSessionMeta(meta) {
   return !!meta && typeof meta === 'object' && Array.isArray(meta.items);
+}
+
+function clearPendingSessionRestore() {
+  pendingSessionRestore = false;
+  pendingSessionRestoreMissingFile = false;
+}
+
+async function evaluatePendingSessionRestore(meta) {
+  if (!isValidSessionMeta(meta) || !meta.items?.length) {
+    return { offer: false, missingFile: false };
+  }
+  let exists = true;
+  if (meta.path && window.RefBoardAPI?.recoverBoardFile) {
+    try {
+      const result = await window.RefBoardAPI.recoverBoardFile(meta.path);
+      exists = !!result?.exists;
+    } catch {
+      exists = false;
+    }
+  }
+  const missingFile = !!(meta.path && !exists);
+  return { offer: !!meta.dirty || missingFile, missingFile };
 }
 
 function normalizeSessionView(view) {
@@ -6348,6 +6430,7 @@ function activateHandTool() {
   arrowTool = null;
   if (drawActive) setDrawActive(false);
   else syncDrawUi();
+  if (fillActive) setFillActive(false);
   tool = null;
   exitCropMode();
   finishNoteEdit();
@@ -6574,6 +6657,7 @@ function setDrawActive(on) {
     tool = null;
     exitCropMode();
     finishNoteEdit();
+    if (fillActive) setFillActive(false);
   } else {
     drawPrepareSeq++;
     hideDrawSizePreview();
@@ -6592,6 +6676,258 @@ function setDrawActive(on) {
 function toggleDrawActive() {
   setDrawActive(!drawActive);
   toast(drawActive ? 'Draw mode — paint on images' : 'Draw mode off');
+}
+
+function setFillActive(on) {
+  fillActive = !!on;
+  if (fillActive) {
+    boardTool = 'select';
+    syncBoardToolUi();
+    arrowTool = null;
+    tool = null;
+    exitCropMode();
+    finishNoteEdit();
+    if (drawActive) setDrawActive(false);
+  } else {
+    fillPrepareSeq++;
+    if (fillSession) cancelFillSession();
+  }
+  syncToolbarEdgeIcon();
+  syncFillUi();
+  invalidate();
+}
+
+function toggleFillActive() {
+  setFillActive(!fillActive);
+  toast(fillActive ? 'Content-aware fill — drag a lasso on an image' : 'Content-aware fill off');
+}
+
+function syncFillUi() {
+  $('#btnFill')?.classList.toggle('on', fillActive);
+  if (fillActive) updateCursor(mouse.x, mouse.y);
+}
+
+function cancelFillSession() {
+  fillPendingPts = null;
+  if (!fillSession) return;
+  try { fillSession.worker?.terminate?.(); } catch (e) {}
+  if (fillSession.prepared?.detached) {
+    const it = fillSession.it;
+    if (it && it.imgId === fillSession.prepared.detachedImgId) it.imgId = fillSession.prepared.sourceImgId;
+    discardDetachedImageEdit(fillSession.prepared);
+  }
+  fillSession = null;
+}
+
+function rasterizeFillMask(pts, w, h) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, w, h);
+  g.fillStyle = '#fff';
+  g.beginPath();
+  if (pts.length) {
+    g.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+    g.closePath();
+  }
+  g.fill();
+  const data = g.getImageData(0, 0, w, h).data;
+  const mask = new Uint8Array(w * h);
+  for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4] > 0 ? 1 : 0;
+  return mask;
+}
+
+function fillFeatherRadius(w, h) {
+  return Math.max(3, Math.min(10, Math.round(Math.max(w, h) / 400)));
+}
+
+function featheredFillMask(pts, w, h, radius) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  g.filter = `blur(${Math.max(1, radius)}px)`;
+  g.fillStyle = '#fff';
+  g.beginPath();
+  if (pts.length) {
+    g.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+    g.closePath();
+  }
+  g.fill();
+  g.filter = 'none';
+  return c;
+}
+
+function downscaleForFill(source, maskCanvas, w, h, maxDim = 2048) {
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  const dw = Math.max(1, Math.round(w * scale));
+  const dh = Math.max(1, Math.round(h * scale));
+  const c = document.createElement('canvas');
+  c.width = dw;
+  c.height = dh;
+  const g = c.getContext('2d');
+  g.drawImage(source, 0, 0, dw, dh);
+  const imgData = g.getImageData(0, 0, dw, dh);
+
+  const mc = document.createElement('canvas');
+  mc.width = dw;
+  mc.height = dh;
+  const mg = mc.getContext('2d');
+  mg.drawImage(maskCanvas, 0, 0, dw, dh);
+  const md = mg.getImageData(0, 0, dw, dh).data;
+  const downMask = new Uint8Array(dw * dh);
+  for (let i = 0; i < downMask.length; i++) downMask[i] = md[i * 4] > 0 ? 1 : 0;
+
+  return { imgData, mask: downMask, w: dw, h: dh, scale };
+}
+
+async function runFillWorker(imgData, mask, w, h) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('./scripts/content-aware-fill-worker.js');
+    fillSession.worker = worker;
+    const timeout = setTimeout(() => {
+      console.error('[fill] worker timeout');
+      worker.terminate();
+      fillSession.worker = null;
+      reject(new Error('fill worker timeout'));
+    }, 5000);
+    worker.onmessage = (e) => {
+      if (e.data.progress) return;
+      clearTimeout(timeout);
+      worker.terminate();
+      fillSession.worker = null;
+      if (e.data.error) reject(new Error(e.data.error));
+      else resolve(e.data.pixels);
+    };
+    worker.onerror = (err) => {
+      clearTimeout(timeout);
+      console.error('[fill] worker error:', err.message || err);
+      worker.terminate();
+      fillSession.worker = null;
+      reject(err);
+    };
+    const pixels = new Uint8ClampedArray(imgData.data);
+    const maskCopy = new Uint8Array(mask);
+    worker.postMessage(
+      { width: w, height: h, pixels: pixels, mask: maskCopy },
+      [pixels.buffer, maskCopy.buffer]
+    );
+  });
+}
+
+async function commitFillSession(m) {
+  try {
+    if (!fillSession || !fillSession.pts || fillSession.pts.length < 3) {
+      fillPendingPts = null;
+      cancelFillSession();
+      return;
+    }
+    const im = images.get(fillSession.imId);
+    if (!im || !im.bitmap) {
+      cancelFillSession();
+      return;
+    }
+
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = im.w;
+  maskCanvas.height = im.h;
+  const maskCtx = maskCanvas.getContext('2d');
+  maskCtx.fillStyle = '#000';
+  maskCtx.fillRect(0, 0, im.w, im.h);
+  maskCtx.fillStyle = '#fff';
+  maskCtx.beginPath();
+  const pts = fillSession.pts;
+  maskCtx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) maskCtx.lineTo(pts[i].x, pts[i].y);
+  maskCtx.closePath();
+  maskCtx.fill();
+
+  const { imgData, mask, w, h, scale } = downscaleForFill(im.bitmap, maskCanvas, im.w, im.h);
+  let filledPixels;
+  try {
+    filledPixels = await runFillWorker(imgData, mask, w, h);
+  } catch (err) {
+    console.error('[fill] worker failed:', err);
+    toast('Fill failed');
+    cancelFillSession();
+    return;
+  }
+
+  // Composite back to full resolution with a soft lasso edge.
+  const workCanvas = document.createElement('canvas');
+  workCanvas.width = w;
+  workCanvas.height = h;
+  const workCtx = workCanvas.getContext('2d');
+  workCtx.putImageData(new ImageData(filledPixels, w, h), 0, 0);
+
+  const featherMask = featheredFillMask(pts, im.w, im.h, fillFeatherRadius(im.w, im.h));
+  const filledLayer = document.createElement('canvas');
+  filledLayer.width = im.w;
+  filledLayer.height = im.h;
+  const filledCtx = filledLayer.getContext('2d');
+  filledCtx.drawImage(workCanvas, 0, 0, w, h, 0, 0, im.w, im.h);
+  filledCtx.globalCompositeOperation = 'destination-in';
+  filledCtx.drawImage(featherMask, 0, 0);
+
+  const out = document.createElement('canvas');
+  out.width = im.w;
+  out.height = im.h;
+  const outCtx = out.getContext('2d');
+  outCtx.drawImage(im.bitmap, 0, 0);
+  outCtx.drawImage(filledLayer, 0, 0);
+
+  // Bake exactly like commitDrawSession.
+  im.pixelUpdateInProgress = true;
+  imageResidency.pin(im);
+  let nextBitmap = null;
+  try {
+    const blob = await new Promise(res => out.toBlob(res, im.type || 'image/png'));
+    if (!blob) {
+      cancelFillSession();
+      return;
+    }
+    nextBitmap = await createImageBitmap(out);
+    if (images.get(fillSession.imId) !== im) {
+      try { nextBitmap?.close?.(); } catch (e) {}
+      cancelFillSession();
+      return;
+    }
+    if (im.bitmap?.close) im.bitmap.close();
+    im.decodePromise = null;
+    im.decodeFailed = false;
+    im.bitmap = nextBitmap;
+    nextBitmap = null;
+    touchFullBitmap(im);
+    im.blob = blob;
+    im.blobSize = blob.size;
+    im.type = blob.type || im.type || 'image/png';
+    im.diskStored = false;
+    invalidateImageLods(im, { bumpVersion: true });
+    await replaceStableImageProxy(im, blob);
+    await persistImageBlob(im, blob);
+    pushUndo({ imgId: fillSession.imId, blob: fillSession.undoBlob });
+    scheduleSave();
+    scheduleSave(false);
+    } catch (err) {
+      console.error('[fill] failed to commit image:', err);
+    } finally {
+      try { nextBitmap?.close?.(); } catch (e) {}
+      im.pixelUpdateInProgress = false;
+      imageResidency.unpin(im);
+      scheduleFullBitmapEviction();
+      fillSession = null;
+      fillPendingPts = null;
+      invalidate();
+    }
+  } catch (outerErr) {
+    console.error('[fill] unexpected error in commitFillSession:', outerErr);
+    fillSession = null;
+    fillPendingPts = null;
+  }
 }
 
 function closeDrawCanvasPop() {
@@ -10246,12 +10582,13 @@ function resetCrop(it) {
 function activateSelectMode() {
   boardTool = 'select';
   syncBoardToolUi();
-  const was = !!(arrowTool || drawActive || tool === 'eyedropper' || cropItemId);
+  const was = !!(arrowTool || drawActive || fillActive || tool === 'eyedropper' || cropItemId);
   arrowTool = null;
   tool = null;
   exitCropMode();
   if (drawActive) setDrawActive(false);
   else syncDrawUi();
+  if (fillActive) setFillActive(false);
   if (was) {
     updateCursor(mouse.x, mouse.y);
     toast('Select tool');
@@ -10893,6 +11230,9 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
 let activeBoardSave = null;
 let manualSaveToastActive = 0;
 let boardPreviewBackfillSeq = 0;
+let boardOpenPersistSeq = 0;
+const BOARD_SAVE_BATCH_MAX = 4;
+const BOARD_SAVE_BATCH_BYTES = 8 * 1024 * 1024;
 
 async function performBoardSave(opts = {}) {
   const silent = !!opts.silent;
@@ -10902,6 +11242,7 @@ async function performBoardSave(opts = {}) {
   const defaultName = currentBoardTitle
     ? `${currentBoardTitle}.refboard`
     : `moodboard-${stamp()}.refboard`;
+  const targetPath = opts.filePath || currentBoardPath || undefined;
 
   if (window.RefBoardAPI?.beginBoardSave) {
     let token = null;
@@ -10909,16 +11250,40 @@ async function performBoardSave(opts = {}) {
     boardPreviewBackfillSeq++;
     try {
       const begin = await window.RefBoardAPI.beginBoardSave(
-        defaultName, currentBoardPath || undefined, snapshot.core, null, saveAs,
+        defaultName, targetPath, snapshot.core, null, saveAs,
       );
       if (!begin?.started) return false;
       token = begin.token;
+      const appendBatch = window.RefBoardAPI.appendBoardSaveImages
+        ? (entries) => window.RefBoardAPI.appendBoardSaveImages(token, entries)
+        : async (entries) => {
+          for (const entry of entries) {
+            await window.RefBoardAPI.appendBoardSaveImage(token, entry.image, entry.data);
+          }
+        };
+      let batch = [];
+      let batchBytes = 0;
+      const flushSaveBatch = async () => {
+        if (!batch.length) return;
+        const pending = batch;
+        batch = [];
+        batchBytes = 0;
+        await appendBatch(pending);
+      };
+      const queueSaveImage = async (image, data) => {
+        const size = data.byteLength || 0;
+        if (batch.length && (batch.length >= BOARD_SAVE_BATCH_MAX || batchBytes + size > BOARD_SAVE_BATCH_BYTES)) {
+          await flushSaveBatch();
+        }
+        batch.push({ image, data });
+        batchBytes += size;
+      };
       for (const ref of snapshot.imageRefs) {
         const im = images.get(ref.id);
         const blob = await ensureImageBlobForSave(im);
         if (!blob) throw new Error(`Missing image data: ${ref.id}`);
         const data = await blob.arrayBuffer();
-        await window.RefBoardAPI.appendBoardSaveImage(token, {
+        await queueSaveImage({
           id: ref.id, type: ref.type || im?.type || blob.type || 'image/png', name: ref.name,
           w: ref.w, h: ref.h, size: blob.size,
         }, data);
@@ -10926,11 +11291,12 @@ async function performBoardSave(opts = {}) {
       for (const ref of snapshot.mediaRefs || []) {
         const blob = animaticsEditor?.getMediaBlob?.(ref.id);
         if (!blob) continue;
-        await window.RefBoardAPI.appendBoardSaveImage(token, {
+        await queueSaveImage({
           id: ref.id, type: ref.type, name: ref.name,
           w: 0, h: 0, size: blob.size,
         }, await blob.arrayBuffer());
       }
+      await flushSaveBatch();
       const result = await window.RefBoardAPI.finishBoardSave(token);
       token = null;
       if (!result?.saved) return false;
@@ -10948,7 +11314,7 @@ async function performBoardSave(opts = {}) {
     const payload = await buildBoardPayload(snapshot);
     const json = JSON.stringify(payload);
     if (window.RefBoardAPI?.saveBoardFile) {
-      const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, currentBoardPath || undefined, saveAs);
+      const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, targetPath, saveAs);
       if (!result?.saved) return false;
       currentBoardPath = result.filePath;
       currentBoardTitle = boardTitleFromPath(result.filePath);
@@ -11792,19 +12158,25 @@ function showRestoreCardIfPending() {
   if (!restoreCardWired) {
     restoreCardWired = true;
     $('#rwRestoreDismiss')?.addEventListener('click', () => {
-      pendingSessionRestore = false;
+      clearPendingSessionRestore();
       card.hidden = true;
     });
     $('#rwRestoreConfirm')?.addEventListener('click', () => {
       void restorePendingSession();
     });
   }
+  const title = $('#rwRestoreTitle');
+  const sub = $('#rwRestoreSub');
+  if (title) title.textContent = pendingSessionRestoreMissingFile ? 'Board file missing' : 'Unsaved session found';
+  if (sub) sub.textContent = pendingSessionRestoreMissingFile
+    ? 'Restore the last session from this app?'
+    : 'You had a board open last time. Restore it?';
   if (pendingSessionRestore) card.hidden = false;
   else card.hidden = true;
 }
 
 async function restorePendingSession() {
-  pendingSessionRestore = false;
+  clearPendingSessionRestore();
   const card = $('#rwRestore');
   if (card) card.hidden = true;
   const result = await restoreSession();
@@ -11849,8 +12221,9 @@ async function openNewBoardImpl() {
     const result = await resolveUnsavedChanges('leave');
     if (result !== 'proceed') return;
   }
-  pendingSessionRestore = false;
+  clearPendingSessionRestore();
   showRestoreCardIfPending();
+  boardOpenPersistSeq++;
   suppressBoardDirty = true;
   animaticsEditor?.clear?.();
   const ownedBlobIds = new Set(images.keys());
@@ -11900,7 +12273,33 @@ async function openNewBoardImpl() {
   toast('New board');
 }
 
-async function applyBoardPayload(j, meta = {}, imageLoader = null) {
+async function persistOpenedBoardBlobs(seq, records) {
+  try {
+    for (const im of records) {
+      if (seq !== boardOpenPersistSeq) return;
+      if (!(im?.blob instanceof Blob) || !im.blob.size) continue;
+      await persistImageBlob(im, im.blob);
+    }
+    if (seq !== boardOpenPersistSeq) return;
+    await pruneDiskImageBlobs(new Set(images.keys()));
+  } catch (err) {
+    console.warn('[openBoard] background persist failed:', err);
+  }
+}
+
+function boardImageBytesToBlob(loaded, rec) {
+  if (loaded instanceof Blob) {
+    return loaded.type ? loaded : new Blob([loaded], { type: rec.type || 'image/png' });
+  }
+  return new Blob([loaded], { type: rec.type || 'image/png' });
+}
+
+async function loadBoardImageRecord(rec, imageLoader) {
+  if (imageLoader) return imageLoader(rec);
+  return (await fetch(rec.data)).blob();
+}
+
+async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoader = null) {
   if (!j || j.app !== 'refboard' || !Array.isArray(j.items)) return 'failed';
   if (!onLanding && boardFileDirty) {
     const result = await resolveUnsavedChanges('leave');
@@ -11915,6 +12314,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
     if (!ok) return 'cancelled';
   }
   showOpeningOverlay();
+  const persistSeq = ++boardOpenPersistSeq;
   // Keep the current board recoverable through its Blobs, but release decoded
   // pixels before decoding a replacement board so opening does not require two
   // complete bitmap sets in memory at once.
@@ -11924,52 +12324,86 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
   let droppedImageItems = false;
   let firstImageLoadError = null;
   lastBoardOpenError = null;
+  let pendingPersist = null;
   try {
     const payloadImageIds = new Set();
     const payloadHasImageItems = j.items.some(it =>
       it && typeof it === 'object' && (it.kind || 'image') === 'image');
     cachedCurrentBoardThumb = typeof j.preview === 'string' && j.preview.length ? j.preview : null;
 
+    const recs = [];
     for (const rec of j.images || []) {
       const imgId = typeof rec?.id === 'string' ? rec.id : '';
       if (!imgId || payloadImageIds.has(imgId)) continue;
       payloadImageIds.add(imgId);
+      recs.push(rec);
+    }
+
+    const ingestLoaded = (rec, loaded) => {
+      const imgId = rec.id;
+      const blob = boardImageBytesToBlob(loaded, rec);
+      if (/^(audio|video)\//.test(String(rec.type || blob.type))) {
+        nextAnimaticMedia.set(imgId, blob);
+        return;
+      }
+      let w = Number(rec.w) || 0;
+      let h = Number(rec.h) || 0;
+      const im = prepareImageRecord({
+        id: imgId,
+        bitmap: null,
+        pristineBlob: null,
+        version: 0,
+        w, h,
+        blob,
+        blobSize: blob.size,
+        type: blob.type || 'image/png',
+        name: rec.name || '',
+      }, imgId);
+      void ensureStableImageProxy(im, blob);
+      nextImages.set(imgId, im);
+    };
+
+    for (let i = 0; i < recs.length; i += BOARD_OPEN_IMAGE_CONCURRENCY) {
+      const batch = recs.slice(i, i + BOARD_OPEN_IMAGE_CONCURRENCY);
+      let loadedList;
+      if (imageBatchLoader) {
+        try {
+          loadedList = await imageBatchLoader(batch);
+        } catch (e) {
+          loadedList = null;
+        }
+      }
+      if (!Array.isArray(loadedList) || loadedList.length !== batch.length) {
+        loadedList = await Promise.all(batch.map(rec =>
+          loadBoardImageRecord(rec, imageLoader).then(value => value, err => ({ __error: err }))
+        ));
+      }
+      for (let b = 0; b < batch.length; b++) {
+        const rec = batch[b];
+        const imgId = rec.id;
+        try {
+          const loaded = loadedList[b];
+          if (!loaded || loaded.__error) throw loaded?.__error || new Error('Missing image data');
+          ingestLoaded(rec, loaded);
+        } catch (e) {
+          if (!firstImageLoadError) {
+            firstImageLoadError = `${imgId || 'unknown image'}: ${e?.message || String(e)}`;
+          }
+          console.warn('[openBoard] skipped image record:', imgId || '(missing id)', e);
+        }
+      }
+    }
+
+    // Fill missing dimensions before items go on screen (only the ones that still lack w/h).
+    for (const im of nextImages.values()) {
+      if (im.w > 0 && im.h > 0) continue;
       try {
-        const loaded = imageLoader ? await imageLoader(rec) : await (await fetch(rec.data)).blob();
-        const blob = loaded instanceof Blob
-          ? (loaded.type ? loaded : new Blob([loaded], { type: rec.type || 'image/png' }))
-          : new Blob([loaded], { type: rec.type || 'image/png' });
-        if (/^(audio|video)\//.test(String(rec.type || blob.type))) {
-          nextAnimaticMedia.set(imgId, blob);
-          continue;
-        }
-        let w = Number(rec.w) || 0;
-        let h = Number(rec.h) || 0;
-        if (!(w > 0 && h > 0)) {
-          const probe = await decodeToBitmap(blob);
-          w = probe.width;
-          h = probe.height;
-          try { probe?.close?.(); } catch (e) {}
-        }
-        const im = prepareImageRecord({
-          id: imgId,
-          bitmap: null,
-          pristineBlob: null,
-          version: 0,
-          w, h,
-          blob,
-          blobSize: blob.size,
-          type: blob.type || 'image/png',
-          name: rec.name || '',
-        }, imgId);
-        void ensureStableImageProxy(im, blob);
-        await persistImageBlob(im, blob);
-        nextImages.set(imgId, im);
+        const probe = await decodeToBitmap(im.blob);
+        im.w = probe.width;
+        im.h = probe.height;
+        try { probe?.close?.(); } catch (e) {}
       } catch (e) {
-        if (!firstImageLoadError) {
-          firstImageLoadError = `${imgId || 'unknown image'}: ${e?.message || String(e)}`;
-        }
-        console.warn('[openBoard] skipped image record:', imgId || '(missing id)', e);
+        console.warn('[openBoard] could not probe image size:', im.id, e);
       }
     }
 
@@ -12021,7 +12455,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
     suppressBoardDirty = false;
     boardFileDirty = false;
     clearUndoHistory();
-    await pruneDiskImageBlobs(new Set(images.keys()));
+    pendingPersist = [...images.values()];
     await transitionToBoard({ fit: state.items.length > 0 });
     await nextUiFrame();
   } catch (err) {
@@ -12033,12 +12467,13 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
   } finally {
     hideOpeningOverlay();
   }
+  if (pendingPersist) void persistOpenedBoardBlobs(persistSeq, pendingPersist);
   await trackRecentWork();
   toast(`Opened board — ${state.items.length} item${state.items.length === 1 ? '' : 's'}`);
   if (droppedImageItems) {
     setTimeout(() => toast('Opened board with some missing images'), 2500);
   }
-  pendingSessionRestore = false;
+  clearPendingSessionRestore();
   // Self-heal boards saved without an embedded Explorer preview (e.g. 2.0.1 regression).
   if (meta.path && !cachedCurrentBoardThumb) {
     scheduleBoardPreviewBackfill(meta.path);
@@ -12058,17 +12493,22 @@ function openBoardFromPath(filePath) {
 }
 
 async function openBoardPayloadFromDesktop(filePath) {
-  if (window.RefBoardAPI?.beginBoardOpen && window.RefBoardAPI?.readBoardOpenImage) {
+  if (window.RefBoardAPI?.beginBoardOpen && (window.RefBoardAPI?.readBoardOpenImages || window.RefBoardAPI?.readBoardOpenImage)) {
     let token = null;
     try {
       const opened = await window.RefBoardAPI.beginBoardOpen(filePath);
       token = opened?.token || null;
       if (!token || !opened?.core || !Array.isArray(opened.images)) throw new Error('Invalid board stream');
       const payload = { ...opened.core, images: opened.images };
+      const imageLoader = rec => window.RefBoardAPI.readBoardOpenImage(token, rec.index);
+      const imageBatchLoader = window.RefBoardAPI.readBoardOpenImages
+        ? (batch) => window.RefBoardAPI.readBoardOpenImages(token, batch.map(rec => rec.index))
+        : null;
       return await applyBoardPayload(
         payload,
         { path: filePath, title: boardTitleFromPath(filePath) },
-        rec => window.RefBoardAPI.readBoardOpenImage(token, rec.index),
+        imageLoader,
+        imageBatchLoader,
       );
     } finally {
       if (token) await window.RefBoardAPI.finishBoardOpen?.(token).catch(() => {});
@@ -13015,6 +13455,7 @@ function drawGroupSelectionUi(it, pts) {
 
 const RESIZE_HANDLE_R = 5;
 const RESIZE_HANDLE_HIT = 14;
+const ROTATE_HANDLE_HIT = 28;
 
 function drawCornerHandles(pts, r = RESIZE_HANDLE_R) {
   ctx.save();
@@ -13190,7 +13631,10 @@ function draw() {
   if (selectedCount > 1 && !lightDrag) {
     for (const it of drawVisibleSelectedItems) drawSelectionOutline(it);
     const pts = selectionBBoxScreenPts(drawSelectedItems);
-    if (pts) drawSelectionUi(pts);
+    if (pts) {
+      drawCornerHandles(pts);
+      drawEdgePills(pts);
+    }
   } else if (selectedCount === 1) {
     const it = drawSelectedItems[0];
     if (drawVisibleItemIds.has(it.id)) {
@@ -13210,6 +13654,38 @@ function draw() {
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(x + 0.5, y + 0.5, w, h);
     ctx.setLineDash([]);
+  }
+
+  if (mode?.type === 'fill' && fillSession?.pts?.length) {
+    const it = byId(mode.it);
+    if (it) {
+      const im = images.get(it.imgId);
+      if (im) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(90,162,255,.85)';
+        ctx.lineWidth = Math.max(1.5, 2 / state.view.s);
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        const cr = cropOf(it);
+        const sx = cr.l * im.w, sy = cr.t * im.h;
+        const sw = (cr.r - cr.l) * im.w, sh = (cr.b - cr.t) * im.h;
+        const pts = fillSession.pts;
+        let first = true;
+        for (const p of pts) {
+          let lx = ((p.x - sx) / sw) * it.w;
+          let ly = ((p.y - sy) / sh) * it.h;
+          if (it.flipX) lx = it.w - lx;
+          if (it.flipY) ly = it.h - ly;
+          const [bx, by] = localToBoardRect(it, lx, ly);
+          const [cx, cy] = toScreen(bx, by);
+          if (first) { ctx.moveTo(cx, cy); first = false; }
+          else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+    }
   }
 
   // Replacement surfaces are installed atomically during drawing. Once the
@@ -13380,6 +13856,78 @@ function handlesHitOnPts(sx, sy, pts) {
   return null;
 }
 
+function selectionCanMouseRotate(items) {
+  return !!items.length && items.every(it => isImageItem(it) || isNoteItem(it));
+}
+
+function rotateHitOnPts(sx, sy, pts, innerR = 14, outerR = 28) {
+  if (!pts || pts.length < 4) return null;
+  const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4;
+  const cy = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
+  const corners = [['nw', pts[0]], ['ne', pts[1]], ['se', pts[2]], ['sw', pts[3]]];
+  for (const [c, [px, py]] of corners) {
+    const d = Math.hypot(sx - px, sy - py);
+    if (d <= innerR || d > outerR) continue;
+    const ox = px - cx, oy = py - cy;
+    const vx = sx - px, vy = sy - py;
+    if (ox * vx + oy * vy <= 0) continue;
+    return { corner: c };
+  }
+  return null;
+}
+
+function snapRotateDelta(deltaDeg, shiftKey) {
+  if (!shiftKey) return deltaDeg;
+  return Math.round(deltaDeg / 90) * 90;
+}
+
+function signedAngleDelta(from, to) {
+  let d = to - from;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function rotateItemAroundOrigin(it, start, origin, deltaDeg) {
+  const rad = (deltaDeg * Math.PI) / 180;
+  const ocx = start.x + start.w / 2;
+  const ocy = start.y + start.h / 2;
+  const v = rotateVec(ocx - origin.x, ocy - origin.y, rad);
+  it.rot = ((start.rot + deltaDeg) % 360 + 360) % 360;
+  it.w = start.w;
+  it.h = start.h;
+  it.x = origin.x + v.x - it.w / 2;
+  it.y = origin.y + v.y - it.h / 2;
+}
+
+function collectRotateOrig(items) {
+  return items.map(it => ({
+    id: it.id,
+    x: it.x, y: it.y, w: it.w, h: it.h,
+    rot: Number(it.rot) || 0,
+  }));
+}
+
+function rotateOriginOf(items) {
+  if (items.length === 1) {
+    const it = items[0];
+    return { x: it.x + it.w / 2, y: it.y + it.h / 2 };
+  }
+  const r = selectionBBoxRect(items);
+  return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+}
+
+function applyItemsRotate(orig, origin, deltaDeg) {
+  for (const o of orig) {
+    const it = byId(o.id);
+    if (!it) continue;
+    rotateItemAroundOrigin(it, o, origin, deltaDeg);
+    roundItemBoardGeom(it);
+    if (isNoteItem(it) && noteEditId === it.id) positionNoteEditor();
+  }
+  invalidateWorkspaceBBox();
+}
+
 function imageContentAspect(it) {
   if (!isImageItem(it)) return 1;
   const im = images.get(it.imgId);
@@ -13507,14 +14055,20 @@ function handleAt(sx, sy) {
     return null;
   }
 
+  const canRotate = !cropItemId && selectionCanMouseRotate(items);
+
   if (items.length > 1) {
     if (items.some(isInLockedGroup)) return null;
     const r = selectionBBoxRect();
     if (!r) return null;
     const pts = selectionBBoxScreenPts();
     const hit = handlesHitOnPts(sx, sy, pts);
-    if (!hit) return null;
-    return { group: true, bbox: r, corner: hit.corner || null, edge: hit.edge || null };
+    if (hit) return { group: true, bbox: r, corner: hit.corner || null, edge: hit.edge || null };
+    if (canRotate) {
+      const rotHit = rotateHitOnPts(sx, sy, pts, RESIZE_HANDLE_HIT, ROTATE_HANDLE_HIT);
+      if (rotHit) return { rotate: true, group: true, corner: rotHit.corner };
+    }
+    return null;
   }
 
   const it = items[0];
@@ -13522,8 +14076,12 @@ function handleAt(sx, sy) {
   if (isInLockedGroup(it)) return null;
   const pts = itemCorners(it).map(p => toScreen(p[0], p[1]));
   const hit = handlesHitOnPts(sx, sy, pts);
-  if (!hit) return null;
-  return { corner: hit.corner || null, edge: hit.edge || null, it };
+  if (hit) return { corner: hit.corner || null, edge: hit.edge || null, it };
+  if (canRotate) {
+    const rotHit = rotateHitOnPts(sx, sy, pts, RESIZE_HANDLE_HIT, ROTATE_HANDLE_HIT);
+    if (rotHit) return { rotate: true, corner: rotHit.corner, it };
+  }
+  return null;
 }
 
 // corner drag: uniform aspect-locked scale, anchored at the opposite corner.
@@ -13813,6 +14371,62 @@ canvas.addEventListener('pointerdown', async e => {
     }
   }
 
+  if (fillActive && e.button === 0 && !(spaceDown || altDown || e.altKey)) {
+    const hit = itemAt(sx, sy);
+    if (hit && isImageItem(hit)) {
+      finishNoteEdit();
+      const [bx, by] = toBoard(sx, sy);
+      const pt = boardPointToBitmap(hit, bx, by);
+      if (pt) {
+        const prepareSeq = ++fillPrepareSeq;
+        fillPendingPts = [pt];
+        fillPendingPts.it = hit;
+        (async () => {
+          try {
+            const prepared = await prepareExclusiveImageEdit(hit);
+            if (!prepared) return;
+            if (prepareSeq !== fillPrepareSeq) {
+              await discardDetachedImageEdit(prepared);
+              return;
+            }
+            const im = prepared.im;
+            await ensureFullBitmap(im);
+            if (!im.bitmap) {
+              await discardDetachedImageEdit(prepared);
+              return;
+            }
+            const undoBlob = await getImageBlob(im);
+            if (!undoBlob) {
+              await discardDetachedImageEdit(prepared);
+              return;
+            }
+            if (prepareSeq !== fillPrepareSeq) {
+              await discardDetachedImageEdit(prepared);
+              return;
+            }
+            if (prepared.detached) hit.imgId = prepared.detachedImgId;
+            fillSession = {
+              it: hit,
+              imId: hit.imgId,
+              prepared,
+              undoBlob,
+              pts: fillPendingPts || [pt],
+              worker: null,
+            };
+            fillPendingPts = null;
+            if (!mode) mode = { type: 'fill', it: hit.id, sx, sy };
+            invalidate();
+          } catch (err) {
+            console.error('[fill] failed to prepare image:', err);
+            fillSession = null;
+            fillPendingPts = null;
+          }
+        })();
+      }
+    }
+    return;
+  }
+
   if (drawActive && e.button === 0 && !(spaceDown || altDown || e.altKey)) {
     const hit = itemAt(sx, sy);
     if (hit && isImageItem(hit)) {
@@ -13905,6 +14519,24 @@ canvas.addEventListener('pointerdown', async e => {
         orig: { x1: h.it.x1, y1: h.it.y1, x2: h.it.x2, y2: h.it.y2 },
         sx, sy, pushed: false,
       };
+      return;
+    }
+    if (h.rotate) {
+      const items = selectedItems();
+      const origin = rotateOriginOf(items);
+      const [bx, by] = toBoard(sx, sy);
+      const startAngle = Math.atan2(by - origin.y, bx - origin.x);
+      mode = {
+        type: 'rotate',
+        corner: h.corner || null,
+        origin,
+        orig: collectRotateOrig(items),
+        startAngle,
+        lastAngle: startAngle,
+        accDelta: 0,
+        sx, sy, pushed: false,
+      };
+      canvas.style.cursor = rotateCursorForHandle(h, h.group ? 0 : (h.it?.rot || 0));
       return;
     }
     if (h.group) {
@@ -14028,6 +14660,20 @@ window.addEventListener('pointermove', e => {
     else hideDrawSizePreview();
   }
   if (!mode) {
+    if (fillActive) {
+      const it = fillSession?.it;
+      const target = it || fillPendingPts?.it;
+      if (target) {
+        const [bx, by] = toBoard(sx, sy);
+        const pt = boardPointToBitmap(target, bx, by);
+        if (pt) {
+          if (fillSession) fillSession.pts.push(pt);
+          else if (fillPendingPts) fillPendingPts.push(pt);
+          invalidate();
+        }
+        return;
+      }
+    }
     updateNoteLinkHover(sx, sy);
     updateCursor(sx, sy);
     return;
@@ -14109,6 +14755,21 @@ window.addEventListener('pointermove', e => {
     if (!Number.isFinite(k)) k = 1;
     applyProportionalResize(it, r, k, A[0], A[1]);
     scheduleSave(); invalidate();
+  } else if (mode.type === 'rotate') {
+    if (!mode.pushed) {
+      if (Math.hypot(dx, dy) < 2) return;
+      mode.pushed = true;
+      pushUndo();
+    }
+    const [bx, by] = toBoard(sx, sy);
+    const ang = Math.atan2(by - mode.origin.y, bx - mode.origin.x);
+    mode.accDelta += signedAngleDelta(mode.lastAngle, ang);
+    mode.lastAngle = ang;
+    const delta = snapRotateDelta(mode.accDelta * 180 / Math.PI, e.shiftKey);
+    applyItemsRotate(mode.orig, mode.origin, delta);
+    const live = mode.orig.length === 1 ? byId(mode.orig[0].id) : null;
+    canvas.style.cursor = rotateCursorForHandle({ corner: mode.corner }, live?.rot || 0);
+    scheduleSave(); invalidate();
   } else if (mode.type === 'groupResize') {
     if (!mode.pushed) {
       if (Math.hypot(dx, dy) < 2) return;
@@ -14184,13 +14845,26 @@ window.addEventListener('pointermove', e => {
     }
     scheduleSave();
     invalidate();
+  } else if (mode.type === 'fill') {
+    const it = byId(mode.it);
+    if (it) {
+      const [bx, by] = toBoard(sx, sy);
+      const pt = boardPointToBitmap(it, bx, by);
+      if (pt) {
+        if (fillSession) fillSession.pts.push(pt);
+        else if (fillPendingPts) fillPendingPts.push(pt);
+        invalidate();
+      }
+    }
   }
 });
 
 window.addEventListener('pointercancel', () => {
   drawPrepareSeq++;
+  fillPrepareSeq++;
   if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
+  cancelFillSession();
   mode = null;
   marquee = null;
   dropTargetGroupId = null;
@@ -14198,7 +14872,12 @@ window.addEventListener('pointercancel', () => {
 });
 
 window.addEventListener('pointerup', e => {
-  if (!mode) return;
+  if (!mode) {
+    if (fillSession?.pts?.length >= 3) {
+      commitFillSession(null);
+    }
+    return;
+  }
   if (mode.type === 'pan') {
     if (mode.right) lastRightDrag = mode.dist;
     scheduleSave(false);
@@ -14265,6 +14944,8 @@ window.addEventListener('pointerup', e => {
     }
   } else if (mode.type === 'draw') {
     commitDrawSessionAndSave();
+  } else if (mode.type === 'fill') {
+    commitFillSession(mode);
   }
   mode = null;
   updateCursor(...clientToCanvas(e.clientX, e.clientY));
@@ -14273,11 +14954,13 @@ window.addEventListener('pointerup', e => {
 window.addEventListener('blur', () => {
   spaceDown = false; altDown = false;
   drawPrepareSeq++;
+  fillPrepareSeq++;
   hideDrawSizePreview();
   hideNoteLinkPop();
   finishNoteEdit();
   if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
+  cancelFillSession();
   mode = null; marquee = null; dropTargetGroupId = null; invalidate();
 });
 
@@ -14300,6 +14983,29 @@ function resizeCursorForHandle(handle, rotation = 0) {
   return resizeCursorForAngle(baseAngle + rotation);
 }
 
+function rotateCursorForHandle(handle, rotation = 0) {
+  const corner = handle?.corner || 'se';
+  const base = { se: 0, sw: 90, nw: 180, ne: 270 }[corner] ?? 0;
+  // OS cursors are screen-space: the glyph never multiplies by board zoom.
+  const deg = Math.round((base + (Number(rotation) || 0)) * 10) / 10;
+  const cache = rotateCursorForHandle._cache || (rotateCursorForHandle._cache = new Map());
+  const cached = cache.get(deg);
+  if (cached) return cached;
+  // PureRef-style 90° double-arrow that hugs the corner, at normal pointer
+  // size. White fill with a hairline dark outline so the curve stays clean.
+  const glyph = '<g transform="rotate(' + deg + ' 16 16)">' +
+    '<path d="M25.05 16A9.05 9.05 0 0 1 16 25.05L16 26.17L11.83 24.05L16 21.93L16 23.05A7.05 7.05 0 0 0 23.05 16L21.93 16L24.05 11.83L26.17 16Z" fill="#111" stroke="#111" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/>' +
+    '<path d="M25.05 16A9.05 9.05 0 0 1 16 25.05L16 26.17L11.83 24.05L16 21.93L16 23.05A7.05 7.05 0 0 0 23.05 16L21.93 16L24.05 11.83L26.17 16Z" fill="#fff"/>' +
+    '</g>';
+  const svgAt = (size) => '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 32 32" shape-rendering="geometricPrecision">' + glyph + '</svg>';
+  const u1 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(32)) + '")';
+  const u2 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(64)) + '")';
+  const u3 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(96)) + '")';
+  const css = u1 + ' 16 16, -webkit-image-set(' + u1 + ' 1x, ' + u2 + ' 2x, ' + u3 + ' 3x) 16 16, grab';
+  cache.set(deg, css);
+  return css;
+}
+
 function updateCursor(sx, sy) {
   if (drawActive) { canvas.style.cursor = drawModeCursor(); return; }
   if (arrowTool) { canvas.style.cursor = 'crosshair'; return; }
@@ -14317,6 +15023,10 @@ function updateCursor(sx, sy) {
   const h = handleAt(sx, sy);
   if (h) {
     if (h.arrowEndpoint) { canvas.style.cursor = 'crosshair'; return; }
+    if (h.rotate) {
+      canvas.style.cursor = rotateCursorForHandle(h, h.group ? 0 : (h.it?.rot || 0));
+      return;
+    }
     canvas.style.cursor = resizeCursorForHandle(h, h.group ? 0 : (h.it?.rot || 0));
     return;
   }
@@ -14366,7 +15076,7 @@ async function pickColorAt(sx, sy) {
 
 window.addEventListener('wheel', e => {
   if (onLanding || isAnimaticsInputActive() || e.target.closest('#recentWorks')) return;
-  if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop')) return;
+  if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop, #titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
   const now = Date.now();
@@ -14871,9 +15581,11 @@ const SHORTCUTS = [
   { cat:'Tools', label:'Eyedropper', keys:['I'] },
   { cat:'Tools', label:'Activate draw pen', keys:['D'] },
   { cat:'Tools', label:'Activate draw eraser', keys:['E'] },
+  { cat:'Tools', label:'Content-aware fill', keys:['C'] },
   { cat:'Tools', label:'Decrease draw size', keys:['['] },
   { cat:'Tools', label:'Increase draw size', keys:[']'] },
   { cat:'Tools', label:'Rotate', keys:['R'] },
+  { cat:'Tools', label:'Rotate from a corner (Shift snaps 90°)', keys:['Drag'] },
   { cat:'Tools', label:'Flip horizontal', keys:['Ctrl','Shift','H'] },
   { cat:'Tools', label:'Flip vertical', keys:['Ctrl','Shift','V'] },
   { cat:'Tools', label:'Toggle grayscale', keys:['G'] },
@@ -14882,6 +15594,7 @@ const SHORTCUTS = [
   { cat:'View', label:'Pan board', keys:['Space','drag'] },
   { cat:'View', label:'Reset zoom', keys:['Ctrl','0'] },
   { cat:'View', label:'Always on top', keys:['Ctrl','T'] },
+  { cat:'View', label:'Always on top of…', keys:['Ctrl','Alt','Shift','A'] },
   { cat:'View', label:'Shortcuts help', keys:['?'] },
   { cat:'Files', label:'Save board', keys:['Ctrl','S'] },
   { cat:'Files', label:'Save board as', keys:['Ctrl','Shift','S'] },
@@ -15046,6 +15759,7 @@ window.addEventListener('pointerdown', e => {
   if (isAnimaticsInputActive()) return;
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
+  if (!e.target.closest('#titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) window.closePinMenus?.();
   if (e.target.closest('#drawColorBtn')) return;
   if (!e.target.closest('#drawCanvasPop')) closeDrawCanvasPop();
   if (!e.target.closest('#drawPen') && !e.target.closest('#drawBrushDrawer')) closeBrushDrawer();
@@ -15125,6 +15839,7 @@ window.addEventListener('keydown', e => {
     if (drawFeaturesOpen) { closeDrawFeatures(); return; }
     if (arrowTool) { arrowTool = null; syncDrawUi(); toast('Arrow tool off'); invalidate(); return; }
     if (drawActive) { setDrawActive(false); toast('Draw mode off'); return; }
+    if (fillActive) { setFillActive(false); toast('Content-aware fill off'); return; }
     if (toolbarIsFloating() && document.body.classList.contains('toolbar-revealed')) {
       setToolbarRevealed(false);
       $('#toolbarEdgeHandle')?.focus({ preventScroll: true });
@@ -15161,6 +15876,8 @@ window.addEventListener('keydown', e => {
       }
     }
     else if (k === 'delete' || k === 'backspace') deleteSelection();
+    else if (k === 'c' && !mod && !e.shiftKey) { e.preventDefault(); toggleFillActive(); }
+    else if (k === 'f' && fillActive) { e.preventDefault(); setFillActive(false); toast('Content-aware fill off'); }
     else if (k === 'f') fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i)));
     else if (k === 'p') arrangeAll();
     else if (e.shiftKey && k === 't') {
@@ -15168,6 +15885,11 @@ window.addEventListener('keydown', e => {
       createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null);
     }
     else if (k === 'i') startEyedropper();
+    else if (k === 'c' && !e.shiftKey) {
+      e.preventDefault();
+      toggleFillActive();
+      if (!e.repeat) toast(fillActive ? 'Content-aware fill — drag a lasso on an image' : 'Content-aware fill off');
+    }
     else if (k === 'd') {
       e.preventDefault();
       activateDrawShortcut('pen');
@@ -15478,15 +16200,19 @@ if (window.RefBoardAPI?.onCloseRequest) {
 
   if (icon && api.getAppIconDataUrl) {
     api.getAppIconDataUrl().then(url => {
-      if (!url) return;
-      icon.src = url;
+      if (url) icon.src = url;
     }).catch(() => {});
   }
 
   const drag = $('#titlebarDrag');
+  const btnPin = $('#titlebarPin');
   const btnMin = $('#titlebarMin');
   const btnMax = $('#titlebarMax');
   const btnClose = $('#titlebarClose');
+  const pinMenu = $('#titlebarPinMenu');
+  const pinWindows = $('#titlebarPinWindows');
+  const pinAlways = $('#titlebarPinAlways');
+  const pinAbove = $('#titlebarPinAbove');
 
   function setMaximized(on) {
     btnMax.classList.toggle('maximized', on);
@@ -15501,6 +16227,140 @@ if (window.RefBoardAPI?.onCloseRequest) {
   btnMax.addEventListener('click', () => api.windowMaximize());
   btnClose.addEventListener('click', () => api.windowClose());
   drag.addEventListener('dblclick', () => api.windowMaximize());
+
+  if (!btnPin || !pinMenu || !pinWindows || !api.pinGetState) return;
+
+  let pinState = { mode: 'off', alwaysOnTop: false };
+  let pinHoverTimer = null;
+
+  function applyPinState(state) {
+    pinState = state && typeof state === 'object' ? state : { mode: 'off' };
+    const on = pinState.mode === 'always' || pinState.mode === 'above';
+    btnPin.classList.toggle('pinned', on);
+    btnPin.setAttribute('aria-pressed', String(on));
+    btnPin.title = pinState.mode === 'above' && pinState.targetTitle
+      ? `Pinned on top of ${pinState.targetTitle}`
+      : on ? 'Pinned on top of other windows' : 'Pin window';
+    pinAlways.classList.toggle('on', pinState.mode === 'always');
+    pinAlways.setAttribute('aria-checked', String(pinState.mode === 'always'));
+    pinAbove.classList.toggle('on', pinState.mode === 'above');
+    pinWindows.querySelectorAll('.mi[data-pin-id]').forEach(item => {
+      item.classList.toggle('on', pinState.mode === 'above' && item.dataset.pinId === pinState.targetId);
+    });
+  }
+
+  function positionPinMenu() {
+    const rect = btnPin.getBoundingClientRect();
+    pinMenu.style.top = `${rect.bottom}px`;
+    pinMenu.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
+    pinMenu.style.left = 'auto';
+  }
+
+  function positionPinWindows() {
+    const menuRect = pinMenu.getBoundingClientRect();
+    const aboveRect = pinAbove.getBoundingClientRect();
+    pinWindows.style.top = `${aboveRect.top}px`;
+    pinWindows.style.right = `${Math.max(8, window.innerWidth - menuRect.left + 4)}px`;
+    pinWindows.style.left = 'auto';
+    const next = pinWindows.getBoundingClientRect();
+    if (next.top + next.height > innerHeight - 8) {
+      pinWindows.style.top = `${Math.max(8, innerHeight - next.height - 8)}px`;
+    }
+  }
+
+  window.closePinMenus = closePinMenus;
+  function closePinMenus() {
+    pinMenu.classList.remove('show');
+    pinWindows.classList.remove('show');
+    btnPin.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('titlebar-pin-open');
+    clearTimeout(pinHoverTimer);
+  }
+
+  async function fillPinWindows() {
+    pinWindows.innerHTML = '<div class="mcat">Windows</div>';
+    let list = [];
+    try { list = await api.pinListWindows(); } catch { list = []; }
+    if (!Array.isArray(list) || !list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'mi';
+      empty.style.pointerEvents = 'none';
+      empty.textContent = 'No other windows found';
+      pinWindows.appendChild(empty);
+      return;
+    }
+    for (const entry of list) {
+      const item = document.createElement('div');
+      item.className = 'mi';
+      item.dataset.pinId = entry.id;
+      item.setAttribute('role', 'menuitem');
+      const label = document.createElement('span');
+      label.textContent = entry.title || 'Window';
+      item.appendChild(label);
+      if (pinState.mode === 'above' && pinState.targetId === entry.id) item.classList.add('on');
+      item.addEventListener('click', async () => {
+        closePinMenus();
+        applyPinState(await api.pinSetAbove(entry.id));
+      });
+      pinWindows.appendChild(item);
+    }
+  }
+
+  async function showPinWindows() {
+    await fillPinWindows();
+    pinWindows.classList.add('show');
+    positionPinWindows();
+  }
+
+  function openPinMenu({ showWindows = false } = {}) {
+    closeMenu();
+    document.body.classList.add('titlebar-pin-open');
+    if (document.body.classList.contains('board-active')) {
+      document.body.classList.add('titlebar-revealed');
+    }
+    pinMenu.classList.add('show');
+    btnPin.setAttribute('aria-expanded', 'true');
+    positionPinMenu();
+    if (showWindows) showPinWindows();
+    else pinWindows.classList.remove('show');
+  }
+
+  btnPin.addEventListener('click', () => {
+    if (pinMenu.classList.contains('show')) closePinMenus();
+    else openPinMenu();
+  });
+
+  pinAlways.addEventListener('click', async () => {
+    closePinMenus();
+    applyPinState(await api.pinSetAlways());
+  });
+
+  pinAbove.addEventListener('mouseenter', () => {
+    clearTimeout(pinHoverTimer);
+    pinHoverTimer = setTimeout(() => showPinWindows(), 80);
+  });
+  pinAbove.addEventListener('click', event => {
+    event.stopPropagation();
+    showPinWindows();
+  });
+  pinMenu.addEventListener('mouseleave', event => {
+    if (event.relatedTarget && pinWindows.contains(event.relatedTarget)) return;
+    clearTimeout(pinHoverTimer);
+  });
+  const stopPinWheel = event => event.stopPropagation();
+  pinMenu.addEventListener('wheel', stopPinWheel, { passive: true });
+  pinWindows.addEventListener('wheel', stopPinWheel, { passive: true });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && pinMenu.classList.contains('show')) {
+      event.preventDefault();
+      closePinMenus();
+    }
+  });
+
+  api.pinGetState().then(applyPinState).catch(() => {});
+  api.onPinStateChange(applyPinState);
+  api.onPinOpenAbove(() => openPinMenu({ showWindows: true }));
 })();
 
 (function initTitlebarAutoHide() {
@@ -15526,20 +16386,27 @@ if (window.RefBoardAPI?.onCloseRequest) {
   }
 
   function scheduleHide() {
+    if (document.body.classList.contains('titlebar-pin-open')) return;
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => setRevealed(false), 420);
   }
 
   function inTitlebarZone(node) {
-    return node && (peek.contains(node) || bar.contains(node));
+    return node && (
+      peek.contains(node) ||
+      bar.contains(node) ||
+      node.closest?.('#titlebarPinMenu, #titlebarPinWindows')
+    );
   }
 
   peek.addEventListener('mouseenter', reveal);
   bar.addEventListener('mouseenter', reveal);
   bar.addEventListener('mouseleave', (e) => {
+    if (document.body.classList.contains('titlebar-pin-open')) return;
     if (!inTitlebarZone(e.relatedTarget)) scheduleHide();
   });
   peek.addEventListener('mouseleave', (e) => {
+    if (document.body.classList.contains('titlebar-pin-open')) return;
     if (!inTitlebarZone(e.relatedTarget)) scheduleHide();
   });
   document.addEventListener('mousemove', (e) => {
@@ -15607,6 +16474,7 @@ $('#addCanvasBtn').addEventListener('click', e => {
   else openDrawCanvasPop($('#addCanvasBtn'));
 });
 $('#btnDraw').addEventListener('click', toggleDrawFeatures);
+$('#btnFill').addEventListener('click', toggleFillActive);
 $('#btnPaste').addEventListener('click', () => menuPaste(null));
 $('#btnNote').addEventListener('click', () => createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null));
 $('#btnArrange').addEventListener('click', arrangeAll);
@@ -16015,9 +16883,10 @@ noteEd.addEventListener('keyup', () => noteListDd?.syncUi());
 noteEd.addEventListener('mouseup', () => noteListDd?.syncUi());
 noteEd.addEventListener('select', () => noteListDd?.syncUi());
 
-const THEMES = ['midnight', 'slate', 'graphite', 'pine', 'plum', 'dim'];
+const THEMES = ['midnight', 'slate', 'black', 'pine', 'ocean', 'dim'];
+const THEME_ALIASES = { graphite: 'black', plum: 'ocean' };
 function applyTheme(name) {
-  const theme = THEMES.includes(name) ? name : 'midnight';
+  const theme = THEMES.includes(THEME_ALIASES[name] || name) ? (THEME_ALIASES[name] || name) : 'midnight';
   if (theme === 'midnight') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme);
   const cs = getComputedStyle(document.documentElement);
@@ -16058,9 +16927,11 @@ async function init() {
   if (db) {
     try {
       const meta = await loadSessionMeta();
-      pendingSessionRestore = isValidSessionMeta(meta) && !!(meta.items && meta.items.length) && !!meta.dirty;
+      const decision = await evaluatePendingSessionRestore(meta);
+      pendingSessionRestore = decision.offer;
+      pendingSessionRestoreMissingFile = decision.missingFile;
     } catch {
-      pendingSessionRestore = false;
+      clearPendingSessionRestore();
     }
   }
 
@@ -16076,7 +16947,7 @@ async function init() {
   const startupBoardPath = await window.RefBoardAPI?.getPendingOpenPath?.();
   if (startupBoardPath) {
     await openBoardFromPath(startupBoardPath);
-    if (sameFilePath(startupBoardPath, currentBoardPath)) pendingSessionRestore = false;
+    if (sameFilePath(startupBoardPath, currentBoardPath)) clearPendingSessionRestore();
   }
   if (!startupBoardPath || !sameFilePath(startupBoardPath, currentBoardPath)) {
     await showLanding();
@@ -16132,9 +17003,15 @@ window.RefBoard = {
   images,
   addImages,
   fitAll,
+  saveBoardFile,
+  openBoardFromPath,
   animatics: animaticsEditor,
   memoryStats: memoryDiagnostics,
   imageRenderState: imageRenderDiagnostics,
+  get fillActive() { return fillActive; },
+  get fillSession() { return fillSession; },
+  get mode() { return mode; },
+  get fillPendingPts() { return fillPendingPts; },
 };
 
 initPerfOverlay({

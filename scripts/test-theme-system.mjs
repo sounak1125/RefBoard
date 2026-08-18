@@ -7,9 +7,9 @@ const animatics = await readFile(new URL('./animatics.mjs', import.meta.url), 'u
 const themes = [
   ['midnight', 'Midnight'],
   ['slate', 'Carbon'],
-  ['graphite', 'Ember'],
+  ['black', 'Black'],
   ['pine', 'Forest'],
-  ['plum', 'Aubergine'],
+  ['ocean', 'Tide'],
   ['dim', 'Studio'],
 ];
 const semanticTokens = [
@@ -73,6 +73,8 @@ for (const [id, label] of themes) {
 }
 
 assert.equal(backgrounds.size, themes.length, 'every theme should have a distinct base background');
+assert.match(html, /graphite:\s*'black'/, 'saved Ember/graphite choices should migrate to Black');
+assert.match(html, /plum:\s*'ocean'/, 'saved Aubergine/plum choices should migrate to Tide');
 assert.match(html, /setAttribute\('aria-pressed',\s*String\(active\)\)/, 'theme cards should expose their selected state');
 assert.match(html, /localStorage\.setItem\('refboard\.theme',\s*theme\)/, 'theme choice should persist immediately');
 assert.match(animatics, /--an-bg:var\(--bg\)/, 'Animatics should inherit the selected application background');
