@@ -14549,25 +14549,23 @@ function resizeCursorForHandle(handle, rotation = 0) {
 
 function rotateCursorForHandle(handle, rotation = 0) {
   const corner = handle?.corner || 'se';
-  const base = { nw: 225, ne: 315, se: 45, sw: 135 }[corner] ?? 45;
+  const base = { se: 0, sw: 90, nw: 180, ne: 270 }[corner] ?? 0;
+  // OS cursors are screen-space: the glyph never multiplies by board zoom.
   const deg = Math.round((base + (Number(rotation) || 0)) * 10) / 10;
   const cache = rotateCursorForHandle._cache || (rotateCursorForHandle._cache = new Map());
   const cached = cache.get(deg);
   if (cached) return cached;
-  // Thin circular double-arrow: white silhouette first, black core on top.
-  // Heads sit on the arc tangents; butt caps keep the ring from blobbing into them.
-  const glyph = '<g transform="rotate(' + deg + ' 16 16)" fill="none" stroke-linecap="butt" stroke-linejoin="round">' +
-    '<path d="M7.96 22.28A10.2 10.2 0 1 0 7.96 9.72" stroke="#fff" stroke-width="3.85"/>' +
-    '<polygon points="11.4,26.68 5.24,24.4 10.68,20.16" fill="#fff"/>' +
-    '<polygon points="11.4,5.32 10.68,11.84 5.24,7.6" fill="#fff"/>' +
-    '<path d="M7.96 22.28A10.2 10.2 0 1 0 7.96 9.72" stroke="#111" stroke-width="2.05"/>' +
-    '<polygon points="10.76,25.87 5.95,23.85 9.97,20.71" fill="#111"/>' +
-    '<polygon points="10.76,6.13 9.97,11.29 5.95,8.15" fill="#111"/>' +
+  // PureRef-style 90° double-arrow that hugs the corner, at normal pointer
+  // size. White fill with a hairline dark outline so the curve stays clean.
+  const glyph = '<g transform="rotate(' + deg + ' 16 16)">' +
+    '<path d="M25.05 16A9.05 9.05 0 0 1 16 25.05L16 26.17L11.83 24.05L16 21.93L16 23.05A7.05 7.05 0 0 0 23.05 16L21.93 16L24.05 11.83L26.17 16Z" fill="#111" stroke="#111" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round"/>' +
+    '<path d="M25.05 16A9.05 9.05 0 0 1 16 25.05L16 26.17L11.83 24.05L16 21.93L16 23.05A7.05 7.05 0 0 0 23.05 16L21.93 16L24.05 11.83L26.17 16Z" fill="#fff"/>' +
     '</g>';
-  const svgAt = (size) => '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 32 32">' + glyph + '</svg>';
-  const u32 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(32)) + '")';
-  const u64 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(64)) + '")';
-  const css = u32 + ' 16 16, -webkit-image-set(' + u32 + ' 1x, ' + u64 + ' 2x) 16 16, grab';
+  const svgAt = (size) => '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 32 32" shape-rendering="geometricPrecision">' + glyph + '</svg>';
+  const u1 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(32)) + '")';
+  const u2 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(64)) + '")';
+  const u3 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(96)) + '")';
+  const css = u1 + ' 16 16, -webkit-image-set(' + u1 + ' 1x, ' + u2 + ' 2x, ' + u3 + ' 3x) 16 16, grab';
   cache.set(deg, css);
   return css;
 }
