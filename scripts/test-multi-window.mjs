@@ -13,7 +13,7 @@ assert.match(main, /function focusedWindow\(\)/, 'a focused window fallback is r
 
 // Window creation is repeatable and self-cleaning.
 assert.match(main, /async function createWindow\(startupFilePath = null\)/, 'createWindow must be reusable per board window');
-assert.match(main, /win\.on\('closed', \(\) => \{ windows\.delete\(win\); \}\)/, 'closing a window must drop it from the registry');
+assert.match(main, /win\.on\('closed', \(\) => \{[\s\S]*?windows\.delete\(win\);/, 'closing a window must drop it from the registry');
 assert.match(main, /win\.webContents\.send\('open-board-path', startupFilePath\)/, 'a window can receive its initial board path after load');
 
 // No single-global window may remain outside createWindow's local scope.

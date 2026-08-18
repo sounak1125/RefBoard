@@ -13,6 +13,7 @@ const { pathToFileURL } = require('url');
 const ffmpegStaticPath = require('ffmpeg-static');
 const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-format');
 const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
+const zorder = require('./scripts/win32-zorder');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -34,6 +35,129 @@ function windowForEvent(event) {
   const fromSender = BrowserWindow.fromWebContents(event.sender);
   if (fromSender && windows.has(fromSender) && !fromSender.isDestroyed()) return fromSender;
   return focusedWindow();
+}
+
+const pinByWindow = new WeakMap();
+
+function nativeHwndId(win) {
+  try {
+    const buf = win.getNativeWindowHandle();
+    if (!buf) return '';
+    if (buf.length >= 8) return buf.readBigUInt64LE(0).toString();
+    return String(buf.readUInt32LE(0));
+  } catch {
+    return '';
+  }
+}
+
+function pinSnapshot(win) {
+  const state = pinByWindow.get(win);
+  if (!state || !win || win.isDestroyed()) {
+    return { mode: 'off', alwaysOnTop: false };
+  }
+  return {
+    mode: state.mode,
+    targetTitle: state.targetTitle || undefined,
+    targetId: state.targetId || undefined,
+    alwaysOnTop: !!win.isAlwaysOnTop(),
+  };
+}
+
+function sendPinState(win) {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send('pin-state-changed', pinSnapshot(win));
+}
+
+function toastPin(win, msg) {
+  if (!win || win.isDestroyed()) return;
+  const safe = JSON.stringify(msg);
+  win.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
+}
+
+function clearPinWatch(state) {
+  if (state?.timer) {
+    clearInterval(state.timer);
+    state.timer = null;
+  }
+}
+
+function unpinWindow(win, { silent = false } = {}) {
+  if (!win) return pinSnapshot(win);
+  const prev = pinByWindow.get(win);
+  clearPinWatch(prev);
+  if (process.platform === 'win32') {
+    const our = nativeHwndId(win);
+    if (our) zorder.detach(our);
+  }
+  if (!win.isDestroyed()) win.setAlwaysOnTop(false);
+  pinByWindow.set(win, { mode: 'off' });
+  sendPinState(win);
+  if (!silent) toastPin(win, 'Unpinned');
+  return pinSnapshot(win);
+}
+
+function pinAlways(win) {
+  if (!win || win.isDestroyed()) return { mode: 'off', alwaysOnTop: false };
+  const prev = pinByWindow.get(win);
+  if (prev?.mode === 'always') return unpinWindow(win);
+  clearPinWatch(prev);
+  if (process.platform === 'win32') {
+    const our = nativeHwndId(win);
+    if (our) zorder.detach(our);
+  }
+  win.setAlwaysOnTop(true, 'floating');
+  pinByWindow.set(win, { mode: 'always' });
+  sendPinState(win);
+  toastPin(win, 'Pinned on top of other windows');
+  return pinSnapshot(win);
+}
+
+function pinAbove(win, targetId) {
+  if (!win || win.isDestroyed()) return { mode: 'off', alwaysOnTop: false };
+  const prev = pinByWindow.get(win);
+  if (prev?.mode === 'above' && prev.targetId === String(targetId || '')) return unpinWindow(win);
+  if (process.platform !== 'win32') {
+    return { ...pinSnapshot(win), error: 'unsupported' };
+  }
+  const our = nativeHwndId(win);
+  const info = zorder.windowInfo(targetId);
+  if (!our || !info) return { ...pinSnapshot(win), error: 'missing-window' };
+  clearPinWatch(prev);
+  win.setAlwaysOnTop(false);
+  const attached = zorder.attach(our, info.id);
+  const state = {
+    mode: 'above',
+    targetId: info.id,
+    targetTitle: info.title,
+    attached,
+    timer: null,
+  };
+  state.timer = setInterval(() => {
+    if (win.isDestroyed()) {
+      clearPinWatch(state);
+      return;
+    }
+    if (!zorder.isWindow(info.id)) {
+      unpinWindow(win);
+      return;
+    }
+    if (!state.attached) zorder.restack(our, info.id);
+  }, 200);
+  pinByWindow.set(win, state);
+  sendPinState(win);
+  toastPin(win, `Pinned on top of ${info.title}`);
+  return pinSnapshot(win);
+}
+
+function listPinWindows(win) {
+  if (process.platform !== 'win32') return [];
+  const skip = [...windows]
+    .filter(candidate => candidate && !candidate.isDestroyed())
+    .map(nativeHwndId)
+    .filter(Boolean);
+  const ours = win && !win.isDestroyed() ? nativeHwndId(win) : '';
+  if (ours) skip.push(ours);
+  return zorder.listWindows(skip);
 }
 
 const MAX_RECENT = 24;
@@ -1296,6 +1420,12 @@ function setupIpc() {
     return !!(target && !target.isDestroyed() && target.isMaximized());
   });
 
+  ipcMain.handle('pin-get-state', event => pinSnapshot(windowForEvent(event)));
+  ipcMain.handle('pin-set-always', event => pinAlways(windowForEvent(event)));
+  ipcMain.handle('pin-set-above', (event, payload = {}) => pinAbove(windowForEvent(event), payload.id));
+  ipcMain.handle('pin-clear', event => unpinWindow(windowForEvent(event)));
+  ipcMain.handle('pin-list-windows', event => listPinWindows(windowForEvent(event)));
+
   ipcMain.handle('install-update', () => {
     if (!app.isPackaged) return { ok: false };
     closing = true;
@@ -1462,17 +1592,23 @@ async function createWindow(startupFilePath = null) {
   ses.setPermissionCheckHandler((_wc, perm) => !BLOCKED_PERMISSIONS.has(perm));
 
   win.webContents.on('before-input-event', (e, input) => {
-    if (input.type === 'keydown' && input.control && !input.alt && !input.shift
-        && input.key.toLowerCase() === 't') {
+    if (input.type !== 'keydown') return;
+    const key = String(input.key || '').toLowerCase();
+    if (input.control && !input.alt && !input.shift && key === 't') {
       e.preventDefault();
-      const on = !win.isAlwaysOnTop();
-      win.setAlwaysOnTop(on, 'floating');
-      const safe = JSON.stringify(on ? 'Pinned on top of other windows' : 'Unpinned');
-      win.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
+      pinAlways(win);
+      return;
+    }
+    if (input.control && input.alt && input.shift && key === 'a') {
+      e.preventDefault();
+      win.webContents.send('pin-open-above');
     }
   });
 
-  win.on('closed', () => { windows.delete(win); });
+  win.on('closed', () => {
+    unpinWindow(win, { silent: true });
+    windows.delete(win);
+  });
 
   const sendMaximizeState = () => {
     if (!win.isDestroyed()) {

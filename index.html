@@ -165,13 +165,45 @@ body.board-active.titlebar-revealed #titlebar{
 .wc-btn:hover{ background:rgba(255,255,255,.07); color:#fff; }
 .wc-btn:active{ background:rgba(255,255,255,.04); }
 .wc-btn.close:hover{ background:#e81123; color:#fff; }
+.wc-btn.pinned{ color:var(--acc); }
+.wc-btn.pinned:hover{ color:var(--acc-hover); }
 .wc-btn svg{
   width:10px; height:10px; stroke:currentColor; stroke-width:1.15;
   fill:none; stroke-linecap:round; stroke-linejoin:round;
 }
+.wc-btn.pinned svg .pin-head{ fill:currentColor; }
 .wc-btn .icon-restore{ display:none; }
 .wc-btn.maximized .icon-max{ display:none; }
 .wc-btn.maximized .icon-restore{ display:block; }
+
+#titlebarPinMenu, #titlebarPinWindows{
+  position:fixed; z-index:120; display:none; min-width:208px;
+  background:var(--card); border:1px solid rgba(255,255,255,.09); border-radius:11px;
+  padding:5px; box-shadow:0 14px 44px rgba(0,0,0,.55); backdrop-filter:blur(16px);
+  -webkit-app-region:no-drag;
+}
+#titlebarPinMenu.show, #titlebarPinWindows.show{ display:block; }
+#titlebarPinWindows{
+  min-width:220px; max-width:280px; max-height:min(320px, calc(100vh - 48px));
+  overflow:auto;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(255,255,255,.16) transparent;
+}
+#titlebarPinWindows::-webkit-scrollbar{ width:8px; }
+#titlebarPinWindows::-webkit-scrollbar-track{ background:transparent; }
+#titlebarPinWindows::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,.14); border-radius:6px;
+  border:2px solid transparent; background-clip:padding-box;
+}
+#titlebarPinWindows::-webkit-scrollbar-thumb:hover{
+  background:rgba(255,255,255,.26); background-clip:padding-box;
+}
+#titlebarPinWindows .mi{
+  justify-content:flex-start; gap:10px;
+}
+#titlebarPinWindows .mi span{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
 
 /* ---------- floating left toolbar ---------- */
 #toolbar{
@@ -2173,6 +2205,12 @@ body.board-active #whatsNewNotice{ display:none; }
     <span id="titlebarTitle">RefBoard</span>
   </div>
   <div id="titlebarControls">
+    <button type="button" class="wc-btn" id="titlebarPin" title="Pin window" aria-label="Pin window" aria-haspopup="menu" aria-expanded="false" aria-pressed="false">
+      <svg viewBox="0 0 10 10" aria-hidden="true">
+        <path class="pin-head" d="M3.3 1.3h3.4c.3 0 .5.2.5.5v.85L6.2 3.7v1.85l1.45.85v.7H2.35v-.7l1.45-.85V3.7L2.8 2.65v-.85c0-.3.2-.5.5-.5z"/>
+        <line x1="5" y1="7.15" x2="5" y2="8.7"/>
+      </svg>
+    </button>
     <button type="button" class="wc-btn" id="titlebarMin" title="Minimize" aria-label="Minimize">
       <svg viewBox="0 0 10 10" aria-hidden="true"><line x1="1" y1="5" x2="9" y2="5"/></svg>
     </button>
@@ -2507,6 +2545,15 @@ body.board-active #whatsNewNotice{ display:none; }
 <div id="ctxmenu"></div>
 <div id="ctxAppear"></div>
 <div id="ctxSub"></div>
+<div id="titlebarPinMenu" role="menu" aria-labelledby="titlebarPin">
+  <div class="mi" id="titlebarPinAlways" role="menuitemcheckbox" aria-checked="false">
+    <span>Always on top</span><span class="k">Ctrl+T</span>
+  </div>
+  <div class="mi has-sub" id="titlebarPinAbove" role="menuitem">
+    <span>Always on top of…</span><span class="sub-arrow">›</span>
+  </div>
+</div>
+<div id="titlebarPinWindows" role="menu" aria-label="Windows to pin above"></div>
 <div id="noteLinkPop" class="note-link-pop" aria-hidden="true">
   <span class="note-link-pop-host"></span>
   <span class="note-link-pop-hint">Ctrl + Click to open</span>
@@ -2785,6 +2832,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks">Settings</span><span class="d">Right-click → Settings → General → enable object snapping</span>
       <span class="ks"><kbd>Ctrl</kbd> while drag</span><span class="d">Temporarily disable snapping when snap mode is on</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>T</kbd></span><span class="d">Keep window always on top (desktop app)</span>
+      <span class="ks"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Shift</kbd><kbd>A</kbd></span><span class="d">Pin above a chosen window (desktop app)</span>
     </div>
     <div style="margin-top:16px;text-align:center;font-size:11.5px;color:var(--dim);">
       RefBoard v1.0.1 &nbsp;·&nbsp; made with care by <b style="color:var(--acc);">Sounak</b>
@@ -15158,6 +15206,7 @@ const SHORTCUTS = [
   { cat:'View', label:'Pan board', keys:['Space','drag'] },
   { cat:'View', label:'Reset zoom', keys:['Ctrl','0'] },
   { cat:'View', label:'Always on top', keys:['Ctrl','T'] },
+  { cat:'View', label:'Always on top of…', keys:['Ctrl','Alt','Shift','A'] },
   { cat:'View', label:'Shortcuts help', keys:['?'] },
   { cat:'Files', label:'Save board', keys:['Ctrl','S'] },
   { cat:'Files', label:'Save board as', keys:['Ctrl','Shift','S'] },
@@ -15322,6 +15371,7 @@ window.addEventListener('pointerdown', e => {
   if (isAnimaticsInputActive()) return;
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
+  if (!e.target.closest('#titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) window.closePinMenus?.();
   if (e.target.closest('#drawColorBtn')) return;
   if (!e.target.closest('#drawCanvasPop')) closeDrawCanvasPop();
   if (!e.target.closest('#drawPen') && !e.target.closest('#drawBrushDrawer')) closeBrushDrawer();
@@ -15754,15 +15804,19 @@ if (window.RefBoardAPI?.onCloseRequest) {
 
   if (icon && api.getAppIconDataUrl) {
     api.getAppIconDataUrl().then(url => {
-      if (!url) return;
-      icon.src = url;
+      if (url) icon.src = url;
     }).catch(() => {});
   }
 
   const drag = $('#titlebarDrag');
+  const btnPin = $('#titlebarPin');
   const btnMin = $('#titlebarMin');
   const btnMax = $('#titlebarMax');
   const btnClose = $('#titlebarClose');
+  const pinMenu = $('#titlebarPinMenu');
+  const pinWindows = $('#titlebarPinWindows');
+  const pinAlways = $('#titlebarPinAlways');
+  const pinAbove = $('#titlebarPinAbove');
 
   function setMaximized(on) {
     btnMax.classList.toggle('maximized', on);
@@ -15777,6 +15831,137 @@ if (window.RefBoardAPI?.onCloseRequest) {
   btnMax.addEventListener('click', () => api.windowMaximize());
   btnClose.addEventListener('click', () => api.windowClose());
   drag.addEventListener('dblclick', () => api.windowMaximize());
+
+  if (!btnPin || !pinMenu || !pinWindows || !api.pinGetState) return;
+
+  let pinState = { mode: 'off', alwaysOnTop: false };
+  let pinHoverTimer = null;
+
+  function applyPinState(state) {
+    pinState = state && typeof state === 'object' ? state : { mode: 'off' };
+    const on = pinState.mode === 'always' || pinState.mode === 'above';
+    btnPin.classList.toggle('pinned', on);
+    btnPin.setAttribute('aria-pressed', String(on));
+    btnPin.title = pinState.mode === 'above' && pinState.targetTitle
+      ? `Pinned on top of ${pinState.targetTitle}`
+      : on ? 'Pinned on top of other windows' : 'Pin window';
+    pinAlways.classList.toggle('on', pinState.mode === 'always');
+    pinAlways.setAttribute('aria-checked', String(pinState.mode === 'always'));
+    pinAbove.classList.toggle('on', pinState.mode === 'above');
+    pinWindows.querySelectorAll('.mi[data-pin-id]').forEach(item => {
+      item.classList.toggle('on', pinState.mode === 'above' && item.dataset.pinId === pinState.targetId);
+    });
+  }
+
+  function positionPinMenu() {
+    const rect = btnPin.getBoundingClientRect();
+    pinMenu.style.top = `${rect.bottom}px`;
+    pinMenu.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
+    pinMenu.style.left = 'auto';
+  }
+
+  function positionPinWindows() {
+    const menuRect = pinMenu.getBoundingClientRect();
+    const aboveRect = pinAbove.getBoundingClientRect();
+    pinWindows.style.top = `${aboveRect.top}px`;
+    pinWindows.style.right = `${Math.max(8, window.innerWidth - menuRect.left + 4)}px`;
+    pinWindows.style.left = 'auto';
+    const next = pinWindows.getBoundingClientRect();
+    if (next.top + next.height > innerHeight - 8) {
+      pinWindows.style.top = `${Math.max(8, innerHeight - next.height - 8)}px`;
+    }
+  }
+
+  window.closePinMenus = closePinMenus;
+  function closePinMenus() {
+    pinMenu.classList.remove('show');
+    pinWindows.classList.remove('show');
+    btnPin.setAttribute('aria-expanded', 'false');
+    document.body.classList.remove('titlebar-pin-open');
+    clearTimeout(pinHoverTimer);
+  }
+
+  async function fillPinWindows() {
+    pinWindows.innerHTML = '<div class="mcat">Windows</div>';
+    let list = [];
+    try { list = await api.pinListWindows(); } catch { list = []; }
+    if (!Array.isArray(list) || !list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'mi';
+      empty.style.pointerEvents = 'none';
+      empty.textContent = 'No other windows found';
+      pinWindows.appendChild(empty);
+      return;
+    }
+    for (const entry of list) {
+      const item = document.createElement('div');
+      item.className = 'mi';
+      item.dataset.pinId = entry.id;
+      item.setAttribute('role', 'menuitem');
+      const label = document.createElement('span');
+      label.textContent = entry.title || 'Window';
+      item.appendChild(label);
+      if (pinState.mode === 'above' && pinState.targetId === entry.id) item.classList.add('on');
+      item.addEventListener('click', async () => {
+        closePinMenus();
+        applyPinState(await api.pinSetAbove(entry.id));
+      });
+      pinWindows.appendChild(item);
+    }
+  }
+
+  async function showPinWindows() {
+    await fillPinWindows();
+    pinWindows.classList.add('show');
+    positionPinWindows();
+  }
+
+  function openPinMenu({ showWindows = false } = {}) {
+    closeMenu();
+    document.body.classList.add('titlebar-pin-open');
+    if (document.body.classList.contains('board-active')) {
+      document.body.classList.add('titlebar-revealed');
+    }
+    pinMenu.classList.add('show');
+    btnPin.setAttribute('aria-expanded', 'true');
+    positionPinMenu();
+    if (showWindows) showPinWindows();
+    else pinWindows.classList.remove('show');
+  }
+
+  btnPin.addEventListener('click', () => {
+    if (pinMenu.classList.contains('show')) closePinMenus();
+    else openPinMenu();
+  });
+
+  pinAlways.addEventListener('click', async () => {
+    closePinMenus();
+    applyPinState(await api.pinSetAlways());
+  });
+
+  pinAbove.addEventListener('mouseenter', () => {
+    clearTimeout(pinHoverTimer);
+    pinHoverTimer = setTimeout(() => showPinWindows(), 80);
+  });
+  pinAbove.addEventListener('click', event => {
+    event.stopPropagation();
+    showPinWindows();
+  });
+  pinMenu.addEventListener('mouseleave', event => {
+    if (event.relatedTarget && pinWindows.contains(event.relatedTarget)) return;
+    clearTimeout(pinHoverTimer);
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && pinMenu.classList.contains('show')) {
+      event.preventDefault();
+      closePinMenus();
+    }
+  });
+
+  api.pinGetState().then(applyPinState).catch(() => {});
+  api.onPinStateChange(applyPinState);
+  api.onPinOpenAbove(() => openPinMenu({ showWindows: true }));
 })();
 
 (function initTitlebarAutoHide() {
@@ -15802,20 +15987,27 @@ if (window.RefBoardAPI?.onCloseRequest) {
   }
 
   function scheduleHide() {
+    if (document.body.classList.contains('titlebar-pin-open')) return;
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => setRevealed(false), 420);
   }
 
   function inTitlebarZone(node) {
-    return node && (peek.contains(node) || bar.contains(node));
+    return node && (
+      peek.contains(node) ||
+      bar.contains(node) ||
+      node.closest?.('#titlebarPinMenu, #titlebarPinWindows')
+    );
   }
 
   peek.addEventListener('mouseenter', reveal);
   bar.addEventListener('mouseenter', reveal);
   bar.addEventListener('mouseleave', (e) => {
+    if (document.body.classList.contains('titlebar-pin-open')) return;
     if (!inTitlebarZone(e.relatedTarget)) scheduleHide();
   });
   peek.addEventListener('mouseleave', (e) => {
+    if (document.body.classList.contains('titlebar-pin-open')) return;
     if (!inTitlebarZone(e.relatedTarget)) scheduleHide();
   });
   document.addEventListener('mousemove', (e) => {
