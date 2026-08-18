@@ -14689,7 +14689,7 @@ async function pickColorAt(sx, sy) {
 
 window.addEventListener('wheel', e => {
   if (onLanding || isAnimaticsInputActive() || e.target.closest('#recentWorks')) return;
-  if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop')) return;
+  if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop, #titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
   const now = Date.now();
@@ -15951,6 +15951,9 @@ if (window.RefBoardAPI?.onCloseRequest) {
     if (event.relatedTarget && pinWindows.contains(event.relatedTarget)) return;
     clearTimeout(pinHoverTimer);
   });
+  const stopPinWheel = event => event.stopPropagation();
+  pinMenu.addEventListener('wheel', stopPinWheel, { passive: true });
+  pinWindows.addEventListener('wheel', stopPinWheel, { passive: true });
 
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && pinMenu.classList.contains('show')) {

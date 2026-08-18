@@ -22,6 +22,11 @@ assert.match(html, /id="titlebarPinAbove"[\s\S]*Always on top of/, 'the pin menu
 assert.match(html, /id="titlebarPinWindows"/, 'the pin window list submenu must exist');
 assert.match(html, /#titlebarPinWindows::-webkit-scrollbar-thumb/, 'the above-window list must use the RefBoard overlay scrollbar');
 assert.match(html, /body\.classList\.add\('titlebar-pin-open'\)/, 'opening the pin menu must keep the title bar revealed');
+assert.match(
+  html,
+  /e\.target\.closest\('\.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop, #titlebarPin, #titlebarPinMenu, #titlebarPinWindows'\)\) return/,
+  'wheel over the pin menus must scroll the window list instead of zooming the board',
+);
 
 assert.match(preload, /pinGetState: \(\) => ipcRenderer\.invoke\('pin-get-state'\)/, 'preload must expose pin state');
 assert.match(preload, /pinSetAlways: \(\) => ipcRenderer\.invoke\('pin-set-always'\)/, 'preload must expose global pin');
