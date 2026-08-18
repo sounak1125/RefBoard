@@ -2209,8 +2209,8 @@ body.board-active #whatsNewNotice{ display:none; }
     </header>
     <div class="rw-restore" id="rwRestore" hidden>
       <div class="rw-restore-copy">
-        <span class="rw-restore-title">Unsaved session found</span>
-        <span class="rw-restore-sub">You had a board open last time. Restore it?</span>
+        <span class="rw-restore-title" id="rwRestoreTitle">Unsaved session found</span>
+        <span class="rw-restore-sub" id="rwRestoreSub">You had a board open last time. Restore it?</span>
       </div>
       <div class="rw-restore-actions">
         <button type="button" class="rw-btn" id="rwRestoreDismiss">Dismiss</button>
@@ -2763,6 +2763,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>F</kbd></span><span class="d">Fit view (selection if any)</span>
       <span class="ks"><kbd>P</kbd></span><span class="d">Pack all images neatly</span>
       <span class="ks"><kbd>R</kbd> / <kbd>Shift</kbd><kbd>R</kbd></span><span class="d">Rotate selection clockwise / counter-clockwise</span>
+      <span class="ks">Drag outside a corner</span><span class="d">Rotate selected images or notes; hold Shift to snap 90°</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd> / <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>V</kbd></span><span class="d">Flip selected images horizontally / vertically</span>
       <span class="ks"><kbd>V</kbd></span><span class="d">Select tool — exit draw, arrow, crop, or eyedropper mode</span>
       <span class="ks"><kbd>G</kbd> / <kbd>Shift</kbd><kbd>G</kbd></span><span class="d">Toggle selected image grayscale / whole-board grayscale</span>
@@ -4281,6 +4282,7 @@ let currentBoardPath = null;
 let currentBoardTitle = null;
 let restoredSessionPendingOpen = false;
 let pendingSessionRestore = false;
+let pendingSessionRestoreMissingFile = false;
 const RECENT_LOCAL_KEY = 'refboard.recentWorks';
 
 const AUTOSAVE_INTERVALS = [5, 10, 15, 20, 30];
@@ -5214,9 +5216,32 @@ function warmAllImageProxiesIdle() {
 }
 
 const SESSION_RESTORE_IMAGE_CONCURRENCY = 3;
+const BOARD_OPEN_IMAGE_CONCURRENCY = 4;
 
 function isValidSessionMeta(meta) {
   return !!meta && typeof meta === 'object' && Array.isArray(meta.items);
+}
+
+function clearPendingSessionRestore() {
+  pendingSessionRestore = false;
+  pendingSessionRestoreMissingFile = false;
+}
+
+async function evaluatePendingSessionRestore(meta) {
+  if (!isValidSessionMeta(meta) || !meta.items?.length) {
+    return { offer: false, missingFile: false };
+  }
+  let exists = true;
+  if (meta.path && window.RefBoardAPI?.recoverBoardFile) {
+    try {
+      const result = await window.RefBoardAPI.recoverBoardFile(meta.path);
+      exists = !!result?.exists;
+    } catch {
+      exists = false;
+    }
+  }
+  const missingFile = !!(meta.path && !exists);
+  return { offer: !!meta.dirty || missingFile, missingFile };
 }
 
 function normalizeSessionView(view) {
@@ -10893,6 +10918,9 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
 let activeBoardSave = null;
 let manualSaveToastActive = 0;
 let boardPreviewBackfillSeq = 0;
+let boardOpenPersistSeq = 0;
+const BOARD_SAVE_BATCH_MAX = 4;
+const BOARD_SAVE_BATCH_BYTES = 8 * 1024 * 1024;
 
 async function performBoardSave(opts = {}) {
   const silent = !!opts.silent;
@@ -10902,6 +10930,7 @@ async function performBoardSave(opts = {}) {
   const defaultName = currentBoardTitle
     ? `${currentBoardTitle}.refboard`
     : `moodboard-${stamp()}.refboard`;
+  const targetPath = opts.filePath || currentBoardPath || undefined;
 
   if (window.RefBoardAPI?.beginBoardSave) {
     let token = null;
@@ -10909,16 +10938,40 @@ async function performBoardSave(opts = {}) {
     boardPreviewBackfillSeq++;
     try {
       const begin = await window.RefBoardAPI.beginBoardSave(
-        defaultName, currentBoardPath || undefined, snapshot.core, null, saveAs,
+        defaultName, targetPath, snapshot.core, null, saveAs,
       );
       if (!begin?.started) return false;
       token = begin.token;
+      const appendBatch = window.RefBoardAPI.appendBoardSaveImages
+        ? (entries) => window.RefBoardAPI.appendBoardSaveImages(token, entries)
+        : async (entries) => {
+          for (const entry of entries) {
+            await window.RefBoardAPI.appendBoardSaveImage(token, entry.image, entry.data);
+          }
+        };
+      let batch = [];
+      let batchBytes = 0;
+      const flushSaveBatch = async () => {
+        if (!batch.length) return;
+        const pending = batch;
+        batch = [];
+        batchBytes = 0;
+        await appendBatch(pending);
+      };
+      const queueSaveImage = async (image, data) => {
+        const size = data.byteLength || 0;
+        if (batch.length && (batch.length >= BOARD_SAVE_BATCH_MAX || batchBytes + size > BOARD_SAVE_BATCH_BYTES)) {
+          await flushSaveBatch();
+        }
+        batch.push({ image, data });
+        batchBytes += size;
+      };
       for (const ref of snapshot.imageRefs) {
         const im = images.get(ref.id);
         const blob = await ensureImageBlobForSave(im);
         if (!blob) throw new Error(`Missing image data: ${ref.id}`);
         const data = await blob.arrayBuffer();
-        await window.RefBoardAPI.appendBoardSaveImage(token, {
+        await queueSaveImage({
           id: ref.id, type: ref.type || im?.type || blob.type || 'image/png', name: ref.name,
           w: ref.w, h: ref.h, size: blob.size,
         }, data);
@@ -10926,11 +10979,12 @@ async function performBoardSave(opts = {}) {
       for (const ref of snapshot.mediaRefs || []) {
         const blob = animaticsEditor?.getMediaBlob?.(ref.id);
         if (!blob) continue;
-        await window.RefBoardAPI.appendBoardSaveImage(token, {
+        await queueSaveImage({
           id: ref.id, type: ref.type, name: ref.name,
           w: 0, h: 0, size: blob.size,
         }, await blob.arrayBuffer());
       }
+      await flushSaveBatch();
       const result = await window.RefBoardAPI.finishBoardSave(token);
       token = null;
       if (!result?.saved) return false;
@@ -10948,7 +11002,7 @@ async function performBoardSave(opts = {}) {
     const payload = await buildBoardPayload(snapshot);
     const json = JSON.stringify(payload);
     if (window.RefBoardAPI?.saveBoardFile) {
-      const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, currentBoardPath || undefined, saveAs);
+      const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, targetPath, saveAs);
       if (!result?.saved) return false;
       currentBoardPath = result.filePath;
       currentBoardTitle = boardTitleFromPath(result.filePath);
@@ -11792,19 +11846,25 @@ function showRestoreCardIfPending() {
   if (!restoreCardWired) {
     restoreCardWired = true;
     $('#rwRestoreDismiss')?.addEventListener('click', () => {
-      pendingSessionRestore = false;
+      clearPendingSessionRestore();
       card.hidden = true;
     });
     $('#rwRestoreConfirm')?.addEventListener('click', () => {
       void restorePendingSession();
     });
   }
+  const title = $('#rwRestoreTitle');
+  const sub = $('#rwRestoreSub');
+  if (title) title.textContent = pendingSessionRestoreMissingFile ? 'Board file missing' : 'Unsaved session found';
+  if (sub) sub.textContent = pendingSessionRestoreMissingFile
+    ? 'Restore the last session from this app?'
+    : 'You had a board open last time. Restore it?';
   if (pendingSessionRestore) card.hidden = false;
   else card.hidden = true;
 }
 
 async function restorePendingSession() {
-  pendingSessionRestore = false;
+  clearPendingSessionRestore();
   const card = $('#rwRestore');
   if (card) card.hidden = true;
   const result = await restoreSession();
@@ -11849,8 +11909,9 @@ async function openNewBoardImpl() {
     const result = await resolveUnsavedChanges('leave');
     if (result !== 'proceed') return;
   }
-  pendingSessionRestore = false;
+  clearPendingSessionRestore();
   showRestoreCardIfPending();
+  boardOpenPersistSeq++;
   suppressBoardDirty = true;
   animaticsEditor?.clear?.();
   const ownedBlobIds = new Set(images.keys());
@@ -11900,7 +11961,33 @@ async function openNewBoardImpl() {
   toast('New board');
 }
 
-async function applyBoardPayload(j, meta = {}, imageLoader = null) {
+async function persistOpenedBoardBlobs(seq, records) {
+  try {
+    for (const im of records) {
+      if (seq !== boardOpenPersistSeq) return;
+      if (!(im?.blob instanceof Blob) || !im.blob.size) continue;
+      await persistImageBlob(im, im.blob);
+    }
+    if (seq !== boardOpenPersistSeq) return;
+    await pruneDiskImageBlobs(new Set(images.keys()));
+  } catch (err) {
+    console.warn('[openBoard] background persist failed:', err);
+  }
+}
+
+function boardImageBytesToBlob(loaded, rec) {
+  if (loaded instanceof Blob) {
+    return loaded.type ? loaded : new Blob([loaded], { type: rec.type || 'image/png' });
+  }
+  return new Blob([loaded], { type: rec.type || 'image/png' });
+}
+
+async function loadBoardImageRecord(rec, imageLoader) {
+  if (imageLoader) return imageLoader(rec);
+  return (await fetch(rec.data)).blob();
+}
+
+async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoader = null) {
   if (!j || j.app !== 'refboard' || !Array.isArray(j.items)) return 'failed';
   if (!onLanding && boardFileDirty) {
     const result = await resolveUnsavedChanges('leave');
@@ -11915,6 +12002,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
     if (!ok) return 'cancelled';
   }
   showOpeningOverlay();
+  const persistSeq = ++boardOpenPersistSeq;
   // Keep the current board recoverable through its Blobs, but release decoded
   // pixels before decoding a replacement board so opening does not require two
   // complete bitmap sets in memory at once.
@@ -11924,52 +12012,86 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
   let droppedImageItems = false;
   let firstImageLoadError = null;
   lastBoardOpenError = null;
+  let pendingPersist = null;
   try {
     const payloadImageIds = new Set();
     const payloadHasImageItems = j.items.some(it =>
       it && typeof it === 'object' && (it.kind || 'image') === 'image');
     cachedCurrentBoardThumb = typeof j.preview === 'string' && j.preview.length ? j.preview : null;
 
+    const recs = [];
     for (const rec of j.images || []) {
       const imgId = typeof rec?.id === 'string' ? rec.id : '';
       if (!imgId || payloadImageIds.has(imgId)) continue;
       payloadImageIds.add(imgId);
+      recs.push(rec);
+    }
+
+    const ingestLoaded = (rec, loaded) => {
+      const imgId = rec.id;
+      const blob = boardImageBytesToBlob(loaded, rec);
+      if (/^(audio|video)\//.test(String(rec.type || blob.type))) {
+        nextAnimaticMedia.set(imgId, blob);
+        return;
+      }
+      let w = Number(rec.w) || 0;
+      let h = Number(rec.h) || 0;
+      const im = prepareImageRecord({
+        id: imgId,
+        bitmap: null,
+        pristineBlob: null,
+        version: 0,
+        w, h,
+        blob,
+        blobSize: blob.size,
+        type: blob.type || 'image/png',
+        name: rec.name || '',
+      }, imgId);
+      void ensureStableImageProxy(im, blob);
+      nextImages.set(imgId, im);
+    };
+
+    for (let i = 0; i < recs.length; i += BOARD_OPEN_IMAGE_CONCURRENCY) {
+      const batch = recs.slice(i, i + BOARD_OPEN_IMAGE_CONCURRENCY);
+      let loadedList;
+      if (imageBatchLoader) {
+        try {
+          loadedList = await imageBatchLoader(batch);
+        } catch (e) {
+          loadedList = null;
+        }
+      }
+      if (!Array.isArray(loadedList) || loadedList.length !== batch.length) {
+        loadedList = await Promise.all(batch.map(rec =>
+          loadBoardImageRecord(rec, imageLoader).then(value => value, err => ({ __error: err }))
+        ));
+      }
+      for (let b = 0; b < batch.length; b++) {
+        const rec = batch[b];
+        const imgId = rec.id;
+        try {
+          const loaded = loadedList[b];
+          if (!loaded || loaded.__error) throw loaded?.__error || new Error('Missing image data');
+          ingestLoaded(rec, loaded);
+        } catch (e) {
+          if (!firstImageLoadError) {
+            firstImageLoadError = `${imgId || 'unknown image'}: ${e?.message || String(e)}`;
+          }
+          console.warn('[openBoard] skipped image record:', imgId || '(missing id)', e);
+        }
+      }
+    }
+
+    // Fill missing dimensions before items go on screen (only the ones that still lack w/h).
+    for (const im of nextImages.values()) {
+      if (im.w > 0 && im.h > 0) continue;
       try {
-        const loaded = imageLoader ? await imageLoader(rec) : await (await fetch(rec.data)).blob();
-        const blob = loaded instanceof Blob
-          ? (loaded.type ? loaded : new Blob([loaded], { type: rec.type || 'image/png' }))
-          : new Blob([loaded], { type: rec.type || 'image/png' });
-        if (/^(audio|video)\//.test(String(rec.type || blob.type))) {
-          nextAnimaticMedia.set(imgId, blob);
-          continue;
-        }
-        let w = Number(rec.w) || 0;
-        let h = Number(rec.h) || 0;
-        if (!(w > 0 && h > 0)) {
-          const probe = await decodeToBitmap(blob);
-          w = probe.width;
-          h = probe.height;
-          try { probe?.close?.(); } catch (e) {}
-        }
-        const im = prepareImageRecord({
-          id: imgId,
-          bitmap: null,
-          pristineBlob: null,
-          version: 0,
-          w, h,
-          blob,
-          blobSize: blob.size,
-          type: blob.type || 'image/png',
-          name: rec.name || '',
-        }, imgId);
-        void ensureStableImageProxy(im, blob);
-        await persistImageBlob(im, blob);
-        nextImages.set(imgId, im);
+        const probe = await decodeToBitmap(im.blob);
+        im.w = probe.width;
+        im.h = probe.height;
+        try { probe?.close?.(); } catch (e) {}
       } catch (e) {
-        if (!firstImageLoadError) {
-          firstImageLoadError = `${imgId || 'unknown image'}: ${e?.message || String(e)}`;
-        }
-        console.warn('[openBoard] skipped image record:', imgId || '(missing id)', e);
+        console.warn('[openBoard] could not probe image size:', im.id, e);
       }
     }
 
@@ -12021,7 +12143,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
     suppressBoardDirty = false;
     boardFileDirty = false;
     clearUndoHistory();
-    await pruneDiskImageBlobs(new Set(images.keys()));
+    pendingPersist = [...images.values()];
     await transitionToBoard({ fit: state.items.length > 0 });
     await nextUiFrame();
   } catch (err) {
@@ -12033,12 +12155,13 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null) {
   } finally {
     hideOpeningOverlay();
   }
+  if (pendingPersist) void persistOpenedBoardBlobs(persistSeq, pendingPersist);
   await trackRecentWork();
   toast(`Opened board — ${state.items.length} item${state.items.length === 1 ? '' : 's'}`);
   if (droppedImageItems) {
     setTimeout(() => toast('Opened board with some missing images'), 2500);
   }
-  pendingSessionRestore = false;
+  clearPendingSessionRestore();
   // Self-heal boards saved without an embedded Explorer preview (e.g. 2.0.1 regression).
   if (meta.path && !cachedCurrentBoardThumb) {
     scheduleBoardPreviewBackfill(meta.path);
@@ -12058,17 +12181,22 @@ function openBoardFromPath(filePath) {
 }
 
 async function openBoardPayloadFromDesktop(filePath) {
-  if (window.RefBoardAPI?.beginBoardOpen && window.RefBoardAPI?.readBoardOpenImage) {
+  if (window.RefBoardAPI?.beginBoardOpen && (window.RefBoardAPI?.readBoardOpenImages || window.RefBoardAPI?.readBoardOpenImage)) {
     let token = null;
     try {
       const opened = await window.RefBoardAPI.beginBoardOpen(filePath);
       token = opened?.token || null;
       if (!token || !opened?.core || !Array.isArray(opened.images)) throw new Error('Invalid board stream');
       const payload = { ...opened.core, images: opened.images };
+      const imageLoader = rec => window.RefBoardAPI.readBoardOpenImage(token, rec.index);
+      const imageBatchLoader = window.RefBoardAPI.readBoardOpenImages
+        ? (batch) => window.RefBoardAPI.readBoardOpenImages(token, batch.map(rec => rec.index))
+        : null;
       return await applyBoardPayload(
         payload,
         { path: filePath, title: boardTitleFromPath(filePath) },
-        rec => window.RefBoardAPI.readBoardOpenImage(token, rec.index),
+        imageLoader,
+        imageBatchLoader,
       );
     } finally {
       if (token) await window.RefBoardAPI.finishBoardOpen?.(token).catch(() => {});
@@ -13015,6 +13143,7 @@ function drawGroupSelectionUi(it, pts) {
 
 const RESIZE_HANDLE_R = 5;
 const RESIZE_HANDLE_HIT = 14;
+const ROTATE_HANDLE_HIT = 28;
 
 function drawCornerHandles(pts, r = RESIZE_HANDLE_R) {
   ctx.save();
@@ -13190,7 +13319,10 @@ function draw() {
   if (selectedCount > 1 && !lightDrag) {
     for (const it of drawVisibleSelectedItems) drawSelectionOutline(it);
     const pts = selectionBBoxScreenPts(drawSelectedItems);
-    if (pts) drawSelectionUi(pts);
+    if (pts) {
+      drawCornerHandles(pts);
+      drawEdgePills(pts);
+    }
   } else if (selectedCount === 1) {
     const it = drawSelectedItems[0];
     if (drawVisibleItemIds.has(it.id)) {
@@ -13380,6 +13512,78 @@ function handlesHitOnPts(sx, sy, pts) {
   return null;
 }
 
+function selectionCanMouseRotate(items) {
+  return !!items.length && items.every(it => isImageItem(it) || isNoteItem(it));
+}
+
+function rotateHitOnPts(sx, sy, pts, innerR = 14, outerR = 28) {
+  if (!pts || pts.length < 4) return null;
+  const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4;
+  const cy = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
+  const corners = [['nw', pts[0]], ['ne', pts[1]], ['se', pts[2]], ['sw', pts[3]]];
+  for (const [c, [px, py]] of corners) {
+    const d = Math.hypot(sx - px, sy - py);
+    if (d <= innerR || d > outerR) continue;
+    const ox = px - cx, oy = py - cy;
+    const vx = sx - px, vy = sy - py;
+    if (ox * vx + oy * vy <= 0) continue;
+    return { corner: c };
+  }
+  return null;
+}
+
+function snapRotateDelta(deltaDeg, shiftKey) {
+  if (!shiftKey) return deltaDeg;
+  return Math.round(deltaDeg / 90) * 90;
+}
+
+function signedAngleDelta(from, to) {
+  let d = to - from;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function rotateItemAroundOrigin(it, start, origin, deltaDeg) {
+  const rad = (deltaDeg * Math.PI) / 180;
+  const ocx = start.x + start.w / 2;
+  const ocy = start.y + start.h / 2;
+  const v = rotateVec(ocx - origin.x, ocy - origin.y, rad);
+  it.rot = ((start.rot + deltaDeg) % 360 + 360) % 360;
+  it.w = start.w;
+  it.h = start.h;
+  it.x = origin.x + v.x - it.w / 2;
+  it.y = origin.y + v.y - it.h / 2;
+}
+
+function collectRotateOrig(items) {
+  return items.map(it => ({
+    id: it.id,
+    x: it.x, y: it.y, w: it.w, h: it.h,
+    rot: Number(it.rot) || 0,
+  }));
+}
+
+function rotateOriginOf(items) {
+  if (items.length === 1) {
+    const it = items[0];
+    return { x: it.x + it.w / 2, y: it.y + it.h / 2 };
+  }
+  const r = selectionBBoxRect(items);
+  return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+}
+
+function applyItemsRotate(orig, origin, deltaDeg) {
+  for (const o of orig) {
+    const it = byId(o.id);
+    if (!it) continue;
+    rotateItemAroundOrigin(it, o, origin, deltaDeg);
+    roundItemBoardGeom(it);
+    if (isNoteItem(it) && noteEditId === it.id) positionNoteEditor();
+  }
+  invalidateWorkspaceBBox();
+}
+
 function imageContentAspect(it) {
   if (!isImageItem(it)) return 1;
   const im = images.get(it.imgId);
@@ -13507,14 +13711,20 @@ function handleAt(sx, sy) {
     return null;
   }
 
+  const canRotate = !cropItemId && selectionCanMouseRotate(items);
+
   if (items.length > 1) {
     if (items.some(isInLockedGroup)) return null;
     const r = selectionBBoxRect();
     if (!r) return null;
     const pts = selectionBBoxScreenPts();
     const hit = handlesHitOnPts(sx, sy, pts);
-    if (!hit) return null;
-    return { group: true, bbox: r, corner: hit.corner || null, edge: hit.edge || null };
+    if (hit) return { group: true, bbox: r, corner: hit.corner || null, edge: hit.edge || null };
+    if (canRotate) {
+      const rotHit = rotateHitOnPts(sx, sy, pts, RESIZE_HANDLE_HIT, ROTATE_HANDLE_HIT);
+      if (rotHit) return { rotate: true, group: true, corner: rotHit.corner };
+    }
+    return null;
   }
 
   const it = items[0];
@@ -13522,8 +13732,12 @@ function handleAt(sx, sy) {
   if (isInLockedGroup(it)) return null;
   const pts = itemCorners(it).map(p => toScreen(p[0], p[1]));
   const hit = handlesHitOnPts(sx, sy, pts);
-  if (!hit) return null;
-  return { corner: hit.corner || null, edge: hit.edge || null, it };
+  if (hit) return { corner: hit.corner || null, edge: hit.edge || null, it };
+  if (canRotate) {
+    const rotHit = rotateHitOnPts(sx, sy, pts, RESIZE_HANDLE_HIT, ROTATE_HANDLE_HIT);
+    if (rotHit) return { rotate: true, corner: rotHit.corner, it };
+  }
+  return null;
 }
 
 // corner drag: uniform aspect-locked scale, anchored at the opposite corner.
@@ -13907,6 +14121,24 @@ canvas.addEventListener('pointerdown', async e => {
       };
       return;
     }
+    if (h.rotate) {
+      const items = selectedItems();
+      const origin = rotateOriginOf(items);
+      const [bx, by] = toBoard(sx, sy);
+      const startAngle = Math.atan2(by - origin.y, bx - origin.x);
+      mode = {
+        type: 'rotate',
+        corner: h.corner || null,
+        origin,
+        orig: collectRotateOrig(items),
+        startAngle,
+        lastAngle: startAngle,
+        accDelta: 0,
+        sx, sy, pushed: false,
+      };
+      canvas.style.cursor = rotateCursorForHandle(h, h.group ? 0 : (h.it?.rot || 0));
+      return;
+    }
     if (h.group) {
       const bb = selectionBBoxRect() || h.bbox;
       mode = {
@@ -14109,6 +14341,21 @@ window.addEventListener('pointermove', e => {
     if (!Number.isFinite(k)) k = 1;
     applyProportionalResize(it, r, k, A[0], A[1]);
     scheduleSave(); invalidate();
+  } else if (mode.type === 'rotate') {
+    if (!mode.pushed) {
+      if (Math.hypot(dx, dy) < 2) return;
+      mode.pushed = true;
+      pushUndo();
+    }
+    const [bx, by] = toBoard(sx, sy);
+    const ang = Math.atan2(by - mode.origin.y, bx - mode.origin.x);
+    mode.accDelta += signedAngleDelta(mode.lastAngle, ang);
+    mode.lastAngle = ang;
+    const delta = snapRotateDelta(mode.accDelta * 180 / Math.PI, e.shiftKey);
+    applyItemsRotate(mode.orig, mode.origin, delta);
+    const live = mode.orig.length === 1 ? byId(mode.orig[0].id) : null;
+    canvas.style.cursor = rotateCursorForHandle({ corner: mode.corner }, live?.rot || 0);
+    scheduleSave(); invalidate();
   } else if (mode.type === 'groupResize') {
     if (!mode.pushed) {
       if (Math.hypot(dx, dy) < 2) return;
@@ -14300,6 +14547,31 @@ function resizeCursorForHandle(handle, rotation = 0) {
   return resizeCursorForAngle(baseAngle + rotation);
 }
 
+function rotateCursorForHandle(handle, rotation = 0) {
+  const corner = handle?.corner || 'se';
+  const base = { nw: 225, ne: 315, se: 45, sw: 135 }[corner] ?? 45;
+  const deg = Math.round((base + (Number(rotation) || 0)) * 10) / 10;
+  const cache = rotateCursorForHandle._cache || (rotateCursorForHandle._cache = new Map());
+  const cached = cache.get(deg);
+  if (cached) return cached;
+  // Thin circular double-arrow: white silhouette first, black core on top.
+  // Heads sit on the arc tangents; butt caps keep the ring from blobbing into them.
+  const glyph = '<g transform="rotate(' + deg + ' 16 16)" fill="none" stroke-linecap="butt" stroke-linejoin="round">' +
+    '<path d="M7.96 22.28A10.2 10.2 0 1 0 7.96 9.72" stroke="#fff" stroke-width="3.85"/>' +
+    '<polygon points="11.4,26.68 5.24,24.4 10.68,20.16" fill="#fff"/>' +
+    '<polygon points="11.4,5.32 10.68,11.84 5.24,7.6" fill="#fff"/>' +
+    '<path d="M7.96 22.28A10.2 10.2 0 1 0 7.96 9.72" stroke="#111" stroke-width="2.05"/>' +
+    '<polygon points="10.76,25.87 5.95,23.85 9.97,20.71" fill="#111"/>' +
+    '<polygon points="10.76,6.13 9.97,11.29 5.95,8.15" fill="#111"/>' +
+    '</g>';
+  const svgAt = (size) => '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 32 32">' + glyph + '</svg>';
+  const u32 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(32)) + '")';
+  const u64 = 'url("data:image/svg+xml,' + encodeURIComponent(svgAt(64)) + '")';
+  const css = u32 + ' 16 16, -webkit-image-set(' + u32 + ' 1x, ' + u64 + ' 2x) 16 16, grab';
+  cache.set(deg, css);
+  return css;
+}
+
 function updateCursor(sx, sy) {
   if (drawActive) { canvas.style.cursor = drawModeCursor(); return; }
   if (arrowTool) { canvas.style.cursor = 'crosshair'; return; }
@@ -14317,6 +14589,10 @@ function updateCursor(sx, sy) {
   const h = handleAt(sx, sy);
   if (h) {
     if (h.arrowEndpoint) { canvas.style.cursor = 'crosshair'; return; }
+    if (h.rotate) {
+      canvas.style.cursor = rotateCursorForHandle(h, h.group ? 0 : (h.it?.rot || 0));
+      return;
+    }
     canvas.style.cursor = resizeCursorForHandle(h, h.group ? 0 : (h.it?.rot || 0));
     return;
   }
@@ -14874,6 +15150,7 @@ const SHORTCUTS = [
   { cat:'Tools', label:'Decrease draw size', keys:['['] },
   { cat:'Tools', label:'Increase draw size', keys:[']'] },
   { cat:'Tools', label:'Rotate', keys:['R'] },
+  { cat:'Tools', label:'Rotate from a corner (Shift snaps 90°)', keys:['Drag'] },
   { cat:'Tools', label:'Flip horizontal', keys:['Ctrl','Shift','H'] },
   { cat:'Tools', label:'Flip vertical', keys:['Ctrl','Shift','V'] },
   { cat:'Tools', label:'Toggle grayscale', keys:['G'] },
@@ -16058,9 +16335,11 @@ async function init() {
   if (db) {
     try {
       const meta = await loadSessionMeta();
-      pendingSessionRestore = isValidSessionMeta(meta) && !!(meta.items && meta.items.length) && !!meta.dirty;
+      const decision = await evaluatePendingSessionRestore(meta);
+      pendingSessionRestore = decision.offer;
+      pendingSessionRestoreMissingFile = decision.missingFile;
     } catch {
-      pendingSessionRestore = false;
+      clearPendingSessionRestore();
     }
   }
 
@@ -16076,7 +16355,7 @@ async function init() {
   const startupBoardPath = await window.RefBoardAPI?.getPendingOpenPath?.();
   if (startupBoardPath) {
     await openBoardFromPath(startupBoardPath);
-    if (sameFilePath(startupBoardPath, currentBoardPath)) pendingSessionRestore = false;
+    if (sameFilePath(startupBoardPath, currentBoardPath)) clearPendingSessionRestore();
   }
   if (!startupBoardPath || !sameFilePath(startupBoardPath, currentBoardPath)) {
     await showLanding();
@@ -16132,6 +16411,8 @@ window.RefBoard = {
   images,
   addImages,
   fitAll,
+  saveBoardFile,
+  openBoardFromPath,
   animatics: animaticsEditor,
   memoryStats: memoryDiagnostics,
   imageRenderState: imageRenderDiagnostics,

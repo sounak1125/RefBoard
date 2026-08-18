@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -91,6 +92,14 @@ try {
     'image payload must survive the header rewrite',
   );
 
+  const bakPath = `${filePath}.bak`;
+  assert.equal(existsSync(bakPath), true, 'preview backfill must keep the previous board as .bak');
+  assert.equal(await readBoardPreview(bakPath), null, 'the first .bak should be the pre-preview save');
+  assert.ok(
+    (await readBoardImageBytes(bakPath, (await scanBoardFile(bakPath)).images[0])).equals(bytes),
+    'the kept .bak must still contain the original image bytes',
+  );
+
   // Second backfill should replace the preview without corrupting images.
   const preview2 = Buffer.from('second-preview').toString('base64');
   await rewriteBoardFilePreview(filePath, preview2);
@@ -99,6 +108,8 @@ try {
     (await readBoardImageBytes(filePath, (await scanBoardFile(filePath)).images[0])).equals(bytes),
     'replacing an existing preview must keep image bytes intact',
   );
+  assert.equal(existsSync(bakPath), true, 'a second backfill must still leave a .bak');
+  assert.equal(await readBoardPreview(bakPath), preview, 'the rotated .bak should keep the previous preview generation');
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

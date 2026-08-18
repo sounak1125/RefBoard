@@ -139,5 +139,15 @@ assert.match(
   /if \(onLanding\) \{[\s\S]*?k === 'o'[\s\S]*?openBoardFromDialog\(\)[\s\S]*?return;/,
   'landing keyboard handling should retain Open board access',
 );
+assert.match(
+  source,
+  /pendingSessionRestoreMissingFile \? 'Board file missing' : 'Unsaved session found'/,
+  'Home should explain a missing board file separately from a dirty unsaved session',
+);
+assert.match(
+  source,
+  /offer: !!meta\.dirty \|\| missingFile/,
+  'Home should offer Restore when the saved board is still missing after .bak recovery',
+);
 
 console.log('landing layout contract tests passed');

@@ -1,7 +1,8 @@
 'use strict';
 const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
-const { scanBoardFile, readBoardImageBytes, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
+const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
+const { replaceBoardFile, recoverBoardFileIfMissing } = require('./scripts/board-file-replace');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -275,6 +276,22 @@ function setupIpc() {
   const animaticExportSessions = new Map();
   const premiereExportSessions = new Map();
   const afterEffectsExportSessions = new Map();
+
+  async function closeBoardOpenSession(session) {
+    if (!session) return;
+    clearTimeout(session.timer);
+    session.timer = null;
+    try { await session.handle?.close(); } catch { /* already closed */ }
+    session.handle = null;
+  }
+
+  async function appendBoardSaveImageParts(session, image, data) {
+    const parts = boardImageParts(image, data);
+    await session.handle.write((session.firstImage ? '' : ',') + parts.prefix);
+    await session.handle.write(parts.base64);
+    await session.handle.write(parts.suffix);
+    session.firstImage = false;
+  }
 
   function ffmpegPath() {
     return String(ffmpegStaticPath || '').replace('app.asar', 'app.asar.unpacked');
@@ -938,37 +955,34 @@ function setupIpc() {
   ipcMain.handle('append-board-save-image', async (event, { token, image, data }) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
-    const parts = boardImageParts(image, data);
-    await session.handle.write((session.firstImage ? '' : ',') + parts.prefix);
-    await session.handle.write(parts.base64);
-    await session.handle.write(parts.suffix);
-    session.firstImage = false;
+    await appendBoardSaveImageParts(session, image, data);
     return { appended: true };
+  });
+
+  ipcMain.handle('append-board-save-images', async (event, { token, images }) => {
+    const session = boardSaveSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
+    const list = Array.isArray(images) ? images : [];
+    for (const entry of list) {
+      await appendBoardSaveImageParts(session, entry?.image, entry?.data);
+    }
+    return { appended: true, count: list.length };
   });
 
   ipcMain.handle('finish-board-save', async (event, token) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
     boardSaveSessions.delete(token);
-    let backupPath = null;
     try {
       await session.handle.write(']}');
       await session.handle.sync();
       await session.handle.close();
       session.handle = null;
 
-      if (fsSync.existsSync(session.target)) {
-        backupPath = `${session.target}.backup-${process.pid}-${session.token}`;
-        await fs.rename(session.target, backupPath);
-      }
-      await fs.rename(session.tempPath, session.target);
-      if (backupPath) await fs.unlink(backupPath).catch(() => {});
+      await replaceBoardFile(session.target, session.tempPath);
       refreshShellIcons(session.target);
       return { saved: true, filePath: session.target };
     } catch (err) {
-      if (backupPath && !fsSync.existsSync(session.target)) {
-        await fs.rename(backupPath, session.target).catch(() => {});
-      }
       await discardBoardSaveSession(session);
       throw err;
     }
@@ -994,19 +1008,37 @@ function setupIpc() {
   });
 
   ipcMain.handle('read-board-file', async (_, filePath) => {
-    const data = await fs.readFile(filePath, 'utf8');
-    return { filePath, data };
+    const resolved = path.resolve(String(filePath || ''));
+    await recoverBoardFileIfMissing(resolved);
+    const data = await fs.readFile(resolved, 'utf8');
+    return { filePath: resolved, data };
+  });
+
+  ipcMain.handle('recover-board-file', async (_, filePath) => {
+    return recoverBoardFileIfMissing(filePath);
   });
 
   ipcMain.handle('begin-board-open', async (event, filePath) => {
     const resolved = path.resolve(String(filePath || ''));
-    const scanned = await scanBoardFile(resolved);
-    const token = crypto.randomUUID();
-    boardOpenSessions.set(token, {
-      token, ownerId: event.sender.id, filePath: resolved, images: scanned.images,
-      timer: setTimeout(() => boardOpenSessions.delete(token), 5 * 60 * 1000),
-    });
-    return { token, core: scanned.core, images: scanned.images.map(({ dataStart, dataLength, ...meta }) => meta) };
+    await recoverBoardFileIfMissing(resolved);
+    const handle = await fs.open(resolved, 'r');
+    try {
+      const stat = await handle.stat();
+      const scanned = await scanBoardHandle(handle, stat.size);
+      const token = crypto.randomUUID();
+      const session = {
+        token, ownerId: event.sender.id, filePath: resolved, images: scanned.images, handle, timer: null,
+      };
+      session.timer = setTimeout(() => {
+        boardOpenSessions.delete(token);
+        void closeBoardOpenSession(session);
+      }, 5 * 60 * 1000);
+      boardOpenSessions.set(token, session);
+      return { token, core: scanned.core, images: scanned.images.map(({ dataStart, dataLength, ...meta }) => meta) };
+    } catch (err) {
+      await handle.close().catch(() => {});
+      throw err;
+    }
   });
 
   ipcMain.handle('read-board-open-image', async (event, { token, index }) => {
@@ -1014,18 +1046,37 @@ function setupIpc() {
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board open session');
     const image = session.images[index];
     if (!image) throw new Error('Unknown board image');
+    if (session.handle) return await readBoardImageBytesFromHandle(session.handle, image);
     return await readBoardImageBytes(session.filePath, image);
+  });
+
+  ipcMain.handle('read-board-open-images', async (event, { token, indexes }) => {
+    const session = boardOpenSessions.get(token);
+    if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board open session');
+    const list = Array.isArray(indexes) ? indexes : [];
+    return await Promise.all(list.map(async (index) => {
+      const image = session.images[index];
+      if (!image) throw new Error('Unknown board image');
+      if (session.handle) return readBoardImageBytesFromHandle(session.handle, image);
+      return readBoardImageBytes(session.filePath, image);
+    }));
   });
 
   ipcMain.handle('finish-board-open', async (event, token) => {
     const session = boardOpenSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) return { finished: false };
-    clearTimeout(session.timer);
     boardOpenSessions.delete(token);
+    await closeBoardOpenSession(session);
     return { finished: true };
   });
 
-  ipcMain.handle('get-recent-works', async () => loadRecentWorks());
+  ipcMain.handle('get-recent-works', async () => {
+    const list = await loadRecentWorks();
+    for (const work of list) {
+      if (work?.path) await recoverBoardFileIfMissing(work.path).catch(() => {});
+    }
+    return list;
+  });
 
   ipcMain.handle('add-recent-work', async (_, entry) => {
     if (!entry?.path) return loadRecentWorks();

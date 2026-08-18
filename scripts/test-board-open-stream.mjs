@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { boardHeaderPrefix, boardImageParts } = require('./board-save-format.js');
-const { scanBoardFile, readBoardImageBytes, readBoardPreview } = require('./board-open-stream.js');
+const { scanBoardFile, scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview } = require('./board-open-stream.js');
 
 function assert(cond, msg) { if (!cond) throw new Error(msg || 'assertion failed'); }
 
@@ -30,6 +30,21 @@ try {
   assert((await readBoardImageBytes(file, scanned.images[0])).equals(a), 'first image range decodes');
   assert((await readBoardPreview(file)) === preview, 'embedded preview reads without decoding board images');
   assert((await readBoardImageBytes(file, scanned.images[1])).equals(b), 'second image range decodes');
+
+  const handle = await fs.open(file, 'r');
+  try {
+    const fromHandle = await scanBoardHandle(handle, (await handle.stat()).size);
+    assert(fromHandle.images.length === 2, 'shared-handle scan indexes both images');
+    const first = await readBoardImageBytesFromHandle(handle, fromHandle.images[0]);
+    const [aa, bb] = await Promise.all([
+      readBoardImageBytesFromHandle(handle, fromHandle.images[0]),
+      readBoardImageBytesFromHandle(handle, fromHandle.images[1]),
+    ]);
+    assert(first.equals(a), 'shared-handle sequential read decodes');
+    assert(aa.equals(a) && bb.equals(b), 'overlapping shared-handle reads decode independently');
+  } finally {
+    await handle.close();
+  }
   console.log('board open stream tests passed');
 } finally {
   await fs.rm(dir, { recursive: true, force: true });
