@@ -6740,6 +6740,28 @@ function rasterizeFillMask(pts, w, h) {
   return mask;
 }
 
+function fillFeatherRadius(w, h) {
+  return Math.max(3, Math.min(10, Math.round(Math.max(w, h) / 400)));
+}
+
+function featheredFillMask(pts, w, h, radius) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  g.filter = `blur(${Math.max(1, radius)}px)`;
+  g.fillStyle = '#fff';
+  g.beginPath();
+  if (pts.length) {
+    g.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+    g.closePath();
+  }
+  g.fill();
+  g.filter = 'none';
+  return c;
+}
+
 function downscaleForFill(source, maskCanvas, w, h, maxDim = 2048) {
   const scale = Math.min(1, maxDim / Math.max(w, h));
   const dw = Math.max(1, Math.round(w * scale));
@@ -6835,28 +6857,28 @@ async function commitFillSession(m) {
     return;
   }
 
-  // Composite back to full resolution.
+  // Composite back to full resolution with a soft lasso edge.
   const workCanvas = document.createElement('canvas');
   workCanvas.width = w;
   workCanvas.height = h;
   const workCtx = workCanvas.getContext('2d');
   workCtx.putImageData(new ImageData(filledPixels, w, h), 0, 0);
 
+  const featherMask = featheredFillMask(pts, im.w, im.h, fillFeatherRadius(im.w, im.h));
+  const filledLayer = document.createElement('canvas');
+  filledLayer.width = im.w;
+  filledLayer.height = im.h;
+  const filledCtx = filledLayer.getContext('2d');
+  filledCtx.drawImage(workCanvas, 0, 0, w, h, 0, 0, im.w, im.h);
+  filledCtx.globalCompositeOperation = 'destination-in';
+  filledCtx.drawImage(featherMask, 0, 0);
+
   const out = document.createElement('canvas');
   out.width = im.w;
   out.height = im.h;
   const outCtx = out.getContext('2d');
   outCtx.drawImage(im.bitmap, 0, 0);
-
-  // Clip to mask and draw the filled work canvas back at full res.
-  outCtx.save();
-  outCtx.beginPath();
-  outCtx.moveTo(pts[0].x, pts[0].y);
-  for (let i = 1; i < pts.length; i++) outCtx.lineTo(pts[i].x, pts[i].y);
-  outCtx.closePath();
-  outCtx.clip();
-  outCtx.drawImage(workCanvas, 0, 0, w, h, 0, 0, im.w, im.h);
-  outCtx.restore();
+  outCtx.drawImage(filledLayer, 0, 0);
 
   // Bake exactly like commitDrawSession.
   im.pixelUpdateInProgress = true;

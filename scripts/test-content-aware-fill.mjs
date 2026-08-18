@@ -22,6 +22,9 @@ assert.match(html, /function cancelFillSession\(\)/, 'cancelFillSession must exi
 assert.match(html, /function rasterizeFillMask\(/, 'rasterizeFillMask must exist');
 assert.match(html, /function downscaleForFill\(/, 'downscaleForFill must exist');
 assert.match(html, /function runFillWorker\(/, 'runFillWorker must exist');
+assert.match(html, /function fillFeatherRadius\(/, 'fillFeatherRadius must exist');
+assert.match(html, /function featheredFillMask\(/, 'featheredFillMask must exist');
+assert.match(html, /globalCompositeOperation = 'destination-in'/, 'fill must composite with a feathered mask');
 assert.match(html, /function commitFillSession\(/, 'commitFillSession must exist');
 assert.match(html, /new Worker\('\.\/scripts\/content-aware-fill-worker\.js'\)/, 'the fill pipeline must load the worker script');
 
