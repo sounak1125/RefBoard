@@ -70,7 +70,7 @@ const smokeExpression = String.raw`(async()=>{
   for(let attempt=0;attempt<100&&!window.RefBoard;attempt++)await wait(50);
   if(!window.RefBoard)throw new Error('RefBoard API unavailable');
   const normalize=color=>{const probe=document.createElement('i');probe.style.color=color;document.body.append(probe);const value=getComputedStyle(probe).color;probe.remove();return value;};
-  const ids=['midnight','slate','graphite','pine','plum','dim'];
+  const ids=['midnight','slate','black','pine','ocean','dim'];
   const results=[];
   for(const id of ids){
     const button=document.querySelector('.theme-swatch[data-theme="'+id+'"]');

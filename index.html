@@ -29,15 +29,15 @@
   --danger:#ff858a; --grid-dot:rgba(255,255,255,.14);
   --scrim:rgba(5,7,9,.62); --shadow:rgba(0,0,0,.54);
 }
-[data-theme="graphite"]{
-  --bg:#15110f; --void:#100d0b; --workspace:#211a16;
-  --card:#1d1714; --panel:rgba(29,23,20,.94);
-  --surface-1:#1d1714; --surface-2:#27201c; --surface-3:#332921;
-  --line:rgba(255,244,235,.11); --line-strong:rgba(255,235,220,.20);
-  --txt:#f8f1ec; --mut:#c2ada0; --dim:#998375;
-  --acc:#f2a06f; --acc-hover:#ffb58a; --acc-contrast:#241006;
-  --danger:#ff817e; --grid-dot:rgba(255,239,226,.13);
-  --scrim:rgba(10,6,4,.64); --shadow:rgba(8,3,1,.58);
+[data-theme="black"]{
+  --bg:#000000; --void:#000000; --workspace:#0a0a0a;
+  --card:#141414; --panel:rgba(18,18,18,.96);
+  --surface-1:#141414; --surface-2:#1c1c1c; --surface-3:#2a2a2a;
+  --line:rgba(255,255,255,.10); --line-strong:rgba(255,255,255,.20);
+  --txt:#f4f4f4; --mut:#b3b3b3; --dim:#8f8f8f;
+  --acc:#ececec; --acc-hover:#ffffff; --acc-contrast:#121212;
+  --danger:#ff858a; --grid-dot:rgba(255,255,255,.12);
+  --scrim:rgba(0,0,0,.72); --shadow:rgba(0,0,0,.72);
 }
 [data-theme="pine"]{
   --bg:#0d1411; --void:#09100d; --workspace:#15221c;
@@ -49,15 +49,15 @@
   --danger:#ff858b; --grid-dot:rgba(235,255,245,.13);
   --scrim:rgba(3,9,6,.65); --shadow:rgba(0,7,3,.57);
 }
-[data-theme="plum"]{
-  --bg:#141018; --void:#0f0c12; --workspace:#21192a;
-  --card:#1d1624; --panel:rgba(29,22,36,.94);
-  --surface-1:#1d1624; --surface-2:#281f31; --surface-3:#352940;
-  --line:rgba(252,239,255,.10); --line-strong:rgba(247,226,255,.19);
-  --txt:#f7f1fa; --mut:#c3b2c9; --dim:#9886a1;
-  --acc:#d39aed; --acc-hover:#e1b1f4; --acc-contrast:#1a0d20;
-  --danger:#ff8496; --grid-dot:rgba(250,238,255,.14);
-  --scrim:rgba(7,3,10,.65); --shadow:rgba(7,1,10,.58);
+[data-theme="ocean"]{
+  --bg:#08141a; --void:#061015; --workspace:#0e1c24;
+  --card:#122028; --panel:rgba(16,30,38,.95);
+  --surface-1:#122028; --surface-2:#1a2c36; --surface-3:#243a46;
+  --line:rgba(210,240,248,.10); --line-strong:rgba(190,235,245,.20);
+  --txt:#eef6f8; --mut:#a9c0c8; --dim:#7f99a3;
+  --acc:#4fd4c8; --acc-hover:#73e0d6; --acc-contrast:#06201c;
+  --danger:#ff858b; --grid-dot:rgba(200,240,245,.13);
+  --scrim:rgba(2,8,12,.66); --shadow:rgba(0,4,8,.58);
 }
 [data-theme="dim"]{
   --bg:#242830; --void:#1e2229; --workspace:#303641;
@@ -1576,10 +1576,11 @@ body.board-active #whatsNewNotice{ display:none; }
   transition:transform .16s cubic-bezier(.22,1,.36,1), border-color .16s ease,
     background .16s ease, box-shadow .16s ease;
 }
+.theme-swatch[data-theme="midnight"]{ --sw-bg:#0e1118; --sw-surface:#273141; --sw-acc:#6eabff; }
 .theme-swatch[data-theme="slate"]{ --sw-bg:#111315; --sw-surface:#293138; --sw-acc:#91b7dc; }
-.theme-swatch[data-theme="graphite"]{ --sw-bg:#15110f; --sw-surface:#332921; --sw-acc:#f2a06f; }
+.theme-swatch[data-theme="black"]{ --sw-bg:#000000; --sw-surface:#2a2a2a; --sw-acc:#ececec; }
 .theme-swatch[data-theme="pine"]{ --sw-bg:#0d1411; --sw-surface:#24372e; --sw-acc:#78d6aa; }
-.theme-swatch[data-theme="plum"]{ --sw-bg:#141018; --sw-surface:#352940; --sw-acc:#d39aed; }
+.theme-swatch[data-theme="ocean"]{ --sw-bg:#08141a; --sw-surface:#243a46; --sw-acc:#4fd4c8; }
 .theme-swatch[data-theme="dim"]{ --sw-bg:#242830; --sw-surface:#424a57; --sw-acc:#86bcff; }
 .theme-preview{
   position:relative; width:42px; height:42px; overflow:hidden; border-radius:8px;
@@ -2841,11 +2842,11 @@ body.board-active #whatsNewNotice{ display:none; }
             <div><div class="s2-label">Theme</div><div class="s2-sub">App colour scheme</div></div>
             <div class="s2-control">
               <div class="theme-row" role="group" aria-label="Theme">
-                <button class="theme-swatch" data-theme="midnight" type="button" aria-label="Midnight theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Midnight</strong><small>Deep blue</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+                <button class="theme-swatch" data-theme="midnight" type="button" aria-label="Midnight theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Midnight</strong><small>Deep navy</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
                 <button class="theme-swatch" data-theme="slate" type="button" aria-label="Carbon theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Carbon</strong><small>Neutral charcoal</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="graphite" type="button" aria-label="Ember theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Ember</strong><small>Warm graphite</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+                <button class="theme-swatch" data-theme="black" type="button" aria-label="Black theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Black</strong><small>True black</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
                 <button class="theme-swatch" data-theme="pine" type="button" aria-label="Forest theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Forest</strong><small>Deep green</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="plum" type="button" aria-label="Aubergine theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Aubergine</strong><small>Soft violet</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+                <button class="theme-swatch" data-theme="ocean" type="button" aria-label="Tide theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Tide</strong><small>Ocean teal</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
                 <button class="theme-swatch" data-theme="dim" type="button" aria-label="Studio theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Studio</strong><small>Lighter contrast</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
               </div>
             </div>
@@ -16290,9 +16291,10 @@ noteEd.addEventListener('keyup', () => noteListDd?.syncUi());
 noteEd.addEventListener('mouseup', () => noteListDd?.syncUi());
 noteEd.addEventListener('select', () => noteListDd?.syncUi());
 
-const THEMES = ['midnight', 'slate', 'graphite', 'pine', 'plum', 'dim'];
+const THEMES = ['midnight', 'slate', 'black', 'pine', 'ocean', 'dim'];
+const THEME_ALIASES = { graphite: 'black', plum: 'ocean' };
 function applyTheme(name) {
-  const theme = THEMES.includes(name) ? name : 'midnight';
+  const theme = THEMES.includes(THEME_ALIASES[name] || name) ? (THEME_ALIASES[name] || name) : 'midnight';
   if (theme === 'midnight') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme);
   const cs = getComputedStyle(document.documentElement);
