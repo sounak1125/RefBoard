@@ -21,6 +21,7 @@ const windows = new Set();
 const MAX_BOARD_WINDOWS = 4;
 let closing = false;
 let pendingOpenPath = null;
+let appDownloadStatus = { phase: 'idle', percent: 0 };
 
 function focusedWindow() {
   const focused = BrowserWindow.getFocusedWindow();
@@ -381,15 +382,30 @@ function setupAutoUpdate() {
   if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-available', () => notifyRenderer({ type: 'update', phase: 'downloading' }));
+  autoUpdater.on('update-available', () => {
+    appDownloadStatus = { phase: 'downloading', percent: 0 };
+    notifyRenderer({ type: 'update', phase: 'downloading', appDownload: { ...appDownloadStatus } });
+  });
   let __updLastPct = -1;
   autoUpdater.on('download-progress', p => {
     const pct = Math.round(p.percent || 0);
-    if (pct !== __updLastPct) { __updLastPct = pct; notifyRenderer({ type: 'update', phase: 'progress', percent: pct }); }
+    if (pct !== __updLastPct) {
+      __updLastPct = pct;
+      appDownloadStatus = { phase: 'progress', percent: pct, downloadedBytes: p.transferred || 0, totalBytes: p.total || 0 };
+      notifyRenderer({ type: 'update', phase: 'progress', percent: pct,
+        appDownload: { ...appDownloadStatus } });
+    }
   });
-  autoUpdater.on('update-downloaded', () => notifyRenderer({ type: 'update', phase: 'ready' }));
-  autoUpdater.on('update-not-available', () => notifyRenderer({ type: 'update', phase: 'uptodate' }));
+  autoUpdater.on('update-downloaded', () => {
+    appDownloadStatus = { phase: 'ready', percent: 100 };
+    notifyRenderer({ type: 'update', phase: 'ready', appDownload: { ...appDownloadStatus } });
+  });
+  autoUpdater.on('update-not-available', () => {
+    appDownloadStatus = { phase: 'idle', percent: 0 };
+    notifyRenderer({ type: 'update', phase: 'uptodate' });
+  });
   autoUpdater.on('error', (err) => {
+    appDownloadStatus = { phase: 'error', percent: 0, error: String(err?.message || err) };
     if (manualUpdateCheck) notifyRenderer({ type: 'update', phase: 'error', message: String(err?.message || err) });
   });
 }

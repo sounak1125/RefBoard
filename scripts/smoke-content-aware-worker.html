@@ -1,0 +1,221 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>content-aware worker smoke</title>
+<body>
+<script>
+const { ipcRenderer } = require('electron');
+const log = [];
+const errors = [];
+const note = m => { log.push(m); };
+const check = (ok, m) => { if (!ok) errors.push(m); else log.push(`ok: ${m}`); };
+
+const WORKER_URL = './content-aware/fill-worker.js?v=exemplar-v1';
+const W = 200, H = 150;
+
+/* A textured scene with an obvious intruder over the region to fill. */
+function scene() {
+  const data = new Uint8ClampedArray(W * H * 4);
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const p = (y * W + x) * 4;
+      const base = 90 + 40 * Math.sin(x / 23) * Math.cos(y / 19);
+      const grain = rnd() * 30;
+      data[p] = base * 0.5 + grain;
+      data[p + 1] = base + grain;
+      data[p + 2] = base * 0.4 + grain;
+      data[p + 3] = 255;
+    }
+  }
+  return data;
+}
+
+function ellipse(cx, cy, rx, ry) {
+  const mask = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const dx = (x - cx) / rx, dy = (y - cy) / ry;
+      if (dx * dx + dy * dy <= 1) mask[y * W + x] = 1;
+    }
+  }
+  return mask;
+}
+
+function runJob(payload, { onProgress, cancelAfter } = {}) {
+  return new Promise(resolve => {
+    let worker;
+    try { worker = new Worker(WORKER_URL); }
+    catch (err) { resolve({ error: `constructor: ${err.message}` }); return; }
+    const timer = setTimeout(() => { try { worker.terminate(); } catch (e) {} resolve({ error: 'job timeout' }); }, 60000);
+    let progressCount = 0;
+    worker.onerror = err => {
+      clearTimeout(timer);
+      try { worker.terminate(); } catch (e) {}
+      resolve({ error: `worker error: ${err.message || 'unknown'} (${err.filename}:${err.lineno})` });
+    };
+    worker.onmessage = event => {
+      const data = event.data || {};
+      if (data.type === 'progress') {
+        progressCount++;
+        if (onProgress) onProgress(data);
+        if (cancelAfter && progressCount >= cancelAfter) {
+          worker.postMessage({ type: 'cancel', id: payload.id });
+        }
+        return;
+      }
+      clearTimeout(timer);
+      try { worker.terminate(); } catch (e) {}
+      resolve({ data, progressCount });
+    };
+    worker.postMessage(payload, [payload.pixels.buffer, payload.mask.buffer]);
+  });
+}
+
+(async () => {
+  try {
+    /* --- 1. the worker loads its modules and completes a fill ------------- */
+    const source = scene();
+    const mask = ellipse(100, 75, 22, 18);
+    const input = new Uint8ClampedArray(source);
+    for (let i = 0; i < W * H; i++) {
+      if (!mask[i]) continue;
+      input[i * 4] = 240; input[i * 4 + 1] = 15; input[i * 4 + 2] = 140;
+    }
+
+    const stages = [];
+    const first = await runJob({
+      type: 'fill', id: 'job-1', width: W, height: H,
+      pixels: new Uint8ClampedArray(input), mask: new Uint8Array(mask),
+      samplingMask: null, options: { seed: 1337, quality: 'preview', maskExpansion: 0 },
+    }, { onProgress: d => { if (!stages.includes(d.stage)) stages.push(d.stage); } });
+
+    check(!first.error, `worker completes without error${first.error ? ` (${first.error})` : ''}`);
+    if (first.error) throw new Error(first.error);
+    check(first.data.type === 'result', 'a result message comes back');
+    const result = first.data.result || {};
+    check(result.pixels instanceof Uint8ClampedArray, 'pixels arrive as a typed array');
+    check(result.pixels.length === W * H * 4, 'the buffer is the right size');
+    note(`stages: ${stages.join(' -> ')}`);
+    check(first.progressCount > 0, `progress is reported (${first.progressCount} messages)`);
+    check(stages.length >= 2, 'progress carries named stages');
+    check(typeof result.confidence === 'number', 'confidence is reported');
+    check(typeof result.algorithmUsed === 'string', `algorithm is reported (${result.algorithmUsed})`);
+    check(result.algorithmUsed.indexOf('patchmatch') === 0, 'a medium hole uses the exemplar path');
+
+    // The intruder is gone, and nothing outside the mask moved.
+    let intruder = 0, outsideChanged = 0;
+    for (let i = 0; i < W * H; i++) {
+      if (mask[i]) {
+        if (result.pixels[i * 4] > 200 && result.pixels[i * 4 + 1] < 70) intruder++;
+      } else {
+        for (let c = 0; c < 4; c++) {
+          if (result.pixels[i * 4 + c] !== source[i * 4 + c]) { outsideChanged++; break; }
+        }
+      }
+    }
+    check(intruder === 0, 'the removed object does not survive the fill');
+    check(outsideChanged === 0, `pixels outside the mask are untouched (${outsideChanged} changed)`);
+
+    /* --- 2. determinism across worker runs -------------------------------- */
+    const second = await runJob({
+      type: 'fill', id: 'job-2', width: W, height: H,
+      pixels: new Uint8ClampedArray(input), mask: new Uint8Array(mask),
+      samplingMask: null, options: { seed: 1337, quality: 'preview', maskExpansion: 0 },
+    });
+    let identical = true;
+    if (second.error) identical = false;
+    else for (let i = 0; i < result.pixels.length; i++) {
+      if (result.pixels[i] !== second.data.result.pixels[i]) { identical = false; break; }
+    }
+    check(identical, 'the same seed reproduces the same pixels in a fresh worker');
+
+    /* --- 3. cancellation ---------------------------------------------------
+     * The solve is synchronous, so a 'cancel' posted mid-run cannot be seen
+     * until the run ends. The two mechanisms that actually work are the time
+     * budget and terminate(); both are exercised here. */
+    const bigMask = ellipse(100, 75, 60, 48);
+    const budgeted = await runJob({
+      type: 'fill', id: 'job-3', width: W, height: H,
+      pixels: new Uint8ClampedArray(input), mask: new Uint8Array(bigMask),
+      samplingMask: null, timeBudgetMs: 1,
+      options: { seed: 4, quality: 'high', maskExpansion: 0 },
+    });
+    check(!budgeted.error, `a time-budgeted job answers${budgeted.error ? ` (${budgeted.error})` : ''}`);
+    if (!budgeted.error) {
+      check(budgeted.data.type === 'error' && budgeted.data.cancelled === true,
+        'an expired budget ends the run cleanly and says it was cancelled');
+      check(!budgeted.data.result, 'and returns no half-finished image');
+    }
+
+    // terminate() is what the Cancel button uses: immediate, and frees the thread.
+    const terminated = await new Promise(resolve => {
+      const w = new Worker(WORKER_URL);
+      let settled = false;
+      const px = new Uint8ClampedArray(input), mk = new Uint8Array(bigMask);
+      w.onmessage = event => {
+        if ((event.data || {}).type !== 'progress' && !settled) { settled = true; resolve('completed'); }
+      };
+      w.onerror = () => { if (!settled) { settled = true; resolve('errored'); } };
+      w.postMessage({
+        type: 'fill', id: 'job-3b', width: W, height: H, pixels: px, mask: mk,
+        samplingMask: null, options: { seed: 4, quality: 'high', maskExpansion: 0 },
+      }, [px.buffer, mk.buffer]);
+      setTimeout(() => { try { w.terminate(); } catch (e) {} }, 30);
+      setTimeout(() => { if (!settled) { settled = true; resolve('silent'); } }, 4000);
+    });
+    check(terminated === 'silent',
+      `terminate() stops the worker without it delivering a result (${terminated})`);
+
+    // A cancel arriving before the job does is honoured.
+    const preCancelled = await new Promise(resolve => {
+      const w = new Worker(WORKER_URL);
+      const px = new Uint8ClampedArray(input), mk = new Uint8Array(mask);
+      w.onmessage = event => {
+        const d = event.data || {};
+        if (d.type === 'progress') return;
+        try { w.terminate(); } catch (e) {}
+        resolve(d);
+      };
+      w.onerror = err => resolve({ type: 'error', error: err.message });
+      w.postMessage({ type: 'cancel', id: 'job-3c' });
+      w.postMessage({
+        type: 'fill', id: 'job-3c', width: W, height: H, pixels: px, mask: mk,
+        samplingMask: null, options: { seed: 4, quality: 'preview', maskExpansion: 0 },
+      }, [px.buffer, mk.buffer]);
+      setTimeout(() => resolve({ type: 'timeout' }), 30000);
+    });
+    check(preCancelled.type === 'error' && preCancelled.cancelled === true,
+      `a cancel queued ahead of the job is honoured (${preCancelled.type})`);
+
+    /* --- 4. a sampling mask travels correctly ------------------------------ */
+    const sampling = new Uint8Array(W * H).fill(255);
+    for (let y = 0; y < H; y++) for (let x = 130; x < W; x++) sampling[y * W + x] = 0;
+    const restricted = await runJob({
+      type: 'fill', id: 'job-4', width: W, height: H,
+      pixels: new Uint8ClampedArray(input), mask: new Uint8Array(mask),
+      samplingMask: sampling, options: { seed: 9, quality: 'preview', maskExpansion: 0 },
+    });
+    check(!restricted.error && restricted.data.type === 'result',
+      `a sampling mask is accepted${restricted.error ? ` (${restricted.error})` : ''}`);
+
+    /* --- 5. a thin scratch takes the diffusion path ------------------------ */
+    const scratch = new Uint8Array(W * H);
+    for (let t = 0; t <= 400; t++) {
+      const x = Math.round(20 + (150 * t) / 400), y = Math.round(30 + (90 * t) / 400);
+      for (let d = -1; d <= 1; d++) if (y + d >= 0 && y + d < H) scratch[(y + d) * W + x] = 1;
+    }
+    const thin = await runJob({
+      type: 'fill', id: 'job-5', width: W, height: H,
+      pixels: new Uint8ClampedArray(input), mask: scratch,
+      samplingMask: null, options: { seed: 3, maskExpansion: 0 },
+    });
+    check(!thin.error && thin.data.result && thin.data.result.algorithmUsed === 'telea',
+      `a thin scratch is routed to diffusion inpainting (${thin.data && thin.data.result ? thin.data.result.algorithmUsed : thin.error})`);
+  } catch (err) {
+    errors.push(String(err && err.stack || err));
+  }
+  ipcRenderer.send('smoke-result', { log, errors });
+})();
+</script>
+</body>

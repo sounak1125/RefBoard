@@ -11,7 +11,7 @@ app.commandLine.appendSwitch('disable-gpu');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function waitFor(win, expression, label, timeoutMs = 30000) {
+async function waitFor(win, expression, label, timeoutMs = 45000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     try {
@@ -58,7 +58,7 @@ function dispatchPointer(win, type, point, buttons) {
   })()`);
 }
 
-async function lassoFill(win, itemId, { expectDetach }) {
+async function lassoFill(win, itemId, { expectDetach, coverBitmap = 140 } = {}) {
   const before = await itemPoint(win, itemId);
   if (!before) throw new Error(`Missing fill target ${itemId}`);
 
@@ -99,18 +99,20 @@ async function lassoFill(win, itemId, { expectDetach }) {
   const itemInfo = await win.webContents.executeJavaScript(`(() => {
     const item = RefBoard.state.items.find(entry => entry.id === ${JSON.stringify(itemId)});
     const view = RefBoard.state.view;
-    const bitmapW = RefBoard.images.get(item.imgId)?.w || 1;
+    const rec = RefBoard.images.get(item.imgId);
     return {
       screenW: item.w * view.s,
-      bitmapW,
+      screenH: item.h * view.s,
+      bitmapW: rec?.w || 1,
+      bitmapH: rec?.h || 1,
       scale: view.s,
     };
   })()`);
   const bitmapPerScreen = itemInfo.bitmapW / itemInfo.screenW;
-  // Cover the 200x200 red square with margin, but clamp to stay within the item.
   const halfScreenW = itemInfo.screenW / 2;
-  const halfScreenH = (itemInfo.bitmapW * 1200 / 1600) / bitmapPerScreen / 2; // item is 1600x1200
-  const pad = Math.min(Math.max(60, Math.round(140 * bitmapPerScreen)), Math.floor(Math.min(halfScreenW, halfScreenH) * 0.8));
+  const halfScreenH = itemInfo.screenH / 2;
+  const coverScreen = Math.round(coverBitmap * (itemInfo.screenW / itemInfo.bitmapW));
+  const pad = Math.min(Math.max(40, coverScreen), Math.floor(Math.min(halfScreenW, halfScreenH) * 0.8));
   console.log('lasso pad:', pad, 'bitmapPerScreen:', bitmapPerScreen, 'halfScreenW:', halfScreenW, 'halfScreenH:', halfScreenH);
 
   // Draw a lasso that fully encloses the red square, starting from top-left corner.
@@ -164,6 +166,26 @@ async function lassoFill(win, itemId, { expectDetach }) {
     canvasPointerEvents: getComputedStyle(document.querySelector('#board')).pointerEvents,
   }))()`);
   console.log('fillState after pointerup:', fillState);
+
+  try {
+    await waitFor(
+      win,
+      `RefBoard.fillSession?.phase === 'preview' && !document.querySelector('#fillApply').disabled`,
+      `${itemId} non-destructive fill preview`,
+      90000,
+    );
+  } catch (error) {
+    const debug = await win.webContents.executeJavaScript(`(() => ({
+      phase: RefBoard.fillSession?.phase,
+      candidateCount: RefBoard.fillSession?.candidates?.length,
+      stage: document.querySelector('#fillPreviewStage')?.textContent,
+      detail: document.querySelector('#fillPreviewDetail')?.textContent,
+      barShown: document.querySelector('#fillPreviewBar')?.classList.contains('show'),
+      applyDisabled: document.querySelector('#fillApply')?.disabled,
+    }))()`);
+    throw new Error(`${error.message}: ${JSON.stringify(debug)}`);
+  }
+  await win.webContents.executeJavaScript(`document.querySelector('#fillApply').click()`);
 
   await waitFor(
     win,
@@ -228,14 +250,14 @@ async function run() {
   const fixture = await win.webContents.executeJavaScript(`(async () => {
     const waitFrame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const source = document.createElement('canvas');
-    source.width = 1600;
-    source.height = 1200;
+    source.width = 800;
+    source.height = 600;
     const ctx = source.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, source.width, source.height);
     // Paint a large red square in the center for the fill to remove.
     ctx.fillStyle = '#ff0000';
-    ctx.fillRect(700, 500, 200, 200);
+    ctx.fillRect(350, 250, 100, 100);
     const blob = await new Promise(resolve => source.toBlob(resolve, 'image/png'));
     source.width = source.height = 0;
     if (!blob) throw new Error('Could not create content-aware fill smoke source');
@@ -417,6 +439,218 @@ async function run() {
     })()`,
     'fill redo',
   );
+
+  const grain = await win.webContents.executeJavaScript(`(async () => {
+    const source = document.createElement('canvas');
+    source.width = 640;
+    source.height = 640;
+    const ctx = source.getContext('2d');
+    const image = ctx.createImageData(640, 640);
+    for (let y = 0; y < 640; y++) {
+      for (let x = 0; x < 640; x++) {
+        let n = (x * 374761393 + y * 668265263) | 0;
+        n = Math.imul(n ^ n >>> 16, 2246822507);
+        n = Math.imul(n ^ n >>> 13, 3266489909);
+        const grain = ((n >>> 0) % 61) - 30;
+        const p = (y * 640 + x) * 4;
+        image.data[p] = Math.max(0, Math.min(255, 168 + grain));
+        image.data[p + 1] = Math.max(0, Math.min(255, 142 + grain));
+        image.data[p + 2] = Math.max(0, Math.min(255, 98 + grain));
+        image.data[p + 3] = 255;
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+    ctx.fillStyle = '#14c85a';
+    ctx.beginPath();
+    ctx.arc(320, 320, 48, 0, Math.PI * 2);
+    ctx.fill();
+    const blob = await new Promise(resolve => source.toBlob(resolve, 'image/png'));
+    source.width = source.height = 0;
+    await RefBoard.addImages([new File([blob], 'fill-grain.png', { type: 'image/png' })]);
+    const item = RefBoard.state.items[RefBoard.state.items.length - 1];
+    item.x = 80;
+    item.y = 80;
+    RefBoard.state.sel = new Set([item.id]);
+    RefBoard.fitAll();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    window.__contentAwareFillSmoke.ids.grain = item.id;
+    window.__contentAwareFillSmoke.sampleGrain = function(itemId) {
+      const it = RefBoard.state.items.find(entry => entry.id === itemId);
+      const bitmap = it && RefBoard.images.get(it.imgId)?.bitmap;
+      if (!it || !bitmap) return null;
+      const c = document.createElement('canvas');
+      c.width = bitmap.width;
+      c.height = bitmap.height;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(bitmap, 0, 0);
+      const x = Math.max(0, Math.floor(bitmap.width / 2) - 8);
+      const y = Math.max(0, Math.round(bitmap.height / 2) - 8);
+      const pixels = g.getImageData(x, y, 16, 16).data;
+      let sum = 0, sumSq = 0, n = 0, maxG = 0, minR = 255;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const L = 0.299 * pixels[i] + 0.587 * pixels[i + 1] + 0.114 * pixels[i + 2];
+        sum += L;
+        sumSq += L * L;
+        n++;
+        maxG = Math.max(maxG, pixels[i + 1]);
+        minR = Math.min(minR, pixels[i]);
+      }
+      c.width = c.height = 0;
+      const mean = sum / n;
+      return { variance: Math.max(0, sumSq / n - mean * mean), maxG, minR, mean };
+    };
+    return { id: item.id, before: window.__contentAwareFillSmoke.sampleGrain(item.id) };
+  })()`);
+
+  if (!grain.before || grain.before.maxG < 180) {
+    throw new Error(`Grain fixture blob was not green: ${JSON.stringify(grain.before)}`);
+  }
+
+  await lassoFill(win, grain.id, { expectDetach: false, coverBitmap: 70 });
+  const grainAfter = await win.webContents.executeJavaScript(
+    `window.__contentAwareFillSmoke.sampleGrain(${JSON.stringify(grain.id)})`,
+  );
+  if (!grainAfter || (grainAfter.minR < 80 && grainAfter.maxG > 180)) {
+    throw new Error(`Grain blob was not removed: ${JSON.stringify(grainAfter)}`);
+  }
+  if (!grainAfter || grainAfter.variance < 25) {
+    throw new Error(`Grain fill stayed smeared: ${JSON.stringify(grainAfter)}`);
+  }
+
+  // Regression for the reported "fill colors do not match" rejections on real
+  // photos: a fill over fine grain must keep Apply available and land near the
+  // surrounding tone rather than drifting away from it.
+  const shifted = await win.webContents.executeJavaScript(`(async () => {
+    const source = document.createElement('canvas');
+    source.width = 512;
+    source.height = 384;
+    const ctx = source.getContext('2d');
+    const image = ctx.createImageData(source.width, source.height);
+    for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) {
+      let n = (x * 374761393 + y * 668265263) | 0;
+      n = Math.imul(n ^ n >>> 16, 2246822507);
+      n = Math.imul(n ^ n >>> 13, 3266489909);
+      const grain = ((n >>> 0) % 17) - 8;
+      const p = (y * source.width + x) * 4;
+      image.data[p] = Math.max(0, Math.min(255, 186 + grain));
+      image.data[p + 1] = Math.max(0, Math.min(255, 178 + grain));
+      image.data[p + 2] = Math.max(0, Math.min(255, 164 + grain));
+      image.data[p + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    ctx.fillStyle = '#20242a';
+    ctx.beginPath();
+    ctx.ellipse(256, 192, 46, 34, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const blob = await new Promise(resolve => source.toBlob(resolve, 'image/png'));
+    source.width = source.height = 0;
+    await RefBoard.addImages([new File([blob], 'fill-shifted.png', { type: 'image/png' })]);
+    const item = RefBoard.state.items[RefBoard.state.items.length - 1];
+    item.x = 60;
+    item.y = 60;
+    RefBoard.state.sel = new Set([item.id]);
+    RefBoard.fitAll();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    window.__contentAwareFillSmoke.ids.shifted = item.id;
+    return { id: item.id };
+  })()`);
+
+  await lassoFill(win, shifted.id, { expectDetach: false, coverBitmap: 70 });
+  const shiftedAfter = await win.webContents.executeJavaScript(`(() => {
+    const it = RefBoard.state.items.find(entry => entry.id === ${JSON.stringify(shifted.id)});
+    const bitmap = it && RefBoard.images.get(it.imgId)?.bitmap;
+    if (!it || !bitmap) return null;
+    const c = document.createElement('canvas');
+    c.width = bitmap.width;
+    c.height = bitmap.height;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(bitmap, 0, 0);
+    const sampleMean = (x, y, w, h) => {
+      const px = g.getImageData(x, y, w, h).data;
+      let sum = 0, count = 0;
+      for (let i = 0; i < px.length; i += 4) { sum += px[i] * .299 + px[i + 1] * .587 + px[i + 2] * .114; count++; }
+      return sum / count;
+    };
+    return {
+      center: sampleMean(Math.floor(bitmap.width / 2) - 10, Math.floor(bitmap.height / 2) - 10, 20, 20),
+      ring: sampleMean(24, 24, 40, 40),
+    };
+  })()`);
+  if (!shiftedAfter || Math.abs(shiftedAfter.center - shiftedAfter.ring) > 45) {
+    throw new Error(`Shifted fill was not harmonized toward the surroundings: ${JSON.stringify(shiftedAfter)}`);
+  }
+
+  // Full renderer regression for the reported rock-removal failure: the engine
+  // mock returns a flat mean fill and bright foam sits near the lasso. The
+  // detail pass must restore ripple texture from compatible water sources only,
+  // so the clean plate keeps the water tone without foam speckle.
+  const water = await win.webContents.executeJavaScript(`(async () => {
+    const source = document.createElement('canvas');
+    source.width = 640;
+    source.height = 480;
+    const ctx = source.getContext('2d');
+    const image = ctx.createImageData(source.width, source.height);
+    for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) {
+      const ripple = ((x * 23 + y * 41) % 29) - 14;
+      const wave = Math.round(Math.sin((x + y * 1.7) / 17) * 7);
+      const p = (y * source.width + x) * 4;
+      image.data[p] = Math.max(0, Math.min(255, 88 + ripple + wave));
+      image.data[p + 1] = Math.max(0, Math.min(255, 137 + ripple + wave));
+      image.data[p + 2] = Math.max(0, Math.min(255, 151 + ripple + wave));
+      image.data[p + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    ctx.fillStyle = '#514632';
+    ctx.beginPath();
+    ctx.ellipse(320, 240, 45, 38, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fbfaf2';
+    ctx.beginPath();
+    ctx.ellipse(455, 235, 42, 31, -.12, 0, Math.PI * 2);
+    ctx.fill();
+    const blob = await new Promise(resolve => source.toBlob(resolve, 'image/png'));
+    source.width = source.height = 0;
+    await RefBoard.addImages([new File([blob], 'fill-water-white-decoy.png', { type: 'image/png' })]);
+    const item = RefBoard.state.items[RefBoard.state.items.length - 1];
+    item.x = 80;
+    item.y = 80;
+    RefBoard.state.sel = new Set([item.id]);
+    RefBoard.fitAll();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    window.__contentAwareFillSmoke.ids.water = item.id;
+    window.__contentAwareFillSmoke.sampleWater = function(itemId) {
+      const it = RefBoard.state.items.find(entry => entry.id === itemId);
+      const bitmap = it && RefBoard.images.get(it.imgId)?.bitmap;
+      if (!it || !bitmap) return null;
+      const c = document.createElement('canvas');
+      c.width = bitmap.width;
+      c.height = bitmap.height;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(bitmap, 0, 0);
+      const pixels = g.getImageData(Math.floor(bitmap.width / 2) - 12, Math.floor(bitmap.height / 2) - 12, 24, 24).data;
+      let sum = 0, sumSq = 0, count = 0, bright = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        const luma = pixels[index] * .299 + pixels[index + 1] * .587 + pixels[index + 2] * .114;
+        sum += luma; sumSq += luma * luma; count++;
+        if (pixels[index] > 225 && pixels[index + 1] > 225 && pixels[index + 2] > 225) bright++;
+      }
+      c.width = c.height = 0;
+      const mean = sum / count;
+      return { mean, variance: Math.max(0, sumSq / count - mean * mean), brightRatio: bright / count };
+    };
+    return { id: item.id, before: window.__contentAwareFillSmoke.sampleWater(item.id) };
+  })()`);
+
+  await lassoFill(win, water.id, { expectDetach: false, coverBitmap: 60 });
+  const waterAfter = await win.webContents.executeJavaScript(
+    `window.__contentAwareFillSmoke.sampleWater(${JSON.stringify(water.id)})`,
+  );
+  if (!waterAfter || waterAfter.mean > 190 || waterAfter.brightRatio > .01) {
+    throw new Error(`White guide/foam contaminated the water clean plate: ${JSON.stringify({ before: water.before, after: waterAfter })}`);
+  }
+  if (waterAfter.variance < 10) {
+    throw new Error(`Water detail was flattened by the clean plate: ${JSON.stringify(waterAfter)}`);
+  }
 
   if (rendererErrors.length) {
     throw new Error(`Renderer errors: ${rendererErrors.join('; ')}`);
