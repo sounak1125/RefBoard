@@ -84,3 +84,27 @@ export function deleteIdsAfterSuccessfulCutCopy(copyResult) {
   if (!Array.isArray(copyResult.deleteIds) || !copyResult.deleteIds.length) return null;
   return copyResult.deleteIds.slice();
 }
+
+/**
+ * Select the system clipboard image representation without touching pixels.
+ * ORIGINAL_IMAGE_CLIPBOARD_BYTES marks the no-encode path for source images.
+ */
+export function chooseClipboardImageSource({
+  itemCount,
+  isImage,
+  isCropped,
+  isTransformed,
+  isGrouped,
+  mimeType,
+} = {}) {
+  const originalType = String(mimeType || '').toLowerCase();
+  const useOriginal = itemCount === 1
+    && isImage === true
+    && isCropped !== true
+    && isTransformed !== true
+    && isGrouped !== true
+    && originalType.startsWith('image/');
+  return useOriginal
+    ? { mode: 'original', mimeType: originalType }
+    : { mode: 'render', mimeType: 'image/png' };
+}

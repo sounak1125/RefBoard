@@ -3102,6 +3102,7 @@ import {
   createClipboardWriteQueue,
   expandSelectionDeleteIds,
   deleteIdsAfterSuccessfulCutCopy,
+  chooseClipboardImageSource,
 } from './scripts/clipboard-copy-order.mjs';
 import {
   sameFilePath,
@@ -8471,16 +8472,23 @@ async function compositeBlob(items, { isCancelled, maxDimension = 8192 } = {}) {
   return blob;
 }
 
-async function directClipboardPng(items) {
-  const drawable = items.filter(it => !isGroupItem(it));
-  if (drawable.length !== 1 || !isImageItem(drawable[0])) return null;
-  const it = drawable[0];
+async function directClipboardImage(items) {
+  const it = items.length === 1 ? items[0] : null;
+  if (!it || !isImageItem(it)) return null;
   const im = images.get(it.imgId);
-  if (!im || im.type !== 'image/png') return null;
+  if (!im) return null;
   const cr = cropOf(it);
-  const uncropped = cr.l === 0 && cr.t === 0 && cr.r === 1 && cr.b === 1;
-  if (!uncropped || it.rot || it.flipX || it.flipY || it.gray || state.boardGray) return null;
-  return await getImageBlob(im);
+  const source = chooseClipboardImageSource({
+    itemCount: items.length,
+    isImage: true,
+    isCropped: cr.l !== 0 || cr.t !== 0 || cr.r !== 1 || cr.b !== 1,
+    isTransformed: !!(it.rot || it.flipX || it.flipY || it.gray || state.boardGray),
+    isGrouped: !!it.groupId,
+    mimeType: im.type,
+  });
+  if (source.mode !== 'original') return null;
+  const blob = await getImageBlob(im);
+  return blob ? { blob, mimeType: source.mimeType } : null;
 }
 
 // Keep unoccupied space in irregular board layouts visually continuous with
@@ -8540,14 +8548,14 @@ async function writeNotesToClipboard(payload, plainText) {
   ]);
 }
 
-async function writeItemClipboard(pngBlob, payload) {
+async function writeItemClipboard(imageBlob, imageMimeType, payload) {
   try {
     await navigator.clipboard.write([new ClipboardItem({
-      'image/png': pngBlob,
+      [imageMimeType]: imageBlob,
       [REFBOARD_ITEM_CLIP_MIME]: new Blob([JSON.stringify(payload)], { type: REFBOARD_ITEM_CLIP_MIME }),
     })]);
   } catch {
-    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+    await navigator.clipboard.write([new ClipboardItem({ [imageMimeType]: imageBlob })]);
   }
 }
 
@@ -8603,21 +8611,36 @@ async function copySelection() {
     if (!isCurrent()) return false;
 
     const drawableCount = compositeItems.filter(it => !isGroupItem(it)).length;
-    const directPng = await directClipboardPng(compositeItems);
-    const blob = directPng || await compositeBlob(compositeItems, {
+    const directImage = await directClipboardImage(compositeItems);
+    let blob = directImage?.blob || await compositeBlob(compositeItems, {
       isCancelled: () => !isCurrent(),
       // Multi-item clipboard composites remain crisp while avoiding a 256 MB
       // 8192×8192 canvas and its expensive PNG encode.
       maxDimension: drawableCount > 1 ? 4096 : 8192,
     });
+    let imageMimeType = directImage?.mimeType || 'image/png';
     if (!isCurrent()) return false;
     if (!blob) {
       if (isCurrent()) toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
       return false;
     }
 
-    const result = await clipboardWrites.enqueue(op, copyOps.isCurrent.bind(copyOps), () =>
-      writeItemClipboard(blob, payload));
+    const result = await clipboardWrites.enqueue(op, copyOps.isCurrent.bind(copyOps), async () => {
+      try {
+        await writeItemClipboard(blob, imageMimeType, payload);
+      } catch (error) {
+        if (!directImage) throw error;
+        console.warn(`[clipboard] Original ${imageMimeType} write failed; falling back to PNG render`, error);
+        const fallbackBlob = await compositeBlob(compositeItems, {
+          isCancelled: () => !isCurrent(),
+          maxDimension: drawableCount > 1 ? 4096 : 8192,
+        });
+        if (!fallbackBlob) throw error;
+        await writeItemClipboard(fallbackBlob, 'image/png', payload);
+        blob = fallbackBlob;
+        imageMimeType = 'image/png';
+      }
+    });
     if (!result.ok) {
       if (!result.stale && isCurrent()) {
         toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');

@@ -9,6 +9,7 @@ import {
   createClipboardWriteQueue,
   expandSelectionDeleteIds,
   deleteIdsAfterSuccessfulCutCopy,
+  chooseClipboardImageSource,
 } from './clipboard-copy-order.mjs';
 
 function assert(cond, msg) {
@@ -192,6 +193,39 @@ function assert(cond, msg) {
 
 {
   assert(({ noLod: true }).noLod === true, 'copy composite uses noLod');
+}
+
+{
+  const originalJpeg = chooseClipboardImageSource({
+    itemCount: 1,
+    isImage: true,
+    isCropped: false,
+    isTransformed: false,
+    isGrouped: false,
+    mimeType: 'image/jpeg',
+  });
+  assert(originalJpeg.mode === 'original', 'single untouched JPEG selects original bytes');
+  assert(originalJpeg.mimeType === 'image/jpeg', 'single untouched JPEG keeps image/jpeg');
+
+  const croppedJpeg = chooseClipboardImageSource({
+    itemCount: 1,
+    isImage: true,
+    isCropped: true,
+    isTransformed: false,
+    isGrouped: false,
+    mimeType: 'image/jpeg',
+  });
+  assert(croppedJpeg.mode === 'render' && croppedJpeg.mimeType === 'image/png', 'cropped JPEG keeps the PNG render path');
+
+  const multiSelect = chooseClipboardImageSource({
+    itemCount: 2,
+    isImage: true,
+    isCropped: false,
+    isTransformed: false,
+    isGrouped: false,
+    mimeType: 'image/jpeg',
+  });
+  assert(multiSelect.mode === 'render' && multiSelect.mimeType === 'image/png', 'multi-select keeps the PNG render path');
 }
 
 console.log('clipboard-copy-order: all checks passed');
