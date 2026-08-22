@@ -201,6 +201,42 @@ const fill = (scene, mask, options) => CAF.fill(
     new Uint8Array(3), null, {}), /matches neither/, 'a wrong-sized mask is caught');
 }
 
+/* --- a very large selection stays inside the host's time budget ---------
+ * Matching scales with the hole, so the presets' fixed refinement budgets stop
+ * making sense at the top end: a 4.5-megapixel selection took 860s at Balanced,
+ * past the budget the renderer allows, and was cancelled instead of finishing.
+ * Past a threshold a preset drops one reconstruction pass and stops bumping the
+ * patch size, which took the same fill to 220s at equal quality. */
+{
+  const px = new Uint8ClampedArray(64 * 64 * 4).fill(128);
+  const resolve = (holeArea, quality) => CAF.resolveOptions({ quality }, {
+    width: 6000, height: 4000, holeArea, pixels: px, textureFrequency: 6,
+  });
+
+  // Below the threshold, nothing changes: ordinary fills keep full quality.
+  const ordinary = resolve(300000, 'balanced');
+  assert.equal(ordinary.passes, 2, 'a normal selection keeps both reconstruction passes');
+
+  const huge = resolve(4500000, 'balanced');
+  assert.equal(huge.passes, 1, 'a very large selection drops to one pass');
+  assert.ok(huge.patchSize <= 9,
+    `and is not given the large-hole patch bump (got ${huge.patchSize})`);
+
+  // The adaptation must not collapse the presets into each other.
+  const hp = resolve(4500000, 'preview');
+  const hb = resolve(4500000, 'balanced');
+  const hh = resolve(4500000, 'high');
+  assert.ok(hh.passes >= hb.passes && hb.passes >= hp.passes,
+    'preset ordering by passes survives the adaptation');
+  assert.ok(hh.iterations > hb.iterations && hb.iterations > hp.iterations,
+    'and the presets remain distinguishable by iterations');
+  assert.ok(hp.passes >= 1, 'passes never drops below one');
+
+  // The threshold is a real boundary, not an accident of rounding.
+  assert.equal(resolve(1400000, 'balanced').passes, 2, 'just below the threshold is unaffected');
+  assert.equal(resolve(1600000, 'balanced').passes, 1, 'just above it adapts');
+}
+
 /* --- horizon: the fill must not import the wrong side ------------------- */
 {
   const scene = horizonScene(W, H);

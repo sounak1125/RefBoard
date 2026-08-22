@@ -58,6 +58,22 @@
   const ROTATION_LEVELS = { off: 0, low: 1, medium: 2, high: 3 };
   const SCALE_LEVELS = { off: 0, low: 1, medium: 2 };
 
+  /* Above this many pixels to reconstruct, a preset stops spending refinement
+   * it cannot pay for.
+   *
+   * Matching is 70-90% of a fill and scales with the hole, so the presets' fixed
+   * budgets stop making sense at the top end: a 4.5-megapixel selection on a
+   * 24-megapixel photo took 860s at Balanced, past the host's own time budget,
+   * and was cancelled rather than finishing. The two adaptations — one fewer
+   * reconstruction pass, and no patch-size bump — were measured on a 588k-pixel
+   * hole at 50.0s -> 28.6s with RMSE 12.1 -> 12.2 and texture retention
+   * 0.92 -> 0.91. Effectively the same picture in half the time.
+   *
+   * Set where it catches only the cases that actually overrun: every benchmark
+   * row below 1.5M finishes comfortably inside its budget already, so they keep
+   * their full quality settings. */
+  const HUGE_HOLE = 1500000;
+
   /* Odd patch side in 5..11, per §6.
    *
    * Two signals drive it. Texture frequency: fine grain wants a small patch so
@@ -83,9 +99,16 @@
     let size = 9;
     if (textureFrequency < 1.4) size = 11;      // smooth, or a large repeat
     else if (textureFrequency > 12) size = 7;   // exceptionally fine grain
-    if (holeArea > roiArea * 0.1) size += 2;
+    /* A hole that fills much of its region needs a bigger patch to stay
+     * coherent — but only up to a point. Matching cost is the hole area times
+     * the patch area, so on a very large selection this bump is the single most
+     * expensive decision in the engine, and measured on a 588k-pixel hole it
+     * bought nothing: patch 11 scored RMSE 12.1 / texture 0.92 against patch 9's
+     * 12.2 / 0.91, for 1.5x the work. Past HUGE_HOLE it is not applied. */
+    if (holeArea > roiArea * 0.1 && holeArea <= HUGE_HOLE) size += 2;
     // A patch wider than the hole cannot straddle the boundary usefully.
     if (holeArea < 900) size -= 2;
+    if (holeArea > HUGE_HOLE) size = Math.min(size, 9);
     return clamp(size | 1, 5, 11);
   }
 
@@ -181,7 +204,11 @@
       iterations,
       pyramidLevels,
       searchRadius,
-      passes: clamp(pick(options.passes, preset.passes), 1, 8),
+      /* One pass fewer past HUGE_HOLE, floored at one. Applied to every preset
+       * so their ordering survives — High still refines more than Balanced,
+       * which still refines more than Preview — while none of them runs away. */
+      passes: clamp(pick(options.passes,
+        holeArea > HUGE_HOLE ? Math.max(1, preset.passes - 1) : preset.passes), 1, 8),
       roiScale: Math.max(0.25, Number(pick(options.roiScale, preset.roiScale)) || 1),
 
       // Scoring weights (§9). They are relative; patch-distance normalises.
