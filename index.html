@@ -18266,10 +18266,15 @@ async function init() {
     }
   } catch (e) {}
 
+  // Startup navigation has settled here: nothing after this point moves the
+  // view, so a board opened from now on will not be torn down. The update
+  // check below reaches the network, so waiting for it would make this flag
+  // depend on GitHub being reachable.
+  appStartupComplete = true;
+
   const info = await window.RefBoardAPI?.getAppInfo?.();
   if (info) setPerfOverlayPackaged(!!info.isPackaged);
   if (info) await window.RefBoardAPI?.updaterInit?.({ checkOnStartup: !!appSettings.checkUpdatesOnStartup });
-  appStartupComplete = true;
 }
 
 /* ================= palette extraction ================= */

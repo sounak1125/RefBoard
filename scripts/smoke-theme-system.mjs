@@ -10,7 +10,7 @@ import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
 const profile = await mkdtemp(path.join(os.tmpdir(), 'refboard-theme-smoke-'));
-const child = spawn(electron, ['.', '--remote-debugging-port=0', `--user-data-dir=${profile}`], {
+const child = spawn(electron, ['.', '--remote-debugging-port=0', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion', `--user-data-dir=${profile}`], {
   cwd: root,
   windowsHide: true,
   stdio: ['ignore', 'pipe', 'pipe'],
