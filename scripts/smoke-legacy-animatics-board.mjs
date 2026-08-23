@@ -166,6 +166,7 @@ const smokeExpression = `(async()=>{
   const priorError=console.error;
   console.error=(...args)=>{errors.push(args.map(String).join(' '));priorError(...args);};
   document.querySelectorAll('.modal.show').forEach(el=>el.classList.remove('show'));
+  let pendingResult;
   const pending=window.RefBoard.openBoardFromPath(filePath);
   let stopped=false;
   const confirmer=(async()=>{
@@ -175,16 +176,20 @@ const smokeExpression = `(async()=>{
       await wait(40);
     }
   })();
-  await pending;
+  pendingResult=await pending;
   stopped=true;
   await confirmer;
   for(let attempt=0;attempt<80;attempt++){
     if(!document.querySelector('#openingOverlay')?.classList.contains('show'))break;
     await wait(50);
   }
-  await wait(200);
+  // Poll rather than assume a fixed settle time: a slow CI runner takes longer
+  // to swap the landing view out than a warm desktop does.
+  for(let attempt=0;attempt<200&&!document.body.classList.contains('board-active');attempt++)await wait(50);
+  await wait(120);
   console.error=priorError;
   const items=window.RefBoard.state.items;
+  const diagnostics=await window.RefBoard.memoryStats().catch(()=>({}));
   return {
     boardActive:document.body.classList.contains('board-active'),
     imageItems:items.filter(it=>(it.kind||'image')==='image').length,
@@ -192,12 +197,27 @@ const smokeExpression = `(async()=>{
     imageRecords:window.RefBoard.images.size,
     recordTypes:[...window.RefBoard.images.values()].map(im=>im.type),
     errors,
+    // Only read when something went wrong, but cheap enough to always return.
+    openError:diagnostics.lastBoardOpenError||null,
+    renderError:diagnostics.lastBoardRenderError||null,
+    toast:(document.querySelector('#toast')?.textContent||'').trim(),
+    landingVisible:!document.querySelector('#recentWorks')?.classList.contains('hide'),
+    openResult:typeof pendingResult==='undefined'?null:pendingResult,
   };
 })()`;
 
 try {
   const result = await evaluate(await debuggerPort(), smokeExpression);
-  assert.equal(result.boardActive, true, 'a legacy animatics board should open into the board view');
+  const why = JSON.stringify({
+    openResult: result.openResult,
+    openError: result.openError,
+    renderError: result.renderError,
+    toast: result.toast,
+    landingVisible: result.landingVisible,
+    items: result.totalItems,
+    consoleErrors: result.errors,
+  });
+  assert.equal(result.boardActive, true, `a legacy animatics board should open into the board view — ${why}`);
   assert.equal(result.imageItems, BOARD_IMAGES, `every board image should survive (found ${result.imageItems})`);
   assert.equal(result.totalItems, BOARD_IMAGES, 'no extra items should appear for the dropped timeline');
   assert.equal(result.imageRecords, BOARD_IMAGES, `audio/video records must be skipped, not registered as images (found ${result.imageRecords})`);
