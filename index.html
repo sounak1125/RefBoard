@@ -2398,6 +2398,9 @@ body.board-active #whatsNewNotice{ display:none; }
   <button class="tb" id="btnFit" data-tip-title="Fit view" data-tip-sub="F">
     <svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>
   </button>
+  <button class="tb" id="btnSearch" data-tip-title="Search" data-tip-sub="Ctrl+F">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+  </button>
   <span class="sep"></span>
   <button class="tb" id="btnExport" data-tip-title="Export" data-tip-sub="Ctrl+E">
     <svg viewBox="0 0 24 24"><path d="M12 3v11M8 10l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
@@ -16699,6 +16702,7 @@ $('#btnPaste').addEventListener('click', () => menuPaste(null));
 $('#btnNote').addEventListener('click', () => createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null));
 $('#btnArrange').addEventListener('click', arrangeAll);
 $('#btnFit').addEventListener('click', () => fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i))));
+$('#btnSearch').addEventListener('click', () => openBoardSearch());
 $('#btnExport').addEventListener('click', openExport);
 $('#btnSave').addEventListener('click', () => manualSaveBoardFile(() => saveBoardFile()));
 $('#btnOpen').addEventListener('click', () => openBoardFromDialog());

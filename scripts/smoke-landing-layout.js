@@ -370,6 +370,11 @@ async function run() {
   await revealToolbarForSmoke(win);
   await clickElement(win, '#btnArrange');
   await clickElement(win, '#btnFit');
+  await clickElement(win, '#btnSearch');
+  await waitFor(win, "document.querySelector('#searchModal').classList.contains('show')", 'Search toolbar button');
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'ESC' });
+  await waitFor(win, "!document.querySelector('#searchModal').classList.contains('show')", 'Search modal close');
   await clickElement(win, '#btnExport');
   await waitFor(win, "document.querySelector('#exportModal').classList.contains('show')", 'Export toolbar button');
   await clickElement(win, '#expCancel');
