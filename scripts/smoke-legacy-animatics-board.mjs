@@ -14,11 +14,12 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, open, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, open, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 
 const require = createRequire(import.meta.url);
 const { boardHeaderPrefix, boardImageParts } = require('./board-save-format.js');
@@ -230,5 +231,5 @@ try {
 } finally {
   if (child.exitCode === null) child.kill();
   await Promise.race([once(child, 'exit'), delay(3000)]).catch(() => {});
-  await rm(profile, { recursive: true, force: true });
+  await removeProfileDir(profile);
 }

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 
 const require = createRequire(import.meta.url);
 const { scanBoardFile } = require('./board-open-stream.js');
@@ -162,5 +163,5 @@ try {
 } finally {
   if (child.exitCode === null) child.kill();
   await Promise.race([once(child, 'exit'), delay(3000)]).catch(() => {});
-  await rm(profile, { recursive: true, force: true });
+  await removeProfileDir(profile);
 }

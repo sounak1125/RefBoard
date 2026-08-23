@@ -9,10 +9,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
@@ -171,5 +172,5 @@ try {
 } finally {
   if (child.exitCode === null) child.kill();
   await Promise.race([once(child, 'exit'), delay(3000)]).catch(() => {});
-  await rm(profile, { recursive: true, force: true });
+  await removeProfileDir(profile);
 }
