@@ -10446,11 +10446,19 @@ function normalizeImagesByScale() { normalizeImagesBy('scale'); }
 function normalizeImagesByWidth() { normalizeImagesBy('width'); }
 function normalizeImagesByHeight() { normalizeImagesBy('height'); }
 
-function nudge(dx, dy) {
+// recordUndo is false for OS key-repeat, so a held arrow key collapses into one
+// history entry for the whole burst instead of one per repeat.
+function nudge(dx, dy, recordUndo = true) {
   if (!state.sel.size) return;
   const moveIds = expandMoveIds(new Set(selectedItems().map(s => s.id)));
   if (idsIncludeLockedGroupItems(moveIds)) return;
-  for (const it of selectedItems()) {
+  // Iterate the EXPANDED set, not selectedItems(): a selected group is a frame
+  // whose children are separate items, so nudging the selection alone slid the
+  // frame off its contents.
+  const items = [...moveIds].map(id => byId(id)).filter(Boolean);
+  if (!items.length) return;
+  if (recordUndo) pushUndo();
+  for (const it of items) {
     if (isArrowItem(it)) {
       it.x1 += dx; it.y1 += dy; it.x2 += dx; it.y2 += dy;
     } else {
@@ -10458,6 +10466,7 @@ function nudge(dx, dy) {
     }
   }
   invalidateWorkspaceBBox();
+  syncGroupFramesForItems(items);
   scheduleSave(); invalidate();
 }
 
@@ -14544,18 +14553,17 @@ function snapGroupCornerResize(orig, r, corner, off, axis) {
   applyGroupProportionalResize(orig, r, Math.max(0.05, k), A[0], A[1]);
 }
 
-function snapGroupResize(orig, r, { corner, edge }, groupId, disabled) {
+function snapGroupResize(orig, r, { corner, edge }, disabled) {
   if (!snapAnyEnabled(disabled)) { clearSnapGuides(); return; }
   const bb = selectionBBoxRect();
   if (!bb || bb.rot) { clearSnapGuides(); return; }
-  // mode.orig for a multi-select groupResize holds group FRAMES without their
-  // children, so without expansion the selection would snap to its own kids.
-  const exclude = expandMoveIds(new Set(orig.map(o => o.id)));
-  // mode.start is the group's stored rect, padded by groupPadding() board units
-  // — measure the visible children instead.
-  const mv = groupId
-    ? snapBoxOfItems(childrenOfGroup(groupId))
-    : snapBoxOfItems(selectedItems());
+  // orig is already the exact set being scaled — group children, no frames — for
+  // both the single-group and multi-select paths, so it serves as both the
+  // exclude set and the moving box. mode.start cannot: it is the group's stored
+  // rect, padded by groupPadding() board units.
+  const moving = orig.map(o => byId(o.id)).filter(Boolean);
+  const exclude = new Set(orig.map(o => o.id));
+  const mv = snapBoxOfItems(moving);
   const pick = resizeSnapSolve(mv, exclude, edge || corner);
   if (!pick) return;
 
@@ -14765,12 +14773,17 @@ canvas.addEventListener('pointerdown', async e => {
     }
     if (h.group) {
       const bb = selectionBBoxRect() || h.bbox;
+      // Expand groups to their children and drop the frames themselves. A frame
+      // is derived from its contents (syncGroupFrame), so scaling the frame
+      // without its children just slid the box off the images it holds.
+      const resizeIds = expandMoveIds(new Set(selectedItems().map(s => s.id)));
+      const resizeItems = [...resizeIds].map(id => byId(id)).filter(it => it && !isGroupItem(it));
       mode = {
         type: 'groupResize',
         corner: h.corner || null,
         edge: h.edge || null,
         start: { x: bb.x, y: bb.y, w: bb.w, h: bb.h, rot: bb.rot || 0 },
-        orig: selectedItems().map(it => {
+        orig: resizeItems.map(it => {
           if (isArrowItem(it)) {
             const b = arrowBBox(it);
             return {
@@ -15009,7 +15022,7 @@ window.addEventListener('pointermove', e => {
       else if (mode.edge === 'top') { k = clamp(r.h - ly, minH, r.h * 50) / r.h; ax = r.w / 2; ay = r.h; }
       else return;
       applyGroupProportionalResize(mode.orig, r, k, ax, ay);
-      snapGroupResize(mode.orig, r, { edge: mode.edge }, mode.groupId, e.ctrlKey || e.metaKey);
+      snapGroupResize(mode.orig, r, { edge: mode.edge }, e.ctrlKey || e.metaKey);
     } else {
       const corners = { nw: [0, 0], ne: [r.w, 0], se: [r.w, r.h], sw: [0, r.h] };
       const opp = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' };
@@ -15019,12 +15032,12 @@ window.addEventListener('pointermove', e => {
       let k = Math.max(0.05, (lx - A[0]) / vx, (ly - A[1]) / vy);
       if (!Number.isFinite(k)) k = 1;
       applyGroupProportionalResize(mode.orig, r, k, A[0], A[1]);
-      snapGroupResize(mode.orig, r, { corner: mode.corner }, mode.groupId, e.ctrlKey || e.metaKey);
+      snapGroupResize(mode.orig, r, { corner: mode.corner }, e.ctrlKey || e.metaKey);
     }
-    if (mode.groupId) {
-      const g = byId(mode.groupId);
-      if (g) syncGroupFrame(g);
-    }
+    // Covers both shapes: the single-group path (children carry groupId) and a
+    // multi-selection that contains groups, which previously synced nothing and
+    // left the frame stale after its children scaled.
+    syncMovedGroupFrames(mode.orig);
     scheduleSave(); invalidate();
   } else if (mode.type === 'crop') {
     if (!mode.pushed && Math.hypot(dx, dy) < 2) return;
@@ -16115,10 +16128,11 @@ window.addEventListener('keydown', e => {
       } else {
         const step = (e.shiftKey ? 20 : 2) / state.view.s;
         if (!mode) {
-          if (k === 'arrowleft') nudge(-step, 0);
-          if (k === 'arrowright') nudge(step, 0);
-          if (k === 'arrowup') nudge(0, -step);
-          if (k === 'arrowdown') nudge(0, step);
+          const record = !e.repeat;
+          if (k === 'arrowleft') nudge(-step, 0, record);
+          if (k === 'arrowright') nudge(step, 0, record);
+          if (k === 'arrowup') nudge(0, -step, record);
+          if (k === 'arrowdown') nudge(0, step, record);
         }
       }
     }
@@ -17602,6 +17616,13 @@ window.RefBoard = {
   extractPaletteForTest: extractPaletteFromItem,
   // A getter, because loadAppSettings() reassigns the object wholesale.
   get appSettings() { return appSettings; },
+  /* Geometry hooks: a harness aiming at a resize handle has to use the same
+     rect handleAt() does, or it misses. A group's presented rect is padded
+     chrome, not its stored one. */
+  selectionBBoxRectForTest: () => selectionBBoxRect(),
+  syncGroupFramesForTest() {
+    for (const g of state.items.filter(isGroupItem)) syncGroupFrame(g);
+  },
   /* Snap hooks: guides and engagement are transient drag state, so a harness
      has to read them mid-gesture to see anything at all. */
   snapStateForTest: () => ({
