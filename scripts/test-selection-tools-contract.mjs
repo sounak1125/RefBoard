@@ -184,6 +184,6 @@ assert.equal(cursorContext.resizeCursorForHandle({ edge: 'bottom' }, 0), 'ns-res
 assert.equal(cursorContext.resizeCursorForHandle({ edge: 'bottom' }, 45), 'nesw-resize', 'a rotated bottom edge should show a matching diagonal cursor');
 assert.equal(cursorContext.resizeCursorForHandle({ edge: 'right' }, 45), 'nwse-resize', 'a rotated side edge should show a matching diagonal cursor');
 assert.equal(cursorContext.resizeCursorForHandle({ corner: 'nw' }, 45), 'ns-resize', 'rotated corner cursors should follow the handle direction');
-assert.match(html, /resizeCursorForHandle\(h, h\.group \? 0 : \(h\.it\?\.rot \|\| 0\)\)/, 'the axis-aligned multi-selection box should keep its unrotated cursors');
+assert.match(html, /resizeCursorForHandle\(h, h\.group \? selectionFrameRot\(\) : \(h\.it\?\.rot \|\| 0\)\)/, 'the multi-selection box carries its own angle, so its cursors follow the frame');
 
 console.log('selection tool contract tests passed');
