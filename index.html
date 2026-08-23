@@ -2890,8 +2890,8 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>I</kbd></span><span class="d">Export selected images</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>S</kbd> / <kbd>O</kbd></span><span class="d">Save / open board file</span>
       <span class="ks"><kbd>Alt</kbd>+<kbd>Arrows</kbd></span><span class="d">Pan the board view</span>
-      <span class="ks">Right-click → Appearance</span><span class="d">None (plain) or Dots grid — Dots snap when moving or scaling</span>
-      <span class="ks">Settings</span><span class="d">Right-click → Settings → General → enable object snapping</span>
+      <span class="ks">Right-click → Appearance</span><span class="d">None (plain) or Dots grid — the grid is visual only, it never snaps</span>
+      <span class="ks">Snapping</span><span class="d">On by default — edges pull flush and align as you drag or scale</span>
       <span class="ks"><kbd>Ctrl</kbd> while drag</span><span class="d">Temporarily disable snapping when snap mode is on</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>T</kbd></span><span class="d">Keep window always on top (desktop app)</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Shift</kbd><kbd>A</kbd></span><span class="d">Pin above a chosen window (desktop app)</span>
@@ -2943,7 +2943,7 @@ body.board-active #whatsNewNotice{ display:none; }
             <div class="s2-control"><div class="ui-num"><input type="number" id="setLargeMP" min="5" max="200" step="5" style="width:64px"><div class="ui-num-steps"><button type="button" class="ui-num-up" tabindex="-1" aria-label="Increase">▲</button><button type="button" class="ui-num-down" tabindex="-1" aria-label="Decrease">▼</button></div></div><span style="color:var(--dim);font-size:12px">MP</span><button class="s2-toggle" id="setWarnLarge" role="switch"></button></div></div>
           <div class="s2-row"><div><div class="s2-label">Generate recent-board thumbnails</div><div class="s2-sub">Preview images on the welcome screen</div></div>
             <div class="s2-control"><button class="s2-toggle" id="setThumbs" role="switch"></button></div></div>
-          <div class="s2-row"><div><div class="s2-label">Object snapping</div><div class="s2-sub">Snap images to each other when moving or resizing</div></div>
+          <div class="s2-row"><div><div class="s2-label">Object snapping</div><div class="s2-sub">Magnetic edges: images butt flush against each other and align as you drag</div></div>
             <div class="s2-control"><button class="s2-toggle" id="setSnap" role="switch"></button></div></div>
         </div>
 
@@ -3161,7 +3161,7 @@ const state = {
   sel: new Set(),
   anchorId: null,
   boardGray: false,
-  snapEnabled: false,
+  // Object snapping is an app setting (appSettings.snapEnabled), not board data.
   gridAppearance: 'dots', // 'none' | 'dots'
 };
 let selectionOrderIds = [];
@@ -4412,6 +4412,7 @@ const SETTINGS_DEFAULTS = {
   pauseWhenHidden: true,
   hideGridWhileNavigating: false,
   lightDragPreview: true,
+  snapEnabled: true,
   autosave: true,
   autosaveIntervalMin: 10,
   warnLargeImages: true,
@@ -5554,7 +5555,6 @@ function resetLiveSessionToBlank() {
   state.sel.clear();
   resetSelectionOrder();
   state.boardGray = false;
-  state.snapEnabled = false;
   state.gridAppearance = 'dots';
   cropItemId = null;
   noteEditId = null;
@@ -5629,7 +5629,6 @@ async function restoreSession() {
     state.items = nextItems;
     invalidateWorkspaceBBox();
     state.boardGray = !!meta.boardGray;
-    state.snapEnabled = !!meta.snapEnabled;
     state.gridAppearance = normalizeGridAppearance(meta.gridAppearance) || 'dots';
     if (savedView) {
       state.view.tx = savedView.tx;
@@ -5691,7 +5690,8 @@ async function persistBoardNow() {
     title: currentBoardTitle || null,
     dirty: boardFileDirty,
     boardGray: state.boardGray,
-    snapEnabled: state.snapEnabled,
+    // Emitted for older builds that still read it as board state.
+    snapEnabled: !!appSettings.snapEnabled,
     gridAppearance: state.gridAppearance,
     imageMeta: [...images.entries()].map(([id, im]) => ({
       id, w: im.w, h: im.h, type: im.type, name: im.name || '', blobSize: im.blobSize || 0,
@@ -5779,7 +5779,7 @@ function scheduleSave(markDirty = true) {
 
 /* ================= undo / redo ================= */
 const undoStack = [], redoStack = [];
-const snap = () => JSON.stringify({ items: state.items, boardGray: state.boardGray, snapEnabled: state.snapEnabled, gridAppearance: state.gridAppearance });
+const snap = () => JSON.stringify({ items: state.items, boardGray: state.boardGray, gridAppearance: state.gridAppearance });
 function normalizeUndoEntry(entry) {
   return typeof entry === 'string' ? { snap: entry } : entry;
 }
@@ -5889,7 +5889,6 @@ function restoreSnap(raw) {
   state.items = (s.items || []).map(normalizeItem);
   invalidateWorkspaceBBox();
   state.boardGray = !!s.boardGray;
-  state.snapEnabled = !!s.snapEnabled;
   const ga = normalizeGridAppearance(s.gridAppearance);
   if (ga) state.gridAppearance = ga;
   for (const it of state.items) {
@@ -10496,10 +10495,12 @@ function toggleImageGray() {
 }
 
 function toggleSnapMode() {
-  state.snapEnabled = !state.snapEnabled;
-  scheduleSave(); invalidate();
+  // App setting, not board data — no scheduleSave().
+  appSettings.snapEnabled = !appSettings.snapEnabled;
+  saveAppSettings();
+  invalidate();
   syncSettingsUi();
-  toast(state.snapEnabled ? 'Snapping on' : 'Snapping off');
+  toast(appSettings.snapEnabled ? 'Snapping on' : 'Snapping off');
 }
 
 const GRID_APPEAR_LABELS = { none: 'None', dots: 'Dots' };
@@ -11178,7 +11179,8 @@ function boardSaveSnapshot() {
       app: 'refboard', version: 3,
       view: { ...state.view },
       boardGray: state.boardGray,
-      snapEnabled: state.snapEnabled,
+      // Emitted for older builds that still read it as board state.
+      snapEnabled: !!appSettings.snapEnabled,
       gridAppearance: state.gridAppearance,
       items,
     },
@@ -12203,7 +12205,6 @@ async function openNewBoardImpl() {
   state.sel.clear();
   resetSelectionOrder();
   state.boardGray = false;
-  state.snapEnabled = false;
   state.gridAppearance = 'dots';
   cropItemId = null;
   arrowTool = null;
@@ -12215,7 +12216,7 @@ async function openNewBoardImpl() {
     items: [],
     view: { ...state.view },
     boardGray: false,
-    snapEnabled: false,
+    snapEnabled: !!appSettings.snapEnabled,
     gridAppearance: state.gridAppearance,
     savedAt: Date.now(),
   });
@@ -12405,7 +12406,6 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
     state.items = nextItems;
     invalidateWorkspaceBBox();
     state.boardGray = !!j.boardGray;
-    state.snapEnabled = !!j.snapEnabled;
     const ga = normalizeGridAppearance(j.gridAppearance);
     if (ga) state.gridAppearance = ga;
     state.sel.clear();
@@ -12595,10 +12595,6 @@ canvas.addEventListener('contextrestored', () => {
 
 const GRID_DOT_SCREEN = 10;
 
-function gridStepBoard() {
-  return GRID_DOT_SCREEN / state.view.s;
-}
-
 function workspaceScreenRect() {
   const ws = workspaceRect();
   const { tx, ty, s } = state.view;
@@ -12644,39 +12640,16 @@ function drawGridDotsScreen() {
   ctx.restore();
 }
 
-function gridSnapEnabled() {
-  return state.gridAppearance === 'dots';
+// The dot grid is decoration only. It used to snap on a 10-screen-px pitch while
+// the pull was 8 screen px, so the nearest lattice line was always inside the
+// threshold — the grid fired every single pointermove and object edges could only
+// win inside the remaining ~5 px. Object snapping is now the sole magnet.
+function objectSnapEnabled() {
+  return !!appSettings.snapEnabled;
 }
 
 function snapAnyEnabled(disabled) {
-  return !disabled && (state.snapEnabled || gridSnapEnabled());
-}
-
-// Grid snap during resize fights the pointer and causes jump/overlap — object snap only.
-function resizeSnapEnabled(disabled) {
-  return !disabled && state.snapEnabled;
-}
-
-function snapToGrid(value) {
-  const sp = gridStepBoard();
-  return Math.round(value / sp) * sp;
-}
-
-function axisSnapOffset(value, objectTargets) {
-  const threshold = snapThreshold();
-  let best = threshold, off = 0;
-  if (state.snapEnabled) {
-    for (const t of objectTargets) {
-      const d = Math.abs(t - value);
-      if (d < best) { best = d; off = t - value; }
-    }
-  }
-  if (gridSnapEnabled()) {
-    const g = snapToGrid(value);
-    const d = Math.abs(g - value);
-    if (d < best) { best = d; off = g - value; }
-  }
-  return off;
+  return !disabled && objectSnapEnabled();
 }
 
 
@@ -13596,6 +13569,7 @@ function draw() {
     ctx.strokeRect(x + 0.5, y + 0.5, w, h);
     ctx.setLineDash([]);
   }
+  drawSnapGuides();
 
 
   // Replacement surfaces are installed atomically during drawing. Once the
@@ -13604,8 +13578,7 @@ function draw() {
 
   const bits = [`${state.items.length} item${state.items.length === 1 ? '' : 's'}`, `${Math.round(s * 100)}%`];
   if (state.boardGray) bits.push('grayscale');
-  if (state.snapEnabled) bits.push('snap');
-  if (gridSnapEnabled()) bits.push('grid snap');
+  if (objectSnapEnabled()) bits.push('snap');
   if (state.gridAppearance !== 'none') bits.push(GRID_APPEAR_LABELS[state.gridAppearance].toLowerCase());
   if (cropItemId) bits.push('crop mode');
   if (tool === 'eyedropper') bits.push('eyedropper');
@@ -13618,6 +13591,43 @@ function draw() {
     lastBoardStatusText = statusText;
     statusEl.textContent = statusText;
   }
+}
+
+// Screen space, after the world transform is restored. snapGuides is empty
+// whenever nothing is engaged, so this needs no gating — and sitting after the
+// marquee block means guides still draw under lightDragPreview, which is
+// exactly when they matter most.
+function drawSnapGuides() {
+  if (!snapGuides.length) return;
+  const { w: bw, h: bh } = boardSize();
+  ctx.save();
+  ctx.strokeStyle = SNAP_GUIDE_COLOR;
+  ctx.lineWidth = SNAP_GUIDE_W;
+  for (const g of snapGuides) {
+    // Solid = flush (a real contact). Dashed = alignment (an imaginary line).
+    ctx.setLineDash(g.cls === 'flush' ? [] : SNAP_GUIDE_DASH_ALIGN);
+    ctx.beginPath();
+    if (g.axis === 'x') {
+      const [px] = toScreen(g.line, 0);
+      if (px < -1 || px > bw + 1) continue;
+      const [, a] = toScreen(0, g.a);
+      const [, b] = toScreen(0, g.b);
+      const x = Math.round(px) + 0.5;
+      ctx.moveTo(x, Math.max(0, a));
+      ctx.lineTo(x, Math.min(bh, b));
+    } else {
+      const [, py] = toScreen(0, g.line);
+      if (py < -1 || py > bh + 1) continue;
+      const [a] = toScreen(g.a, 0);
+      const [b] = toScreen(g.b, 0);
+      const y = Math.round(py) + 0.5;
+      ctx.moveTo(Math.max(0, a), y);
+      ctx.lineTo(Math.min(bw, b), y);
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 let boardFrameRecoveryScheduled = false;
@@ -14082,26 +14092,287 @@ function applyEdgeResize(it, r, edge, lx, ly) {
   applyProportionalResize(it, r, k, ax, ay);
 }
 
-function snapThreshold() { return 8 / state.view.s; }
+/* ================= object snapping =================
+   Edge-flush magnetism: a dragged image butts up against its neighbours so
+   images tile with no gap, and holds there until you deliberately pull away.
 
-function snapTargets(excludeIds) {
-  const xs = [], ys = [];
-  for (const it of state.items) {
-    if (excludeIds.has(it.id)) continue;
-    const b = boundsOf(it);
-    xs.push(b.x, b.x + b.w / 2, b.x + b.w);
-    ys.push(b.y, b.y + b.h / 2, b.y + b.h);
-  }
-  return { xs, ys };
+   All radii are SCREEN px and divided by state.view.s at use, so the feel is
+   identical at every zoom. Distances inside candidates are kept in screen px
+   for the same reason; offsets are board units because that is what moves. */
+
+// Flush gets the widest pull because it is the signature move — you should land
+// flush without aiming. Alignment keeps the old 8px so muscle memory survives.
+const SNAP_PULL_IN_FLUSH_PX = 12;
+const SNAP_PULL_IN_ALIGN_PX = 8;
+// Release must exceed pull-in by more than one frame of ordinary drag motion
+// (~5-15px) or the boundary oscillates; under ~25px or it feels welded.
+const SNAP_RELEASE_MULT = 1.75;
+// Additive penalty in screen px: score = dist + bias. Flush wins a tie within
+// 1.5px of an edge candidate, but a genuinely closer candidate still wins.
+const SNAP_CLASS_BIAS_PX = { flush: 0, edge: 1.5, center: 3 };
+// "Already satisfied" window. Sub-pixel at any zoom so real motion never trips
+// it. The board floor is 2x roundItemBoardGeom's 0.01 quantum — without it, at
+// extreme zoom a rounding residue reads as a whole screen pixel.
+const SNAP_ZERO_EPS_PX = 0.5;
+const SNAP_ZERO_EPS_BOARD_MIN = 0.02;
+// Flush needs real perpendicular overlap: two boxes that do not face each other
+// are not adjacent, merely co-linear. 10% kills corner-kissing false positives
+// while still allowing a heavily staggered tile.
+const SNAP_FLUSH_MIN_OVERLAP_FRAC = 0.10;
+// Alignment deliberately does NOT need overlap — a vertical column has zero Y
+// overlap and lining up its left edges is the whole point. It needs a proximity
+// bound instead, which the old code lacked entirely.
+const SNAP_ALIGN_RANGE_PX = 600;
+// 2x VIEWPORT_CULL_BUFFER so a target can leave the draw set and still snap.
+const SNAP_TARGET_CULL_MARGIN_PX = 400;
+const SNAP_TARGET_MAX = 1500;
+// Absorbs float residue from repeated rotates without admitting a visible tilt.
+const SNAP_ROT_TOL_DEG = 0.5;
+const SNAP_SESSION_ZOOM_DRIFT = 1.5;
+
+function snapPullInBoard(cls) {
+  const px = cls === 'flush' ? SNAP_PULL_IN_FLUSH_PX : SNAP_PULL_IN_ALIGN_PX;
+  return px / state.view.s;
 }
 
-function nearestSnapOffset(value, targets, threshold = snapThreshold()) {
-  let best = threshold, off = 0;
-  for (const t of targets) {
-    const d = Math.abs(t - value);
-    if (d < best) { best = d; off = t - value; }
+// Singleton — the drag hot path must not allocate. Callers must not retain it.
+const snapRadiiCache = { s: 1, collectPx: 0, alignRangeBoard: 0, zeroEpsBoard: 0, pullIn: {}, release: {} };
+
+function snapRadii() {
+  const s = state.view.s;
+  const R = snapRadiiCache;
+  R.s = s;
+  R.pullIn.flush = SNAP_PULL_IN_FLUSH_PX;
+  R.pullIn.edge = SNAP_PULL_IN_ALIGN_PX;
+  R.pullIn.center = SNAP_PULL_IN_ALIGN_PX;
+  R.release.flush = SNAP_PULL_IN_FLUSH_PX * SNAP_RELEASE_MULT;
+  R.release.edge = SNAP_PULL_IN_ALIGN_PX * SNAP_RELEASE_MULT;
+  R.release.center = SNAP_PULL_IN_ALIGN_PX * SNAP_RELEASE_MULT;
+  // Collect out to the widest RELEASE radius so a held candidate is still found.
+  R.collectPx = R.release.flush;
+  R.alignRangeBoard = SNAP_ALIGN_RANGE_PX / s;
+  R.zeroEpsBoard = Math.max(SNAP_ZERO_EPS_PX / s, SNAP_ZERO_EPS_BOARD_MIN);
+  return R;
+}
+
+function isAxisAlignedItem(it) {
+  const r = Math.abs(Number(it?.rot) || 0) % 90;
+  return r <= SNAP_ROT_TOL_DEG || r >= 90 - SNAP_ROT_TOL_DEG;
+}
+
+// The box the user can SEE. Group frames are chrome padded by 16 SCREEN px
+// (groupUiRect) and arrow bounds carry an arrowhead pad (arrowBBox) — neither is
+// a real edge, so both are rejected outright.
+//
+// An off-axis item is a softer case. Its AABB touches the artwork at a single
+// corner, so an edge or flush snap to one would land with a visible wedge gap —
+// but its CENTRE is genuine and rotation-invariant. Such a box is therefore
+// marked `centerOnly` and offers centre alignment and nothing else. Items at
+// exact multiples of 90 degrees are square as far as this is concerned: their
+// AABB really is the visible rect.
+function snapBoxOfItem(it) {
+  if (!it || isGroupItem(it) || isArrowItem(it)) return null;
+  const b = boundsOf(it);
+  if (!(b.w > 0 && b.h > 0)) return null;
+  const box = { x1: b.x, y1: b.y, x2: b.x + b.w, y2: b.y + b.h };
+  if (!isAxisAlignedItem(it)) box.centerOnly = true;
+  return box;
+}
+
+// Union of the visible boxes. Because group frames are filtered out, a dragged
+// group's [frame, ...children] collapses to exactly the children's bbox — no
+// padding — which is what makes a group land flush instead of 16px short.
+//
+// Square members are preferred: their union has real edges, so a selection that
+// merely contains a rotated image keeps full flush and edge snapping. Only when
+// nothing in the selection is square does it fall back to the rotated AABB,
+// which can offer its centre and nothing more.
+function snapBoxOfItems(items) {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  let ax1 = Infinity, ay1 = Infinity, ax2 = -Infinity, ay2 = -Infinity;
+  let anySquare = false, any = false;
+  for (const it of items || []) {
+    const b = snapBoxOfItem(it);
+    if (!b) continue;
+    any = true;
+    if (b.x1 < ax1) ax1 = b.x1;
+    if (b.y1 < ay1) ay1 = b.y1;
+    if (b.x2 > ax2) ax2 = b.x2;
+    if (b.y2 > ay2) ay2 = b.y2;
+    if (b.centerOnly) continue;
+    anySquare = true;
+    if (b.x1 < x1) x1 = b.x1;
+    if (b.y1 < y1) y1 = b.y1;
+    if (b.x2 > x2) x2 = b.x2;
+    if (b.y2 > y2) y2 = b.y2;
   }
-  return off;
+  if (!any) return null;
+  if (anySquare) return { x1, y1, x2, y2 };
+  return { x1: ax1, y1: ay1, x2: ax2, y2: ay2, centerOnly: true };
+}
+
+let snapSession = null;
+
+function snapBoxCenterDist2(b, cx, cy) {
+  const dx = (b.x1 + b.x2) / 2 - cx;
+  const dy = (b.y1 + b.y2) / 2 - cy;
+  return dx * dx + dy * dy;
+}
+
+// Targets are static for the whole gesture — only the selection moves — so
+// boundsOf() runs once per target here instead of for every item, 60x a second,
+// inside the drag loop.
+function buildSnapSession(excludeIds, refBox) {
+  const { tx, ty, s } = state.view;
+  const vs = boardSize();
+  const m = SNAP_TARGET_CULL_MARGIN_PX;
+  const vl = (-m - tx) / s, vt = (-m - ty) / s;
+  const vr = (vs.w + m - tx) / s, vb = (vs.h + m - ty) / s;
+  const boxes = [];
+  for (const it of state.items) {
+    if (excludeIds.has(it.id)) continue;
+    const b = snapBoxOfItem(it);
+    if (!b) continue;
+    if (b.x2 < vl || b.x1 > vr || b.y2 < vt || b.y1 > vb) continue;
+    b.id = it.id;
+    boxes.push(b);
+  }
+  if (boxes.length > SNAP_TARGET_MAX && refBox) {
+    const cx = (refBox.x1 + refBox.x2) / 2, cy = (refBox.y1 + refBox.y2) / 2;
+    boxes.sort((a, b) => snapBoxCenterDist2(a, cx, cy) - snapBoxCenterDist2(b, cx, cy));
+    boxes.length = SNAP_TARGET_MAX;
+  }
+  return { gesture: mode, s0: s, tx0: tx, ty0: ty, boxes };
+}
+
+// The gesture-identity check is load-bearing: it makes the cache self-expiring
+// the moment `mode` is cleared or replaced, so a missed pointercancel cannot
+// leak a stale target set into the next drag.
+function snapSessionValid(sess) {
+  if (!sess || sess.gesture !== mode) return false;
+  const { tx, ty, s } = state.view;
+  const k = s / sess.s0;
+  if (k > SNAP_SESSION_ZOOM_DRIFT || k < 1 / SNAP_SESSION_ZOOM_DRIFT) return false;
+  return Math.abs(tx - sess.tx0) <= SNAP_TARGET_CULL_MARGIN_PX
+      && Math.abs(ty - sess.ty0) <= SNAP_TARGET_CULL_MARGIN_PX;
+}
+
+function releaseSnapSession() {
+  snapSession = null;
+  if (snapGuides.length) { snapGuides.length = 0; invalidate(); }
+}
+
+/* Legal pairs per axis (min/max = left/right on x, top/bottom on y):
+     flush  : moving.max -> target.min | moving.min -> target.max
+     edge   : moving.min -> target.min | moving.max -> target.max
+     center : moving.mid -> target.mid
+   The four edge<->centre cross pairs the old code produced as a side effect of
+   comparing flat value arrays are gone: they fire constantly, are the main
+   source of random-feeling snaps, and have no PureRef equivalent. */
+function collectAxisCandidates(axis, mv, boxes, R, movingEdges, out) {
+  out.length = 0;
+  const mMin = axis === 'x' ? mv.x1 : mv.y1;
+  const mMax = axis === 'x' ? mv.x2 : mv.y2;
+  const pMin = axis === 'x' ? mv.y1 : mv.x1;
+  const pMax = axis === 'x' ? mv.y2 : mv.x2;
+  const mMid = (mMin + mMax) / 2;
+  const mPerp = pMax - pMin;
+  // A rotated moving box has no real edge to offer, so it may only align centres.
+  const mEdgesUsable = !mv.centerOnly;
+  const wantMin = mEdgesUsable && movingEdges.includes('min');
+  const wantMax = mEdgesUsable && movingEdges.includes('max');
+  const wantMid = movingEdges.includes('center');
+  if (!wantMin && !wantMax && !wantMid) return out;
+
+  for (const b of boxes) {
+    const tMin = axis === 'x' ? b.x1 : b.y1;
+    const tMax = axis === 'x' ? b.x2 : b.y2;
+    const tp1 = axis === 'x' ? b.y1 : b.x1;
+    const tp2 = axis === 'x' ? b.y2 : b.x2;
+    const overlap = Math.min(pMax, tp2) - Math.max(pMin, tp1);
+    const flushOk = overlap >= SNAP_FLUSH_MIN_OVERLAP_FRAC * Math.min(mPerp, tp2 - tp1);
+    const alignOk = -overlap <= R.alignRangeBoard;
+    // Same rule on the target side: a rotated neighbour lends its centre only.
+    const tEdges = !b.centerOnly;
+
+    if (tEdges && flushOk && wantMax) pushSnapCandidate(out, axis, 'flush', 'max', 'min', mMax, tMin, b, tp1, tp2, R);
+    if (tEdges && flushOk && wantMin) pushSnapCandidate(out, axis, 'flush', 'min', 'max', mMin, tMax, b, tp1, tp2, R);
+    if (tEdges && alignOk && wantMin) pushSnapCandidate(out, axis, 'edge', 'min', 'min', mMin, tMin, b, tp1, tp2, R);
+    if (tEdges && alignOk && wantMax) pushSnapCandidate(out, axis, 'edge', 'max', 'max', mMax, tMax, b, tp1, tp2, R);
+    if (alignOk && wantMid) pushSnapCandidate(out, axis, 'center', 'center', 'center', mMid, (tMin + tMax) / 2, b, tp1, tp2, R);
+  }
+  return out;
+}
+
+function pushSnapCandidate(out, axis, cls, movingEdge, targetEdge, value, line, box, tPerpMin, tPerpMax, R) {
+  const off = line - value;
+  const dist = Math.abs(off) * R.s;
+  if (dist > R.collectPx) return;
+  out.push({
+    axis, cls, movingEdge, targetEdge,
+    targetId: box.id, line, off, dist,
+    score: dist + SNAP_CLASS_BIAS_PX[cls],
+    tPerpMin, tPerpMax,
+  });
+}
+
+function pickAxisCandidate(cands, sticky, R) {
+  // 1. SATISFIED LOCK. An axis already sitting on a line freezes there. The old
+  //    `if (off)` discarded off === 0, so an exact alignment counted for nothing
+  //    and a 7px pull from an unrelated candidate could destroy it. This also
+  //    makes the solver idempotent, which is what stops per-frame oscillation.
+  let sat = null;
+  for (const c of cands) {
+    if (Math.abs(c.off) > R.zeroEpsBoard) continue;
+    if (!sat || SNAP_CLASS_BIAS_PX[c.cls] < SNAP_CLASS_BIAS_PX[sat.cls]) sat = c;
+  }
+  if (sat) return sat;
+
+  // 2. HOLD. The engaged candidate survives out to the larger release radius.
+  //    It is only findable here if collectAxisCandidates re-emitted it this
+  //    frame, so the perpendicular gate is re-validated for free and a target
+  //    that drifted out of range disengages on its own.
+  if (sticky) {
+    for (const c of cands) {
+      if (c.cls === sticky.cls && c.movingEdge === sticky.movingEdge
+       && c.targetEdge === sticky.targetEdge && c.targetId === sticky.targetId) {
+        return c.dist <= R.release[c.cls] ? c : null;
+      }
+    }
+    return null;
+  }
+
+  // 3. ENGAGE. Fresh engagement needs the tighter pull-in radius. Skipped while
+  //    engaged: the axis does not shop around, it disengages first and re-engages
+  //    next frame. That one-frame gap is what produces a detent instead of a
+  //    candidate flickering between two neighbours.
+  let best = null;
+  for (const c of cands) {
+    if (c.dist > R.pullIn[c.cls]) continue;
+    if (!best || c.score < best.score) best = c;
+  }
+  return best;
+}
+
+const snapCandBufX = [], snapCandBufY = [];
+const SNAP_EDGES_ALL = ['min', 'max', 'center'];
+const SNAP_NONE = Object.freeze({ dx: 0, dy: 0, x: null, y: null });
+
+// X and Y are fully independent, engagement state included — X can hold a flush
+// contact while Y engages and releases freely. That is what makes tiling work.
+function solveSnap(mv, boxes, sticky, edgesX, edgesY, R) {
+  const res = { dx: 0, dy: 0, x: null, y: null };
+  const cx = collectAxisCandidates('x', mv, boxes, R, edgesX, snapCandBufX);
+  const px = pickAxisCandidate(cx, sticky ? sticky.x : null, R);
+  const cy = collectAxisCandidates('y', mv, boxes, R, edgesY, snapCandBufY);
+  const py = pickAxisCandidate(cy, sticky ? sticky.y : null, R);
+  if (px) { res.x = px; res.dx = px.off; }
+  if (py) { res.y = py; res.dy = py.off; }
+  if (sticky) {
+    sticky.x = px ? { cls: px.cls, movingEdge: px.movingEdge, targetEdge: px.targetEdge, targetId: px.targetId } : null;
+    sticky.y = py ? { cls: py.cls, movingEdge: py.movingEdge, targetEdge: py.targetEdge, targetId: py.targetId } : null;
+  }
+  return res;
 }
 
 function edgeMidpointBoard(it, edge) {
@@ -14129,49 +14400,134 @@ function bboxCorner(bb, corner) {
   return [0, 0];
 }
 
-function snapCornerResize(it, r, corner, offX, offY) {
+/* --- guides ---
+   Populated by every solveSnap caller and drawn in screen space. At most two
+   lines ever exist, one per axis. */
+const snapGuides = [];
+const SNAP_GUIDE_COLOR = 'rgba(255,92,122,0.92)';
+const SNAP_GUIDE_W = 1;
+const SNAP_GUIDE_DASH_ALIGN = [6, 4];
+const SNAP_GUIDE_OVERHANG_PX = 12;
+
+// The guide spans the union of the moving box and the matched target only —
+// never the viewport — so it reads as a relationship between two things.
+function updateSnapGuides(res, mv) {
+  snapGuides.length = 0;
+  if (!mv) return;
+  const over = SNAP_GUIDE_OVERHANG_PX / state.view.s;
+  const x1 = mv.x1 + res.dx, x2 = mv.x2 + res.dx;
+  const y1 = mv.y1 + res.dy, y2 = mv.y2 + res.dy;
+  if (res.x) {
+    snapGuides.push({
+      axis: 'x', line: res.x.line, cls: res.x.cls,
+      a: Math.min(y1, res.x.tPerpMin) - over,
+      b: Math.max(y2, res.x.tPerpMax) + over,
+    });
+  }
+  if (res.y) {
+    snapGuides.push({
+      axis: 'y', line: res.y.line, cls: res.y.cls,
+      a: Math.min(x1, res.y.tPerpMin) - over,
+      b: Math.max(x2, res.y.tPerpMax) + over,
+    });
+  }
+}
+
+function clearSnapGuides() {
+  if (snapGuides.length) snapGuides.length = 0;
+}
+
+function applyMoveSnap(m, disabled) {
+  if (!snapAnyEnabled(disabled)) { m.snapSticky = null; clearSnapGuides(); return SNAP_NONE; }
+  const mv = snapBoxOfItems(m.movingItems);
+  if (!mv) { m.snapSticky = null; clearSnapGuides(); return SNAP_NONE; }
+  if (!snapSessionValid(snapSession)) snapSession = buildSnapSession(m.movingIds, mv);
+  // `mode` is a fresh literal at every pointerdown, so this is self-resetting.
+  if (!m.snapSticky) m.snapSticky = { x: null, y: null };
+  const res = solveSnap(mv, snapSession.boxes, m.snapSticky, SNAP_EDGES_ALL, SNAP_EDGES_ALL, snapRadii());
+  updateSnapGuides(res, mv);
+  return res;
+}
+
+/* --- resize snapping ---
+   applyEdgeResize and applyProportionalResize are ASPECT-LOCKED: one scalar k
+   drives both w and h. So only ONE axis constraint can ever be satisfied, and
+   resize picks a single candidate across both axes rather than combining them.
+   (The old dead code took Math.max(k_from_x, k_from_y), which satisfied
+   neither.) Restricting movingEdges to the dragged edge also drops the centre
+   class automatically — constraining a box's centre while scaling it is not a
+   meaningful operation.
+
+   Resize is deliberately STATELESS — pull-in radii only, no hysteresis. Sticky
+   behaviour on a resize means the *size* sticks, which fights the pointer. */
+const RESIZE_SNAP_EDGES = {
+  right:  { x: ['max'], y: [] },
+  left:   { x: ['min'], y: [] },
+  bottom: { x: [], y: ['max'] },
+  top:    { x: [], y: ['min'] },
+  se: { x: ['max'], y: ['max'] },
+  nw: { x: ['min'], y: ['min'] },
+  ne: { x: ['max'], y: ['min'] },
+  sw: { x: ['min'], y: ['max'] },
+};
+
+function resizeSnapSolve(mv, excludeIds, handle) {
+  const edges = RESIZE_SNAP_EDGES[handle];
+  // Clear first: every bail below must not leave the previous frame's guide up.
+  clearSnapGuides();
+  if (!mv || !edges) return null;
+  if (!snapSessionValid(snapSession)) snapSession = buildSnapSession(excludeIds, mv);
+  const res = solveSnap(mv, snapSession.boxes, null, edges.x, edges.y, snapRadii());
+  if (!res.x && !res.y) return null;
+  const pick = (res.x && res.y) ? (res.x.score <= res.y.score ? res.x : res.y) : (res.x || res.y);
+  // Only one axis is ever applied (aspect lock), so only that one gets a guide —
+  // otherwise a resize would advertise a snap it did not perform. Offsets are
+  // zero here because a resize scales the box rather than translating it.
+  updateSnapGuides({
+    dx: 0, dy: 0,
+    x: pick.axis === 'x' ? pick : null,
+    y: pick.axis === 'y' ? pick : null,
+  }, mv);
+  return pick;
+}
+
+function snapCornerResize(it, r, corner, off, axis) {
   const opp = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' };
   const corners = { nw: [0, 0], ne: [r.w, 0], se: [r.w, r.h], sw: [0, r.h] };
   const A = corners[opp[corner]];
   const C = corners[corner];
   const idx = { nw: 0, ne: 1, se: 2, sw: 3 }[corner];
   const [px, py] = itemCorners(it)[idx];
-  const [targetLx, targetLy] = boardToLocalRect(r, px + offX, py + offY);
-  const vx = C[0] - A[0], vy = C[1] - A[1];
-  let k = Math.max(0.05, (targetLx - A[0]) / vx, (targetLy - A[1]) / vy);
-  if (!Number.isFinite(k)) return;
-  applyProportionalResize(it, r, k, A[0], A[1]);
+  const [ulx, uly] = boardToLocalRect(r, px, py);
+  const [tlx, tly] = boardToLocalRect(r, px + (axis === 'x' ? off : 0), py + (axis === 'y' ? off : 0));
+  // Board x maps to local y at 90/270°, so pick the local axis that actually
+  // moved rather than assuming board-x is local-x.
+  const useLx = Math.abs(tlx - ulx) >= Math.abs(tly - uly);
+  const v = useLx ? (C[0] - A[0]) : (C[1] - A[1]);
+  const t = useLx ? (tlx - A[0]) : (tly - A[1]);
+  const k = t / v;
+  if (!Number.isFinite(k) || k <= 0) return;
+  applyProportionalResize(it, r, Math.max(0.05, k), A[0], A[1]);
 }
 
 function snapItemResize(it, r, { corner, edge }, disabled) {
-  if (!resizeSnapEnabled(disabled)) return;
-  const exclude = new Set([it.id]);
-  const { xs, ys } = snapTargets(exclude);
+  if (!snapAnyEnabled(disabled)) { clearSnapGuides(); return; }
+  const mv = snapBoxOfItem(it);
+  const pick = resizeSnapSolve(mv, new Set([it.id]), edge || corner);
+  if (!pick) return;
 
   if (edge) {
     const [mx, my] = edgeMidpointBoard(it, edge);
-    const off = (edge === 'right' || edge === 'left')
-      ? axisSnapOffset(mx, xs)
-      : axisSnapOffset(my, ys);
-    if (!off) return;
-    const bx = (edge === 'right' || edge === 'left') ? mx + off : mx;
-    const by = (edge === 'right' || edge === 'left') ? my : my + off;
+    const bx = pick.axis === 'x' ? pick.line : mx;
+    const by = pick.axis === 'y' ? pick.line : my;
     const [lx, ly] = boardToLocalRect(r, bx, by);
     applyEdgeResize(it, r, edge, lx, ly);
     return;
   }
-
-  if (corner) {
-    const idx = { nw: 0, ne: 1, se: 2, sw: 3 }[corner];
-    const [px, py] = itemCorners(it)[idx];
-    const offX = axisSnapOffset(px, xs);
-    const offY = axisSnapOffset(py, ys);
-    if (!offX && !offY) return;
-    snapCornerResize(it, r, corner, offX, offY);
-  }
+  if (corner) snapCornerResize(it, r, corner, pick.off, pick.axis);
 }
 
-function snapGroupCornerResize(orig, r, corner, offX, offY) {
+function snapGroupCornerResize(orig, r, corner, off, axis) {
   const opp = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' };
   const corners = { nw: [0, 0], ne: [r.w, 0], se: [r.w, r.h], sw: [0, r.h] };
   const A = corners[opp[corner]];
@@ -14179,32 +14535,37 @@ function snapGroupCornerResize(orig, r, corner, offX, offY) {
   const bb = selectionBBoxRect();
   if (!bb || bb.rot) return;
   const [px, py] = bboxCorner(bb, corner);
-  const targetLx = (px + offX) - r.x;
-  const targetLy = (py + offY) - r.y;
-  const vx = C[0] - A[0], vy = C[1] - A[1];
-  let k = Math.max(0.05, (targetLx - A[0]) / vx, (targetLy - A[1]) / vy);
-  if (!Number.isFinite(k)) return;
-  applyGroupProportionalResize(orig, r, k, A[0], A[1]);
+  const targetLx = (px + (axis === 'x' ? off : 0)) - r.x;
+  const targetLy = (py + (axis === 'y' ? off : 0)) - r.y;
+  const v = axis === 'x' ? (C[0] - A[0]) : (C[1] - A[1]);
+  const t = axis === 'x' ? (targetLx - A[0]) : (targetLy - A[1]);
+  const k = t / v;
+  if (!Number.isFinite(k) || k <= 0) return;
+  applyGroupProportionalResize(orig, r, Math.max(0.05, k), A[0], A[1]);
 }
 
-function snapGroupResize(orig, r, { corner, edge }, disabled) {
-  if (!resizeSnapEnabled(disabled)) return;
-  const exclude = new Set(orig.map(o => o.id));
-  const { xs, ys } = snapTargets(exclude);
+function snapGroupResize(orig, r, { corner, edge }, groupId, disabled) {
+  if (!snapAnyEnabled(disabled)) { clearSnapGuides(); return; }
   const bb = selectionBBoxRect();
-  if (!bb || bb.rot) return;
+  if (!bb || bb.rot) { clearSnapGuides(); return; }
+  // mode.orig for a multi-select groupResize holds group FRAMES without their
+  // children, so without expansion the selection would snap to its own kids.
+  const exclude = expandMoveIds(new Set(orig.map(o => o.id)));
+  // mode.start is the group's stored rect, padded by groupPadding() board units
+  // — measure the visible children instead.
+  const mv = groupId
+    ? snapBoxOfItems(childrenOfGroup(groupId))
+    : snapBoxOfItems(selectedItems());
+  const pick = resizeSnapSolve(mv, exclude, edge || corner);
+  if (!pick) return;
 
   if (edge) {
     const [mx, my] = bboxEdgeMidpoint(bb, edge);
-    const off = (edge === 'right' || edge === 'left')
-      ? axisSnapOffset(mx, xs)
-      : axisSnapOffset(my, ys);
-    if (!off) return;
     const minW = RESIZE_MIN_BOARD;
     const minH = RESIZE_MIN_BOARD;
     let k, ax, ay;
-    const targetLx = (edge === 'right' || edge === 'left') ? mx + off - r.x : mx - r.x;
-    const targetLy = (edge === 'right' || edge === 'left') ? my - r.y : my + off - r.y;
+    const targetLx = (pick.axis === 'x' ? pick.line : mx) - r.x;
+    const targetLy = (pick.axis === 'y' ? pick.line : my) - r.y;
     if (edge === 'right') { k = clamp(targetLx, minW, r.w * 50) / r.w; ax = 0; ay = r.h / 2; }
     else if (edge === 'left') { k = clamp(r.w - targetLx, minW, r.w * 50) / r.w; ax = r.w; ay = r.h / 2; }
     else if (edge === 'bottom') { k = clamp(targetLy, minH, r.h * 50) / r.h; ax = r.w / 2; ay = 0; }
@@ -14213,42 +14574,7 @@ function snapGroupResize(orig, r, { corner, edge }, disabled) {
     applyGroupProportionalResize(orig, r, k, ax, ay);
     return;
   }
-
-  if (corner) {
-    const [px, py] = bboxCorner(bb, corner);
-    const offX = axisSnapOffset(px, xs);
-    const offY = axisSnapOffset(py, ys);
-    if (!offX && !offY) return;
-    snapGroupCornerResize(orig, r, corner, offX, offY);
-  }
-}
-
-function applySnap(ids, disabled) {
-  if (!snapAnyEnabled(disabled)) return { dx: 0, dy: 0 };
-  const moving = state.items.filter(it => ids.has(it.id));
-  if (!moving.length) return { dx: 0, dy: 0 };
-  const bb = bboxOf(moving);
-  const { xs, ys } = snapTargets(ids);
-  const mx = [bb.x, bb.x + bb.w / 2, bb.x + bb.w];
-  const my = [bb.y, bb.y + bb.h / 2, bb.y + bb.h];
-  const threshold = snapThreshold();
-  let bestX = { d: threshold, off: 0 };
-  let bestY = { d: threshold, off: 0 };
-  for (const a of mx) {
-    const off = axisSnapOffset(a, xs);
-    if (off) {
-      const d = Math.abs(off);
-      if (d < bestX.d) bestX = { d, off };
-    }
-  }
-  for (const a of my) {
-    const off = axisSnapOffset(a, ys);
-    if (off) {
-      const d = Math.abs(off);
-      if (d < bestY.d) bestY = { d, off };
-    }
-  }
-  return { dx: bestX.off, dy: bestY.off };
+  if (corner) snapGroupCornerResize(orig, r, corner, pick.off, pick.axis);
 }
 
 function updateCropDrag(e) {
@@ -14537,6 +14863,11 @@ canvas.addEventListener('pointerdown', async e => {
       mode = {
         type: 'move', sx, sy, hit: it.id, pushed: false,
         orig: collectMoveOrig(moveIds),
+        // Held so the snap hot path does not rebuild a Set every pointermove.
+        // bringItemsToFront rebuilds state.items by filter/spread, so the item
+        // references stay valid for the whole gesture.
+        movingIds: moveIds,
+        movingItems: [...moveIds].map(byId).filter(Boolean),
       };
     }
   } else {
@@ -14590,7 +14921,7 @@ window.addEventListener('pointermove', e => {
         it.x = o.x + bdx; it.y = o.y + bdy;
       }
     }
-    const s = applySnap(new Set(mode.orig.map(o => o.id)), e.ctrlKey);
+    const s = applyMoveSnap(mode, e.ctrlKey || e.metaKey);
     if (s.dx || s.dy) {
       for (const o of mode.orig) {
         const it = byId(o.id);
@@ -14625,6 +14956,8 @@ window.addEventListener('pointermove', e => {
 
     if (mode.edge) {
       applyEdgeResize(it, r, mode.edge, lx, ly);
+      // After the raw resize, so the perpendicular gate sees the live extent.
+      snapItemResize(it, r, { edge: mode.edge }, e.ctrlKey || e.metaKey);
       scheduleSave(); invalidate();
       return;
     }
@@ -14637,6 +14970,7 @@ window.addEventListener('pointermove', e => {
     let k = Math.max(0.05, (lx - A[0]) / vx, (ly - A[1]) / vy);
     if (!Number.isFinite(k)) k = 1;
     applyProportionalResize(it, r, k, A[0], A[1]);
+    snapItemResize(it, r, { corner: mode.corner }, e.ctrlKey || e.metaKey);
     scheduleSave(); invalidate();
   } else if (mode.type === 'rotate') {
     if (!mode.pushed) {
@@ -14675,6 +15009,7 @@ window.addEventListener('pointermove', e => {
       else if (mode.edge === 'top') { k = clamp(r.h - ly, minH, r.h * 50) / r.h; ax = r.w / 2; ay = r.h; }
       else return;
       applyGroupProportionalResize(mode.orig, r, k, ax, ay);
+      snapGroupResize(mode.orig, r, { edge: mode.edge }, mode.groupId, e.ctrlKey || e.metaKey);
     } else {
       const corners = { nw: [0, 0], ne: [r.w, 0], se: [r.w, r.h], sw: [0, r.h] };
       const opp = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' };
@@ -14684,6 +15019,7 @@ window.addEventListener('pointermove', e => {
       let k = Math.max(0.05, (lx - A[0]) / vx, (ly - A[1]) / vy);
       if (!Number.isFinite(k)) k = 1;
       applyGroupProportionalResize(mode.orig, r, k, A[0], A[1]);
+      snapGroupResize(mode.orig, r, { corner: mode.corner }, mode.groupId, e.ctrlKey || e.metaKey);
     }
     if (mode.groupId) {
       const g = byId(mode.groupId);
@@ -14737,6 +15073,7 @@ window.addEventListener('pointercancel', () => {
   mode = null;
   marquee = null;
   dropTargetGroupId = null;
+  releaseSnapSession();
   invalidate();
 });
 
@@ -14811,6 +15148,7 @@ window.addEventListener('pointerup', e => {
   }
   const restoreIdleSelectionUi = mode.type === 'rotate';
   mode = null;
+  releaseSnapSession();
   updateCursor(...clientToCanvas(e.clientX, e.clientY));
   if (restoreIdleSelectionUi) invalidate();
 });
@@ -14823,7 +15161,7 @@ window.addEventListener('blur', () => {
   finishNoteEdit();
   if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
-  mode = null; marquee = null; dropTargetGroupId = null; invalidate();
+  mode = null; marquee = null; dropTargetGroupId = null; releaseSnapSession(); invalidate();
 });
 
 function panView(dx, dy) {
@@ -15353,7 +15691,7 @@ function syncSettingsUi() {
   $$('setAutosave').classList.toggle('on', appSettings.autosave);
   $$('setWarnLarge').classList.toggle('on', appSettings.warnLargeImages);
   $$('setThumbs').classList.toggle('on', appSettings.generateThumbnails);
-  $$('setSnap')?.classList.toggle('on', state.snapEnabled);
+  $$('setSnap')?.classList.toggle('on', appSettings.snapEnabled);
   const sub = $$('setAutosaveSub');
   const chg = $$('setAutosaveInterval');
   if (sub) sub.textContent = appSettings.autosave
@@ -15497,11 +15835,7 @@ function restoreSettingsDefaults() {
     scheduleSave(false);
     invalidate();
   }
-  if (state.snapEnabled) {
-    state.snapEnabled = false;
-    scheduleSave(false);
-    invalidate();
-  }
+  // snapEnabled rides along in appSettings above — no board state to reset.
   try { localStorage.removeItem(CLOSE_CHOICE_KEY); } catch { /* ignore */ }
   const search = document.getElementById('settingsSearch');
   if (search) {
@@ -17266,6 +17600,15 @@ window.RefBoard = {
   runAutosaveTick,
   get startupComplete() { return appStartupComplete; },
   extractPaletteForTest: extractPaletteFromItem,
+  // A getter, because loadAppSettings() reassigns the object wholesale.
+  get appSettings() { return appSettings; },
+  /* Snap hooks: guides and engagement are transient drag state, so a harness
+     has to read them mid-gesture to see anything at all. */
+  snapStateForTest: () => ({
+    guides: snapGuides.map(g => ({ ...g })),
+    sticky: mode?.snapSticky ? { x: mode.snapSticky.x, y: mode.snapSticky.y } : null,
+    targets: snapSession ? snapSession.boxes.length : 0,
+  }),
   /* Benchmark hooks: bypass the note text memos, and drive draw() directly so a
      measurement is not pinned to the vsync interval. */
   setNoteCacheDefeatForTest(on) { noteCacheDefeat = !!on; },
