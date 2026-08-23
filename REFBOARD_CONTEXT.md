@@ -23,7 +23,7 @@ Scope: source inspected with dependencies, build outputs, caches, and generated 
 
 **Confirmed.** `tick()` runs continuously with `requestAnimationFrame`, but `draw()` executes only when `dirty` is set by `invalidate()`. `draw()` clears the viewport, draws workspace/grid, applies `state.view` translation/scale, collects visible objects, and paints groups, images, notes, then arrows in passes through `drawBoardItem()`. Selection UI is painted afterward in screen coordinates. Notes are Canvas text except during live contenteditable editing. `resize()` sizes the backing canvas by device-pixel ratio.
 
-**Confirmed — culling.** `collectVisibleItems()` uses `isItemVisible()` against a viewport expanded by 200 screen pixels. Off-screen objects are not painted. However, visibility collection remains an O(n) scan, and `itemAt()`, marquee selection, and `snapTargets()` also scan `state.items`. User symptom: fewer raster draws off-screen, but very large boards can still make pointer movement and redraw preparation slower.
+**Confirmed — culling.** `collectVisibleItems()` uses `isItemVisible()` against a viewport expanded by 200 screen pixels. Off-screen objects are not painted. However, visibility collection remains an O(n) scan, and `itemAt()` and marquee selection also scan `state.items` (snapping no longer does — `buildSnapSession()` caches its targets once per gesture). User symptom: fewer raster draws off-screen, but very large boards can still make pointer movement and redraw preparation slower.
 
 ## 5. Image lifecycle
 
@@ -35,7 +35,7 @@ Scope: source inspected with dependencies, build outputs, caches, and generated 
 
 ## 6. Interaction flow
 
-**Confirmed.** `state.view` uses `screen = board * s + translation`; `zoomAt()` zooms around the pointer and `panView()`/pointer `mode: 'pan'` update translation. `pointerdown` performs crop/handle/item hit testing and creates a mode (`move`, `resize`, `groupResize`, `marquee`, crop, draw, arrow). `pointermove` mutates item geometry, applies snapping through `applySnap()`/`snapItemResize()`/`snapGroupResize()`, and invalidates. `pointerup` finalizes grouping, selection, or creation. `rotateSelection()`, `applyProportionalResize()`, and `applyGroupProportionalResize()` handle rotation/scaling. Single-click note selection opens toolbar-only mode; double-click opens `startNoteEdit()` live editing.
+**Confirmed.** `state.view` uses `screen = board * s + translation`; `zoomAt()` zooms around the pointer and `panView()`/pointer `mode: 'pan'` update translation. `pointerdown` performs crop/handle/item hit testing and creates a mode (`move`, `resize`, `groupResize`, `marquee`, crop, draw, arrow). `pointermove` mutates item geometry, applies snapping through `applyMoveSnap()`/`snapItemResize()`/`snapGroupResize()` (all three now live, and the dot grid no longer snaps), and invalidates. `pointerup` finalizes grouping, selection, or creation. `rotateSelection()`, `applyProportionalResize()`, and `applyGroupProportionalResize()` handle rotation/scaling. Single-click note selection opens toolbar-only mode; double-click opens `startNoteEdit()` live editing.
 
 ## 7. State management
 
@@ -61,7 +61,7 @@ Scope: source inspected with dependencies, build outputs, caches, and generated 
 
 1. **Highest — confirmed:** `buildBoardPayload()`, `compositeBlob()`, `captureBoardPreviewStrip()`, and `doExportPNG()` perform full-board rasterization/base64/JSON work. Symptom: save/export stalls and memory spikes on large boards.
 2. **Confirmed:** permanent full-resolution bitmap/blob residency plus LOD duplication (`registerBlob()`, `restoreSessionImages()`, `runImageLodJob()`). Symptom: high RAM/GPU usage and possible process termination.
-3. **Confirmed:** O(n) scans in `collectVisibleItems()`, `itemAt()`, marquee logic, `snapTargets()`, selection collection, and several draw passes. Symptom: drag/hover/redraw latency with thousands of objects.
+3. **Confirmed:** O(n) scans in `collectVisibleItems()`, `itemAt()`, marquee logic, selection collection, and several draw passes. Symptom: drag/hover/redraw latency with thousands of objects.
 4. **Confirmed:** note rendering repeatedly parses text and calls `measureText` through `layoutNoteLines()`, `drawNoteText()`, link/check hit regions, and editor metrics. Symptom: text-heavy boards redraw more slowly, especially while zooming/editing.
 5. **Confirmed:** whole-board JSON snapshots in `snap()` for undo and debounced recovery metadata serialization in `persistBoardNow()`. Symptom: action latency and growing memory on large item graphs.
 
