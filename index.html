@@ -1402,39 +1402,6 @@ body.board-active #whatsNewNotice{ display:none; }
 .uc-btn.primary{ background:var(--acc); border-color:var(--acc); color:var(--acc-contrast); font-weight:600; }
 .uc-btn.primary:hover{ filter:brightness(1.08); }
 
-#fillPreviewBar{
-  position:fixed; left:50%; bottom:22px; z-index:118; width:min(720px,calc(100vw - 28px));
-  transform:translate(-50%,18px); opacity:0; pointer-events:none;
-  display:flex; align-items:center; gap:10px; padding:10px 12px;
-  background:color-mix(in srgb,var(--card) 94%,transparent); border:1px solid var(--line);
-  border-radius:13px; box-shadow:0 16px 44px rgba(0,0,0,.52); backdrop-filter:blur(18px);
-  transition:opacity .18s,transform .2s cubic-bezier(.22,1,.36,1);
-}
-#fillPreviewBar.show{ opacity:1; transform:translate(-50%,0); pointer-events:auto; }
-.fp-status{ min-width:150px; flex:1 1 210px; overflow:hidden; }
-.fp-stage{ font-size:12.5px; font-weight:600; color:var(--txt); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.fp-detail{ margin-top:2px; font-size:11px; color:var(--mut); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.fp-confidence{ display:none; flex:0 0 auto; padding:4px 7px; border-radius:7px; font-size:10.5px; color:#ffbf69; background:rgba(255,169,77,.12); border:1px solid rgba(255,169,77,.25); }
-.fp-confidence.show{ display:inline-flex; }
-.fp-quality{ display:flex; flex:0 0 auto; gap:2px; padding:2px; border:1px solid var(--line); border-radius:9px; background:rgba(255,255,255,.03); }
-.fp-q{ border:0; background:transparent; color:var(--mut); border-radius:7px; padding:5px 9px; font-size:11.5px; }
-.fp-q:hover:not(:disabled){ color:var(--txt); background:rgba(255,255,255,.06); }
-.fp-q.on{ background:rgba(255,255,255,.11); color:var(--txt); font-weight:600; }
-.fp-q:disabled{ opacity:.42; cursor:default; }
-.fp-btn.on{ background:rgba(90,220,140,.16); border-color:rgba(90,220,140,.45); color:#8ce8ae; }
-.fp-feather{ display:flex; align-items:center; gap:7px; min-width:200px; }
-.fp-feather input{ width:112px; accent-color:var(--acc); }
-.fp-value{ width:34px; color:var(--mut); font-size:11px; font-variant-numeric:tabular-nums; }
-.fp-btn{ flex:0 0 auto; border:1px solid var(--line); background:rgba(255,255,255,.035); color:var(--txt); border-radius:8px; padding:7px 11px; font-size:12px; }
-.fp-btn:hover:not(:disabled){ background:rgba(255,255,255,.09); }
-.fp-btn:disabled{ opacity:.42; cursor:default; }
-.fp-btn.primary{ background:var(--acc); border-color:var(--acc); color:var(--acc-contrast); font-weight:600; }
-@media(max-width:680px){
-  #fillPreviewBar{ flex-wrap:wrap; }
-  .fp-status{ flex-basis:100%; }
-  .fp-feather{ flex:1; }
-}
-
 /* ---------- context menu ---------- */
 #ctxmenu{
   position:fixed; z-index:50; display:none; min-width:208px;
@@ -2386,27 +2353,6 @@ body.board-active #whatsNewNotice{ display:none; }
 <canvas id="board"></canvas>
 <div id="drawSizePreview" class="draw-size-preview" aria-hidden="true"></div>
 
-<div id="fillPreviewBar" role="status" aria-live="polite">
-  <div class="fp-status">
-    <div class="fp-stage" id="fillPreviewStage">Analyzing</div>
-    <div class="fp-detail" id="fillPreviewDetail">Reading the full-resolution image…</div>
-  </div>
-  <span class="fp-confidence" id="fillConfidence">Low confidence</span>
-  <div class="fp-quality" id="fillQuality" role="group" aria-label="Fill quality">
-    <button class="fp-q" type="button" data-quality="preview" title="Fastest, fewer pyramid levels">Preview</button>
-    <button class="fp-q on" type="button" data-quality="balanced" title="Default quality">Balanced</button>
-    <button class="fp-q" type="button" data-quality="high" title="Slowest, best reconstruction">High</button>
-  </div>
-  <button class="fp-btn" id="fillSampling" type="button" title="Paint which areas the fill may copy from (S)">Sampling Area</button>
-  <button class="fp-btn" id="fillAutoFeather" type="button">Auto Feather</button>
-  <label class="fp-feather" title="Feather in source-image pixels">
-    <input id="fillFeather" type="range" min="0" max="128" step="1" value="0">
-    <span class="fp-value" id="fillFeatherValue">0 px</span>
-  </label>
-  <button class="fp-btn" id="fillCancel" type="button">Cancel</button>
-  <button class="fp-btn" id="fillRetry" type="button" disabled>Retry</button>
-  <button class="fp-btn primary" id="fillApply" type="button" disabled>Apply</button>
-</div>
 
 <div id="empty">
   <div class="frame">
@@ -2438,9 +2384,6 @@ body.board-active #whatsNewNotice{ display:none; }
   <span class="sep"></span>
   <button class="tb" id="btnDraw" data-tip-title="Draw" aria-expanded="false" aria-controls="drawPanelWrap">
     <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-  </button>
-  <button class="tb" id="btnFill" data-tip-title="Content-aware fill" data-tip-sub="C" aria-expanded="false">
-    <svg viewBox="0 0 24 24"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>
   </button>
   <button class="tb" id="btnPaste" data-tip-title="Paste" data-tip-sub="Ctrl+V">
     <svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="16" rx="2"/><path d="M9 5V3h6v2M9 12h6M9 16h4"/></svg>
@@ -2936,7 +2879,6 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>G</kbd> / <kbd>Shift</kbd><kbd>G</kbd></span><span class="d">Toggle selected image grayscale / whole-board grayscale</span>
       <span class="ks"><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Add a text note — drag corners or edges to scale</span>
       <span class="ks"><kbd>I</kbd></span><span class="d">Eyedropper: copy pixel color as hex and RGB</span>
-      <span class="ks"><kbd>C</kbd></span><span class="d">Content-aware fill — drag a lasso on an image to erase and auto-fill</span>
       <span class="ks"><kbd>D</kbd></span><span class="d">Activate draw mode with the pen</span>
       <span class="ks"><kbd>E</kbd></span><span class="d">Activate draw mode with the eraser</span>
       <span class="ks"><kbd>[</kbd> / <kbd>]</kbd></span><span class="d">Decrease / increase brush or eraser size; hold to resize continuously</span>
@@ -3377,10 +3319,6 @@ const drawVisibleSelectedItems = [];
 let mode = null;                // active pointer interaction
 let tool = null;                // one-shot tools, currently eyedropper
 let drawActive = false;
-let fillActive = false;
-let fillPrepareSeq = 0;
-let fillSession = null; // non-destructive native-resolution clean-plate session
-let fillPendingPts = null; // lasso points captured while the async edit prep is in flight
 let drawTool = 'pen';           // 'pen' | 'eraser'
 let drawBrushType = 'pen';      // 'pen' | 'soft' | 'marker' | 'pencil'
 let brushDrawerOpen = false;
@@ -5609,7 +5547,6 @@ function reconcileNoteBoxesInItems(items) {
 }
 
 function resetLiveSessionToBlank() {
-  void cancelFillSession();
   closeImageRecordBitmaps(images);
   images.clear();
   state.items = [];
@@ -6002,7 +5939,6 @@ async function applyUndoEntry(entry) {
   const gen = ++historyApplySeq;
   discardNoteEditForBoardHistory();
   cancelDrawSession();
-  await cancelFillSession();
   const e = normalizeUndoEntry(entry);
   restoreSnap(e.snap);
   if (e.bitmap) {
@@ -6645,7 +6581,6 @@ function activateHandTool() {
   arrowTool = null;
   if (drawActive) setDrawActive(false);
   else syncDrawUi();
-  if (fillActive) setFillActive(false);
   tool = null;
   exitCropMode();
   finishNoteEdit();
@@ -6872,7 +6807,6 @@ function setDrawActive(on) {
     tool = null;
     exitCropMode();
     finishNoteEdit();
-    if (fillActive) setFillActive(false);
   } else {
     drawPrepareSeq++;
     hideDrawSizePreview();
@@ -6891,1104 +6825,6 @@ function setDrawActive(on) {
 function toggleDrawActive() {
   setDrawActive(!drawActive);
   toast(drawActive ? 'Draw mode — paint on images' : 'Draw mode off');
-}
-
-function setFillActive(on) {
-  fillActive = !!on;
-  if (fillActive) {
-    boardTool = 'select';
-    syncBoardToolUi();
-    arrowTool = null;
-    tool = null;
-    exitCropMode();
-    finishNoteEdit();
-    if (drawActive) setDrawActive(false);
-  } else {
-    fillPrepareSeq++;
-    if (fillSession) cancelFillSession();
-  }
-  syncToolbarEdgeIcon();
-  syncFillUi();
-  invalidate();
-}
-
-function toggleFillActive() {
-  setFillActive(!fillActive);
-  toast(fillActive ? 'Content-aware fill — drag a lasso on an image' : 'Content-aware fill off');
-}
-
-function syncFillUi() {
-  $('#btnFill')?.classList.toggle('on', fillActive);
-  if (fillActive) updateCursor(mouse.x, mouse.y);
-}
-
-function setFillPreviewStatus(stage, detail = '', options = {}) {
-  const bar = $('#fillPreviewBar');
-  if (!bar) return;
-  bar.classList.add('show');
-  $('#fillPreviewStage').textContent = stage || 'Content-Aware Fill';
-  $('#fillPreviewDetail').textContent = detail || '';
-  /* The badge is the only place this surfaces, so it has to carry the reason.
-   * flaggedReasons answers a different set of questions, so a result tripped by
-   * a confidence threshold alone used to show a bare chip with nothing behind
-   * it and no way to find out what it meant. */
-  const confidenceBadge = $('#fillConfidence');
-  confidenceBadge.classList.toggle('show', !!options.lowConfidence);
-  const confidenceWhy = Array.isArray(options.lowConfidenceReasons)
-    ? options.lowConfidenceReasons.filter(Boolean) : [];
-  confidenceBadge.title = confidenceWhy.length
-    ? `Low confidence: ${confidenceWhy.join(' · ')}`
-    : 'Low confidence — check the preview before applying.';
-  $('#fillApply').disabled = !options.canApply;
-  $('#fillRetry').disabled = !options.canRetry;
-  $('#fillAutoFeather').disabled = !options.canFeather;
-  $('#fillFeather').disabled = !options.canFeather;
-  /* Quality can be changed whenever a run could be started or restarted; the
-   * sampling area needs a crop to paint into, so it waits for a first result. */
-  const canRestart = !!options.canRetry;
-  for (const btn of document.querySelectorAll('#fillQuality .fp-q')) btn.disabled = !canRestart;
-  const sampling = $('#fillSampling');
-  if (sampling) sampling.disabled = !options.canSample;
-  if (!options.canSample && fillSamplingMode) setFillSamplingMode(false);
-}
-
-function hideFillPreviewBar() {
-  fillSamplingMode = false;
-  $('#fillSampling')?.classList.remove('on');
-  $('#fillPreviewBar')?.classList.remove('show');
-  $('#fillConfidence')?.classList.remove('show');
-}
-
-async function cancelFillSession() {
-  fillPendingPts = null;
-  const session = fillSession;
-  if (!session) { hideFillPreviewBar(); return; }
-  session.canceled = true;
-  session.runToken = (session.runToken || 0) + 1;
-  try { session.worker?.terminate?.(); } catch (e) {}
-  session.worker = null;
-  if (session.expand) await revertExpandSession(session);
-  if (session.prepared?.detached) {
-    const it = session.it;
-    if (it && it.imgId === session.prepared.detachedImgId) it.imgId = session.prepared.sourceImgId;
-  }
-  if (fillSession === session) fillSession = null;
-  hideFillPreviewBar();
-  invalidate();
-  if (session.previewCanvas) {
-    session.previewCanvas.width = 0;
-    session.previewCanvas.height = 0;
-    session.previewCanvas = null;
-  }
-  try { session.previewBitmap?.close?.(); } catch (e) {}
-  if (session.prepared?.detached) {
-    await discardDetachedImageEdit(session.prepared);
-  }
-}
-
-function dilateMaskCanvas(src, radius) {
-  const out = document.createElement('canvas');
-  out.width = src.width;
-  out.height = src.height;
-  const g = out.getContext('2d');
-  const r = Math.max(1, radius | 0);
-  for (let dy = -r; dy <= r; dy++) {
-    for (let dx = -r; dx <= r; dx++) {
-      if (dx * dx + dy * dy <= r * r) g.drawImage(src, dx, dy);
-    }
-  }
-  return out;
-}
-
-function fillLassoBounds(pts, w, h, pad) {
-  let minX = w, minY = h, maxX = 0, maxY = 0;
-  for (const p of pts) {
-    minX = Math.min(minX, p.x);
-    minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  }
-  const x0 = Math.max(0, Math.floor(minX) - pad);
-  const y0 = Math.max(0, Math.floor(minY) - pad);
-  const x1 = Math.min(w, Math.ceil(maxX) + pad);
-  const y1 = Math.min(h, Math.ceil(maxY) + pad);
-  return { x0, y0, cropW: Math.max(1, x1 - x0), cropH: Math.max(1, y1 - y0) };
-}
-const CONTENT_AWARE_ATTEMPT_MS = 150000;
-const CONTENT_AWARE_WORKER_URL = './scripts/content-aware/fill-worker.js?v=exemplar-v1';
-const CONTENT_AWARE_QUALITY_PRESETS = ['preview', 'balanced', 'high'];
-/* The worker shares the renderer process. A 24MP native fill peaked at 3.4GB
- * and closed the app on machines that could not absorb the spike. 4K (~8.3MP)
- * survived at 1.8GB, so anything larger is solved at that budget and scaled back. */
-const CONTENT_AWARE_MAX_WORKING_PIXELS = 3840 * 2160;
-
-function contentAwareWorkingSize(width, height) {
-  const w = Math.max(1, width | 0), h = Math.max(1, height | 0);
-  const area = w * h;
-  if (area <= CONTENT_AWARE_MAX_WORKING_PIXELS) return { width: w, height: h, scale: 1 };
-  const scale = Math.sqrt(CONTENT_AWARE_MAX_WORKING_PIXELS / area);
-  const widthOut = Math.max(1, Math.floor(w * scale));
-  const heightOut = Math.max(1, Math.floor(h * scale));
-  return { width: widthOut, height: heightOut, scale: widthOut / w };
-}
-
-function resizeRgbaForFill(pixels, srcW, srcH, dstW, dstH) {
-  if (srcW === dstW && srcH === dstH) return new Uint8ClampedArray(pixels);
-  const src = document.createElement('canvas');
-  src.width = srcW; src.height = srcH;
-  const srcData = pixels instanceof Uint8ClampedArray && pixels.length === srcW * srcH * 4
-    ? pixels : new Uint8ClampedArray(pixels);
-  src.getContext('2d').putImageData(new ImageData(srcData, srcW, srcH), 0, 0);
-  const dst = document.createElement('canvas');
-  dst.width = dstW; dst.height = dstH;
-  const g = dst.getContext('2d');
-  g.imageSmoothingEnabled = true;
-  g.imageSmoothingQuality = 'high';
-  g.drawImage(src, 0, 0, srcW, srcH, 0, 0, dstW, dstH);
-  return new Uint8ClampedArray(g.getImageData(0, 0, dstW, dstH).data);
-}
-
-function resizePlaneNearest(plane, srcW, srcH, dstW, dstH) {
-  if (srcW === dstW && srcH === dstH) return plane.slice();
-  const out = new Uint8Array(dstW * dstH);
-  for (let y = 0; y < dstH; y++) {
-    const sy = Math.min(srcH - 1, (y * srcH / dstH) | 0);
-    const srcRow = sy * srcW, dstRow = y * dstW;
-    for (let x = 0; x < dstW; x++) {
-      out[dstRow + x] = plane[srcRow + Math.min(srcW - 1, (x * srcW / dstW) | 0)];
-    }
-  }
-  return out;
-}
-
-function nativeFillContextBounds(pts, w, h) {
-  const b = fillLassoBounds(pts, w, h, 0);
-  const maskLongEdge = Math.max(b.cropW, b.cropH);
-  return fillLassoBounds(pts, w, h, Math.max(256, Math.round(maskLongEdge * 2)));
-}
-
-function fillHardMaskCrop(pts, bounds, radius) {
-  const c = document.createElement('canvas');
-  c.width = bounds.cropW;
-  c.height = bounds.cropH;
-  const g = c.getContext('2d');
-  g.fillStyle = '#fff';
-  g.beginPath();
-  g.moveTo(pts[0].x - bounds.x0, pts[0].y - bounds.y0);
-  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x - bounds.x0, pts[i].y - bounds.y0);
-  g.closePath();
-  g.fill();
-  return dilateMaskCanvas(c, radius);
-}
-
-function readBinaryMask(maskCanvas) {
-  const data = maskCanvas.getContext('2d').getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
-  const mask = new Uint8Array(maskCanvas.width * maskCanvas.height);
-  for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4] >= 128 ? 1 : 0;
-  return mask;
-}
-
-function cropSubMask(mask, fullW, x0, y0, w, h) {
-  const out = new Uint8ClampedArray(w * h * 4);
-  for (let y = 0; y < h; y++) {
-    const row = (y0 + y) * fullW + x0;
-    for (let x = 0; x < w; x++) {
-      const p = (y * w + x) * 4;
-      const v = mask[row + x] ? 255 : 0;
-      out[p] = v; out[p + 1] = v; out[p + 2] = v; out[p + 3] = 255;
-    }
-  }
-  return out;
-}
-
-function autoFeatherForFill(sourcePixels, mask, w, h, imageLongEdge) {
-  const base = clamp(Math.round(.0015 * imageLongEdge), 2, 32);
-  let detail = 0, count = 0;
-  const step = Math.max(1, Math.floor(Math.sqrt((w * h) / 150000)));
-  for (let y = 1; y < h - 1; y += step) for (let x = 1; x < w - 1; x += step) {
-    const i = y * w + x;
-    if (!mask[i]) continue;
-    const neighbors = [i - 1, i + 1, i - w, i + w];
-    for (const q of neighbors) {
-      if (mask[q]) continue;
-      const p = q * 4;
-      const qx = q % w, qy = (q / w) | 0;
-      const pr = (qy * w + Math.min(w - 1, qx + 1)) * 4;
-      const pd = (Math.min(h - 1, qy + 1) * w + qx) * 4;
-      const l = sourcePixels[p] * .299 + sourcePixels[p + 1] * .587 + sourcePixels[p + 2] * .114;
-      const lr = sourcePixels[pr] * .299 + sourcePixels[pr + 1] * .587 + sourcePixels[pr + 2] * .114;
-      const ld = sourcePixels[pd] * .299 + sourcePixels[pd + 1] * .587 + sourcePixels[pd + 2] * .114;
-      detail += Math.abs(l - lr) + Math.abs(l - ld); count += 2;
-    }
-  }
-  const meanDetail = count ? detail / count : 16;
-  const scale = meanDetail > 26 ? .5 : meanDetail < 8 ? 1.6 : meanDetail < 15 ? 1.2 : .85;
-  return clamp(Math.round(base * scale), 2, 64);
-}
-
-function outwardFeatherAlpha(mask, w, h, radius) {
-  const count = w * h;
-  const alpha = new Uint8ClampedArray(count);
-  if (radius <= 0) {
-    for (let i = 0; i < count; i++) alpha[i] = mask[i] ? 255 : 0;
-    return alpha;
-  }
-  const inf = radius + 2;
-  const dist = new Float32Array(count);
-  for (let i = 0; i < count; i++) dist[i] = mask[i] ? 0 : inf;
-  const diagonal = Math.SQRT2;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x;
-    let d = dist[i];
-    if (x) d = Math.min(d, dist[i - 1] + 1);
-    if (y) d = Math.min(d, dist[i - w] + 1);
-    if (x && y) d = Math.min(d, dist[i - w - 1] + diagonal);
-    if (x + 1 < w && y) d = Math.min(d, dist[i - w + 1] + diagonal);
-    dist[i] = d;
-  }
-  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
-    const i = y * w + x;
-    let d = dist[i];
-    if (x + 1 < w) d = Math.min(d, dist[i + 1] + 1);
-    if (y + 1 < h) d = Math.min(d, dist[i + w] + 1);
-    if (x + 1 < w && y + 1 < h) d = Math.min(d, dist[i + w + 1] + diagonal);
-    if (x && y + 1 < h) d = Math.min(d, dist[i + w - 1] + diagonal);
-    dist[i] = d;
-  }
-  for (let i = 0; i < count; i++) {
-    if (mask[i]) alpha[i] = 255;
-    else if (dist[i] <= radius) alpha[i] = Math.round(255 * (1 - dist[i] / (radius + 1)));
-  }
-  return alpha;
-}
-
-/* Grows the removal mask by `radius` pixels so halo pixels around the erased
- * object are filled rather than reused as sources. */
-function dilateBinaryMask(mask, w, h, radius) {
-  if (radius <= 0) return mask;
-  const count = w * h;
-  const inf = radius + 2;
-  const dist = new Float32Array(count);
-  for (let i = 0; i < count; i++) dist[i] = mask[i] ? 0 : inf;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x;
-    let d = dist[i];
-    if (x) d = Math.min(d, dist[i - 1] + 1);
-    if (y) d = Math.min(d, dist[i - w] + 1);
-    if (x && y) d = Math.min(d, dist[i - w - 1] + Math.SQRT2);
-    if (x + 1 < w && y) d = Math.min(d, dist[i - w + 1] + Math.SQRT2);
-    dist[i] = d;
-  }
-  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
-    const i = y * w + x;
-    let d = dist[i];
-    if (x + 1 < w) d = Math.min(d, dist[i + 1] + 1);
-    if (y + 1 < h) d = Math.min(d, dist[i + w] + 1);
-    if (x + 1 < w && y + 1 < h) d = Math.min(d, dist[i + w + 1] + Math.SQRT2);
-    if (x && y + 1 < h) d = Math.min(d, dist[i + w - 1] + Math.SQRT2);
-    dist[i] = d;
-  }
-  const out = new Uint8Array(count);
-  for (let i = 0; i < count; i++) out[i] = dist[i] <= radius ? 1 : 0;
-  return out;
-}
-
-/* ---------------------------------------------------------------------------
- * Content-aware canvas extension (§24).
- *
- * Dragging a crop edge outward proposes new canvas. On release the bitmap is
- * grown for real, the new margin becomes the fill mask, and the ordinary
- * exemplar pipeline synthesises a continuation of the scene into it — the
- * original pixels are never stretched or repeated.
- *
- * The image record is resized up front rather than at Apply, so preview,
- * compositing and feathering all work unchanged: by the time the engine runs,
- * im.w/im.h already describe the expanded canvas. Cancelling restores the
- * geometry captured in session.expand.previous.
- * ------------------------------------------------------------------------- */
-const EXPAND_MAX_PX = 4096;
-
-/* Source pixels per unit of the item's local (board) space, along each axis. */
-function itemSourceScale(it, im) {
-  const cr = cropOf(it);
-  return {
-    x: Math.max(1e-6, (cr.r - cr.l) * im.w) / Math.max(1e-6, it.w),
-    y: Math.max(1e-6, (cr.b - cr.t) * im.h) / Math.max(1e-6, it.h),
-  };
-}
-
-async function startContentAwareExpand(it, margins) {
-  const left = clamp(Math.round(margins.left || 0), 0, EXPAND_MAX_PX);
-  const top = clamp(Math.round(margins.top || 0), 0, EXPAND_MAX_PX);
-  const right = clamp(Math.round(margins.right || 0), 0, EXPAND_MAX_PX);
-  const bottom = clamp(Math.round(margins.bottom || 0), 0, EXPAND_MAX_PX);
-  if (!(left || top || right || bottom)) return;
-  if (fillSession) { toast('Apply or cancel the current fill first'); return; }
-
-  const prepareSeq = ++fillPrepareSeq;
-  let prepared = null;
-  try {
-    prepared = await prepareExclusiveImageEdit(it);
-    if (!prepared || prepareSeq !== fillPrepareSeq) {
-      if (prepared) await discardDetachedImageEdit(prepared);
-      return;
-    }
-    const im = prepared.im;
-    await ensureFullBitmap(im);
-    if (!im.bitmap) { await discardDetachedImageEdit(prepared); return; }
-    const undoBlob = await getImageBlob(im);
-    if (!undoBlob || prepareSeq !== fillPrepareSeq) {
-      await discardDetachedImageEdit(prepared);
-      return;
-    }
-
-    const newW = im.w + left + right;
-    const newH = im.h + top + bottom;
-    if (newW > 20000 || newH > 20000) { toast('That expansion is too large'); await discardDetachedImageEdit(prepared); return; }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = newW; canvas.height = newH;
-    const g = canvas.getContext('2d', { willReadFrequently: true });
-    g.clearRect(0, 0, newW, newH);
-    g.drawImage(im.bitmap, left, top);
-    const sourcePixels = new Uint8ClampedArray(g.getImageData(0, 0, newW, newH).data);
-
-    // The new canvas is the region to reconstruct.
-    const mask = new Uint8Array(newW * newH);
-    for (let y = 0; y < newH; y++) {
-      const inRow = y >= top && y < top + im.h;
-      for (let x = 0; x < newW; x++) {
-        if (!inRow || x < left || x >= left + im.w) mask[y * newW + x] = 1;
-      }
-    }
-
-    const scale = itemSourceScale(it, im);
-    const previous = {
-      imW: im.w, imH: im.h, bitmap: im.bitmap, blob: im.blob, blobSize: im.blobSize,
-      type: im.type, name: im.name, version: im.version,
-      rect: { x: it.x, y: it.y, w: it.w, h: it.h },
-      crop: { ...cropOf(it) },
-    };
-
-    // Grow the item so the original content stays exactly where it was.
-    const topLeft = localToBoardRect(previous.rect, -left / scale.x, -top / scale.y);
-    setRectFromTopLeftBoard(it, topLeft, newW / scale.x, newH / scale.y);
-    it.crop = { l: 0, t: 0, r: 1, b: 1 };
-
-    const nextBitmap = await createImageBitmap(canvas);
-    try { im.bitmap?.close?.(); } catch (e) {}
-    im.bitmap = nextBitmap;
-    im.w = newW; im.h = newH;
-    im.decodePromise = null;
-    im.decodeFailed = false;
-    invalidateImageLods(im, { bumpVersion: true });
-    touchFullBitmap(im);
-
-    if (prepared.detached) it.imgId = prepared.detachedImgId;
-
-    fillSession = {
-      it, im, imId: it.imgId, prepared, undoBlob,
-      pts: null, worker: null, phase: 'reconstructing', runToken: 0,
-      quality: 'balanced',
-      bounds: { x0: 0, y0: 0, cropW: newW, cropH: newH },
-      sourceCanvas: canvas,
-      sourcePixels,
-      mask,
-      hardMask: mask,
-      // Nothing is being removed, so the seam is a canvas edge: no feather.
-      autoFeather: 0,
-      feather: 0,
-      candidates: [],
-      candidateIndex: 0,
-      generationCount: 0,
-      rejectedCandidateCount: 0,
-      seedBase: Date.now() & 0x7fffffff,
-      expand: { left, top, right, bottom, previous },
-    };
-    for (const btn of document.querySelectorAll('#fillQuality .fp-q')) {
-      btn.classList.toggle('on', btn.dataset.quality === 'balanced');
-    }
-    invalidateWorkspaceBBox();
-    invalidate();
-    setFillPreviewStatus('Expanding canvas',
-      `Synthesising ${newW - previous.imW}×${newH - previous.imH}px of new content…`, {});
-
-    const session = fillSession;
-    await buildFillCandidates(session, { append: false });
-    if (fillSession === session) session.phase = 'preview';
-  } catch (err) {
-    console.error('[fill] expand failed:', err);
-    /* Only unwind the session this call created. Cancel may already have
-     * reverted it, and a later session must not be rolled back by an error
-     * belonging to an earlier one. */
-    if (fillSession && fillSession.expand && fillSession.prepared === prepared) {
-      const failed = fillSession;
-      fillSession = null;
-      await revertExpandSession(failed);
-      hideFillPreviewBar();
-      if (prepared) { try { await discardDetachedImageEdit(prepared); } catch (e) {} }
-      toast('Could not expand the canvas');
-      invalidate();
-    }
-  }
-}
-
-/* Puts the item and its image record back the way they were before an
- * expansion. Used by Cancel, and by Apply while it records undo history. */
-function restoreExpandGeometry(session) {
-  const previous = session?.expand?.previous;
-  const it = session?.it, im = session?.im;
-  if (!previous || !it || !im) return;
-  it.x = previous.rect.x; it.y = previous.rect.y;
-  it.w = previous.rect.w; it.h = previous.rect.h;
-  it.crop = { ...previous.crop };
-  im.w = previous.imW; im.h = previous.imH;
-  invalidateWorkspaceBBox();
-}
-
-async function revertExpandSession(session) {
-  const previous = session?.expand?.previous;
-  if (!previous) return;
-  restoreExpandGeometry(session);
-  const im = session.im;
-  if (im) {
-    try { if (im.bitmap !== previous.bitmap) im.bitmap?.close?.(); } catch (e) {}
-    im.bitmap = previous.bitmap;
-    im.blob = previous.blob;
-    im.blobSize = previous.blobSize;
-    im.type = previous.type;
-    im.name = previous.name;
-    im.decodePromise = null;
-    im.decodeFailed = false;
-    invalidateImageLods(im, { bumpVersion: true });
-  }
-}
-
-/* ---------------------------------------------------------------------------
- * Sampling area (§17).
- *
- * A Photoshop-style control over where the fill may copy from. The mask lives in
- * crop space — the same coordinates the worker receives — so it needs no
- * translation on the way out, and it is discarded whenever the crop changes.
- *
- * 255 = may sample, 0 = excluded, matching the engine's convention.
- * ------------------------------------------------------------------------- */
-let fillSamplingMode = false;
-let fillBrushRadius = 28;          // source-image pixels
-const FILL_BRUSH_MIN = 4, FILL_BRUSH_MAX = 400;
-
-function ensureSamplingMask(session) {
-  if (!session?.bounds) return null;
-  const count = session.bounds.cropW * session.bounds.cropH;
-  if (!session.samplingMask || session.samplingMask.length !== count) {
-    // Everything legal until the user says otherwise.
-    session.samplingMask = new Uint8Array(count).fill(255);
-    session.samplingOverlay = null;
-  }
-  return session.samplingMask;
-}
-
-/* Paints a disc into the sampling mask. `px`/`py` are source-image pixels. */
-function paintSamplingArea(session, px, py, add) {
-  const mask = ensureSamplingMask(session);
-  if (!mask) return false;
-  const { x0, y0, cropW, cropH } = session.bounds;
-  const cx = px - x0, cy = py - y0;
-  const r = fillBrushRadius;
-  const value = add ? 255 : 0;
-  let changed = false;
-  const yLo = Math.max(0, Math.floor(cy - r)), yHi = Math.min(cropH - 1, Math.ceil(cy + r));
-  const xLo = Math.max(0, Math.floor(cx - r)), xHi = Math.min(cropW - 1, Math.ceil(cx + r));
-  for (let y = yLo; y <= yHi; y++) {
-    const dy = y - cy;
-    for (let x = xLo; x <= xHi; x++) {
-      const dx = x - cx;
-      if (dx * dx + dy * dy > r * r) continue;
-      const i = y * cropW + x;
-      if (mask[i] === value) continue;
-      mask[i] = value;
-      changed = true;
-    }
-  }
-  if (changed) {
-    session.samplingOverlay = null;
-    session.samplingDirty = true;
-  }
-  return changed;
-}
-
-/* The green overlay §17 describes, cached until the mask changes. Excluded
- * pixels are left untinted, so the tint marks what the fill may draw on. */
-function samplingOverlayCanvas(session) {
-  if (session.samplingOverlay) return session.samplingOverlay;
-  const mask = session.samplingMask;
-  if (!mask) return null;
-  const { cropW, cropH } = session.bounds;
-  const c = document.createElement('canvas');
-  c.width = cropW; c.height = cropH;
-  const data = new ImageData(cropW, cropH);
-  /* Green marks what may be sampled, and excluded pixels are dimmed rather than
-   * merely tinted a different hue. A hue-only difference is nearly invisible
-   * whenever the photograph happens to share that hue — on a green plate the
-   * two washes were indistinguishable — while a change in brightness reads on
-   * any image. */
-  for (let i = 0; i < cropW * cropH; i++) {
-    const p = i * 4;
-    if (mask[i] >= 128) {
-      data.data[p] = 74; data.data[p + 1] = 232; data.data[p + 2] = 128; data.data[p + 3] = 54;
-    } else {
-      data.data[p] = 8; data.data[p + 1] = 10; data.data[p + 2] = 16; data.data[p + 3] = 130;
-    }
-  }
-  c.getContext('2d').putImageData(data, 0, 0);
-  session.samplingOverlay = c;
-  return c;
-}
-
-/* Source-image pixel -> screen, following the same crop/flip/rotate chain the
- * board uses to draw the image itself. */
-function fillSourceToScreen(it, im, px, py) {
-  const cr = cropOf(it);
-  const sx = cr.l * im.w, sy = cr.t * im.h;
-  const sw = Math.max(1e-6, (cr.r - cr.l) * im.w);
-  const sh = Math.max(1e-6, (cr.b - cr.t) * im.h);
-  let lx = ((px - sx) / sw) * it.w;
-  let ly = ((py - sy) / sh) * it.h;
-  if (it.flipX) lx = it.w - lx;
-  if (it.flipY) ly = it.h - ly;
-  const [bx, by] = localToBoardRect(it, lx, ly);
-  return toScreen(bx, by);
-}
-
-/* The chain above is affine, so three evaluated corners give the whole matrix
- * and the overlay can be blitted in one drawImage. */
-function fillSourceRectTransform(it, im, x0, y0, w, h) {
-  const o = fillSourceToScreen(it, im, x0, y0);
-  const ux = fillSourceToScreen(it, im, x0 + w, y0);
-  const uy = fillSourceToScreen(it, im, x0, y0 + h);
-  return {
-    a: (ux[0] - o[0]) / w, b: (ux[1] - o[1]) / w,
-    c: (uy[0] - o[0]) / h, d: (uy[1] - o[1]) / h,
-    e: o[0], f: o[1],
-  };
-}
-
-function drawSamplingOverlay(session) {
-  if (!fillSamplingMode || !session?.bounds || !session.samplingMask) return;
-  const it = session.it, im = session.im;
-  if (!it || !im) return;
-  const overlay = samplingOverlayCanvas(session);
-  if (!overlay) return;
-  const { x0, y0, cropW, cropH } = session.bounds;
-  const t = fillSourceRectTransform(it, im, x0, y0, cropW, cropH);
-  ctx.save();
-  ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f);
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(overlay, 0, 0);
-  ctx.restore();
-
-  // Brush cursor, drawn in source space so its size means source pixels.
-  if (mouse && Number.isFinite(mouse.x)) {
-    const [bx, by] = toBoard(mouse.x, mouse.y);
-    const pt = boardPointToBitmap(it, bx, by);
-    if (pt) {
-      const centre = fillSourceToScreen(it, im, pt.x, pt.y);
-      const edge = fillSourceToScreen(it, im, pt.x + fillBrushRadius, pt.y);
-      const r = Math.hypot(edge[0] - centre[0], edge[1] - centre[1]);
-      ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,.85)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(centre[0], centre[1], Math.max(2, r), 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(0,0,0,.5)';
-      ctx.beginPath();
-      ctx.arc(centre[0], centre[1], Math.max(2, r) + 1.5, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
-}
-
-/* Painting only makes sense once a crop exists, which is after the first run. */
-function samplingPaintable(session) {
-  return fillSamplingMode && !!session?.bounds && session.phase === 'preview';
-}
-
-function setFillSamplingMode(on) {
-  const session = fillSession;
-  fillSamplingMode = !!on && !!session?.bounds;
-  $('#fillSampling')?.classList.toggle('on', fillSamplingMode);
-  if (fillSamplingMode) {
-    ensureSamplingMask(session);
-    toast('Drag to mark what the fill may copy from · Alt-drag to exclude · [ ] brush size');
-  } else if (session?.samplingDirty) {
-    // Re-run against the new sampling area as soon as painting ends.
-    session.samplingDirty = false;
-    session.candidates = [];
-    session.candidateIndex = 0;
-    session.phase = 'reconstructing';
-    void buildFillCandidates(session, { append: false })
-      .then(() => { if (fillSession === session) session.phase = 'preview'; })
-      .catch(err => {
-        if (fillSession !== session) return;
-        session.phase = 'error';
-        setFillPreviewStatus('Content-Aware Fill failed', String(err?.message || err), { canRetry: true });
-      });
-  }
-  updateCursor(mouse.x, mouse.y);
-  invalidate();
-}
-
-function setFillQuality(quality) {
-  const session = fillSession;
-  if (!session || !CONTENT_AWARE_QUALITY_PRESETS.includes(quality)) return;
-  if (session.quality === quality) return;
-  session.quality = quality;
-  for (const btn of document.querySelectorAll('#fillQuality .fp-q')) {
-    btn.classList.toggle('on', btn.dataset.quality === quality);
-  }
-  if (session.phase !== 'preview' && session.phase !== 'error') return;
-  session.candidates = [];
-  session.candidateIndex = 0;
-  session.phase = 'reconstructing';
-  void buildFillCandidates(session, { append: false })
-    .then(() => { if (fillSession === session) session.phase = 'preview'; })
-    .catch(err => {
-      if (fillSession !== session) return;
-      session.phase = 'error';
-      setFillPreviewStatus('Content-Aware Fill failed', String(err?.message || err), { canRetry: true });
-    });
-}
-
-function composeFillCrop(session) {
-  const candidate = session.candidates?.[session.candidateIndex];
-  if (!candidate) return null;
-  const alpha = outwardFeatherAlpha(session.mask, session.bounds.cropW, session.bounds.cropH, session.feather);
-  const out = session.sourcePixels.slice();
-  for (let i = 0; i < alpha.length; i++) {
-    const a = alpha[i];
-    if (!a) continue;
-    const p = i * 4;
-    if (a === 255) {
-      out[p] = candidate.pixels[p]; out[p + 1] = candidate.pixels[p + 1]; out[p + 2] = candidate.pixels[p + 2]; out[p + 3] = 255;
-    } else {
-      const inv = 255 - a;
-      out[p] = Math.round((candidate.pixels[p] * a + session.sourcePixels[p] * inv) / 255);
-      out[p + 1] = Math.round((candidate.pixels[p + 1] * a + session.sourcePixels[p + 1] * inv) / 255);
-      out[p + 2] = Math.round((candidate.pixels[p + 2] * a + session.sourcePixels[p + 2] * inv) / 255);
-      out[p + 3] = session.sourcePixels[p + 3];
-    }
-  }
-  return out;
-}
-
-function refreshFillPreview(session) {
-  if (!session || fillSession !== session || !session.candidates?.length) return;
-  const candidate = session.candidates[session.candidateIndex];
-  if (!candidate || candidate.hardRejected) {
-    setFillPreviewStatus('Unsafe fill rejected', candidate?.unsafeReasons?.join(' · ') || 'The result does not match the surrounding image.', {
-      canApply: false, canRetry: true, canFeather: false, canSample: true, lowConfidence: true,
-      lowConfidenceReasons: candidate?.unsafeReasons,
-    });
-    return;
-  }
-  const pixels = composeFillCrop(session);
-  if (!pixels) return;
-  if (!session.previewCanvas) {
-    session.previewCanvas = document.createElement('canvas');
-    session.previewCanvas.width = session.im.w;
-    session.previewCanvas.height = session.im.h;
-  }
-  const g = session.previewCanvas.getContext('2d');
-  g.clearRect(0, 0, session.im.w, session.im.h);
-  g.drawImage(session.im.bitmap, 0, 0);
-  g.putImageData(new ImageData(pixels, session.bounds.cropW, session.bounds.cropH), session.bounds.x0, session.bounds.y0);
-  const flaggedSuffix = candidate.flaggedReasons?.length
-    ? ` · flagged: ${candidate.flaggedReasons.join(', ')}` : '';
-  /* Only the first reason inline — the bar is one line and the rest are on the
-   * badge's tooltip. */
-  const lowSuffix = candidate.lowConfidence && candidate.lowConfidenceReasons?.length
-    ? ` · ${candidate.lowConfidenceReasons[0]}` : '';
-  setFillPreviewStatus('Preview ready', `Candidate ${session.candidateIndex + 1} of ${session.candidates.length} · ${session.feather}px feather${flaggedSuffix}${lowSuffix}`, {
-    canApply: !candidate.hardRejected, canRetry: true, canFeather: true, canSample: true,
-    lowConfidence: candidate.lowConfidence, lowConfidenceReasons: candidate.lowConfidenceReasons,
-  });
-  $('#fillFeather').value = String(session.feather);
-  $('#fillFeatherValue').textContent = `${session.feather} px`;
-  invalidate();
-}
-
-/* Lower is better. Weights carried over from the metric battery the previous
- * implementation tuned, minus the terms that only meant anything when scored
- * against a generated guide. */
-function candidateRank(candidate) {
-  const m = candidate.metrics || {};
-  return (m.seamMean || 0) * 1.7
-    + (m.internalSeamP95 || 0) * .8
-    + (m.straightSeamMean || 0) * 1.1
-    + (m.boundaryToneShift || 0) * .55
-    + (m.boundaryOutlierRatio || 0) * 80
-    + (m.localProfileError || 0) * 42
-    + (m.repeatedPatchDensity || 0) * 26
-    + (1 - (m.textureFrequencyRetention || 0)) * 54
-    + (1 - (candidate.confidence || 0)) * 30
-    + (m.missingRatio || 0) * 1000;
-}
-
-function contentAwareFillOptions(session, seed) {
-  return {
-    quality: session.quality || 'balanced',
-    seed,
-    maskExpansion: 0,          // the host already dilated the mask before handing it over
-    edgeBlend: 'auto',
-    debug: !!window.__contentAwareDebug,
-  };
-}
-
-/* Runs the exemplar engine over the crop. Everything the worker needs travels as
- * transferable buffers, and only session.mask pixels come back changed. Large
- * crops are solved at CONTENT_AWARE_MAX_WORKING_PIXELS and scaled back so the
- * renderer is not asked to hold a multi-gigabyte native solve. */
-function runContentAwareFillWork(session, seed, timeBudgetMs, token) {
-  return new Promise((resolve, reject) => {
-    const owner = session.owner || session;
-    const jobId = `caf-${token}-${seed}`;
-    const srcW = session.bounds.cropW, srcH = session.bounds.cropH;
-    const working = contentAwareWorkingSize(srcW, srcH);
-    const workW = working.width, workH = working.height;
-    const scaled = working.scale < 1;
-    let worker;
-    try { worker = new Worker(CONTENT_AWARE_WORKER_URL); }
-    catch (err) { reject(new Error(`Could not start the fill engine: ${err?.message || err}`)); return; }
-    owner.worker = worker;
-    let done = false;
-    // Returns true when the promise was already settled, so callers can bail.
-    const release = () => {
-      if (done) return true;
-      done = true;
-      clearTimeout(timer);
-      try { worker.terminate(); } catch (e) {}
-      if (owner.worker === worker) owner.worker = null;
-      return false;
-    };
-    const timer = setTimeout(() => {
-      try { worker.postMessage({ type: 'cancel', id: jobId }); } catch (e) {}
-      if (!release()) reject(new Error('Content-aware fill timed out'));
-    }, Math.max(2500, timeBudgetMs + 2500));
-    const sizeLabel = scaled ? `${workW}×${workH}` : 'native resolution';
-    worker.onmessage = event => {
-      const data = event.data || {};
-      if (data.id && data.id !== jobId) return;
-      if (data.type === 'progress') {
-        if (fillSession === owner && owner.runToken === token) {
-          setFillPreviewStatus(data.stage || 'Reconstructing',
-            `${Math.round(data.percent || 0)}% · ${sizeLabel}`, {});
-        }
-        return;
-      }
-      if (release()) return;
-      if (data.type === 'error') { reject(new Error(data.error || 'The fill engine failed')); return; }
-      const result = data.result || {};
-      let outPixels = new Uint8ClampedArray(result.pixels || []);
-      if (scaled && outPixels.length === workW * workH * 4) {
-        outPixels = resizeRgbaForFill(outPixels, workW, workH, srcW, srcH);
-      }
-      resolve({
-        pixels: outPixels,
-        metrics: result.metrics || {},
-        confidence: Number(result.confidence) || 0,
-        lowConfidence: !!result.lowConfidence,
-        hardRejected: !!result.hardRejected,
-        unsafeReasons: Array.isArray(result.unsafeReasons) ? result.unsafeReasons.map(String) : [],
-        flaggedReasons: Array.isArray(result.flaggedReasons) ? result.flaggedReasons.map(String) : [],
-        lowConfidenceReasons: Array.isArray(result.lowConfidenceReasons) ? result.lowConfidenceReasons.map(String) : [],
-        algorithmUsed: String(result.algorithmUsed || 'patchmatch'),
-        processingTime: Number(result.processingTime) || 0,
-        debugInfo: result.debugInfo || null,
-        seed,
-      });
-    };
-    worker.onerror = err => {
-      if (release()) return;
-      reject(new Error(err?.message || 'The fill engine crashed'));
-    };
-    let pixels = scaled
-      ? resizeRgbaForFill(session.sourcePixels, srcW, srcH, workW, workH)
-      : session.sourcePixels.slice();
-    let mask = scaled
-      ? resizePlaneNearest(session.mask, srcW, srcH, workW, workH)
-      : session.mask.slice();
-    const transfer = [pixels.buffer, mask.buffer];
-    let samplingMask = null;
-    if (session.samplingMask) {
-      samplingMask = scaled
-        ? resizePlaneNearest(session.samplingMask, srcW, srcH, workW, workH)
-        : session.samplingMask.slice();
-      transfer.push(samplingMask.buffer);
-    }
-    worker.postMessage({
-      type: 'fill', id: jobId,
-      width: workW, height: workH,
-      pixels, mask, samplingMask,
-      timeBudgetMs,
-      options: contentAwareFillOptions(session, seed),
-    }, transfer);
-  });
-}
-
-function fillMaskBounds(mask, w, h) {
-  let x0 = w, y0 = h, x1 = -1, y1 = -1;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    if (!mask[y * w + x]) continue;
-    if (x < x0) x0 = x; if (x > x1) x1 = x;
-    if (y < y0) y0 = y; if (y > y1) y1 = y;
-  }
-  return x1 < x0 ? null : { x0, y0, x1: x1 + 1, y1: y1 + 1 };
-}
-
-async function buildFillCandidates(session, { append = false } = {}) {
-  session.runToken = (session.runToken || 0) + 1;
-  const token = session.runToken;
-  /* The budget has to cover the job actually asked for. Matching cost scales
-   * with the hole, and a large erase on a big photo genuinely runs for minutes
-   * — measured, a 1.3-megapixel hole in a 4K frame takes about 3.5 minutes at
-   * Balanced. A flat one-minute cap turned those into a timeout rather than a
-   * result, so the ceiling scales with the region and the Preview preset stays
-   * the way to trade quality for speed. */
-  const holeArea = session.mask ? session.mask.reduce((n, v) => n + (v ? 1 : 0), 0) : 0;
-  const working = contentAwareWorkingSize(session.bounds.cropW, session.bounds.cropH);
-  const areaScale = (working.width * working.height) / Math.max(1, session.bounds.cropW * session.bounds.cropH);
-  const workingHole = Math.max(1, Math.round(holeArea * areaScale));
-  const scaled = 20000 + workingHole * 0.6;
-  const budget = Math.max(1200, Math.min(CONTENT_AWARE_ATTEMPT_MS * 4, scaled));
-  const seed = (session.seedBase || 41) + (session.generationCount || 0) * 97;
-  session.generationCount = (session.generationCount || 0) + 1;
-  setFillPreviewStatus('Preparing image', 'Reading the surrounding pixels…', {});
-  const generated = [];
-  session.lastError = null;
-  try {
-    generated.push(await runContentAwareFillWork(session, seed, budget, token));
-  } catch (err) {
-    if (fillSession !== session || session.canceled || session.runToken !== token) return;
-    console.warn('[fill] reconstruction failed:', err?.message || err);
-    session.lastError = String(err?.message || err);
-  }
-  if (fillSession !== session || session.canceled || session.runToken !== token) return;
-  const rejected = generated.filter(candidate => candidate.hardRejected);
-  const accepted = generated.filter(candidate => !candidate.hardRejected);
-  session.rejectedCandidateCount = (session.rejectedCandidateCount || 0) + rejected.length;
-  accepted.sort((a, b) => candidateRank(a) - candidateRank(b));
-  if (!accepted.length) {
-    const reasons = [...new Set(rejected.flatMap(candidate => candidate.unsafeReasons || []))];
-    const current = session.candidates[session.candidateIndex];
-    if (current && !current.hardRejected) {
-      setFillPreviewStatus('Reconstruction rejected', reasons.join(' · ') || session.lastError || 'The new result does not match the surrounding image.', {
-        canApply: true, canRetry: true, canFeather: true, canSample: true, lowConfidence: current.lowConfidence,
-        lowConfidenceReasons: current.lowConfidenceReasons,
-      });
-      $('#fillFeather').value = String(session.feather);
-      $('#fillFeatherValue').textContent = `${session.feather} px`;
-      invalidate();
-    } else {
-      if (session.previewCanvas) {
-        session.previewCanvas.width = 0; session.previewCanvas.height = 0; session.previewCanvas = null;
-      }
-      setFillPreviewStatus('Unsafe fill rejected', reasons.join(' · ') || session.lastError || 'The reconstructed pixels do not match the surrounding image.', {
-        canApply: false, canRetry: true, canFeather: false, canSample: true, lowConfidence: true,
-        lowConfidenceReasons: reasons,
-      });
-      invalidate();
-    }
-    return;
-  }
-  if (append && session.candidates.length) {
-    const firstNew = session.candidates.length;
-    session.candidates.push(...accepted);
-    let best = firstNew;
-    for (let index = firstNew; index < session.candidates.length; index++) {
-      if (candidateRank(session.candidates[index]) < candidateRank(session.candidates[best])) best = index;
-    }
-    session.candidateIndex = candidateRank(session.candidates[best]) < candidateRank(session.candidates[0]) ? best : 0;
-  } else {
-    session.candidates = accepted;
-    session.candidateIndex = 0;
-  }
-  refreshFillPreview(session);
-}
-
-async function startContentAwareFill(session) {
-  try {
-    session.phase = 'preparing';
-    session.quality = session.quality || 'balanced';
-    for (const btn of document.querySelectorAll('#fillQuality .fp-q')) {
-      btn.classList.toggle('on', btn.dataset.quality === session.quality);
-    }
-    setFillPreviewStatus('Preparing image', 'Reading the full-resolution image…', {});
-
-    const bounds = nativeFillContextBounds(session.pts, session.im.w, session.im.h);
-    const hardExpansion = clamp(Math.round(.001 * Math.max(session.im.w, session.im.h)), 2, 16);
-    const maskCanvas = fillHardMaskCrop(session.pts, bounds, hardExpansion);
-    const sourceCanvas = document.createElement('canvas');
-    sourceCanvas.width = bounds.cropW; sourceCanvas.height = bounds.cropH;
-    const sourceCtx = sourceCanvas.getContext('2d', { willReadFrequently: true });
-    sourceCtx.drawImage(session.im.bitmap, bounds.x0, bounds.y0, bounds.cropW, bounds.cropH, 0, 0, bounds.cropW, bounds.cropH);
-    const sourcePixels = sourceCtx.getImageData(0, 0, bounds.cropW, bounds.cropH).data;
-    const hardMask = readBinaryMask(maskCanvas);
-    if (!hardMask.some(Boolean)) throw new Error('The lasso did not contain any image pixels');
-
-    session.bounds = bounds;
-    session.sourceCanvas = sourceCanvas;
-    session.sourcePixels = new Uint8ClampedArray(sourcePixels);
-    session.autoFeather = autoFeatherForFill(session.sourcePixels, hardMask, bounds.cropW, bounds.cropH,
-      Math.max(session.im.w, session.im.h));
-    session.feather = session.autoFeather;
-    const dilation = clamp(Math.round(session.autoFeather * .75), 1, 8);
-    session.mask = dilateBinaryMask(hardMask, bounds.cropW, bounds.cropH, dilation);
-    session.hardMask = hardMask;
-    session.candidates = [];
-    session.candidateIndex = 0;
-    session.generationCount = 0;
-    session.rejectedCandidateCount = 0;
-    session.seedBase = Date.now() & 0x7fffffff;
-    if (session.samplingMask && session.samplingMask.length !== bounds.cropW * bounds.cropH) {
-      session.samplingMask = null;   // a stale mask from a previous crop cannot be reused
-    }
-
-    session.phase = 'reconstructing';
-    await buildFillCandidates(session, { append: false });
-    if (fillSession === session) session.phase = 'preview';
-  } catch (err) {
-    if (fillSession !== session || session.canceled) return;
-    console.error('[fill] content-aware pipeline failed:', err);
-    session.phase = 'error';
-    setFillPreviewStatus('Content-Aware Fill failed', String(err?.message || err), { canRetry: true });
-  }
-}
-async function commitFillSession() {
-  const session = fillSession;
-  if (!session || !session.pts || session.pts.length < 3) {
-    await cancelFillSession();
-    return;
-  }
-  if (session.phase && session.phase !== 'lasso') return;
-  session.phase = 'starting';
-  fillPendingPts = null;
-  void startContentAwareFill(session);
-}
-
-async function retryContentAwareFill() {
-  const session = fillSession;
-  if (!session || session.canceled) return;
-  if (session.phase === 'error') {
-    if (session.expand) {
-      session.phase = 'reconstructing';
-      void buildFillCandidates(session, { append: false })
-        .then(() => { if (fillSession === session) session.phase = 'preview'; });
-      return;
-    }
-    session.phase = 'starting';
-    void startContentAwareFill(session);
-    return;
-  }
-  if (session.phase !== 'preview') return;
-  if (session.candidateIndex + 1 < session.candidates.length) {
-    session.candidateIndex++;
-    refreshFillPreview(session);
-    return;
-  }
-  session.phase = 'refining';
-  try {
-    await buildFillCandidates(session, { append: true });
-    if (fillSession === session) session.phase = 'preview';
-  } catch (err) {
-    if (fillSession === session) {
-      session.phase = 'preview';
-      setFillPreviewStatus('Could not build another candidate', String(err?.message || err), {
-        canApply: true, canRetry: true, canFeather: true, canSample: true,
-        lowConfidence: session.candidates[session.candidateIndex]?.lowConfidence,
-        lowConfidenceReasons: session.candidates[session.candidateIndex]?.lowConfidenceReasons,
-      });
-    }
-  }
-}
-
-async function applyContentAwareFill() {
-  const session = fillSession;
-  if (!session || session.phase !== 'preview' || !session.previewCanvas) return;
-  const candidate = session.candidates?.[session.candidateIndex];
-  if (!candidate || candidate.hardRejected) {
-    setFillPreviewStatus('Unsafe fill rejected', candidate?.unsafeReasons?.join(' · ') || 'This result cannot be applied.', {
-      canApply: false, canRetry: true, canFeather: false, canSample: true, lowConfidence: true,
-      lowConfidenceReasons: candidate?.unsafeReasons,
-    });
-    return;
-  }
-  session.phase = 'applying';
-  setFillPreviewStatus('Applying', 'Encoding a lossless PNG…', {});
-  const im = session.im;
-  im.pixelUpdateInProgress = true;
-  imageResidency.pin(im);
-  let nextBitmap = null;
-  try {
-    const blob = await new Promise(resolve => session.previewCanvas.toBlob(resolve, 'image/png'));
-    if (!blob) throw new Error('Could not encode the clean plate');
-    nextBitmap = await createImageBitmap(blob);
-    if (fillSession !== session || images.get(session.imId) !== im) throw new Error('The edited image changed before Apply');
-    try { im.bitmap?.close?.(); } catch (e) {}
-    im.decodePromise = null;
-    im.decodeFailed = false;
-    im.bitmap = nextBitmap;
-    nextBitmap = null;
-    touchFullBitmap(im);
-    im.blob = blob;
-    im.blobSize = blob.size;
-    im.type = 'image/png';
-    if (im.name) im.name = im.name.replace(/\.[^.]+$/i, '') + '.png';
-    im.diskStored = false;
-    invalidateImageLods(im, { bumpVersion: true });
-    await replaceStableImageProxy(im, blob);
-    await persistImageBlob(im, blob);
-    if (session.expand) {
-      /* undo() applies the entry it pops, so the snapshot must describe the state
-       * to go back to. Restore the pre-expansion geometry just long enough to
-       * capture it, then put the grown geometry back. */
-      const grown = { rect: { x: session.it.x, y: session.it.y, w: session.it.w, h: session.it.h }, crop: { ...cropOf(session.it) }, imW: im.w, imH: im.h };
-      restoreExpandGeometry(session);
-      pushUndo({ imgId: session.imId, blob: session.undoBlob });
-      session.it.x = grown.rect.x; session.it.y = grown.rect.y;
-      session.it.w = grown.rect.w; session.it.h = grown.rect.h;
-      session.it.crop = grown.crop;
-      im.w = grown.imW; im.h = grown.imH;
-      invalidateWorkspaceBBox();
-    } else {
-      pushUndo({ imgId: session.imId, blob: session.undoBlob });
-    }
-    session.previewCanvas.width = 0;
-    session.previewCanvas.height = 0;
-    session.previewCanvas = null;
-    fillSession = null;
-    fillPendingPts = null;
-    hideFillPreviewBar();
-    scheduleSave();
-    toast('Clean plate applied');
-  } catch (err) {
-    console.error('[fill] apply failed:', err);
-    if (fillSession === session) {
-      session.phase = 'preview';
-      setFillPreviewStatus('Could not apply clean plate', String(err?.message || err), {
-        canApply: true, canRetry: true, canFeather: true, canSample: true,
-        lowConfidence: session.candidates[session.candidateIndex]?.lowConfidence,
-        lowConfidenceReasons: session.candidates[session.candidateIndex]?.lowConfidenceReasons,
-      });
-    }
-  } finally {
-    try { nextBitmap?.close?.(); } catch (e) {}
-    im.pixelUpdateInProgress = false;
-    imageResidency.unpin(im);
-    scheduleFullBitmapEviction();
-    invalidate();
-  }
 }
 
 function closeDrawCanvasPop() {
@@ -11731,13 +10567,12 @@ function resetCrop(it) {
 function activateSelectMode() {
   boardTool = 'select';
   syncBoardToolUi();
-  const was = !!(arrowTool || drawActive || fillActive || tool === 'eyedropper' || cropItemId);
+  const was = !!(arrowTool || drawActive || tool === 'eyedropper' || cropItemId);
   arrowTool = null;
   tool = null;
   exitCropMode();
   if (drawActive) setDrawActive(false);
   else syncDrawUi();
-  if (fillActive) setFillActive(false);
   if (was) {
     updateCursor(mouse.x, mouse.y);
     toast('Select tool');
@@ -13342,7 +12177,6 @@ function goHome() {
     closeDrawFeatures();
     const result = await resolveUnsavedChanges('leave');
     if (result === 'proceed') {
-      await cancelFillSession();
       await showLanding();
     }
   });
@@ -13358,7 +12192,6 @@ async function openNewBoardImpl() {
     if (result !== 'proceed') return;
   }
   clearPendingSessionRestore();
-  await cancelFillSession();
   showRestoreCardIfPending();
   boardOpenPersistSeq++;
   suppressBoardDirty = true;
@@ -13447,7 +12280,6 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
     });
     if (!ok) return 'cancelled';
   }
-  await cancelFillSession();
   showOpeningOverlay();
   const persistSeq = ++boardOpenPersistSeq;
   // Keep the current board recoverable through its Blobs, but release decoded
@@ -14433,17 +13265,7 @@ function drawBoardItem(g, it, opts = {}) {
   const sx = cr.l * im.w, sy = cr.t * im.h;
   const sw = Math.max(1, (cr.r - cr.l) * im.w), sh = Math.max(1, (cr.b - cr.t) * im.h);
   let surface = null;
-  if (fillSession?.it?.id === it.id && fillSession.previewCanvas) {
-    surface = {
-      key: `fill-preview:${it.id}:${fillSession.candidateIndex}:${fillSession.feather}`,
-      kind: 'fill-preview',
-      bitmap: fillSession.previewCanvas,
-      sourceScaleX: 1,
-      sourceScaleY: 1,
-      extent: Math.max(im.w, im.h),
-      im,
-    };
-  } else if (drawSession?.itemId === it.id) {
+  if (drawSession?.itemId === it.id) {
     surface = {
       key: `draw:${it.id}`,
       kind: 'draw',
@@ -14643,22 +13465,6 @@ function drawCropUi(it) {
   const pts = itemCorners(it).map(p => toScreen(p[0], p[1]));
   strokeScreenPoly(pts, 'rgba(255,210,120,.75)', 1, [5, 4]);
   drawEdgePills(pts, 14, 2.5);
-  drawExpandProposal(it);
-}
-
-/* The dashed outline of canvas an outward crop drag would add (§24). */
-function drawExpandProposal(it) {
-  const ex = mode?.type === 'crop' && mode.expandLocal && mode.it === it ? mode.expandLocal : null;
-  if (!ex) return;
-  const r = mode.start;
-  let x0 = 0, y0 = 0, x1 = r.w, y1 = r.h;
-  if (ex.edge === 'left') x0 = -ex.amount;
-  else if (ex.edge === 'right') x1 = r.w + ex.amount;
-  else if (ex.edge === 'top') y0 = -ex.amount;
-  else y1 = r.h + ex.amount;
-  const corners = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-    .map(([lx, ly]) => toScreen(...localToBoardRect(r, lx, ly)));
-  strokeScreenPoly(corners, 'rgba(120,220,160,.9)', 1.5, [7, 5]);
 }
 
 function drawGroupFrame(g, { pulse = false } = {}) {
@@ -14791,38 +13597,6 @@ function draw() {
     ctx.setLineDash([]);
   }
 
-  if (mode?.type === 'fill' && fillSession?.pts?.length) {
-    const it = byId(mode.it);
-    if (it) {
-      const im = images.get(it.imgId);
-      if (im) {
-        ctx.save();
-        ctx.strokeStyle = 'rgba(90,162,255,.85)';
-        ctx.lineWidth = Math.max(1.5, 2 / state.view.s);
-        ctx.setLineDash([6, 4]);
-        ctx.beginPath();
-        const cr = cropOf(it);
-        const sx = cr.l * im.w, sy = cr.t * im.h;
-        const sw = (cr.r - cr.l) * im.w, sh = (cr.b - cr.t) * im.h;
-        const pts = fillSession.pts;
-        let first = true;
-        for (const p of pts) {
-          let lx = ((p.x - sx) / sw) * it.w;
-          let ly = ((p.y - sy) / sh) * it.h;
-          if (it.flipX) lx = it.w - lx;
-          if (it.flipY) ly = it.h - ly;
-          const [bx, by] = localToBoardRect(it, lx, ly);
-          const [cx, cy] = toScreen(bx, by);
-          if (first) { ctx.moveTo(cx, cy); first = false; }
-          else ctx.lineTo(cx, cy);
-        }
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.restore();
-        drawSamplingOverlay(fillSession);
-      }
-    }
-  }
 
   // Replacement surfaces are installed atomically during drawing. Once the
   // frame has declared what it actually used, stale tiers can be reclaimed.
@@ -15487,20 +14261,6 @@ function updateCropDrag(e) {
   const minH = Math.min(r.h - 1, Math.max(12 / state.view.s, 8));
   const vw = c.r - c.l, vh = c.b - c.t;
 
-  /* Dragging an edge *outward* proposes new canvas rather than cropping (§24).
-   * The item is left alone while the drag is live — drawCropUi shows the
-   * proposal as a dashed outline — and the expansion is materialised on
-   * release, because growing the bitmap is far too expensive to do per frame. */
-  const outward = mode.edge === 'left' ? -lx
-    : mode.edge === 'top' ? -ly
-      : mode.edge === 'right' ? lx - r.w
-        : ly - r.h;
-  if (outward > 1) {
-    mode.expandLocal = { edge: mode.edge, amount: outward };
-    invalidate();
-    return;
-  }
-  mode.expandLocal = null;
   if (!mode.pushed) { mode.pushed = true; pushUndo(); }
 
   let nx = 0, ny = 0, nw = r.w, nh = r.h;
@@ -15561,85 +14321,6 @@ canvas.addEventListener('pointerdown', async e => {
       invalidate();
       return;
     }
-  }
-
-  /* Painting the sampling area (§17). Checked before the lasso branch and
-   * before the space/alt guards, because Alt is the "exclude" modifier here. */
-  if (samplingPaintable(fillSession) && e.button === 0 && !spaceDown) {
-    const it = fillSession.it;
-    const [bx, by] = toBoard(sx, sy);
-    const pt = boardPointToBitmap(it, bx, by);
-    if (pt) {
-      e.preventDefault();
-      const add = !(altDown || e.altKey);
-      mode = { type: 'samplingPaint', add, it: it.id };
-      if (paintSamplingArea(fillSession, pt.x, pt.y, add)) invalidate();
-      return;
-    }
-  }
-
-  if (fillActive && e.button === 0 && !(spaceDown || altDown || e.altKey)) {
-    if (fillSession && fillSession.phase !== 'lasso') {
-      toast('Apply or cancel the current clean-plate preview first');
-      return;
-    }
-    const hit = itemAt(sx, sy);
-    if (hit && isImageItem(hit)) {
-      finishNoteEdit();
-      const [bx, by] = toBoard(sx, sy);
-      const pt = boardPointToBitmap(hit, bx, by);
-      if (pt) {
-        const prepareSeq = ++fillPrepareSeq;
-        fillPendingPts = [pt];
-        fillPendingPts.it = hit;
-        (async () => {
-          try {
-            const prepared = await prepareExclusiveImageEdit(hit);
-            if (!prepared) return;
-            if (prepareSeq !== fillPrepareSeq) {
-              await discardDetachedImageEdit(prepared);
-              return;
-            }
-            const im = prepared.im;
-            await ensureFullBitmap(im);
-            if (!im.bitmap) {
-              await discardDetachedImageEdit(prepared);
-              return;
-            }
-            const undoBlob = await getImageBlob(im);
-            if (!undoBlob) {
-              await discardDetachedImageEdit(prepared);
-              return;
-            }
-            if (prepareSeq !== fillPrepareSeq) {
-              await discardDetachedImageEdit(prepared);
-              return;
-            }
-            if (prepared.detached) hit.imgId = prepared.detachedImgId;
-            fillSession = {
-              it: hit,
-              im,
-              imId: hit.imgId,
-              prepared,
-              undoBlob,
-              pts: fillPendingPts || [pt],
-              worker: null,
-              phase: 'lasso',
-              runToken: 0,
-            };
-            fillPendingPts = null;
-            if (!mode) mode = { type: 'fill', it: hit.id, sx, sy };
-            if (fillSession.pts.released) commitFillSession(null);
-            invalidate();
-          } catch (err) {
-            console.error('[fill] failed to prepare image:', err);
-            fillSession = null;
-            fillPendingPts = null;
-          }
-        })();
-      }
-    }
-    return;
   }
 
   if (drawActive && e.button === 0 && !(spaceDown || altDown || e.altKey)) {
@@ -15876,24 +14557,6 @@ window.addEventListener('pointermove', e => {
     else hideDrawSizePreview();
   }
   if (!mode) {
-    // The brush ring follows the pointer, so the overlay has to repaint.
-    if (samplingPaintable(fillSession)) invalidate();
-    /* Only extend the lasso while it is being drawn. Appending during preview
-     * would silently corrupt the selection that Retry re-runs from. */
-    if (fillActive && (!fillSession || fillSession.phase === 'lasso')) {
-      const it = fillSession?.it;
-      const target = it || fillPendingPts?.it;
-      if (target) {
-        const [bx, by] = toBoard(sx, sy);
-        const pt = boardPointToBitmap(target, bx, by);
-        if (pt) {
-          if (fillSession) fillSession.pts.push(pt);
-          else if (fillPendingPts) fillPendingPts.push(pt);
-          invalidate();
-        }
-        return;
-      }
-    }
     updateNoteLinkHover(sx, sy);
     updateCursor(sx, sy);
     return;
@@ -16030,7 +14693,7 @@ window.addEventListener('pointermove', e => {
   } else if (mode.type === 'crop') {
     if (!mode.pushed && Math.hypot(dx, dy) < 2) return;
     updateCropDrag(e);
-    if (!mode.expandLocal) scheduleSave();
+    scheduleSave();
     invalidate();
   } else if (mode.type === 'marquee') {
     marquee.ex = sx; marquee.ey = sy;
@@ -16055,12 +14718,6 @@ window.addEventListener('pointermove', e => {
     else { it.x2 = bx; it.y2 = by; }
     invalidateWorkspaceBBox();
     scheduleSave(); invalidate();
-  } else if (mode.type === 'samplingPaint') {
-    if (samplingPaintable(fillSession)) {
-      const [bx, by] = toBoard(sx, sy);
-      const pt = boardPointToBitmap(fillSession.it, bx, by);
-      if (pt && paintSamplingArea(fillSession, pt.x, pt.y, mode.add)) invalidate();
-    }
   } else if (mode.type === 'draw') {
     const it = byId(mode.it);
     if (it) {
@@ -16070,26 +14727,13 @@ window.addEventListener('pointermove', e => {
     }
     scheduleSave();
     invalidate();
-  } else if (mode.type === 'fill') {
-    const it = byId(mode.it);
-    if (it) {
-      const [bx, by] = toBoard(sx, sy);
-      const pt = boardPointToBitmap(it, bx, by);
-      if (pt) {
-        if (fillSession) fillSession.pts.push(pt);
-        else if (fillPendingPts) fillPendingPts.push(pt);
-        invalidate();
-      }
-    }
   }
 });
 
 window.addEventListener('pointercancel', () => {
   drawPrepareSeq++;
-  fillPrepareSeq++;
   if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
-  if (fillSession?.phase === 'lasso') void cancelFillSession();
   mode = null;
   marquee = null;
   dropTargetGroupId = null;
@@ -16097,14 +14741,7 @@ window.addEventListener('pointercancel', () => {
 });
 
 window.addEventListener('pointerup', e => {
-  if (!mode) {
-    if (fillSession?.pts?.length >= 3) {
-      commitFillSession(null);
-    } else if (fillPendingPts) {
-      fillPendingPts.released = true;
-    }
-    return;
-  }
+  if (!mode) return;
   if (mode.type === 'pan') {
     if (mode.right) lastRightDrag = mode.dist;
     scheduleSave(false);
@@ -16171,23 +14808,6 @@ window.addEventListener('pointerup', e => {
     }
   } else if (mode.type === 'draw') {
     commitDrawSessionAndSave();
-  } else if (mode.type === 'fill') {
-    commitFillSession(mode);
-  } else if (mode.type === 'crop' && mode.expandLocal) {
-    // An outward crop drag: turn the proposal into real canvas (§24).
-    const it = mode.it;
-    const im = images.get(it.imgId);
-    const ex = mode.expandLocal;
-    if (im) {
-      const scale = itemSourceScale(it, im);
-      const px = Math.round(ex.amount * (ex.edge === 'left' || ex.edge === 'right' ? scale.x : scale.y));
-      const margins = { left: 0, top: 0, right: 0, bottom: 0 };
-      margins[ex.edge === 'top' ? 'top' : ex.edge === 'bottom' ? 'bottom' : ex.edge] = px;
-      if (px >= 4) {
-        exitCropMode();
-        void startContentAwareExpand(it, margins);
-      }
-    }
   }
   const restoreIdleSelectionUi = mode.type === 'rotate';
   mode = null;
@@ -16198,13 +14818,11 @@ window.addEventListener('pointerup', e => {
 window.addEventListener('blur', () => {
   spaceDown = false; altDown = false;
   drawPrepareSeq++;
-  fillPrepareSeq++;
   hideDrawSizePreview();
   hideNoteLinkPop();
   finishNoteEdit();
   if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
-  if (fillSession?.phase === 'lasso') void cancelFillSession();
   mode = null; marquee = null; dropTargetGroupId = null; invalidate();
 });
 
@@ -16832,7 +15450,6 @@ const SHORTCUTS = [
   { cat:'Tools', label:'Eyedropper', keys:['I'] },
   { cat:'Tools', label:'Activate draw pen', keys:['D'] },
   { cat:'Tools', label:'Activate draw eraser', keys:['E'] },
-  { cat:'Tools', label:'Content-aware fill', keys:['C'] },
   { cat:'Tools', label:'Decrease draw size', keys:['['] },
   { cat:'Tools', label:'Increase draw size', keys:[']'] },
   { cat:'Tools', label:'Rotate', keys:['R'] },
@@ -17032,34 +15649,6 @@ window.addEventListener('keydown', e => {
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   const formControl = e.target.matches('input,textarea,select');
-  /* Sampling-area shortcuts, ahead of everything else so the brush keys are not
-   * swallowed by a board shortcut while the user is painting. */
-  if (fillSession?.bounds && !formControl) {
-    if (k === 's' && !mod) {
-      e.preventDefault();
-      setFillSamplingMode(!fillSamplingMode);
-      return;
-    }
-    if (fillSamplingMode && (k === '[' || k === ']')) {
-      e.preventDefault();
-      const step = Math.max(2, Math.round(fillBrushRadius * 0.25));
-      fillBrushRadius = clamp(fillBrushRadius + (k === ']' ? step : -step), FILL_BRUSH_MIN, FILL_BRUSH_MAX);
-      toast(`Sampling brush ${fillBrushRadius} px`);
-      invalidate();
-      return;
-    }
-    if (fillSamplingMode && k === 'escape') {
-      e.preventDefault();
-      setFillSamplingMode(false);
-      return;
-    }
-  }
-  if (fillSession?.phase === 'preview' && (k === 'enter' || k === 'escape')) {
-    e.preventDefault();
-    if (k === 'enter') void applyContentAwareFill();
-    else void cancelFillSession();
-    return;
-  }
   // Formatting popovers keep focus on their button. While a note is open,
   // Ctrl+Z/Ctrl+Y must still operate on that note instead of board history.
   if (noteEditId && !formControl && mod && (k === 'z' || k === 'y')) {
@@ -17112,13 +15701,11 @@ window.addEventListener('keydown', e => {
   }
 
   if (k === 'escape') {
-    if (fillSession) { void cancelFillSession(); return; }
     if (noteEditId) { finishNoteEdit(); return; }
     if (addFeaturesOpen) { closeAddFeatures(); return; }
     if (drawFeaturesOpen) { closeDrawFeatures(); return; }
     if (arrowTool) { arrowTool = null; syncDrawUi(); toast('Arrow tool off'); invalidate(); return; }
     if (drawActive) { setDrawActive(false); toast('Draw mode off'); return; }
-    if (fillActive) { setFillActive(false); toast('Content-aware fill off'); return; }
     if (toolbarIsFloating() && document.body.classList.contains('toolbar-revealed')) {
       setToolbarRevealed(false);
       $('#toolbarEdgeHandle')?.focus({ preventScroll: true });
@@ -17156,8 +15743,6 @@ window.addEventListener('keydown', e => {
       }
     }
     else if (k === 'delete' || k === 'backspace') deleteSelection();
-    else if (k === 'c' && !mod && !e.shiftKey) { e.preventDefault(); toggleFillActive(); }
-    else if (k === 'f' && fillActive) { e.preventDefault(); setFillActive(false); toast('Content-aware fill off'); }
     else if (k === 'f') fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i)));
     else if (k === 'm') { e.preventDefault(); toggleMinimap(); }
     else if (k === 'p') arrangeAll();
@@ -17166,11 +15751,6 @@ window.addEventListener('keydown', e => {
       createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null);
     }
     else if (k === 'i') startEyedropper();
-    else if (k === 'c' && !e.shiftKey) {
-      e.preventDefault();
-      toggleFillActive();
-      if (!e.repeat) toast(fillActive ? 'Content-aware fill — drag a lasso on an image' : 'Content-aware fill off');
-    }
     else if (k === 'd') {
       e.preventDefault();
       activateDrawShortcut('pen');
@@ -17343,25 +15923,6 @@ function hideUpdateCard() { document.getElementById('updateCard').classList.remo
 document.getElementById('ucClose').addEventListener('click', hideUpdateCard);
 document.getElementById('ucLater').addEventListener('click', hideUpdateCard);
 document.getElementById('ucRestart').addEventListener('click', () => window.RefBoardAPI?.installUpdate?.());
-
-$('#fillSampling').addEventListener('click', () => { setFillSamplingMode(!fillSamplingMode); });
-$('#fillQuality').addEventListener('click', event => {
-  const btn = event.target.closest('.fp-q');
-  if (btn && !btn.disabled) setFillQuality(btn.dataset.quality);
-});
-$('#fillCancel').addEventListener('click', () => { void cancelFillSession(); });
-$('#fillRetry').addEventListener('click', () => { void retryContentAwareFill(); });
-$('#fillApply').addEventListener('click', () => { void applyContentAwareFill(); });
-$('#fillAutoFeather').addEventListener('click', () => {
-  if (!fillSession?.candidates?.length) return;
-  fillSession.feather = fillSession.autoFeather;
-  refreshFillPreview(fillSession);
-});
-$('#fillFeather').addEventListener('input', event => {
-  if (!fillSession?.candidates?.length) return;
-  fillSession.feather = clamp(Number(event.target.value) | 0, 0, 128);
-  refreshFillPreview(fillSession);
-});
 
 window.__pinToast = msg => {
   if (msg && typeof msg === 'object' && msg.type === 'update') {
@@ -17786,7 +16347,6 @@ $('#addCanvasBtn').addEventListener('click', e => {
   else openDrawCanvasPop($('#addCanvasBtn'));
 });
 $('#btnDraw').addEventListener('click', toggleDrawFeatures);
-$('#btnFill').addEventListener('click', toggleFillActive);
 $('#btnPaste').addEventListener('click', () => menuPaste(null));
 $('#btnNote').addEventListener('click', () => createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null));
 $('#btnArrange').addEventListener('click', arrangeAll);
@@ -18701,11 +17261,7 @@ window.RefBoard = {
   openBoardFromPath,
   memoryStats: memoryDiagnostics,
   imageRenderState: imageRenderDiagnostics,
-  get fillActive() { return fillActive; },
-  get fillSession() { return fillSession; },
   get mode() { return mode; },
-  get fillPendingPts() { return fillPendingPts; },
-  get fillSamplingMode() { return fillSamplingMode; },
   invalidate,
   runAutosaveTick,
   get startupComplete() { return appStartupComplete; },
@@ -18742,40 +17298,6 @@ window.RefBoard = {
   /* Test hook: closing the connection makes every later transaction throw,
      which is the closest a harness can get to a real storage failure. */
   closeDbForTest() { try { db?.close(); } catch (e) { /* already closed */ } },
-  setFillQuality,
-  setFillSamplingMode,
-  expandCanvas: (itemId, margins) => startContentAwareExpand(byId(itemId), margins || {}),
-  /* Developer visualisation (§33). Off by default and never surfaced in the
-   * interface. Turn it on, run a fill, then call dumpContentAwareDebug() to get
-   * every intermediate the engine produced — pyramid levels, gradient and edge
-   * maps, the NNF as colour, the patch-cost and confidence maps, the raw
-   * reconstruction and the blended one — as downloadable PNGs. */
-  get contentAwareDebug() { return !!window.__contentAwareDebug; },
-  setContentAwareDebug(on) {
-    window.__contentAwareDebug = !!on;
-    toast(`Content-aware debug capture ${on ? 'on' : 'off'}`);
-  },
-  contentAwareDebugInfo() {
-    return fillSession?.candidates?.[fillSession.candidateIndex]?.debugInfo || null;
-  },
-  async dumpContentAwareDebug() {
-    const info = fillSession?.candidates?.[fillSession.candidateIndex]?.debugInfo;
-    if (!info) { toast('No debug capture — enable it, then run a fill'); return null; }
-    console.log('[fill] debug notes:', info.notes);
-    for (const layer of info.layers || []) {
-      const c = document.createElement('canvas');
-      c.width = layer.width; c.height = layer.height;
-      c.getContext('2d').putImageData(new ImageData(layer.data, layer.width, layer.height), 0, 0);
-      const blob = await new Promise(resolve => c.toBlob(resolve, 'image/png'));
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `content-aware-${layer.name}.png`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    }
-    return info.notes;
-  },
 };
 
 initPerfOverlay({

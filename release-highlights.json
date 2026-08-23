@@ -1,39 +1,13 @@
 {
-  "headline": "Pin, fill, and a safer board",
-  "summary": "Keep RefBoard above other windows, erase objects from images with a lasso fill, and recover the last good board after a crash.",
+  "headline": "Lighter and steadier",
+  "summary": "Content-aware fill is removed from the product so boards stay fast and reliable.",
   "sections": {
-    "new": [
-      {
-        "title": "Always on top",
-        "description": "A pin in the title bar keeps RefBoard above other windows, or attached above a window you pick."
-      },
-      {
-        "title": "Content-aware fill",
-        "description": "Press C or use the wand next to Draw, lasso something on an image, and release to erase and fill from nearby pixels. Undo restores the original. Shared copies stay untouched."
-      }
-    ],
-    "improved": [
-      {
-        "title": "Softer fill edges",
-        "description": "The fill blends a few pixels at the lasso rim instead of leaving a hard cut."
-      },
-      {
-        "title": "Black and Tide themes",
-        "description": "Two new appearance themes in settings."
-      },
-      {
-        "title": "Clearer rotate cursor",
-        "description": "Corner rotate uses a 32px PureRef-style cursor."
-      }
-    ],
+    "new": [],
+    "improved": [],
     "fixed": [
       {
-        "title": "Wheel over the pin list",
-        "description": "Scrolling the \"always on top of\" window list no longer zooms the board."
-      },
-      {
-        "title": "Last good board after a crash",
-        "description": "RefBoard keeps a last-good copy so a crash is less likely to lose the board you were working on."
+        "title": "Content-aware fill removed",
+        "description": "The lasso fill tool is no longer in the toolbar. It was too heavy and unreliable for everyday moodboard work."
       }
     ]
   }
