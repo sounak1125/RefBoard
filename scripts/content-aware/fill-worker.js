@@ -100,6 +100,7 @@ importScripts(
       hardRejected: result.hardRejected,
       unsafeReasons: result.unsafeReasons,
       flaggedReasons: result.flaggedReasons,
+      lowConfidenceReasons: result.lowConfidenceReasons,
       status: result.status,
       algorithmUsed: result.algorithmUsed,
       processingTime: result.processingTime,

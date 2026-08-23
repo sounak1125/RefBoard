@@ -6779,7 +6779,17 @@ function setFillPreviewStatus(stage, detail = '', options = {}) {
   bar.classList.add('show');
   $('#fillPreviewStage').textContent = stage || 'Content-Aware Fill';
   $('#fillPreviewDetail').textContent = detail || '';
-  $('#fillConfidence').classList.toggle('show', !!options.lowConfidence);
+  /* The badge is the only place this surfaces, so it has to carry the reason.
+   * flaggedReasons answers a different set of questions, so a result tripped by
+   * a confidence threshold alone used to show a bare chip with nothing behind
+   * it and no way to find out what it meant. */
+  const confidenceBadge = $('#fillConfidence');
+  confidenceBadge.classList.toggle('show', !!options.lowConfidence);
+  const confidenceWhy = Array.isArray(options.lowConfidenceReasons)
+    ? options.lowConfidenceReasons.filter(Boolean) : [];
+  confidenceBadge.title = confidenceWhy.length
+    ? `Low confidence: ${confidenceWhy.join(' · ')}`
+    : 'Low confidence — check the preview before applying.';
   $('#fillApply').disabled = !options.canApply;
   $('#fillRetry').disabled = !options.canRetry;
   $('#fillAutoFeather').disabled = !options.canFeather;
@@ -7387,6 +7397,7 @@ function refreshFillPreview(session) {
   if (!candidate || candidate.hardRejected) {
     setFillPreviewStatus('Unsafe fill rejected', candidate?.unsafeReasons?.join(' · ') || 'The result does not match the surrounding image.', {
       canApply: false, canRetry: true, canFeather: false, canSample: true, lowConfidence: true,
+      lowConfidenceReasons: candidate?.unsafeReasons,
     });
     return;
   }
@@ -7403,9 +7414,13 @@ function refreshFillPreview(session) {
   g.putImageData(new ImageData(pixels, session.bounds.cropW, session.bounds.cropH), session.bounds.x0, session.bounds.y0);
   const flaggedSuffix = candidate.flaggedReasons?.length
     ? ` · flagged: ${candidate.flaggedReasons.join(', ')}` : '';
-  setFillPreviewStatus('Preview ready', `Candidate ${session.candidateIndex + 1} of ${session.candidates.length} · ${session.feather}px feather${flaggedSuffix}`, {
+  /* Only the first reason inline — the bar is one line and the rest are on the
+   * badge's tooltip. */
+  const lowSuffix = candidate.lowConfidence && candidate.lowConfidenceReasons?.length
+    ? ` · ${candidate.lowConfidenceReasons[0]}` : '';
+  setFillPreviewStatus('Preview ready', `Candidate ${session.candidateIndex + 1} of ${session.candidates.length} · ${session.feather}px feather${flaggedSuffix}${lowSuffix}`, {
     canApply: !candidate.hardRejected, canRetry: true, canFeather: true, canSample: true,
-    lowConfidence: candidate.lowConfidence,
+    lowConfidence: candidate.lowConfidence, lowConfidenceReasons: candidate.lowConfidenceReasons,
   });
   $('#fillFeather').value = String(session.feather);
   $('#fillFeatherValue').textContent = `${session.feather} px`;
@@ -7484,6 +7499,7 @@ function runContentAwareFillWork(session, seed, timeBudgetMs, token) {
         hardRejected: !!result.hardRejected,
         unsafeReasons: Array.isArray(result.unsafeReasons) ? result.unsafeReasons.map(String) : [],
         flaggedReasons: Array.isArray(result.flaggedReasons) ? result.flaggedReasons.map(String) : [],
+        lowConfidenceReasons: Array.isArray(result.lowConfidenceReasons) ? result.lowConfidenceReasons.map(String) : [],
         algorithmUsed: String(result.algorithmUsed || 'patchmatch'),
         processingTime: Number(result.processingTime) || 0,
         debugInfo: result.debugInfo || null,
@@ -7557,6 +7573,7 @@ async function buildFillCandidates(session, { append = false } = {}) {
     if (current && !current.hardRejected) {
       setFillPreviewStatus('Reconstruction rejected', reasons.join(' · ') || session.lastError || 'The new result does not match the surrounding image.', {
         canApply: true, canRetry: true, canFeather: true, canSample: true, lowConfidence: current.lowConfidence,
+        lowConfidenceReasons: current.lowConfidenceReasons,
       });
       $('#fillFeather').value = String(session.feather);
       $('#fillFeatherValue').textContent = `${session.feather} px`;
@@ -7567,6 +7584,7 @@ async function buildFillCandidates(session, { append = false } = {}) {
       }
       setFillPreviewStatus('Unsafe fill rejected', reasons.join(' · ') || session.lastError || 'The reconstructed pixels do not match the surrounding image.', {
         canApply: false, canRetry: true, canFeather: false, canSample: true, lowConfidence: true,
+        lowConfidenceReasons: reasons,
       });
       invalidate();
     }
@@ -7677,6 +7695,7 @@ async function retryContentAwareFill() {
       setFillPreviewStatus('Could not build another candidate', String(err?.message || err), {
         canApply: true, canRetry: true, canFeather: true, canSample: true,
         lowConfidence: session.candidates[session.candidateIndex]?.lowConfidence,
+        lowConfidenceReasons: session.candidates[session.candidateIndex]?.lowConfidenceReasons,
       });
     }
   }
@@ -7689,6 +7708,7 @@ async function applyContentAwareFill() {
   if (!candidate || candidate.hardRejected) {
     setFillPreviewStatus('Unsafe fill rejected', candidate?.unsafeReasons?.join(' · ') || 'This result cannot be applied.', {
       canApply: false, canRetry: true, canFeather: false, canSample: true, lowConfidence: true,
+      lowConfidenceReasons: candidate?.unsafeReasons,
     });
     return;
   }
@@ -7747,6 +7767,7 @@ async function applyContentAwareFill() {
       setFillPreviewStatus('Could not apply clean plate', String(err?.message || err), {
         canApply: true, canRetry: true, canFeather: true, canSample: true,
         lowConfidence: session.candidates[session.candidateIndex]?.lowConfidence,
+        lowConfidenceReasons: session.candidates[session.candidateIndex]?.lowConfidenceReasons,
       });
     }
   } finally {
