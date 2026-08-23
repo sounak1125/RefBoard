@@ -164,11 +164,22 @@ const smokeExpression = String.raw`(async()=>{
   const groupEndAng=groupStartAng+0.9;
   const groupRadius=Math.hypot(groupOut.clientX-(rect().left+gcsx),groupOut.clientY-(rect().top+gcsy));
   const groupEnd={clientX:rect().left+gcsx+Math.cos(groupEndAng)*groupRadius,clientY:rect().top+gcsy+Math.sin(groupEndAng)*groupRadius};
+  const glyphDeg=c=>{const m=decodeURIComponent(c||'').match(/rotate\((-?[\d.]+) 16 16\)/);return m?((+m[1]%360)+360)%360:null;};
+  fire('pointermove',groupOut);
+  await wait(20);
+  const groupGlyphIdle=glyphDeg(board.style.cursor);
   fire('pointerdown',groupOut);
   fire('pointermove',groupEnd,{drag:true});
+  await wait(20);
+  const groupGlyphDragging=glyphDeg(board.style.cursor);
   fire('pointerup',groupEnd,{drag:true,button:0,buttons:0});
   await wait(40);
   const multi={imgRot:image().rot||0,noteRot:note().rot||0,imgCx:image().x+image().w/2,imgCy:image().y+image().h/2,noteCx:note().x+note().w/2,noteCy:note().y+note().h/2};
+  // The frame keeps the angle it was rotated to, so the same spot outside the
+  // corner is still a rotate handle and its glyph still reports the new angle.
+  fire('pointermove',groupEnd);
+  await wait(20);
+  const groupGlyphAtRest=glyphDeg(board.style.cursor);
   image().rot=0;image().x=imgStart.x;image().y=imgStart.y;
   note().rot=0;note().x=noteStart.x;note().y=noteStart.y;
   window.RefBoard.state.sel=new Set([image().id]);
@@ -186,7 +197,8 @@ const smokeExpression = String.raw`(async()=>{
   const rotAfterShift=image().rot||0;
   return {
     resizeCursor,rotateCursor,beforeRotate,afterRotate,beforeResize,afterResize,
-    imgStart,noteStart,multi,rotBeforeShift,rotAfterShift
+    imgStart,noteStart,multi,rotBeforeShift,rotAfterShift,
+    groupGlyphIdle,groupGlyphDragging,groupGlyphAtRest
   };
 })()`;
 
@@ -209,6 +221,12 @@ try {
     Math.hypot(result.multi.imgCx - result.imgStart.cx, result.multi.imgCy - result.imgStart.cy) > 4
     || Math.hypot(result.multi.noteCx - result.noteStart.cx, result.multi.noteCy - result.noteStart.cy) > 4,
     'multi-select rotate should orbit items around the selection center',
+  );
+  assert.equal(result.groupGlyphIdle, 0, 'an unrotated group frame should show an unrotated glyph');
+  assert.ok(result.groupGlyphDragging > 5, `the group rotate glyph should turn with the drag (got ${result.groupGlyphDragging})`);
+  assert.ok(
+    result.groupGlyphAtRest !== null && Math.abs(result.groupGlyphAtRest - result.groupGlyphDragging) < 3,
+    `the group frame should keep its angle after release (dragging ${result.groupGlyphDragging}, at rest ${result.groupGlyphAtRest})`,
   );
   const snapped = ((result.rotAfterShift % 360) + 360) % 360;
   assert.ok(snapped % 90 === 0, `Shift rotate should snap to 90° (got ${result.rotAfterShift})`);

@@ -27,6 +27,14 @@ vm.runInNewContext(`
   ${extractFunction('rotateVec')}
   ${extractFunction('rotateItemAroundOrigin')}
   ${extractFunction('rotateCursorForHandle')}
+  const itemUiRect = (it) => ({ x: it.x, y: it.y, w: it.w, h: it.h });
+  ${extractFunction('rotRad')}
+  ${extractFunction('localToBoardRect')}
+  ${extractFunction('itemCorners')}
+  ${extractFunction('boundsOf')}
+  ${extractFunction('bboxOf')}
+  ${extractFunction('selectionBBoxRect')}
+  this.selectionBBoxRect = selectionBBoxRect;
   this.handlesHitOnPts = handlesHitOnPts;
   this.rotateHitOnPts = rotateHitOnPts;
   this.snapRotateDelta = snapRotateDelta;
@@ -108,8 +116,8 @@ const nw = context.rotateCursorForHandle({ corner: 'nw' }, 0);
 assert.match(decodeURIComponent(nw.match(/^url\("data:image\/svg\+xml,([^"]+)"\)/)[1]), /rotate\(180 16 16\)/);
 
 assert.match(html, /if \(h\.rotate\)/, 'updateCursor and pointerdown should branch on rotate hits');
-assert.match(html, /rotateCursorForHandle\(h, h\.group \? 0 : \(h\.it\?\.rot \|\| 0\)\)/);
-assert.match(html, /resizeCursorForHandle\(h, h\.group \? 0 : \(h\.it\?\.rot \|\| 0\)\)/, 'single-item and group-frame resize should still use rotated resize cursors');
+assert.match(html, /rotateCursorForHandle\(h, h\.group \? selectionFrameRot\(\) : \(h\.it\?\.rot \|\| 0\)\)/, 'the group rotate cursor should track the frame angle, not sit at 0');
+assert.match(html, /resizeCursorForHandle\(h, h\.group \? selectionFrameRot\(\) : \(h\.it\?\.rot \|\| 0\)\)/, 'single-item and group-frame resize should still use rotated resize cursors');
 assert.match(html, /type: 'rotate'/);
 assert.match(html, /snapRotateDelta\(/);
 assert.match(html, /Drag outside a corner/);
@@ -117,8 +125,41 @@ assert.match(html, /Rotate from a corner \(Shift snaps 90°\)/);
 const multiSelDraw = html.match(/if \(selectedCount > 1 && !lightDrag\) \{[\s\S]*?\} else if \(selectedCount === 1\)/);
 assert.ok(multiSelDraw, 'multi-select drawing should remain a distinct branch');
 assert.match(multiSelDraw[0], /drawSelectionOutline\(it\)/, 'multi-select should still outline each item');
-assert.doesNotMatch(multiSelDraw[0], /drawSelectionUi\(/, 'multi-select should not stroke the outer bounding box');
+assert.doesNotMatch(multiSelDraw[0], /drawSelectionUi\(/, 'multi-select chrome should not go through the single-item helper');
+assert.match(multiSelDraw[0], /strokeScreenPoly\(pts, ACC, GROUP_FRAME_W\)/, 'multi-select should stroke the rotated group frame');
 assert.match(multiSelDraw[0], /drawCornerHandles/, 'multi-select should still show the corner cubes');
 assert.match(multiSelDraw[0], /drawEdgePills/, 'multi-select should still show the edge handles');
+
+// The whole fix rests on this: rotate every item by delta and the frame by the
+// same delta, and the frame's own extents come out unchanged. That rigidity is
+// what keeps the corner cubes pinned under the pointer through a group rotate.
+function closeEnough(actual, expected, message) {
+  assert.ok(Math.abs(actual - expected) < 1e-6, `${message}: expected ${expected}, received ${actual}`);
+}
+
+const cluster = [
+  { x: 0, y: 0, w: 100, h: 60, rot: 0 },
+  { x: 200, y: 40, w: 80, h: 80, rot: 20 },
+];
+const flat = context.selectionBBoxRect(cluster, 0);
+assert.equal(flat.rot, 0, 'an unrotated selection still reports an axis-aligned frame');
+const frameOrigin = { x: flat.x + flat.w / 2, y: flat.y + flat.h / 2 };
+const spinDeg = 37;
+const spun = cluster.map(it => {
+  const live = { ...it };
+  context.rotateItemAroundOrigin(live, { ...it }, frameOrigin, spinDeg);
+  return live;
+});
+const spunFrame = context.selectionBBoxRect(spun, spinDeg);
+closeEnough(spunFrame.w, flat.w, 'frame width should survive a group rotate');
+closeEnough(spunFrame.h, flat.h, 'frame height should survive a group rotate');
+closeEnough(spunFrame.x + spunFrame.w / 2, frameOrigin.x, 'frame centre should stay on the rotate origin');
+closeEnough(spunFrame.y + spunFrame.h / 2, frameOrigin.y, 'frame centre should stay on the rotate origin');
+
+// The old rot:0 fit is what made the box swell and the cubes slide mid-rotate.
+const naive = context.selectionBBoxRect(spun, 0);
+assert.ok(naive.w * naive.h > flat.w * flat.h * 1.5, 'an axis-aligned fit of the same rotated cluster should be visibly looser');
+
+assert.equal(context.selectionBBoxRect([cluster[0]], 0), null, 'a single item has no group frame');
 
 console.log('corner rotate contract tests passed');
