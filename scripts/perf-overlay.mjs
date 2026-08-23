@@ -180,10 +180,7 @@ function updateUi() {
   let counts = { items: 0, view: 'board' };
   try { counts = getCounts() || counts; } catch { /* ignore */ }
   const view = counts.view || 'board';
-  let countLine = `items ${counts.items ?? 0}`;
-  if (view === 'animatics') {
-    countLine += `  |  clips ${counts.clips ?? 0}  texts ${counts.texts ?? 0}  audio ${counts.audio ?? 0}`;
-  }
+  const countLine = `items ${counts.items ?? 0}`;
 
   el.textContent =
     `RefBoard perf  [${view}]\n` +

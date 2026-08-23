@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    # RefBoard is a Windows-only Electron app: the shell integration, pin/z-order
+    # and thumbnail-handler code paths only make sense on the target platform.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit and contract tests
+        run: npm test
+
+  smoke:
+    # Electron smoke tests drive a real window, so they need a display and are
+    # slower and flakier than the contract suite. Keep them off the critical
+    # path but still run them on every push.
+    runs-on: windows-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Board I/O smoke
+        run: npm run test:board-io-smoke
+
+      - name: Legacy board compatibility smoke
+        run: npm run test:legacy-board-smoke
+
+      - name: Autosave failure smoke
+        run: npm run test:autosave-failure-smoke
+
+      - name: Undo memory budget smoke
+        run: npm run test:undo-memory-smoke
+
+      - name: Note layout cache smoke
+        run: npm run test:note-cache-smoke
+
+      - name: Board search smoke
+        run: npm run test:search-smoke
+
+      - name: Minimap smoke
+        run: npm run test:minimap-smoke
+
+      - name: Palette extraction smoke
+        run: npm run test:palette-smoke

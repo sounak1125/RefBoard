@@ -23,7 +23,7 @@ assert.equal(windowLocalCreates.length, 3, 'win should only exist as a local ins
 
 // Every modal dialog must attach to the calling window, never a shared global.
 const dialogCalls = main.match(/dialog\.show(?:Save|Open)Dialog\(windowForEvent\(event\)/g) || [];
-assert.equal(dialogCalls.length, 8, 'all 8 save/open dialogs stay parented to the calling window');
+assert.equal(dialogCalls.length, 3, 'all 3 board save/save-as/open dialogs stay parented to the calling window');
 assert.doesNotMatch(main, /dialog\.show(?:Save|Open)Dialog\((win|null),/, 'no dialog may use a shared window parent');
 
 // Per-window titlebar + close plumbing.

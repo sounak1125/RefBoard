@@ -414,9 +414,6 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 #selbar .sel-images-multi-only{ display:none; }
 #selbar.images-multi .sel-images-multi-only.tb{ display:flex; }
 #selbar.images-multi .sel-images-multi-only.sep{ display:block; }
-#selbar .sel-images-only{ display:none; }
-#selbar.has-images .sel-images-only.tb{ display:flex; }
-#selbar.has-images .sel-images-only.sep{ display:block; }
 #selbar .sel-group-only{ display:none; }
 #selbar.group-sel .sel-group-only.tb{ display:flex; }
 #selbar.group-sel .sel-group-only.sep{ display:block; }
@@ -625,6 +622,29 @@ body.board-active.titlebar-revealed #drawPanelWrap{
 #drawCanvasPop .draw-ratio-btn .k{ font-size:11px; color:#6b7180; }
 
 /* ---------- status ---------- */
+/* ---------- minimap ---------- */
+#minimap{
+  position:fixed; right:14px; bottom:44px; z-index:16;
+  width:190px; height:130px;
+  background:var(--panel); border:1px solid var(--line); border-radius:10px;
+  backdrop-filter:blur(12px); overflow:hidden;
+  display:none; cursor:crosshair;
+  box-shadow:0 8px 26px rgba(0,0,0,.35);
+}
+body.board-active #minimap.on{ display:block; }
+#minimapCanvas{ display:block; width:100%; height:100%; }
+#minimapToggle{
+  position:fixed; right:14px; bottom:44px; z-index:17;
+  width:26px; height:26px; padding:0; display:none;
+  align-items:center; justify-content:center;
+  background:var(--panel); border:1px solid var(--line); border-radius:8px;
+  color:var(--mut); cursor:pointer; backdrop-filter:blur(12px);
+}
+body.board-active #minimapToggle{ display:flex; }
+#minimapToggle:hover{ color:var(--fg,#e9ecf2); }
+#minimapToggle.on{ right:18px; bottom:150px; }
+#minimapToggle svg{ width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.8; }
+
 #status{
   position:fixed; right:14px; bottom:12px; z-index:15;
   background:var(--panel); border:1px solid var(--line); border-radius:9px;
@@ -1840,6 +1860,37 @@ body.board-active #whatsNewNotice{ display:none; }
 }
 .card.note-link-card .note-link-url:focus{ border-color:rgba(90,162,255,.55); }
 .card.note-link-card .row-btns{ justify-content:center; }
+
+/* ---- board search (Ctrl+F) ---- */
+#searchModal{ z-index:86; align-items:flex-start; justify-content:center; background:transparent; backdrop-filter:none; }
+.card.search-card{
+  width:520px; margin-top:12vh; padding:14px 14px 10px;
+  pointer-events:auto;
+}
+.card.search-card .search-input{
+  width:100%; background:var(--input,#0f1116); color:var(--fg,#e9ecf2);
+  border:1px solid rgba(255,255,255,.12); border-radius:10px;
+  padding:10px 12px; font-size:14px; outline:none;
+}
+.card.search-card .search-input:focus{ border-color:var(--acc); }
+.card.search-card .search-meta{
+  font-size:11.5px; color:var(--mut); margin:8px 2px 6px; display:flex; justify-content:space-between;
+}
+.card.search-card .search-results{ max-height:46vh; overflow-y:auto; margin:0 -6px; }
+.search-hit{
+  display:flex; gap:10px; align-items:center; width:100%; text-align:left;
+  background:transparent; border:0; border-radius:9px; cursor:pointer;
+  padding:8px 10px; color:var(--fg,#e9ecf2); font-size:13px;
+}
+.search-hit:hover{ background:rgba(255,255,255,.05); }
+.search-hit.active{ background:color-mix(in srgb, var(--acc) 22%, transparent); }
+.search-hit .hit-kind{
+  flex:0 0 auto; font-size:10px; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--mut); border:1px solid rgba(255,255,255,.14); border-radius:5px; padding:2px 5px;
+}
+.search-hit .hit-text{ flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.search-hit .hit-text mark{ background:transparent; color:var(--acc); font-weight:600; }
+.search-empty{ padding:14px 12px; color:var(--mut); font-size:12.5px; }
 .confirm-danger{ background:#c45c6a; border-color:#c45c6a; color:#fff; font-weight:600; }
 .confirm-danger:hover{ filter:brightness(1.08); }
 .settings2-footer{ margin-top:auto; padding-top:10px; border-top:1px solid var(--line); }
@@ -2404,9 +2455,6 @@ body.board-active #whatsNewNotice{ display:none; }
   <button class="tb" id="btnFit" data-tip-title="Fit view" data-tip-sub="F">
     <svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>
   </button>
-  <button class="tb" id="btnAnimatics" data-tip-title="Animatics" data-tip-sub="Open timeline">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/><path d="M7 3v2M12 3v2M17 3v2M7 19v2M12 19v2M17 19v2"/></svg>
-  </button>
   <span class="sep"></span>
   <button class="tb" id="btnExport" data-tip-title="Export" data-tip-sub="Ctrl+E">
     <svg viewBox="0 0 24 24"><path d="M12 3v11M8 10l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
@@ -2538,10 +2586,6 @@ body.board-active #whatsNewNotice{ display:none; }
   <button class="tb" id="sOrig" data-tip="Export images…  (Ctrl+Shift+I)">
     <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6M12 11v6M9 14.5l3 3 3-3"/></svg>
   </button>
-  <span class="sep sel-images-only"></span>
-  <button class="tb sel-images-only" id="sAnimatics" data-tip="Add to Animatics">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/><path d="M7 3v2M12 3v2M17 3v2M7 19v2M12 19v2M17 19v2"/></svg>
-  </button>
   <span class="sep sel-multi-only"></span>
   <button class="tb sel-multi-only" id="sAlignH" data-tip="Align in a row">
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2599,6 +2643,10 @@ body.board-active #whatsNewNotice{ display:none; }
 </div>
 
 <div id="status"></div>
+<div id="minimap" aria-hidden="true"><canvas id="minimapCanvas"></canvas></div>
+<button type="button" id="minimapToggle" title="Minimap (M)" aria-label="Toggle minimap" aria-pressed="false">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16M3 10h18"/></svg>
+</button>
 <div id="toast"></div>
 <div id="ctxmenu"></div>
 <div id="ctxAppear"></div>
@@ -2773,6 +2821,18 @@ body.board-active #whatsNewNotice{ display:none; }
   </div>
 </div>
 
+<div id="searchModal" class="modal">
+  <div class="card search-card">
+    <input type="text" id="searchInput" class="search-input" spellcheck="false" autocomplete="off"
+           placeholder="Find notes and images on this board…" aria-label="Search this board">
+    <div class="search-meta">
+      <span id="searchCount"></span>
+      <span>Enter / ↑↓ to step · Esc to close</span>
+    </div>
+    <div class="search-results" id="searchResults" role="listbox"></div>
+  </div>
+</div>
+
 <div id="noteLinkModal" class="modal">
   <div class="card note-link-card">
     <button type="button" class="modal-x" id="noteLinkClose" title="Close">×</button>
@@ -2862,6 +2922,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks">Group selected → context / bar</span><span class="d">Name group, color, lock/unlock, pack items inside group</span>
       <span class="ks">Locked group</span><span class="d">Select children individually; unlock to move, resize, or drop items in/out</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>A</kbd></span><span class="d">Select all</span>
+      <span class="ks"><kbd>Ctrl</kbd><kbd>F</kbd></span><span class="d">Find on board</span>
       <span class="ks"><kbd>Del</kbd></span><span class="d">Delete selection</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Z</kbd> / <kbd>Y</kbd></span><span class="d">Undo / redo</span>
       <span class="ks"><kbd>Wheel</kbd></span><span class="d">Zoom at cursor</span>
@@ -3128,7 +3189,6 @@ import {
   resolveExportItems,
   sortItemsForExport,
 } from './scripts/export-order.mjs';
-import { createAnimaticsEditor } from './scripts/animatics.mjs';
 import {
   initPerfOverlay,
   isPerfOverlayEnabled,
@@ -3189,13 +3249,6 @@ const imageResidency = createImageResidencyController({
 let fullBitmapEvictTimer = 0;
 let lastBoardOpenError = null;
 let lastBoardRenderError = null;
-let animaticsEditor = null;
-let animaticsReturnView = null;
-
-function isAnimaticsInputActive() {
-  return document.body.classList.contains('animatics-open');
-}
-
 function prepareImageRecord(im, imgId) {
   if (!im) return im;
   if (imgId && !im.id) im.id = imgId;
@@ -3244,6 +3297,10 @@ function imageMemoryStats() {
     lodMiB: Math.round(lodPixels * 4 / 104857.6) / 10,
     residentBlobMiB: Math.round(residentBlobBytes / 104857.6) / 10,
     diskBackedOriginalMiB: Math.round(diskBlobBytes / 104857.6) / 10,
+    undoEntries: undoStack.length,
+    redoEntries: redoStack.length,
+    undoHistoryMiB: Math.round(undoHistoryBytes() / 104857.6) / 10,
+    undoHistoryBudgetMiB: Math.round(undoByteBudget / 104857.6) / 10,
   };
 }
 
@@ -4322,27 +4379,36 @@ async function loadSessionMeta() {
 function openDB() {
   return new Promise(res => {
     try {
-      const rq = indexedDB.open('refboard', 3);
+      const rq = indexedDB.open('refboard', 4);
       rq.onupgradeneeded = () => {
         const d = rq.result;
         if (!d.objectStoreNames.contains('blobs')) d.createObjectStore('blobs');
         if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
         if (!d.objectStoreNames.contains('historyBlobs')) d.createObjectStore('historyBlobs');
-        if (!d.objectStoreNames.contains('mediaBlobs')) d.createObjectStore('mediaBlobs');
+        // v4 dropped the animatics timeline. Reclaim its audio/video store so
+        // upgrading users do not keep paying disk for media nothing can play.
+        if (d.objectStoreNames.contains('mediaBlobs')) d.deleteObjectStore('mediaBlobs');
       };
       rq.onsuccess = () => res(rq.result);
       rq.onerror = () => res(null);
     } catch (e) { res(null); }
   });
 }
-const dbPut = (store, key, val) => new Promise(res => {
-  if (!db) return res(false);
-  const tx = db.transaction(store, 'readwrite');
-  tx.objectStore(store).put(val, key);
-  tx.oncomplete = () => res(true);
-  tx.onerror = () => res(false);
-  tx.onabort = () => res(false);
+/* Resolves { ok, error } so writes that must not fail silently — the session
+   autosave above all — can tell the user what went wrong. A dropped autosave
+   the user believes succeeded is the worst failure this app has. */
+const dbPutChecked = (store, key, val) => new Promise(res => {
+  if (!db) return res({ ok: false, error: new Error('Local storage is unavailable') });
+  let tx;
+  try {
+    tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(val, key);
+  } catch (error) { return res({ ok: false, error }); }
+  tx.oncomplete = () => res({ ok: true, error: null });
+  tx.onerror = () => res({ ok: false, error: tx.error });
+  tx.onabort = () => res({ ok: false, error: tx.error });
 });
+const dbPut = async (store, key, val) => (await dbPutChecked(store, key, val)).ok;
 const dbGet = (store, key) => new Promise(res => {
   if (!db) return res(undefined);
   const rq = db.transaction(store).objectStore(store).get(key);
@@ -4413,6 +4479,7 @@ const SETTINGS_DEFAULTS = {
   landingLayout: 'classic',
   toolbarMode: 'floating',
   checkUpdatesOnStartup: true,
+  minimap: false,
 };
 let appSettings = { ...SETTINGS_DEFAULTS };
 let undoLimit = SETTINGS_DEFAULTS.undoLimit;
@@ -4453,6 +4520,7 @@ function applyAppSettings() {
   const recentWorks = document.getElementById('recentWorks');
   if (recentWorks) recentWorks.classList.toggle('layout-focus', appSettings.landingLayout === 'focus');
   applyToolbarMode();
+  setMinimapOn(!!appSettings.minimap);
   startAutosaveTimer();
   invalidate();
 }
@@ -5539,7 +5607,6 @@ function reconcileNoteBoxesInItems(items) {
 
 function resetLiveSessionToBlank() {
   void cancelFillSession();
-  animaticsEditor?.clear?.();
   closeImageRecordBitmaps(images);
   images.clear();
   state.items = [];
@@ -5624,14 +5691,6 @@ async function restoreSession() {
     state.boardGray = !!meta.boardGray;
     state.snapEnabled = !!meta.snapEnabled;
     state.gridAppearance = normalizeGridAppearance(meta.gridAppearance) || 'dots';
-    const restoredAnimaticMedia = new Map();
-    const animaticMedia = [...(meta.animatics?.audio || []), ...(meta.animatics?.clips || []).filter(clip => clip?.mediaId)];
-    for (const media of animaticMedia) {
-      if (!media?.mediaId || restoredAnimaticMedia.has(media.mediaId)) continue;
-      const blob = await dbGet('mediaBlobs', media.mediaId);
-      if (blob instanceof Blob && blob.size) restoredAnimaticMedia.set(media.mediaId, blob);
-    }
-    animaticsEditor?.load?.(meta.animatics, restoredAnimaticMedia);
     if (savedView) {
       state.view.tx = savedView.tx;
       state.view.ty = savedView.ty;
@@ -5685,21 +5744,7 @@ function markBoardDirty() {
 }
 
 async function persistBoardNow() {
-  const mediaRefs = animaticsEditor?.mediaRefs?.() || [];
-  const keepMedia = new Set();
-  for (const ref of mediaRefs) {
-    const blob = animaticsEditor?.getMediaBlob?.(ref.id);
-    if (!(blob instanceof Blob) || !blob.size) continue;
-    keepMedia.add(ref.id);
-    await dbPut('mediaBlobs', ref.id, blob);
-  }
-  // Shared store: only reclaim media when this is the sole board window.
-  if (!(await isMultiBoardWindow())) {
-    for (const key of await dbKeys('mediaBlobs')) {
-      if (!keepMedia.has(key)) await dbDel('mediaBlobs', key);
-    }
-  }
-  return dbPut('meta', SESSION_META_KEY, {
+  return dbPutChecked('meta', SESSION_META_KEY, {
     items: state.items.map(i => ({ ...i })),
     view: { ...state.view },
     path: currentBoardPath || null,
@@ -5708,7 +5753,6 @@ async function persistBoardNow() {
     boardGray: state.boardGray,
     snapEnabled: state.snapEnabled,
     gridAppearance: state.gridAppearance,
-    animatics: animaticsEditor?.serialize?.() || null,
     imageMeta: [...images.entries()].map(([id, im]) => ({
       id, w: im.w, h: im.h, type: im.type, name: im.name || '', blobSize: im.blobSize || 0,
     })),
@@ -5729,12 +5773,52 @@ function startAutosaveTimer() {
 
 async function runAutosaveTick() {
   if (onLanding || !state.items.length) return;
-  try { await persistBoardNow(); } catch { /* ignore */ }
+  let result;
+  try { result = await persistBoardNow(); }
+  catch (error) { result = { ok: false, error }; }
+  if (!result?.ok) {
+    reportSessionPersistFailure(result?.error);
+    return;
+  }
+  clearSessionPersistFailure();
   if (currentBoardPath && boardFileDirty) {
     await saveBoardFile({ silent: true });
     return;
   }
   toast('Session autosaved');
+}
+
+/* The session autosave is the only copy of an unsaved board. When IndexedDB
+   refuses a write — quota exhausted, disk full, database closed — say so and
+   offer the one recovery that always works: write a real file. */
+let sessionPersistFailureShown = false;
+
+function reportSessionPersistFailure(error) {
+  const name = error?.name || '';
+  const quota = name === 'QuotaExceededError' || /quota/i.test(String(error?.message || ''));
+  console.error('[board] session autosave failed:', error);
+  if (sessionPersistFailureShown) return;
+  sessionPersistFailureShown = true;
+  toast(
+    quota
+      ? 'Autosave failed — this PC is out of storage for RefBoard. Save your board to a file.'
+      : 'Autosave failed — your recent changes are not backed up. Save your board to a file.',
+    {
+      sticky: true,
+      actionLabel: 'Save board…',
+      onAction: () => {
+        sessionPersistFailureShown = false;
+        hideToast();
+        void manualSaveBoardFile(() => saveBoardFile());
+      },
+    },
+  );
+}
+
+/* A later success means the board is protected again, so allow a fresh warning
+   if it ever breaks a second time. */
+function clearSessionPersistFailure() {
+  sessionPersistFailureShown = false;
 }
 
 function isNavigatingView() {
@@ -5745,7 +5829,10 @@ function scheduleSave(markDirty = true) {
   if (markDirty) markBoardDirty();
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    persistBoardNow();
+    void persistBoardNow().then(result => {
+      if (result?.ok) clearSessionPersistFailure();
+      else reportSessionPersistFailure(result?.error);
+    }, error => reportSessionPersistFailure(error));
     touchRecentWorkEdited();
   }, 400);
 }
@@ -5782,8 +5869,31 @@ function clearRedoHistory() {
   for (const entry of redoStack) releaseUndoEntry(entry);
   redoStack.length = 0;
 }
+/* Every undo entry is a full JSON snapshot of the board, so on a large board
+   each one runs to megabytes. Capping the entry count alone let the default 200
+   steps retain hundreds of MB of strings. Cap the retained bytes as well, but
+   always keep a few steps so undo still does something on a board whose single
+   snapshot already exceeds the budget. */
+let undoByteBudget = 64 * 1024 * 1024;
+const UNDO_MIN_ENTRIES = 3;
+
+/* JS strings are UTF-16, so a code unit is two bytes. */
+const undoEntryBytes = entry => (normalizeUndoEntry(entry)?.snap?.length || 0) * 2;
+
+function undoHistoryBytes() {
+  let total = 0;
+  for (const entry of undoStack) total += undoEntryBytes(entry);
+  for (const entry of redoStack) total += undoEntryBytes(entry);
+  return total;
+}
+
 function trimUndoHistory() {
   while (undoStack.length > undoLimit) releaseUndoEntry(undoStack.shift());
+  let bytes = undoHistoryBytes();
+  while (bytes > undoByteBudget && undoStack.length > UNDO_MIN_ENTRIES) {
+    bytes -= undoEntryBytes(undoStack[0]);
+    releaseUndoEntry(undoStack.shift());
+  }
 }
 async function captureUndoState(bitmapEntry) {
   const entry = { snap: snap() };
@@ -6071,9 +6181,40 @@ function centerItemsAt(items, cx, cy) {
   invalidateWorkspaceBBox();
 }
 
-async function addImages(blobs, atBoardPos) {
+/* Refuse an import the browser storage bucket cannot hold, rather than writing
+   half of it and failing partway through. The estimate is advisory — Chromium
+   reports a bucket quota, not free disk — so only a clear shortfall blocks. */
+async function storageShortfall(bytes) {
+  if (!bytes || !navigator.storage?.estimate) return null;
+  let estimate;
+  try { estimate = await navigator.storage.estimate(); }
+  catch { return null; }
+  const quota = Number(estimate?.quota) || 0;
+  const usage = Number(estimate?.usage) || 0;
+  if (!quota) return null;
+  // Keep a margin: the originals are also copied into the session snapshot.
+  const free = quota - usage;
+  const needed = bytes * 1.25;
+  return needed > free ? { needed, free } : null;
+}
+
+const formatMiB = bytes => `${Math.max(0.1, Math.round(bytes / 104857.6) / 10)} MB`;
+
+/* `sourceUrl` records where a web-dropped image came from. On a reference
+   board attribution is a feature, and the drop handler already has the URL. */
+async function addImages(blobs, atBoardPos, { sourceUrl = '' } = {}) {
   const list = [...blobs];
   if (!list.length) return [];
+  const incoming = list.reduce((sum, b) => sum + (Number(b?.size) || 0), 0);
+  const shortfall = await storageShortfall(incoming);
+  if (shortfall) {
+    toast(
+      `Not enough local storage for ${formatMiB(incoming)} of images `
+      + `(about ${formatMiB(shortfall.free)} free). Save and close another board first.`,
+      { sticky: true, actionLabel: 'Dismiss', onAction: hideToast },
+    );
+    return [];
+  }
   pushUndo();
   const added = [];
   let cx, cy;
@@ -6089,7 +6230,10 @@ async function addImages(blobs, atBoardPos) {
     const { w: vw, h: vh } = boardSize();
     const k = Math.min(1, ((vw / state.view.s) * 0.55) / im.w, ((vh / state.view.s) * 0.55) / im.h);
     const w = im.w * k, h = im.h * k;
-    const it = normalizeItem({ id: uid(), imgId, x: 0, y: 0, w, h, name: b.name || '' });
+    const it = normalizeItem({
+      id: uid(), imgId, x: 0, y: 0, w, h, name: b.name || '',
+      ...(sourceUrl ? { source: sourceUrl } : {}),
+    });
     state.items.push(it);
     added.push(it);
   }
@@ -7855,7 +7999,7 @@ async function tryFetchImage(url, pos) {
     const b = await r.blob();
     if (!b.type.startsWith('image/')) throw new Error('not image');
     const name = (url.split('/').pop() || 'image').split('?')[0];
-    await addImages([new File([b], name, { type: b.type })], pos);
+    await addImages([new File([b], name, { type: b.type })], pos, { sourceUrl: url });
     toast('Image added');
   } catch (e) {
     toast('Site blocked the download — save the image and drop the file instead');
@@ -8759,7 +8903,7 @@ async function menuPaste(pos) {
 }
 
 window.addEventListener('paste', async e => {
-  if (onLanding || isAnimaticsInputActive()) return;
+  if (onLanding) return;
   if (e.target.closest('#noteEditor')) return;
   if (e.target.matches('input,textarea') && e.target.id !== 'noteEditor') return;
 
@@ -8813,7 +8957,7 @@ function mouseOnCanvas() {
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', async e => {
   e.preventDefault();
-  if (onLanding || isAnimaticsInputActive()) return;
+  if (onLanding) return;
   const pos = clientToBoard(e.clientX, e.clientY);
   const files = [...(e.dataTransfer.files || [])].filter(f =>
     f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(f.name));
@@ -9711,6 +9855,22 @@ function tryPasteNoteLink(text) {
   return true;
 }
 
+/* Only http(s) sources are surfaced: a data: or blob: URL is not somewhere the
+   user can navigate back to, and must never be handed to the shell. */
+function itemSourceUrl(it) {
+  const url = String(it?.source || '').trim();
+  return /^https?:\/\//i.test(url) ? url : '';
+}
+
+async function copySourceUrl(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('Source link copied');
+  } catch {
+    toast('Could not copy the source link');
+  }
+}
+
 async function openNoteLink(url) {
   const s = String(url ?? '').trim();
   if (!/^https?:\/\//i.test(s)) return;
@@ -9826,7 +9986,7 @@ function noteWidestPrefixWidth(g, text) {
     const prefix = noteLinePrefixOf(ln);
     if (!prefix) continue;
     if (parseNoteLine(ln).type === 'check') continue;
-    maxW = Math.max(maxW, g.measureText(prefix).width);
+    maxW = Math.max(maxW, noteTextWidth(g, prefix));
   }
   return maxW;
 }
@@ -9867,12 +10027,33 @@ function stripNoteMarkdown(text) {
   return String(text ?? '').replace(/\[([^\]]*)\]\([^)]+\)/g, '$1');
 }
 
+/* measureText dominates note rendering: draw() measures every line and every
+   styled segment of every visible note, every frame. Width is a pure function
+   of the font and the string, so memoise it. The cache is cleared wholesale
+   past the cap rather than evicted one entry at a time: refilling costs a
+   single frame and keeps this off the hot path. */
+const NOTE_WIDTH_CACHE_MAX = 8000;
+let noteCacheDefeat = false;
+const _noteWidthCache = new Map();
+
+function noteTextWidth(g, text) {
+  const str = text || '';
+  if (!str) return 0;
+  const key = `${g.font}\0${str}`;
+  const hit = _noteWidthCache.get(key);
+  if (hit !== undefined) return hit;
+  const width = g.measureText(str).width;
+  if (_noteWidthCache.size >= NOTE_WIDTH_CACHE_MAX) _noteWidthCache.clear();
+  _noteWidthCache.set(key, width);
+  return width;
+}
+
 function noteTextMeasure(g, text) {
   // Advance width — the DOM editor lays text out by advances (white-space:pre
   // keeps trailing spaces). Ink-based width (actualBoundingBox*) made canvas
   // and editor disagree on line width, center/right alignment and caret x,
   // and let the box lag behind trailing spaces while typing.
-  return { width: g.measureText(text || '').width, inset: 0 };
+  return { width: noteTextWidth(g, text), inset: 0 };
 }
 
 // Declared font metrics (Chromium strut) — match CSS line boxes so canvas and
@@ -9882,8 +10063,15 @@ function noteTextMeasure(g, text) {
 // Measure at the size the glyphs actually rasterize on screen (screenPx) and
 // map back into g.font space — the canvas baseline then stays within a screen
 // pixel of the editor's CSS strut at every zoom level.
+const _noteVertMetricsCache = new Map();
+
 function noteTextVertMetrics(g, fontPx, screenPx = fontPx) {
   const probePx = clamp(screenPx || fontPx, 4, 3000);
+  // One probe measurement per note per frame otherwise; the result depends only
+  // on the font and the two sizes, so it memoises the same way widths do.
+  const metricsKey = `${g.font}\0${probePx}\0${fontPx}`;
+  const cachedMetrics = noteCacheDefeat ? null : _noteVertMetricsCache.get(metricsKey);
+  if (cachedMetrics) return cachedMetrics;
   const prevFont = g.font;
   const prevBaseline = g.textBaseline;
   g.font = String(prevFont).replace(/(\d+(?:\.\d+)?)px/, `${probePx}px`);
@@ -9894,7 +10082,10 @@ function noteTextVertMetrics(g, fontPx, screenPx = fontPx) {
   const k = fontPx / probePx;
   const ascent = (m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent ?? probePx * 0.78) * k;
   const descent = (m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent ?? probePx * 0.22) * k;
-  return { ascent, descent, ink: ascent + descent };
+  const metrics = { ascent, descent, ink: ascent + descent };
+  if (_noteVertMetricsCache.size >= NOTE_WIDTH_CACHE_MAX) _noteVertMetricsCache.clear();
+  _noteVertMetricsCache.set(metricsKey, metrics);
+  return metrics;
 }
 
 function noteTextLineBaselineY(lineTop, lineH, vm) {
@@ -9946,7 +10137,7 @@ function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkCol
       g.save();
       g.fillStyle = linkColor || '#5aa2ff';
       g.fillText(seg.text, tx, y);
-      const tw = g.measureText(seg.text).width;
+      const tw = noteTextWidth(g, seg.text);
       g.fillStyle = linkColor || '#5aa2ff';
       g.fillRect(tx, y + underlineOffset, tw, underlineThick);
       g.restore();
@@ -9955,10 +10146,10 @@ function drawNoteTextSegments(g, segs, x, y, underline, size, textColor, linkCol
     } else {
       g.fillText(seg.text, tx, y);
       if (underline) {
-        const tw = g.measureText(seg.text).width;
+        const tw = noteTextWidth(g, seg.text);
         g.fillRect(tx, y + underlineOffset, tw, underlineThick);
       }
-      tx += g.measureText(seg.text).width;
+      tx += noteTextWidth(g, seg.text);
     }
   }
 }
@@ -9979,7 +10170,18 @@ function noteLineHeight(it) {
   return noteEffSize(it) * 1.45;
 }
 
+/* draw() calls this for every visible note on every frame, and the measureText
+   loop below is the most repeated work on a note-heavy board. The result
+   depends only on the text and the font, so cache it per item exactly the way
+   noteListGutterForText already caches its own result. */
+const _noteLayoutByItem = new WeakMap();
+
 function layoutNoteLines(g, text, it) {
+  const cacheKey = `${g.font}\0${text || ''}`;
+  if (it && !noteCacheDefeat) {
+    const cached = _noteLayoutByItem.get(it);
+    if (cached && cached.key === cacheKey) return cached.layout;
+  }
   const lines = String(text || '').split('\n');
   if (!lines.length) lines.push('');
   const size = parseFloat(String(g.font).match(/(\d+(?:\.\d+)?)px/)?.[1]) || 15;
@@ -9992,7 +10194,9 @@ function layoutNoteLines(g, text, it) {
     const body = stripNoteMarkdown(p.body);
     maxLineW = Math.max(maxLineW, gutt + noteTextMeasure(g, body).width);
   }
-  return { lines, maxLineW, lineCount: lines.length, gutter };
+  const layout = { lines, maxLineW, lineCount: lines.length, gutter };
+  if (it) _noteLayoutByItem.set(it, { key: cacheKey, layout });
+  return layout;
 }
 
 let _noteMeasureEl = null;
@@ -12102,7 +12306,6 @@ function boardSaveSnapshot() {
       blobSize: im.blobSize || 0,
     } : null;
   }).filter(Boolean);
-  const mediaRefs = animaticsEditor?.mediaRefs?.() || [];
   return {
     core: {
       app: 'refboard', version: 3,
@@ -12110,11 +12313,9 @@ function boardSaveSnapshot() {
       boardGray: state.boardGray,
       snapEnabled: state.snapEnabled,
       gridAppearance: state.gridAppearance,
-      animatics: animaticsEditor?.serialize?.() || null,
       items,
     },
     imageRefs,
-    mediaRefs,
     changeVersion: boardChangeVersion,
   };
 }
@@ -12126,11 +12327,6 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
     const blob = await ensureImageBlobForSave(im);
     if (!blob) continue;
     imgs.push({ ...ref, data: await blobToDataURL(blob) });
-  }
-  for (const ref of snapshot.mediaRefs || []) {
-    const blob = animaticsEditor?.getMediaBlob?.(ref.id);
-    if (!blob) continue;
-    imgs.push({ ...ref, w: 0, h: 0, data: await blobToDataURL(blob) });
   }
   let preview = null;
   if (snapshot.core.items.length) {
@@ -12200,14 +12396,6 @@ async function performBoardSave(opts = {}) {
           id: ref.id, type: ref.type || im?.type || blob.type || 'image/png', name: ref.name,
           w: ref.w, h: ref.h, size: blob.size,
         }, data);
-      }
-      for (const ref of snapshot.mediaRefs || []) {
-        const blob = animaticsEditor?.getMediaBlob?.(ref.id);
-        if (!blob) continue;
-        await queueSaveImage({
-          id: ref.id, type: ref.type, name: ref.name,
-          w: 0, h: 0, size: blob.size,
-        }, await blob.arrayBuffer());
       }
       await flushSaveBatch();
       const result = await window.RefBoardAPI.finishBoardSave(token);
@@ -13142,7 +13330,6 @@ async function openNewBoardImpl() {
   showRestoreCardIfPending();
   boardOpenPersistSeq++;
   suppressBoardDirty = true;
-  animaticsEditor?.clear?.();
   const ownedBlobIds = new Set(images.keys());
   releaseAllImages();
   state.items = [];
@@ -13165,7 +13352,6 @@ async function openNewBoardImpl() {
     boardGray: false,
     snapEnabled: false,
     gridAppearance: state.gridAppearance,
-    animatics: animaticsEditor?.serialize?.() || null,
     savedAt: Date.now(),
   });
   // With multiple windows, never wipe the shared blob store wholesale.
@@ -13174,7 +13360,6 @@ async function openNewBoardImpl() {
   } else {
     const keys = await dbKeys('blobs');
     for (const k of keys) await dbDel('blobs', k);
-    await dbClear('mediaBlobs');
   }
   suppressBoardDirty = false;
   boardFileDirty = false;
@@ -13238,7 +13423,6 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
   // complete bitmap sets in memory at once.
   for (const im of images.values()) demoteImageDecodedMemory(im);
   let nextImages = new Map();
-  const nextAnimaticMedia = new Map();
   let droppedImageItems = false;
   let firstImageLoadError = null;
   lastBoardOpenError = null;
@@ -13260,10 +13444,10 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
     const ingestLoaded = (rec, loaded) => {
       const imgId = rec.id;
       const blob = boardImageBytesToBlob(loaded, rec);
-      if (/^(audio|video)\//.test(String(rec.type || blob.type))) {
-        nextAnimaticMedia.set(imgId, blob);
-        return;
-      }
+      // Legacy boards embedded animatics audio/video records alongside the
+      // images. The timeline is gone, so skip them rather than decoding a
+      // video blob as a board image.
+      if (/^(audio|video)\//.test(String(rec.type || blob.type))) return;
       let w = Number(rec.w) || 0;
       let h = Number(rec.h) || 0;
       const im = prepareImageRecord({
@@ -13360,7 +13544,6 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
     state.snapEnabled = !!j.snapEnabled;
     const ga = normalizeGridAppearance(j.gridAppearance);
     if (ga) state.gridAppearance = ga;
-    animaticsEditor?.load?.(j.animatics, nextAnimaticMedia);
     state.sel.clear();
     resetSelectionOrder();
     cropItemId = null;
@@ -13508,7 +13691,8 @@ function forceBoardCanvasRepaint() {
   const dpr = devicePixelRatio || 1;
   const { w, h } = boardLayoutSize();
   // Assign even when the dimensions match. This replaces a backing surface
-  // Chromium may have discarded while the canvas was hidden behind Animatics.
+  // Chromium may have discarded while the canvas was hidden or its GPU
+  // context was lost.
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   canvas.style.width = w + 'px';
@@ -13521,7 +13705,7 @@ function recoverBoardAfterHeavyOverlay() {
   if (state.items.length) {
     void warmVisibleImageProxies().catch(err => {
       lastBoardRenderError = err?.stack || err?.message || String(err);
-      console.error('[board] image warmup after Animatics failed:', err);
+      console.error('[board] image warmup after overlay recovery failed:', err);
       invalidate();
     });
   }
@@ -13529,35 +13713,6 @@ function recoverBoardAfterHeavyOverlay() {
     forceBoardCanvasRepaint();
     updateEmpty();
   });
-}
-
-function beginAnimaticsBoardSession() {
-  if (!animaticsReturnView) {
-    const { tx, ty, s } = state.view;
-    animaticsReturnView = { tx, ty, s };
-  }
-  // Animatics owns pointer and modifier input until it closes. Do not leave a
-  // partially started board gesture alive underneath the full-screen editor.
-  mode = null;
-  marquee = null;
-  dropTargetGroupId = null;
-  spaceDown = false;
-  altDown = false;
-  hideDrawSizePreview();
-  invalidate();
-}
-
-function finishAnimaticsBoardSession() {
-  const savedView = animaticsReturnView;
-  animaticsReturnView = null;
-  if (savedView && Number.isFinite(savedView.tx) && Number.isFinite(savedView.ty)
-      && Number.isFinite(savedView.s) && savedView.s > 0) {
-    applyTargetView(savedView);
-    // Replace any autosave queued by a leaked/legacy navigation event with the
-    // restored camera so session recovery also returns to the same position.
-    scheduleSave(false);
-  }
-  recoverBoardAfterHeavyOverlay();
 }
 
 canvas.addEventListener('contextlost', e => {
@@ -13744,7 +13899,7 @@ function drawNoteText(g, text, x, y, maxW, lineH, maxLines, underline, size, inn
       const body = parsed.body;
       g.fillText(body, tx, ly);
       if (underline && body) {
-        const tw = g.measureText(body).width;
+        const tw = noteTextWidth(g, body);
         g.fillRect(tx, ly + noteUnderlineOffsetY(g, size, screenPx), tw, noteUnderlineThickness(size));
       }
     }
@@ -14646,6 +14801,8 @@ function draw() {
   if (tool === 'eyedropper') bits.push('eyedropper');
   if (drawActive) bits.push('draw');
   if (arrowTool) bits.push(arrowTool === 'dotted' ? 'dotted arrow' : 'arrow');
+  drawMinimap();
+
   const statusText = bits.join('  ·  ');
   if (statusText !== lastBoardStatusText) {
     lastBoardStatusText = statusText;
@@ -15644,7 +15801,6 @@ canvas.addEventListener('pointerdown', async e => {
 });
 
 window.addEventListener('pointermove', e => {
-  if (isAnimaticsInputActive()) return;
   const [sx, sy] = clientToCanvas(e.clientX, e.clientY);
   mouse = { x: sx, y: sy };
   if ($('#drawSizePreview')?.classList.contains('show')) {
@@ -16093,7 +16249,7 @@ async function pickColorAt(sx, sy) {
 }
 
 window.addEventListener('wheel', e => {
-  if (onLanding || isAnimaticsInputActive() || e.target.closest('#recentWorks')) return;
+  if (onLanding || e.target.closest('#recentWorks')) return;
   if (e.target.closest('.modal, #toolbar, #ctxmenu, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop, #titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
@@ -16107,7 +16263,6 @@ window.addEventListener('wheel', e => {
 }, { passive: false });
 
 $('#noteOverlay').addEventListener('wheel', e => {
-  if (isAnimaticsInputActive()) return;
   if (e.target.closest('#noteFmtBar, #noteEditor, #noteColorPop, .fmt-dd-menu, .fmt-icon-pop')) return;
   e.preventDefault();
   e.stopPropagation();
@@ -16205,7 +16360,6 @@ function openAppearMenu(anchorEl, x, y) {
 }
 
 window.addEventListener('contextmenu', e => {
-  if (isAnimaticsInputActive()) return;
   e.preventDefault();
   if (e.target.closest('#toolbar, .pill, .modal, #ctxmenu, #ctxAppear, #ctxSub, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop, #groupColorPop')) return;
   if (lastRightDrag > 5) { lastRightDrag = 0; return; }
@@ -16253,6 +16407,14 @@ function showMenu(x, y, hitItem) {
     entries.push(
       { l: sel > 1 ? 'Export images' : 'Export image', k: 'Ctrl+Shift+I', f: exportOriginals },
     );
+    if (sel === 1 && isImageItem(selItems[0])) {
+      entries.push({ l: 'Extract palette', f: () => void extractPaletteFromItem(selItems[0]) });
+    }
+    const sourceUrl = sel === 1 ? itemSourceUrl(selItems[0]) : '';
+    if (sourceUrl) {
+      entries.push({ l: 'Open source page', f: () => void openNoteLink(sourceUrl) });
+      entries.push({ l: 'Copy source link', f: () => copySourceUrl(sourceUrl) });
+    }
     if (sel > 1) {
       entries.push({ l: 'Alignment', sub: 'align' });
     }
@@ -16595,6 +16757,7 @@ const SHORTCUTS = [
   { cat:'Editing', label:'Redo', keys:['Ctrl','Y'] },
   { cat:'Editing', label:'Delete', keys:['Del'] },
   { cat:'Editing', label:'Nudge selection', keys:['Arrows'] },
+  { cat:'Tools', label:'Find on board', keys:['Ctrl','F'] },
   { cat:'Tools', label:'Add text note', keys:['Shift','T'] },
   { cat:'Tools', label:'Eyedropper', keys:['I'] },
   { cat:'Tools', label:'Activate draw pen', keys:['D'] },
@@ -16608,6 +16771,7 @@ const SHORTCUTS = [
   { cat:'Tools', label:'Flip vertical', keys:['Ctrl','Shift','V'] },
   { cat:'Tools', label:'Toggle grayscale', keys:['G'] },
   { cat:'View', label:'Fit view', keys:['F'] },
+  { cat:'View', label:'Toggle minimap', keys:['M'] },
   { cat:'View', label:'Pack all', keys:['P'] },
   { cat:'View', label:'Pan board', keys:['Space','drag'] },
   { cat:'View', label:'Reset zoom', keys:['Ctrl','0'] },
@@ -16774,7 +16938,6 @@ window.addEventListener('pointerdown', e => {
   // from an earlier wheel gesture retain demand priority over it.
   wheelFocusImageId = null;
   wheelFocusPriorityUntil = 0;
-  if (isAnimaticsInputActive()) return;
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
   if (!e.target.closest('#titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) window.closePinMenus?.();
@@ -16796,7 +16959,6 @@ window.addEventListener('pointerdown', e => {
 
 /* ================= keyboard ================= */
 window.addEventListener('keydown', e => {
-  if (isAnimaticsInputActive()) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   const formControl = e.target.matches('input,textarea,select');
@@ -16903,6 +17065,7 @@ window.addEventListener('keydown', e => {
   else if (mod && k === 'x') { e.preventDefault(); cutSelection(); }
   else if (mod && k === 'd') { e.preventDefault(); duplicateSelection(); }
   else if (mod && k === 'a') { e.preventDefault(); selectAll(); }
+  else if (mod && k === 'f') { e.preventDefault(); openBoardSearch(); }
   else if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
   else if (mod && k === 'y') { e.preventDefault(); redo(); }
   else if (mod && k === 's') { e.preventDefault(); manualSaveBoardFile(() => saveBoardFile({ saveAs: e.shiftKey })); }
@@ -16926,6 +17089,7 @@ window.addEventListener('keydown', e => {
     else if (k === 'c' && !mod && !e.shiftKey) { e.preventDefault(); toggleFillActive(); }
     else if (k === 'f' && fillActive) { e.preventDefault(); setFillActive(false); toast('Content-aware fill off'); }
     else if (k === 'f') fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i)));
+    else if (k === 'm') { e.preventDefault(); toggleMinimap(); }
     else if (k === 'p') arrangeAll();
     else if (e.shiftKey && k === 't') {
       e.preventDefault();
@@ -16977,7 +17141,6 @@ window.addEventListener('keydown', e => {
   }
 });
 window.addEventListener('keyup', e => {
-  if (isAnimaticsInputActive()) return;
   if (e.code === 'Space') { spaceDown = false; if (!mode) { canvas.style.cursor = 'default'; updateCursor(mouse.x, mouse.y); } }
   if (e.code === 'AltLeft' || e.code === 'AltRight') { altDown = false; if (!mode) { canvas.style.cursor = 'default'; updateCursor(mouse.x, mouse.y); } }
 });
@@ -17053,6 +17216,13 @@ function clearToastAction() {
   if (btn) btn.remove();
 }
 
+function hideToast() {
+  clearTimeout(toastTimer);
+  toastTimer = 0;
+  toastEl.classList.remove('show');
+  clearToastAction();
+}
+
 function toast(msg, opts) {
   clearToastAction();
   toastEl.textContent = msg;
@@ -17067,6 +17237,10 @@ function toast(msg, opts) {
   }
   toastEl.classList.add('show');
   clearTimeout(toastTimer);
+  toastTimer = 0;
+  // A sticky notice reports something the user must act on (a failed save).
+  // Auto-dismissing it would hide exactly the message they cannot afford to miss.
+  if (opts?.sticky) return;
   const duration = opts?.duration ?? 2400;
   toastTimer = setTimeout(() => { toastEl.classList.remove('show'); clearToastAction(); }, duration);
 }
@@ -17513,7 +17687,6 @@ function updateSelBar() {
   bar.classList.toggle('show', n > 0);
   bar.classList.toggle('multi', n > 1);
   bar.classList.toggle('images-multi', selectedImages().length >= 2);
-  bar.classList.toggle('has-images', selectedImages().length > 0);
   bar.classList.toggle('group-sel', !!grp);
   if (n) $('#selcount').textContent = n === 1 ? '1 selected' : `${n} selected`;
   if (grp) {
@@ -17548,7 +17721,6 @@ $('#btnPaste').addEventListener('click', () => menuPaste(null));
 $('#btnNote').addEventListener('click', () => createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null));
 $('#btnArrange').addEventListener('click', arrangeAll);
 $('#btnFit').addEventListener('click', () => fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i))));
-$('#btnAnimatics').addEventListener('click', () => animaticsEditor.open());
 $('#btnExport').addEventListener('click', openExport);
 $('#btnSave').addEventListener('click', () => manualSaveBoardFile(() => saveBoardFile()));
 $('#btnOpen').addEventListener('click', () => openBoardFromDialog());
@@ -17627,11 +17799,6 @@ $('#unsavedClose').addEventListener('click', () => hideUnsavedModal('cancel'));
 $('#sCopy').addEventListener('click', copySelection);
 $('#sDup').addEventListener('click', duplicateSelection);
 $('#sOrig').addEventListener('click', exportOriginals);
-$('#sAnimatics').addEventListener('click', () => {
-  const items = selectedImages();
-  if (!items.length) { toast('Select one or more images first'); return; }
-  animaticsEditor.open(items);
-});
 $('#sAlignH').addEventListener('click', alignSelectionHorizontal);
 $('#sAlignV').addEventListener('click', alignSelectionVertical);
 $('#sNormScale').addEventListener('click', normalizeImagesByScale);
@@ -18034,42 +18201,419 @@ async function init() {
   if (info) await window.RefBoardAPI?.updaterInit?.({ checkOnStartup: !!appSettings.checkUpdatesOnStartup });
 }
 
-animaticsEditor = createAnimaticsEditor({
-  getImage(itemId) {
-    const item = byId(itemId);
-    return item ? images.get(item.imgId) || null : null;
-  },
-  async getBitmap(itemId, opts) {
-    const item = byId(itemId);
-    const image = item ? images.get(item.imgId) : null;
-    return image ? await ensureFullBitmap(image, { ...opts, itemId }) : null;
-  },
-  async getBlob(itemId) {
-    const item = byId(itemId);
-    return item ? await getImageBlob(images.get(item.imgId)) : null;
-  },
-  getBoardTransform(item) {
-    return {
-      crop: cropOf(item),
-      rotation: Number(item.rot) || 0,
-      flipX: !!item.flipX,
-      flipY: !!item.flipY,
-      gray: !!item.gray || state.boardGray,
-      width: Math.max(.001, Number(item.w) || 1),
-      height: Math.max(.001, Number(item.h) || 1),
-    };
-  },
-  async onImportImages(files) {
-    return await addImages(files);
-  },
-  onDirty() { scheduleSave(); },
-  onOpen() { beginAnimaticsBoardSession(); },
-  onClose() { finishAnimaticsBoardSession(); },
-  onRequestImages() {
-    animaticsEditor.close();
-    toast('Select more board images, then click Animatics');
-  },
-  toast,
+/* ================= palette extraction ================= */
+/* The classic moodboard move: pull the dominant colours out of a reference and
+   drop them on the board as swatches. Median-cut over a downsampled copy —
+   deterministic, no dependencies, and fast enough to run on the main thread. */
+
+const PALETTE_SAMPLE_EDGE = 128;   // downsample longest edge before bucketing
+const PALETTE_SWATCH = 96;         // board-space size of each swatch
+const PALETTE_GAP = 10;
+
+function paletteMedianCut(pixels, wanted) {
+  // pixels: flat array of [r,g,b] triples already stripped of transparency.
+  let boxes = [pixels];
+  while (boxes.length < wanted) {
+    // Split the box with the widest channel spread; that is what makes the
+    // result track the image rather than an arbitrary grid of colour space.
+    let target = -1, targetChannel = 0, targetSpread = -1;
+    boxes.forEach((box, index) => {
+      if (box.length < 2) return;
+      for (let c = 0; c < 3; c++) {
+        let lo = 255, hi = 0;
+        for (const px of box) { const v = px[c]; if (v < lo) lo = v; if (v > hi) hi = v; }
+        const spread = hi - lo;
+        if (spread > targetSpread) { targetSpread = spread; target = index; targetChannel = c; }
+      }
+    });
+    if (target < 0 || targetSpread <= 0) break;
+    const box = boxes[target];
+    box.sort((a, b) => a[targetChannel] - b[targetChannel]);
+    const mid = box.length >> 1;
+    boxes.splice(target, 1, box.slice(0, mid), box.slice(mid));
+  }
+  return boxes.filter(box => box.length).map(box => {
+    let r = 0, g = 0, b = 0;
+    for (const px of box) { r += px[0]; g += px[1]; b += px[2]; }
+    const n = box.length;
+    return [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+  });
+}
+
+function paletteFromBitmap(bitmap, wanted) {
+  const scale = Math.min(1, PALETTE_SAMPLE_EDGE / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(bitmap, 0, 0, w, h);
+  const data = g.getImageData(0, 0, w, h).data;
+  const pixels = [];
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] < 128) continue;            // ignore transparent regions
+    pixels.push([data[i], data[i + 1], data[i + 2]]);
+  }
+  if (!pixels.length) return [];
+  const swatches = paletteMedianCut(pixels, wanted);
+  // Darkest to lightest reads as a palette rather than a random row.
+  swatches.sort((a, b) => (a[0] + a[1] + a[2]) - (b[0] + b[1] + b[2]));
+  return swatches;
+}
+
+const paletteHex = ([r, g, b]) => rgbToHexColor(r, g, b);
+
+async function extractPaletteFromItem(it, count = 6) {
+  if (!isImageItem(it)) return;
+  const im = images.get(it.imgId);
+  if (!im) { toast('Image is not loaded yet'); return; }
+  let swatches = [];
+  try {
+    swatches = await withFullBitmap(im, bitmap => paletteFromBitmap(bitmap, count)) || [];
+  } catch (err) {
+    console.error('[palette] extraction failed:', err);
+  }
+  if (!swatches.length) { toast('Could not read colours from that image'); return; }
+
+  pushUndo();
+  const bounds = boundsOf(it);
+  const totalW = swatches.length * PALETTE_SWATCH + (swatches.length - 1) * PALETTE_GAP;
+  const x0 = bounds.x + (bounds.w - totalW) / 2;
+  const y0 = bounds.y + bounds.h + PALETTE_GAP * 2;
+  const added = [];
+  swatches.forEach((rgb, index) => {
+    const hex = paletteHex(rgb);
+    // A note carries the hex as text, so the value is copyable and searchable.
+    const swatch = normalizeItem({
+      id: uid(), kind: 'note', text: hex,
+      x: x0 + index * (PALETTE_SWATCH + PALETTE_GAP), y: y0,
+      w: PALETTE_SWATCH, h: PALETTE_SWATCH,
+      color: hex,
+      textColor: paletteReadableInk(rgb),
+      opacity: 1,
+      fontFamily: 'Segoe UI', fontSize: 13, scale: 1,
+      textAlign: 'center',
+    });
+    state.items.push(swatch);
+    added.push(swatch);
+  });
+  invalidateWorkspaceBBox();
+  state.sel = new Set(added.map(a => a.id));
+  resetSelectionOrder(added.map(a => a.id));
+  updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
+  toast(`Added ${added.length} colour swatches`);
+}
+
+/* Relative luminance decides black or white text so every swatch stays legible. */
+function paletteReadableInk([r, g, b]) {
+  const lin = v => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  return L > 0.36 ? '#101217' : '#f0f2f6';
+}
+
+/* ================= minimap ================= */
+/* On a large board there is otherwise no way to see where you are. Draws the
+   whole workspace scaled down, with the current viewport as a rectangle; click
+   or drag inside it to pan. Repaints on the same dirty flag as the board but
+   throttled, since it only needs to track gross movement. */
+
+const MINIMAP_PAD = 6;
+const MINIMAP_MIN_FPS_MS = 90;
+
+const minimapEl = $('#minimap');
+const minimapCanvas = $('#minimapCanvas');
+const minimapToggleEl = $('#minimapToggle');
+const minimapCtx = minimapCanvas.getContext('2d');
+let minimapOn = false;
+let minimapLastDraw = 0;
+let minimapDragging = false;
+
+function minimapVisible() {
+  return minimapOn && !onLanding;
+}
+
+/** Board-space rect the minimap covers: content plus the current viewport, so
+ *  the viewport marker stays inside the frame even when panned off the items. */
+function minimapWorldRect() {
+  const bb = workspaceContentBBox();
+  const { w: vw, h: vh } = boardSize();
+  const { tx, ty, s } = state.view;
+  const view = { x: -tx / s, y: -ty / s, w: vw / s, h: vh / s };
+  if (!state.items.length) return view;
+  const x1 = Math.min(bb.x, view.x), y1 = Math.min(bb.y, view.y);
+  const x2 = Math.max(bb.x + bb.w, view.x + view.w), y2 = Math.max(bb.y + bb.h, view.y + view.h);
+  return { x: x1, y: y1, w: Math.max(1e-6, x2 - x1), h: Math.max(1e-6, y2 - y1) };
+}
+
+function minimapTransform() {
+  const cw = minimapCanvas.clientWidth || 1;
+  const ch = minimapCanvas.clientHeight || 1;
+  const world = minimapWorldRect();
+  const k = Math.min((cw - MINIMAP_PAD * 2) / world.w, (ch - MINIMAP_PAD * 2) / world.h);
+  return {
+    k,
+    ox: (cw - world.w * k) / 2 - world.x * k,
+    oy: (ch - world.h * k) / 2 - world.y * k,
+    cw, ch,
+  };
+}
+
+function drawMinimap(force = false) {
+  if (!minimapVisible()) return;
+  const now = performance.now();
+  if (!force && now - minimapLastDraw < MINIMAP_MIN_FPS_MS) return;
+  minimapLastDraw = now;
+
+  const dpr = devicePixelRatio || 1;
+  const t = minimapTransform();
+  const pw = Math.max(1, Math.round(t.cw * dpr));
+  const ph = Math.max(1, Math.round(t.ch * dpr));
+  if (minimapCanvas.width !== pw || minimapCanvas.height !== ph) {
+    minimapCanvas.width = pw;
+    minimapCanvas.height = ph;
+  }
+  const g = minimapCtx;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, t.cw, t.ch);
+
+  // Items as flat blocks: the minimap is about position, not content.
+  for (const it of state.items) {
+    if (isArrowItem(it)) continue;
+    const r = boundsOf(it);
+    const x = r.x * t.k + t.ox, y = r.y * t.k + t.oy;
+    const w = Math.max(1, r.w * t.k), h = Math.max(1, r.h * t.k);
+    if (isGroupItem(it)) {
+      g.strokeStyle = 'rgba(255,255,255,.16)';
+      g.lineWidth = 1;
+      g.strokeRect(x, y, w, h);
+      continue;
+    }
+    g.fillStyle = state.sel.has(it.id) ? 'rgba(90,162,255,.9)'
+      : isNoteItem(it) ? 'rgba(255,255,255,.34)'
+      : 'rgba(255,255,255,.52)';
+    g.fillRect(x, y, w, h);
+  }
+
+  // Current viewport.
+  const { w: vw, h: vh } = boardSize();
+  const { tx, ty, s } = state.view;
+  const vx = (-tx / s) * t.k + t.ox, vy = (-ty / s) * t.k + t.oy;
+  const vwk = (vw / s) * t.k, vhk = (vh / s) * t.k;
+  g.strokeStyle = 'rgba(90,162,255,.95)';
+  g.lineWidth = 1.5;
+  g.strokeRect(vx + 0.75, vy + 0.75, Math.max(2, vwk - 1.5), Math.max(2, vhk - 1.5));
+  g.fillStyle = 'rgba(90,162,255,.10)';
+  g.fillRect(vx, vy, Math.max(2, vwk), Math.max(2, vhk));
+}
+
+/** Centre the board view on the board-space point under a minimap position. */
+function minimapPanTo(clientX, clientY) {
+  const rect = minimapCanvas.getBoundingClientRect();
+  const t = minimapTransform();
+  const bx = (clientX - rect.left - t.ox) / t.k;
+  const by = (clientY - rect.top - t.oy) / t.k;
+  const { w: vw, h: vh } = boardSize();
+  state.view.tx = vw / 2 - bx * state.view.s;
+  state.view.ty = vh / 2 - by * state.view.s;
+  scheduleSave(false);
+  invalidate();
+  drawMinimap(true);
+}
+
+function setMinimapOn(on) {
+  minimapOn = !!on;
+  minimapEl.classList.toggle('on', minimapOn);
+  minimapToggleEl.classList.toggle('on', minimapOn);
+  minimapToggleEl.setAttribute('aria-pressed', String(minimapOn));
+  minimapEl.setAttribute('aria-hidden', String(!minimapOn));
+  appSettings.minimap = minimapOn;
+  saveAppSettings();
+  if (minimapOn) drawMinimap(true);
+}
+
+function toggleMinimap() {
+  setMinimapOn(!minimapOn);
+  toast(minimapOn ? 'Minimap on' : 'Minimap off');
+}
+
+minimapToggleEl.addEventListener('click', toggleMinimap);
+minimapCanvas.addEventListener('pointerdown', e => {
+  minimapDragging = true;
+  minimapCanvas.setPointerCapture?.(e.pointerId);
+  minimapPanTo(e.clientX, e.clientY);
+  e.preventDefault();
+});
+minimapCanvas.addEventListener('pointermove', e => {
+  if (minimapDragging) minimapPanTo(e.clientX, e.clientY);
+});
+const endMinimapDrag = e => {
+  if (!minimapDragging) return;
+  minimapDragging = false;
+  minimapCanvas.releasePointerCapture?.(e.pointerId);
+};
+minimapCanvas.addEventListener('pointerup', endMinimapDrag);
+minimapCanvas.addEventListener('pointercancel', endMinimapDrag);
+
+/* ================= board search (Ctrl+F) ================= */
+/* A reference board of a few hundred images has no other way to find anything.
+   Matches note text, image file names and group names, then flies the view to
+   the chosen item using the same tween the fit commands use. */
+
+const SEARCH_MAX_HITS = 60;
+/* Framing a single small item would otherwise zoom to a useless magnification. */
+const SEARCH_MAX_ZOOM = 1.6;
+
+let searchHits = [];
+let searchActiveIndex = 0;
+let searchReturnView = null;
+
+const searchModalEl = $('#searchModal');
+const searchInputEl = $('#searchInput');
+const searchResultsEl = $('#searchResults');
+const searchCountEl = $('#searchCount');
+
+const searchEscape = str => String(str ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function searchableText(it) {
+  if (isNoteItem(it)) return stripNoteMarkdown(String(it.text || '').replace(/\n/g, ' ')).trim();
+  if (isGroupItem(it)) return String(it.name || '').trim();
+  return String(it.name || '').trim();
+}
+
+function searchKindLabel(it) {
+  if (isNoteItem(it)) return 'note';
+  if (isGroupItem(it)) return 'group';
+  if (isArrowItem(it)) return 'arrow';
+  return 'image';
+}
+
+function collectSearchHits(query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const hits = [];
+  for (const it of state.items) {
+    if (isArrowItem(it)) continue;               // nothing textual to match on
+    const text = searchableText(it);
+    if (!text) continue;
+    const at = text.toLowerCase().indexOf(needle);
+    if (at < 0) continue;
+    hits.push({ id: it.id, kind: searchKindLabel(it), text, at, len: needle.length });
+    if (hits.length >= SEARCH_MAX_HITS) break;
+  }
+  // Earliest match first reads as "most relevant" without a scoring model.
+  hits.sort((a, b) => a.at - b.at || a.text.length - b.text.length);
+  return hits;
+}
+
+function searchHitMarkup(hit) {
+  const before = searchEscape(hit.text.slice(0, hit.at));
+  const match = searchEscape(hit.text.slice(hit.at, hit.at + hit.len));
+  const after = searchEscape(hit.text.slice(hit.at + hit.len));
+  return `<span class="hit-kind">${hit.kind}</span><span class="hit-text">${before}<mark>${match}</mark>${after}</span>`;
+}
+
+function renderSearchResults() {
+  searchResultsEl.textContent = '';
+  if (!searchHits.length) {
+    const empty = document.createElement('div');
+    empty.className = 'search-empty';
+    empty.textContent = searchInputEl.value.trim() ? 'No matches on this board.' : 'Type to search notes, image names and groups.';
+    searchResultsEl.appendChild(empty);
+    searchCountEl.textContent = '';
+    return;
+  }
+  searchHits.forEach((hit, index) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'search-hit' + (index === searchActiveIndex ? ' active' : '');
+    btn.setAttribute('role', 'option');
+    btn.setAttribute('aria-selected', String(index === searchActiveIndex));
+    btn.innerHTML = searchHitMarkup(hit);
+    btn.addEventListener('click', () => { searchActiveIndex = index; commitSearchHit(); });
+    searchResultsEl.appendChild(btn);
+  });
+  const capped = searchHits.length >= SEARCH_MAX_HITS ? '+' : '';
+  searchCountEl.textContent = `${searchActiveIndex + 1} of ${searchHits.length}${capped}`;
+  searchResultsEl.children[searchActiveIndex]?.scrollIntoView({ block: 'nearest' });
+}
+
+function focusSearchHit(index, { animate = true } = {}) {
+  const hit = searchHits[index];
+  if (!hit) return;
+  const it = byId(hit.id);
+  if (!it) return;
+  state.sel = new Set([it.id]);
+  resetSelectionOrder([it.id]);
+  updateSelBar();
+  const target = viewFitForItems([it]);
+  const s = Math.min(target.s, SEARCH_MAX_ZOOM);
+  const { w: vw, h: vh } = boardSize();
+  const r = itemUiRect(it);
+  const tx = vw / 2 - (r.x + r.w / 2) * s;
+  const ty = vh / 2 - (r.y + r.h / 2) * s;
+  if (animate) void animateViewTo(tx, ty, s, 260);
+  else { applyTargetView({ tx, ty, s }); invalidate(); }
+}
+
+function stepSearchHit(delta) {
+  if (!searchHits.length) return;
+  searchActiveIndex = (searchActiveIndex + delta + searchHits.length) % searchHits.length;
+  renderSearchResults();
+  focusSearchHit(searchActiveIndex);
+}
+
+function runSearchQuery() {
+  searchHits = collectSearchHits(searchInputEl.value);
+  searchActiveIndex = 0;
+  renderSearchResults();
+  if (searchHits.length) focusSearchHit(0);
+}
+
+/** @param {boolean} restoreView return the camera to where the search started. */
+function closeBoardSearch(restoreView = false) {
+  if (!searchModalEl.classList.contains('show')) return;
+  searchModalEl.classList.remove('show');
+  if (restoreView && searchReturnView) applyTargetView(searchReturnView);
+  searchReturnView = null;
+  searchHits = [];
+  invalidate();
+  canvas.focus?.();
+}
+
+function openBoardSearch() {
+  if (onLanding) return;
+  finishNoteEdit();
+  const { tx, ty, s } = state.view;
+  searchReturnView = { tx, ty, s };
+  searchModalEl.classList.add('show');
+  searchInputEl.value = '';
+  searchHits = [];
+  searchActiveIndex = 0;
+  renderSearchResults();
+  searchInputEl.focus();
+  searchInputEl.select();
+}
+
+function commitSearchHit() {
+  if (!searchHits.length) return;
+  focusSearchHit(searchActiveIndex, { animate: false });
+  searchReturnView = null;          // the user chose this view; keep it
+  closeBoardSearch();
+}
+
+searchInputEl.addEventListener('input', runSearchQuery);
+searchInputEl.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeBoardSearch(true); return; }
+  if (e.key === 'Enter') { e.preventDefault(); commitSearchHit(); return; }
+  if (e.key === 'ArrowDown') { e.preventDefault(); stepSearchHit(1); return; }
+  if (e.key === 'ArrowUp') { e.preventDefault(); stepSearchHit(-1); return; }
+});
+searchModalEl.addEventListener('mousedown', e => {
+  if (e.target === searchModalEl) closeBoardSearch(true);
 });
 
 window.RefBoard = {
@@ -18079,7 +18623,6 @@ window.RefBoard = {
   fitAll,
   saveBoardFile,
   openBoardFromPath,
-  animatics: animaticsEditor,
   memoryStats: memoryDiagnostics,
   imageRenderState: imageRenderDiagnostics,
   get fillActive() { return fillActive; },
@@ -18088,6 +18631,40 @@ window.RefBoard = {
   get fillPendingPts() { return fillPendingPts; },
   get fillSamplingMode() { return fillSamplingMode; },
   invalidate,
+  runAutosaveTick,
+  extractPaletteForTest: extractPaletteFromItem,
+  /* Benchmark hooks: bypass the note text memos, and drive draw() directly so a
+     measurement is not pinned to the vsync interval. */
+  setNoteCacheDefeatForTest(on) { noteCacheDefeat = !!on; },
+  benchDrawForTest(times = 20) {
+    const t0 = performance.now();
+    for (let i = 0; i < times; i++) draw();
+    return (performance.now() - t0) / Math.max(1, times);
+  },
+  /* Test hooks: build note items without the editor/undo side effects that
+     createNote() performs, so a benchmark can populate a board cheaply. */
+  makeNoteForTest(props) {
+    return normalizeItem({
+      id: uid(), kind: 'note', w: 240, h: 120,
+      color: '#15161c', textColor: '#f0f2f6', opacity: 0.72,
+      fontFamily: 'Segoe UI', fontSize: 15, scale: 1,
+      ...props,
+    });
+  },
+  reconcileNotesForTest: reconcileAllNoteBoxes,
+  selectAllForTest: selectAll,
+  rotateSelectionForTest: rotateSelection,
+  undoForTest: undo,
+  undoStats: () => ({
+    entries: undoStack.length,
+    redoEntries: redoStack.length,
+    bytes: undoHistoryBytes(),
+    budget: undoByteBudget,
+  }),
+  setUndoByteBudgetForTest(bytes) { undoByteBudget = Math.max(1, Number(bytes) || 1); trimUndoHistory(); },
+  /* Test hook: closing the connection makes every later transaction throw,
+     which is the closest a harness can get to a real storage failure. */
+  closeDbForTest() { try { db?.close(); } catch (e) { /* already closed */ } },
   setFillQuality,
   setFillSamplingMode,
   expandCanvas: (itemId, margins) => startContentAwareExpand(byId(itemId), margins || {}),
@@ -18126,12 +18703,7 @@ window.RefBoard = {
 
 initPerfOverlay({
   getCounts() {
-    const animOpen = !!animaticsEditor?.isOpen?.();
-    const counts = { items: state.items.length, view: animOpen ? 'animatics' : 'board' };
-    if (animOpen && typeof animaticsEditor.debugCounts === 'function') {
-      Object.assign(counts, animaticsEditor.debugCounts());
-    }
-    return counts;
+    return { items: state.items.length, view: 'board' };
   },
 });
 

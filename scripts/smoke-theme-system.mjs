@@ -76,9 +76,6 @@ const smokeExpression = String.raw`(async()=>{
     const button=document.querySelector('.theme-swatch[data-theme="'+id+'"]');
     button.click();await wait(25);
     const root=getComputedStyle(document.documentElement);
-    window.RefBoard.animatics.open();await wait(25);
-    const workspace=document.querySelector('#animaticsWorkspace'),workspaceStyle=getComputedStyle(workspace),topStyle=getComputedStyle(document.querySelector('.an-top'));
-    const timelineResizer=document.querySelector('.an-timeline-resizer'),sideResizer=document.querySelector('.an-side-resizer');
     results.push({
       id,
       stored:localStorage.getItem('refboard.theme'),
@@ -87,20 +84,7 @@ const smokeExpression = String.raw`(async()=>{
       pressed:[...document.querySelectorAll('.theme-swatch[aria-pressed="true"]')].map(item=>item.dataset.theme),
       rootBg:normalize(root.getPropertyValue('--bg')),
       rootAccent:normalize(root.getPropertyValue('--acc')),
-      animaticsBg:workspaceStyle.backgroundColor,
-      animaticsAccent:normalize(workspaceStyle.getPropertyValue('--an-accent')),
-      topSurface:topStyle.backgroundColor,
-      rootSurface:normalize(root.getPropertyValue('--surface-1')),
-      stageBackground:getComputedStyle(document.querySelector('.an-stage-row')).backgroundColor,
-      timelineHitArea:getComputedStyle(timelineResizer).backgroundColor,
-      timelineGripWidth:getComputedStyle(timelineResizer,'::after').width,
-      timelineGripColor:getComputedStyle(timelineResizer,'::after').backgroundColor,
-      sideGripWidth:getComputedStyle(sideResizer,'::after').width,
-      playBackground:getComputedStyle(document.querySelector('.an-play')).backgroundColor,
-      snapBackground:getComputedStyle(document.querySelector('.an-snap-btn')).backgroundColor,
-      passiveIconBackground:getComputedStyle(document.querySelector('#anAddImages')).backgroundColor,
     });
-    window.RefBoard.animatics.close();
   }
   document.querySelector('.theme-swatch[data-theme="midnight"]').click();
   return results;
@@ -116,16 +100,6 @@ try {
     assert.equal(result.rootTheme, result.id, `${result.id} should apply on the root`);
     assert.deepEqual(result.active, [result.id], `${result.id} should be the only active theme card`);
     assert.deepEqual(result.pressed, [result.id], `${result.id} should expose the correct accessible state`);
-    assert.equal(result.animaticsBg, result.rootBg, `${result.id} should reach the Animatics workspace`);
-    assert.equal(result.animaticsAccent, result.rootAccent, `${result.id} accent should reach Animatics controls`);
-    assert.equal(result.topSurface, result.rootSurface, `${result.id} surface should reach the Animatics toolbar`);
-    assert.equal(result.stageBackground, 'rgb(13, 15, 19)', `${result.id} should keep the viewer workspace neutral`);
-    assert.equal(result.timelineHitArea, 'rgba(0, 0, 0, 0)', `${result.id} should not paint the timeline resize hit area`);
-    assert.equal(result.timelineGripWidth, '52px', `${result.id} should retain the compact timeline grip`);
-    assert.equal(result.timelineGripColor, 'rgb(64, 70, 83)', `${result.id} should retain the neutral timeline grip color`);
-    assert.equal(result.sideGripWidth, '2px', `${result.id} should retain the thin inspector grip`);
-    assert.equal(result.playBackground, 'rgb(240, 242, 247)', `${result.id} should retain the neutral playback control`);
-    assert.notEqual(result.snapBackground, result.passiveIconBackground, `${result.id} should keep Snap visually distinct from passive tools`);
   }
   console.log('theme Electron persistence and cross-workspace smoke passed');
 } finally {
