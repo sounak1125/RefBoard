@@ -404,18 +404,25 @@
      * mean and percentile both climb with the number of neighbour pairs, so a
      * flag keyed to them marks a good fill on a big photo as doubtful purely
      * for being big; they earn their place in the rejection rules, where the
-     * margin to a genuinely bad fill is wide, not in a borderline flag. */
-    const lowConfidence = hardRejected
-      || confidence < 0.55
-      || metrics.patchCostNormalized > 0.6
-      || metrics.seamExcess > 6
-      || metrics.localProfileError > 2.2
-      || metrics.boundaryOutlierRatio > 0.5
-      || metrics.coherence < 0.35;
+     * margin to a genuinely bad fill is wide, not in a borderline flag.
+     *
+     * Collected as reasons rather than a bare boolean because the badge that
+     * shows this is the only thing the user sees, and "Low confidence" with
+     * nothing after it is not a finding — flaggedReasons above answers a
+     * different set of questions, so a fill tripped by one of these alone had
+     * nothing at all to explain itself with. */
+    const lowConfidenceReasons = [];
+    if (confidence < 0.55) lowConfidenceReasons.push('overall reconstruction confidence is low');
+    if (metrics.patchCostNormalized > 0.6) lowConfidenceReasons.push('the closest source patches were still a poor fit');
+    if (metrics.seamExcess > 6) lowConfidenceReasons.push('the fill edge steps harder than the surrounding image does');
+    if (metrics.localProfileError > 2.2) lowConfidenceReasons.push('fill texture differs from the boundary around it');
+    if (metrics.boundaryOutlierRatio > 0.5) lowConfidenceReasons.push('fill colors sit outside the surrounding range');
+    if (metrics.coherence < 0.35) lowConfidenceReasons.push('reconstruction is fragmented');
+    const lowConfidence = hardRejected || lowConfidenceReasons.length > 0;
 
     return {
       metrics, confidence, lowConfidence, hardRejected,
-      unsafeReasons, flaggedReasons, profile,
+      unsafeReasons, flaggedReasons, lowConfidenceReasons, profile,
       status: hardRejected ? 'REJECTED' : lowConfidence ? 'LOW_CONFIDENCE' : 'OK',
     };
   }

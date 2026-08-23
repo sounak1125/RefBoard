@@ -556,6 +556,7 @@
       hardRejected: report.hardRejected,
       unsafeReasons: report.unsafeReasons,
       flaggedReasons: report.flaggedReasons,
+      lowConfidenceReasons: report.lowConfidenceReasons,
       status: report.status,
       metrics: report.metrics,
       options,
