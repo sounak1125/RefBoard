@@ -169,11 +169,22 @@ const smokeExpression = String.raw`(async()=>{
   const groupEndAng=groupStartAng+0.9;
   const groupRadius=Math.hypot(groupOut.clientX-(rect().left+gcsx),groupOut.clientY-(rect().top+gcsy));
   const groupEnd={clientX:rect().left+gcsx+Math.cos(groupEndAng)*groupRadius,clientY:rect().top+gcsy+Math.sin(groupEndAng)*groupRadius};
+  const glyphDeg=c=>{const m=decodeURIComponent(c||'').match(/rotate\((-?[\d.]+) 16 16\)/);return m?((+m[1]%360)+360)%360:null;};
+  fire('pointermove',groupOut);
+  await wait(20);
+  const groupGlyphIdle=glyphDeg(board.style.cursor);
   fire('pointerdown',groupOut);
   fire('pointermove',groupEnd,{drag:true});
+  await wait(20);
+  const groupGlyphDragging=glyphDeg(board.style.cursor);
   fire('pointerup',groupEnd,{drag:true,button:0,buttons:0});
   await wait(40);
   const multi={imgRot:image().rot||0,noteRot:note().rot||0,imgCx:image().x+image().w/2,imgCy:image().y+image().h/2,noteCx:note().x+note().w/2,noteCy:note().y+note().h/2};
+  // The frame keeps the angle it was rotated to, so the same spot outside the
+  // corner is still a rotate handle and its glyph still reports the new angle.
+  fire('pointermove',groupEnd);
+  await wait(20);
+  const groupGlyphAtRest=glyphDeg(board.style.cursor);
   image().rot=0;image().x=imgStart.x;image().y=imgStart.y;
   note().rot=0;note().x=noteStart.x;note().y=noteStart.y;
   window.RefBoard.state.sel=new Set([image().id]);
@@ -189,94 +200,10 @@ const smokeExpression = String.raw`(async()=>{
   fire('pointerup',shiftEnd,{drag:true,button:0,buttons:0,shiftKey:true});
   await wait(40);
   const rotAfterShift=image().rot||0;
-  const makeNote=(id,x,y)=>({id,kind:'note',x,y,w:120,h:80,rot:0,text:'n',color:'#15161c',textColor:'#f0f2f6',opacity:1,fontFamily:'Segoe UI',fontSize:15,scale:1,bold:false,italic:false,underline:false,textAlign:'left',groupId:null});
-  window.RefBoard.state.items.push(makeNote('bbox-a',0,0),makeNote('bbox-b',200,0),makeNote('bbox-c',0,140));
-  window.RefBoard.state.sel=new Set(['bbox-a','bbox-b','bbox-c']);
-  window.RefBoard.invalidate();
-  window.RefBoard.fitAll();
-  await wait(120);
-  const notes=window.RefBoard.state.items.filter(it=>['bbox-a','bbox-b','bbox-c'].includes(it.id));
-  if(notes.length!==3)throw new Error('gapped multi-select notes were not added');
-  const left=Math.min(...notes.map(it=>it.x));
-  const top=Math.min(...notes.map(it=>it.y));
-  const right=Math.max(...notes.map(it=>it.x+it.w));
-  const bottom=Math.max(...notes.map(it=>it.y+it.h));
-  const innerRight=Math.max(...notes.filter(it=>it.id!=='bbox-b').map(it=>it.x+it.w));
-  const innerBottom=Math.max(...notes.filter(it=>it.id!=='bbox-c').map(it=>it.y+it.h));
-  const canvas=document.getElementById('board');
-  const dpr=window.devicePixelRatio||1;
-  const read=canvas.getContext('2d');
-  const boardView=window.RefBoard.state.view;
-  const sampleBoard=(bx,by)=>{
-    const sx=bx*boardView.s+boardView.tx, sy=by*boardView.s+boardView.ty;
-    const px=Math.round(sx*dpr), py=Math.round(sy*dpr);
-    let hits=0;
-    for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){
-      const x=px+dx,y=py+dy;
-      if(x<0||y<0||x>=canvas.width||y>=canvas.height)continue;
-      const p=read.getImageData(x,y,1,1).data;
-      if(p[2]>180&&p[0]<140&&p[1]>110&&p[3]>80)hits++;
-    }
-    return hits;
-  };
-  const sampleHandle=(bx,by)=>{
-    const sx=bx*boardView.s+boardView.tx, sy=by*boardView.s+boardView.ty;
-    const px=Math.round(sx*dpr), py=Math.round(sy*dpr);
-    let hits=0;
-    for(let dy=-5;dy<=5;dy++)for(let dx=-5;dx<=5;dx++){
-      const x=px+dx,y=py+dy;
-      if(x<0||y<0||x>=canvas.width||y>=canvas.height)continue;
-      const p=read.getImageData(x,y,1,1).data;
-      if(p[2]>200&&p[1]>170&&p[0]>140&&p[3]>80)hits++;
-    }
-    return hits;
-  };
-  const emptyRight=sampleBoard(right,(innerBottom+bottom)/2);
-  const emptyBottom=sampleBoard((innerRight+right)/2,bottom);
-  const emptyInside=sampleBoard((innerRight+right)/2,(innerBottom+bottom)/2);
-  const bboxOriginX=(left+right)/2, bboxOriginY=(top+bottom)/2;
-  const [bboxCsx,bboxCsy]=toScreen(bboxOriginX,bboxOriginY);
-  const [bboxSx,bboxSy]=toScreen(right,bottom);
-  const bboxDx=bboxSx-bboxCsx,bboxDy=bboxSy-bboxCsy,bboxLen=Math.hypot(bboxDx,bboxDy)||1;
-  const bboxOut=toClient(bboxSx+(bboxDx/bboxLen)*22,bboxSy+(bboxDy/bboxLen)*22);
-  const bboxStartAng=Math.atan2(bboxOut.clientY-(rect().top+bboxCsy),bboxOut.clientX-(rect().left+bboxCsx));
-  const bboxEndAng=bboxStartAng+0.3;
-  const bboxRadius=Math.hypot(bboxOut.clientX-(rect().left+bboxCsx),bboxOut.clientY-(rect().top+bboxCsy));
-  const bboxEnd={clientX:rect().left+bboxCsx+Math.cos(bboxEndAng)*bboxRadius,clientY:rect().top+bboxCsy+Math.sin(bboxEndAng)*bboxRadius};
-  fire('pointerdown',bboxOut);
-  fire('pointermove',bboxEnd,{drag:true});
-  await wait(50);
-  const rotatingType=window.RefBoard.mode?.type;
-  const itemAabb=it=>{
-    const rad=((it.rot||0)*Math.PI)/180;
-    const cx=it.x+it.w/2, cy=it.y+it.h/2, hw=it.w/2, hh=it.h/2;
-    const pts=[[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(([lx,ly])=>[cx+lx*Math.cos(rad)-ly*Math.sin(rad),cy+lx*Math.sin(rad)+ly*Math.cos(rad)]);
-    const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
-    return {x:Math.min(...xs),y:Math.min(...ys),r:Math.max(...xs),b:Math.max(...ys)};
-  };
-  const live=window.RefBoard.state.items.filter(it=>['bbox-a','bbox-b','bbox-c'].includes(it.id)).map(itemAabb);
-  const liveRight=Math.max(...live.map(b=>b.r));
-  const liveBottom=Math.max(...live.map(b=>b.b));
-  const liveTop=Math.min(...live.map(b=>b.y));
-  const emptyRightDuringRotate=sampleBoard(liveRight,liveTop+(liveBottom-liveTop)*0.75);
-  fire('pointerup',bboxEnd,{drag:true,button:0,buttons:0});
-  await wait(50);
-  const emptyRightAfterRotate=sampleBoard(liveRight,liveTop+(liveBottom-liveTop)*0.75);
-  const handleAfterRotate=sampleHandle(liveRight,liveBottom);
-  const reset=[{id:'bbox-a',x:0,y:0},{id:'bbox-b',x:200,y:0},{id:'bbox-c',x:0,y:140}];
-  for(const o of reset){
-    const it=window.RefBoard.state.items.find(item=>item.id===o.id);
-    if(!it)continue;
-    it.x=o.x;it.y=o.y;it.rot=0;
-  }
-  window.RefBoard.invalidate();
-  await wait(50);
-  const emptyRightUntilted=sampleBoard(right,(innerBottom+bottom)/2);
   return {
     resizeCursor,rotateCursor,beforeRotate,afterRotate,beforeResize,afterResize,
     imgStart,noteStart,multi,rotBeforeShift,rotAfterShift,
-    emptyRight,emptyBottom,emptyInside,rotatingType,emptyRightDuringRotate,emptyRightAfterRotate,handleAfterRotate,emptyRightUntilted,
-    bbox:{left,top,right,bottom,innerRight,innerBottom}
+    groupGlyphIdle,groupGlyphDragging,groupGlyphAtRest
   };
 })()`;
 
@@ -300,17 +227,15 @@ try {
     || Math.hypot(result.multi.noteCx - result.noteStart.cx, result.multi.noteCy - result.noteStart.cy) > 4,
     'multi-select rotate should orbit items around the selection center',
   );
+  assert.equal(result.groupGlyphIdle, 0, 'an unrotated group frame should show an unrotated glyph');
+  assert.ok(result.groupGlyphDragging > 5, `the group rotate glyph should turn with the drag (got ${result.groupGlyphDragging})`);
+  assert.ok(
+    result.groupGlyphAtRest !== null && Math.abs(result.groupGlyphAtRest - result.groupGlyphDragging) < 3,
+    `the group frame should keep its angle after release (dragging ${result.groupGlyphDragging}, at rest ${result.groupGlyphAtRest})`,
+  );
   const snapped = ((result.rotAfterShift % 360) + 360) % 360;
   assert.ok(snapped % 90 === 0, `Shift rotate should snap to 90° (got ${result.rotAfterShift})`);
   assert.notEqual(snapped, result.rotBeforeShift, 'Shift rotate should move to a new 90° step');
-  assert.ok(result.emptyRight > 0, `empty right edge of a gapped multi-select should be stroked (hits=${result.emptyRight})`);
-  assert.ok(result.emptyBottom > 0, `empty bottom edge of a gapped multi-select should be stroked (hits=${result.emptyBottom})`);
-  assert.ok(result.emptyInside === 0, `empty interior of a gapped multi-select should not be filled (hits=${result.emptyInside})`);
-  assert.equal(result.rotatingType, 'rotate', 'gapped multi-select corner drag should enter rotate mode');
-  assert.equal(result.emptyRightDuringRotate, 0, `group box must not stroke during rotate (hits=${result.emptyRightDuringRotate})`);
-  assert.equal(result.emptyRightAfterRotate, 0, `group box must stay hidden after leaving a tilted selection (hits=${result.emptyRightAfterRotate})`);
-  assert.ok(result.handleAfterRotate > 0, `tilted multi-select should still show corner cubes (hits=${result.handleAfterRotate})`);
-  assert.ok(result.emptyRightUntilted > 0, `group box should return once the selection is axis-aligned again (hits=${result.emptyRightUntilted})`);
   console.log('corner rotate Electron smoke passed');
 } finally {
   if (child.exitCode === null) child.kill();

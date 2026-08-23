@@ -325,9 +325,35 @@
     /* Excess over the local contrast the photograph already has. */
     metrics.seamExcess = Math.max(0, metrics.seamMean - metrics.boundaryContrast);
 
+    /* Patch cost is an absolute distance, so it carries the image's own noise
+     * floor: on a grainy photograph even a perfect match differs by the grain,
+     * and a fixed threshold reads that as "no good matches were found". With
+     * synthetic grain added to the reference scenes, mean cost tracked the noise
+     * and nothing else — grass scored 0.22 clean and 1.74 at ±64, while seam
+     * excess stayed 0.0, boundary outliers 0.00 and coherence 0.81-0.85 across
+     * the whole range. The fill was equally correct at both ends; only the score
+     * moved, far enough to flag at ±36 and hard-reject at ±56.
+     *
+     * boundaryContrast is the adjacent-pixel step the known content already
+     * takes — the same noise floor, measured on pixels the fill never touched,
+     * so a bad fill cannot deflate its own denominator. It is the trick
+     * internalAllowance and continuousExcess already use here. Dividing by it
+     * held good fills inside 1.05-2.60 over an 80x contrast range, against
+     * 7.5-107 for a hole spliced from an incompatible region.
+     *
+     * Referenced to NOISE_REFERENCE rather than used as a bare ratio so clean
+     * images pass through unscaled: every scene the thresholds below were
+     * calibrated on sits at or under it (sky 0.8, horizon 1.4, arch 5.5, grass
+     * 9.0), so their tuned behaviour is untouched and only images noisier than
+     * the calibration panel are discounted. */
+    const NOISE_REFERENCE = 9;
+    const noiseFloor = Number.isFinite(metrics.boundaryContrast) ? metrics.boundaryContrast : 0;
+    metrics.patchCostNormalized = metrics.patchCostMean
+      * NOISE_REFERENCE / Math.max(NOISE_REFERENCE, noiseFloor);
+
     const confidence = clamp(1
       // §34's "very high patch costs" — by far the strongest single signal.
-      - metrics.patchCostMean / 3
+      - metrics.patchCostNormalized / 3
       /* Offset by the value a *correct* fill already scores. localProfileError
        * is a mean absolute deviation in robust-sigma units, so even a perfect
        * reconstruction of textured content lands near 0.8; charging from zero
@@ -344,7 +370,7 @@
     const toneLimit = Math.max(46, profile.luma.spread * 1.45);
     const unsafeReasons = [];
     if (metrics.missingRatio > 0.001) unsafeReasons.push('part of the region had no usable source');
-    if (metrics.patchCostMean > 1.2) unsafeReasons.push('no good matches were found for this region');
+    if (metrics.patchCostNormalized > 1.2) unsafeReasons.push('no good matches were found for this region');
     if (metrics.seamExcess > 9) unsafeReasons.push('visible boundary seam');
     if (metrics.boundaryOutlierRatio > 0.7) unsafeReasons.push('fill colors do not match the surrounding surface');
     if (metrics.boundaryToneShift > toneLimit && metrics.boundaryOutlierRatio > 0.5) unsafeReasons.push('catastrophic boundary tone shift');
@@ -378,18 +404,25 @@
      * mean and percentile both climb with the number of neighbour pairs, so a
      * flag keyed to them marks a good fill on a big photo as doubtful purely
      * for being big; they earn their place in the rejection rules, where the
-     * margin to a genuinely bad fill is wide, not in a borderline flag. */
-    const lowConfidence = hardRejected
-      || confidence < 0.55
-      || metrics.patchCostMean > 0.6
-      || metrics.seamExcess > 6
-      || metrics.localProfileError > 2.2
-      || metrics.boundaryOutlierRatio > 0.5
-      || metrics.coherence < 0.35;
+     * margin to a genuinely bad fill is wide, not in a borderline flag.
+     *
+     * Collected as reasons rather than a bare boolean because the badge that
+     * shows this is the only thing the user sees, and "Low confidence" with
+     * nothing after it is not a finding — flaggedReasons above answers a
+     * different set of questions, so a fill tripped by one of these alone had
+     * nothing at all to explain itself with. */
+    const lowConfidenceReasons = [];
+    if (confidence < 0.55) lowConfidenceReasons.push('overall reconstruction confidence is low');
+    if (metrics.patchCostNormalized > 0.6) lowConfidenceReasons.push('the closest source patches were still a poor fit');
+    if (metrics.seamExcess > 6) lowConfidenceReasons.push('the fill edge steps harder than the surrounding image does');
+    if (metrics.localProfileError > 2.2) lowConfidenceReasons.push('fill texture differs from the boundary around it');
+    if (metrics.boundaryOutlierRatio > 0.5) lowConfidenceReasons.push('fill colors sit outside the surrounding range');
+    if (metrics.coherence < 0.35) lowConfidenceReasons.push('reconstruction is fragmented');
+    const lowConfidence = hardRejected || lowConfidenceReasons.length > 0;
 
     return {
       metrics, confidence, lowConfidence, hardRejected,
-      unsafeReasons, flaggedReasons, profile,
+      unsafeReasons, flaggedReasons, lowConfidenceReasons, profile,
       status: hardRejected ? 'REJECTED' : lowConfidence ? 'LOW_CONFIDENCE' : 'OK',
     };
   }
