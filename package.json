@@ -32,6 +32,7 @@
     "build:thumb-handler": "node scripts/build-thumb-handler.js",
     "test:corner-rotate-smoke": "node scripts/smoke-corner-rotate.mjs",
     "test:snap-smoke": "node scripts/smoke-snap-drag.mjs",
+    "test:group-fix-smoke": "node scripts/smoke-group-nudge-resize.mjs",
     "test:board-io-smoke": "node scripts/smoke-board-io.mjs",
     "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-local-dist.ps1 -ReplaceAssets",
     "release:ship": "powershell -ExecutionPolicy Bypass -File scripts/ship-release.ps1 -DistDir dist -Draft",
