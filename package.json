@@ -25,7 +25,6 @@
     "test:theme-smoke": "node scripts/smoke-theme-system.mjs",
     "test:pin-smoke": "node scripts/smoke-pin-window.mjs",
     "test:content-aware-fill": "node scripts/test-content-aware-fill.mjs && node scripts/test-content-aware-mask.mjs && node scripts/test-content-aware-sampling.mjs && node scripts/test-content-aware-patchmatch.mjs && node scripts/test-content-aware-blend.mjs && node scripts/test-content-aware-composite.mjs && node scripts/test-content-aware-regressions.mjs && node scripts/test-content-aware-scenes.mjs",
-    "test:content-aware-fill-smoke": "electron scripts/smoke-content-aware-fill.js",
     "predist": "npm test && node scripts/sync-changelog.mjs",
     "dist": "electron-builder --win",
     "dist:publish": "electron-builder --win --publish always",
@@ -39,7 +38,6 @@
     "bench:content-aware": "node scripts/bench-content-aware.mjs",
     "stress:content-aware": "node scripts/stress-content-aware.mjs",
     "test:content-aware-worker-smoke": "electron scripts/smoke-content-aware-worker.js",
-    "test:content-aware-ui-smoke": "electron scripts/smoke-content-aware-ui.js",
     "test:legacy-board-smoke": "node scripts/smoke-legacy-animatics-board.mjs",
     "test:autosave-failure-smoke": "node scripts/smoke-autosave-failure.mjs",
     "test:undo-memory-smoke": "node scripts/smoke-undo-memory.mjs",
@@ -83,7 +81,6 @@
       "scripts/board-file-replace.js",
       "scripts/win32-zorder.js",
       "scripts/win32-shell-notify.js",
-      "scripts/content-aware/**",
       "changelog.json",
       "package.json",
       "assets/icons/sel/**"

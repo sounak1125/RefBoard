@@ -469,5 +469,19 @@
         }
       ]
     }
+  },
+  "2.0.7": {
+    "headline": "Lighter and steadier",
+    "summary": "Content-aware fill is removed from the product so boards stay fast and reliable.",
+    "sections": {
+      "new": [],
+      "improved": [],
+      "fixed": [
+        {
+          "title": "Content-aware fill removed",
+          "description": "The lasso fill tool is no longer in the toolbar. It was too heavy and unreliable for everyday moodboard work."
+        }
+      ]
+    }
   }
 }
