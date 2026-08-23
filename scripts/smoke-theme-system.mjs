@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
 const profile = await mkdtemp(path.join(os.tmpdir(), 'refboard-theme-smoke-'));
-const child = spawn(electron, ['.', '--remote-debugging-port=0', `--user-data-dir=${profile}`], {
+const child = spawn(electron, ['.', '--remote-debugging-port=0', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion', `--user-data-dir=${profile}`], {
   cwd: root,
   windowsHide: true,
   stdio: ['ignore', 'pipe', 'pipe'],
@@ -69,6 +70,10 @@ const smokeExpression = String.raw`(async()=>{
   const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   for(let attempt=0;attempt<100&&!window.RefBoard;attempt++)await wait(50);
   if(!window.RefBoard)throw new Error('RefBoard API unavailable');
+  // init() ends by navigating to the landing view; anything done before
+  // that point gets torn down again. Wait for startup to finish.
+  for(let attempt=0;attempt<300&&!window.RefBoard.startupComplete;attempt++)await wait(50);
+  if(!window.RefBoard.startupComplete)throw new Error('RefBoard startup did not complete');
   const normalize=color=>{const probe=document.createElement('i');probe.style.color=color;document.body.append(probe);const value=getComputedStyle(probe).color;probe.remove();return value;};
   const ids=['midnight','slate','black','pine','ocean','dim'];
   const results=[];
@@ -76,9 +81,6 @@ const smokeExpression = String.raw`(async()=>{
     const button=document.querySelector('.theme-swatch[data-theme="'+id+'"]');
     button.click();await wait(25);
     const root=getComputedStyle(document.documentElement);
-    window.RefBoard.animatics.open();await wait(25);
-    const workspace=document.querySelector('#animaticsWorkspace'),workspaceStyle=getComputedStyle(workspace),topStyle=getComputedStyle(document.querySelector('.an-top'));
-    const timelineResizer=document.querySelector('.an-timeline-resizer'),sideResizer=document.querySelector('.an-side-resizer');
     results.push({
       id,
       stored:localStorage.getItem('refboard.theme'),
@@ -87,20 +89,7 @@ const smokeExpression = String.raw`(async()=>{
       pressed:[...document.querySelectorAll('.theme-swatch[aria-pressed="true"]')].map(item=>item.dataset.theme),
       rootBg:normalize(root.getPropertyValue('--bg')),
       rootAccent:normalize(root.getPropertyValue('--acc')),
-      animaticsBg:workspaceStyle.backgroundColor,
-      animaticsAccent:normalize(workspaceStyle.getPropertyValue('--an-accent')),
-      topSurface:topStyle.backgroundColor,
-      rootSurface:normalize(root.getPropertyValue('--surface-1')),
-      stageBackground:getComputedStyle(document.querySelector('.an-stage-row')).backgroundColor,
-      timelineHitArea:getComputedStyle(timelineResizer).backgroundColor,
-      timelineGripWidth:getComputedStyle(timelineResizer,'::after').width,
-      timelineGripColor:getComputedStyle(timelineResizer,'::after').backgroundColor,
-      sideGripWidth:getComputedStyle(sideResizer,'::after').width,
-      playBackground:getComputedStyle(document.querySelector('.an-play')).backgroundColor,
-      snapBackground:getComputedStyle(document.querySelector('.an-snap-btn')).backgroundColor,
-      passiveIconBackground:getComputedStyle(document.querySelector('#anAddImages')).backgroundColor,
     });
-    window.RefBoard.animatics.close();
   }
   document.querySelector('.theme-swatch[data-theme="midnight"]').click();
   return results;
@@ -116,20 +105,10 @@ try {
     assert.equal(result.rootTheme, result.id, `${result.id} should apply on the root`);
     assert.deepEqual(result.active, [result.id], `${result.id} should be the only active theme card`);
     assert.deepEqual(result.pressed, [result.id], `${result.id} should expose the correct accessible state`);
-    assert.equal(result.animaticsBg, result.rootBg, `${result.id} should reach the Animatics workspace`);
-    assert.equal(result.animaticsAccent, result.rootAccent, `${result.id} accent should reach Animatics controls`);
-    assert.equal(result.topSurface, result.rootSurface, `${result.id} surface should reach the Animatics toolbar`);
-    assert.equal(result.stageBackground, 'rgb(13, 15, 19)', `${result.id} should keep the viewer workspace neutral`);
-    assert.equal(result.timelineHitArea, 'rgba(0, 0, 0, 0)', `${result.id} should not paint the timeline resize hit area`);
-    assert.equal(result.timelineGripWidth, '52px', `${result.id} should retain the compact timeline grip`);
-    assert.equal(result.timelineGripColor, 'rgb(64, 70, 83)', `${result.id} should retain the neutral timeline grip color`);
-    assert.equal(result.sideGripWidth, '2px', `${result.id} should retain the thin inspector grip`);
-    assert.equal(result.playBackground, 'rgb(240, 242, 247)', `${result.id} should retain the neutral playback control`);
-    assert.notEqual(result.snapBackground, result.passiveIconBackground, `${result.id} should keep Snap visually distinct from passive tools`);
   }
   console.log('theme Electron persistence and cross-workspace smoke passed');
 } finally {
   if (child.exitCode === null) child.kill();
   await Promise.race([once(child, 'exit'), delay(3000)]).catch(() => {});
-  await rm(profile, { recursive:true, force:true });
+  await removeProfileDir(profile);
 }

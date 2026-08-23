@@ -4,16 +4,11 @@
  *
  * Builds a real .refboard (board-save-format streaming JSON) with:
  *   - N board images (mixed small + huge) laid out in a grid
- *   - Embedded animatics project: image clips + texts + audio
- *
- * Animatics is NOT a separate importable file in the app — it only loads from
- * the board payload (`animatics` + audio/video blobs in `images[]`). This
- * script therefore emits one loadable .refboard that contains both.
  *
  * Usage:
  *   node scripts/stress-generate.mjs
- *   node scripts/stress-generate.mjs --board-images 300 --anim-clips 400 --huge 25
- *   node scripts/stress-generate.mjs --audio path/to/wavs --out stress-out
+ *   node scripts/stress-generate.mjs --board-images 2000 --huge 25
+ *   node scripts/stress-generate.mjs --board-images 500 --out stress-out
  *
  * Then in RefBoard: Open → pick stress-out/stress-board.refboard
  */
@@ -34,15 +29,8 @@ const ROOT = path.resolve(__dirname, '..');
 
 const DEFAULTS = {
   boardImages: 300,
-  animClips: 400,
   huge: 25,
-  texts: 40,
-  audioClips: 8,
-  videoTracks: 4,
-  clipDuration: 1,
-  textDuration: 3,
   out: path.join(ROOT, 'stress-out'),
-  audio: null,
 };
 
 const HUGE_W = 6000;
@@ -63,15 +51,8 @@ function parseArgs(argv) {
     };
     switch (a) {
       case '--board-images': opts.boardImages = Math.max(1, Number(next()) || DEFAULTS.boardImages); break;
-      case '--anim-clips': opts.animClips = Math.max(0, Number(next()) || 0); break;
       case '--huge': opts.huge = Math.max(0, Number(next()) || 0); break;
-      case '--texts': opts.texts = Math.max(0, Number(next()) || 0); break;
-      case '--audio-clips': opts.audioClips = Math.max(0, Number(next()) || 0); break;
-      case '--video-tracks': opts.videoTracks = Math.min(8, Math.max(1, Number(next()) || 4)); break;
-      case '--clip-duration': opts.clipDuration = Math.max(1 / 60, Number(next()) || 1); break;
-      case '--text-duration': opts.textDuration = Math.max(1 / 60, Number(next()) || 3); break;
       case '--out': opts.out = path.resolve(next()); break;
-      case '--audio': opts.audio = path.resolve(next()); break;
       case '--help': case '-h':
         printHelp();
         process.exit(0);
@@ -89,14 +70,7 @@ function printHelp() {
 
 Options (defaults in parentheses):
   --board-images N   Board image count (${DEFAULTS.boardImages})
-  --anim-clips N     Animatics image clips (${DEFAULTS.animClips})
   --huge N           Huge 6000x4000 images among board set (${DEFAULTS.huge})
-  --texts N          Text overlays (${DEFAULTS.texts})
-  --audio-clips N    Audio clips on timeline (${DEFAULTS.audioClips})
-  --video-tracks N   Video tracks 1-8 (${DEFAULTS.videoTracks})
-  --clip-duration S  Image clip duration seconds (${DEFAULTS.clipDuration})
-  --text-duration S  Text duration seconds (${DEFAULTS.textDuration})
-  --audio DIR        Folder of real audio files (else generate WAVs)
   --out DIR          Output directory (${DEFAULTS.out})
 `);
 }
@@ -201,85 +175,6 @@ function escapeXml(s) {
 }
 
 /** Minimal PCM WAV (mono 16-bit). */
-function makeWavBytes({ durationSec = 2, sampleRate = 22050, freq = 440 } = {}) {
-  const n = Math.max(1, Math.floor(durationSec * sampleRate));
-  const dataSize = n * 2;
-  const buf = Buffer.alloc(44 + dataSize);
-  buf.write('RIFF', 0);
-  buf.writeUInt32LE(36 + dataSize, 4);
-  buf.write('WAVE', 8);
-  buf.write('fmt ', 12);
-  buf.writeUInt32LE(16, 16);
-  buf.writeUInt16LE(1, 20);
-  buf.writeUInt16LE(1, 22);
-  buf.writeUInt32LE(sampleRate, 24);
-  buf.writeUInt32LE(sampleRate * 2, 28);
-  buf.writeUInt16LE(2, 32);
-  buf.writeUInt16LE(16, 34);
-  buf.write('data', 36);
-  buf.writeUInt32LE(dataSize, 40);
-  for (let i = 0; i < n; i++) {
-    const t = i / sampleRate;
-    const env = Math.min(1, t * 8) * Math.min(1, (durationSec - t) * 8);
-    const sample = Math.round(Math.sin(2 * Math.PI * freq * t) * 0.35 * env * 32767);
-    buf.writeInt16LE(sample, 44 + i * 2);
-  }
-  return buf;
-}
-
-function wavDurationSec(buf) {
-  if (buf.length < 44) return 1;
-  const sampleRate = buf.readUInt32LE(24) || 22050;
-  const channels = buf.readUInt16LE(22) || 1;
-  const bits = buf.readUInt16LE(34) || 16;
-  const dataSize = buf.readUInt32LE(40);
-  const bytesPerSample = (bits / 8) * channels;
-  if (!(sampleRate > 0 && bytesPerSample > 0)) return 1;
-  return Math.max(1 / 60, dataSize / bytesPerSample / sampleRate);
-}
-
-async function loadAudioSources(opts, audioDir) {
-  const sources = [];
-  if (opts.audio) {
-    const entries = await fsp.readdir(opts.audio);
-    const files = entries
-      .filter((n) => /\.(wav|mp3|m4a|aac|ogg|flac|opus)$/i.test(n))
-      .sort()
-      .slice(0, Math.max(opts.audioClips, 1));
-    if (!files.length) {
-      console.warn(`[warn] No audio files in ${opts.audio}; generating WAVs instead`);
-    } else {
-      for (const name of files) {
-        const full = path.join(opts.audio, name);
-        const bytes = await fsp.readFile(full);
-        const ext = path.extname(name).toLowerCase();
-        const type =
-          ext === '.wav' ? 'audio/wav'
-            : ext === '.mp3' ? 'audio/mpeg'
-              : ext === '.m4a' || ext === '.aac' ? 'audio/mp4'
-                : ext === '.ogg' || ext === '.opus' ? 'audio/ogg'
-                  : ext === '.flac' ? 'audio/flac'
-                    : 'audio/mpeg';
-        let duration = ext === '.wav' ? wavDurationSec(bytes) : 3;
-        sources.push({ name, bytes, type, duration, path: full });
-      }
-    }
-  }
-  while (sources.length < opts.audioClips) {
-    const i = sources.length;
-    const duration = 2 + (i % 3);
-    const bytes = makeWavBytes({
-      durationSec: duration,
-      freq: 220 + i * 37,
-    });
-    const name = `tone-${String(i + 1).padStart(2, '0')}.wav`;
-    const dest = path.join(audioDir, name);
-    await fsp.writeFile(dest, bytes);
-    sources.push({ name, bytes, type: 'audio/wav', duration, path: dest });
-  }
-  return sources.slice(0, opts.audioClips);
-}
-
 function displaySize(pw, ph) {
   const k = Math.min(1, DISPLAY_MAX / Math.max(pw, ph));
   return {
@@ -308,149 +203,6 @@ function layoutGrid(items) {
     rowH = Math.max(rowH, it.h);
     col++;
   }
-}
-
-function buildAnimatics({ boardItems, opts, audioMeta }) {
-  const tracks = opts.videoTracks;
-  const clipDur = opts.clipDuration;
-  const clips = [];
-  for (let i = 0; i < opts.animClips; i++) {
-    const item = boardItems[i % boardItems.length];
-    const track = i % tracks;
-    const indexOnTrack = Math.floor(i / tracks);
-    const start = indexOnTrack * clipDur;
-    clips.push({
-      id: uid('clip', i + 1),
-      itemId: item.id,
-      mediaKind: 'image',
-      mediaId: null,
-      track,
-      start,
-      duration: clipDur,
-      sourceIn: 0,
-      sourceOut: clipDur,
-      originalDuration: clipDur,
-      name: item.name || `Shot ${i + 1}`,
-      type: 'image/jpeg',
-      enabled: true,
-      framing: { fit: 'contain', scale: 1, x: 0, y: 0 },
-      strokes: [],
-    });
-  }
-
-  const contentEnd = Math.max(
-    0,
-    ...clips.map((c) => c.start + c.duration),
-    opts.texts * 0.5 + opts.textDuration,
-    ...audioMeta.map((a, i) => i * 1.5 + a.duration),
-  );
-
-  const texts = [];
-  const colors = ['#ffffff', '#ffe08a', '#7dd3fc', '#f9a8d4', '#bbf7d0'];
-  for (let i = 0; i < opts.texts; i++) {
-    texts.push({
-      id: uid('text', i + 1),
-      track: 0,
-      start: Math.max(0, (i * contentEnd) / Math.max(1, opts.texts)),
-      duration: opts.textDuration,
-      content: `Stress text ${i + 1}`,
-      size: 28 + (i % 5) * 8,
-      color: colors[i % colors.length],
-      fontFamily: 'Segoe UI',
-      fontStyle: 'Regular',
-      fontWeight: 400,
-      fontFullName: '',
-      fontPostscriptName: '',
-      bold: false,
-      italic: false,
-      align: 'center',
-      background: i % 4 === 0,
-      scale: 1,
-      rotation: (i % 7) * 5 - 15,
-      x: 0.2 + (i % 5) * 0.15,
-      y: 0.25 + (i % 4) * 0.15,
-    });
-  }
-
-  const audio = audioMeta.map((a, i) => {
-    const duration = Math.max(1 / 60, Number(a.duration) || 2);
-    return {
-      id: uid('aud', i + 1),
-      mediaId: a.mediaId,
-      track: i % Math.min(5, Math.max(1, opts.audioClips)),
-      start: i * 1.5,
-      duration,
-      sourceIn: 0,
-      sourceOut: duration,
-      originalDuration: duration,
-      name: a.name,
-      volume: 1,
-      type: a.type,
-      fadeInDuration: 0,
-      fadeOutDuration: 0,
-      fadeInCurve: 'constant-power',
-      fadeOutCurve: 'constant-power',
-      fadeInShape: 0,
-      fadeOutShape: 0,
-    };
-  });
-
-  const audioTracks = audio.length
-    ? Math.min(5, 1 + Math.max(...audio.map((a) => a.track)))
-    : 0;
-
-  const sequenceDuration = Math.max(
-    contentEnd,
-    ...audio.map((a) => a.start + a.duration),
-  );
-
-  // Matches freshProject()/normalizeProject schema (version 9), serialize()-safe
-  // (no blob/url fields).
-  return {
-    version: 9,
-    fps: 30,
-    resolution: 1080,
-    aspect: '16:9',
-    playhead: 0,
-    inPoint: null,
-    outPoint: null,
-    sequenceDuration: Math.ceil(sequenceDuration * 30) / 30,
-    timelineDisplay: 'timecode',
-    timelineZoom: 90,
-    timelineHeight: 286,
-    inspectorWidth: 278,
-    timelineSnap: true,
-    timecode: false,
-    counterMode: 'timecode',
-    previewQuality: 'full',
-    background: '#000000',
-    textDefaults: {
-      size: 42,
-      color: '#ffffff',
-      fontFamily: 'Segoe UI',
-      fontStyle: 'Regular',
-      fontWeight: 400,
-      fontFullName: '',
-      fontPostscriptName: '',
-      bold: false,
-      italic: false,
-      align: 'center',
-      background: false,
-    },
-    videoTracks: tracks,
-    audioTracks,
-    videoTrackHeights: Array.from({ length: tracks }, () => 44),
-    videoTrackEnabled: Array.from({ length: tracks }, () => true),
-    videoTrackLocked: Array.from({ length: tracks }, () => false),
-    audioTrackHeights: Array.from({ length: audioTracks }, () => 44),
-    audioTrackMuted: Array.from({ length: audioTracks }, () => false),
-    audioTrackSolo: Array.from({ length: audioTracks }, () => false),
-    audioTrackLocked: Array.from({ length: audioTracks }, () => false),
-    textTrackLocked: false,
-    clips,
-    texts,
-    audio,
-  };
 }
 
 async function writeRefboard(outPath, core, mediaRecords) {
@@ -484,15 +236,10 @@ async function writeRefboard(outPath, core, mediaRecords) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const imagesDir = path.join(opts.out, 'images');
-  const audioDir = path.join(opts.out, 'audio');
   await fsp.mkdir(imagesDir, { recursive: true });
-  await fsp.mkdir(audioDir, { recursive: true });
 
   console.log('Generating stress fixtures…');
   console.log(`  board images: ${opts.boardImages} (${opts.huge} huge ${HUGE_W}×${HUGE_H})`);
-  console.log(`  anim clips:   ${opts.animClips} across ${opts.videoTracks} tracks`);
-  console.log(`  texts:        ${opts.texts}`);
-  console.log(`  audio clips:  ${opts.audioClips}`);
   console.log(`  out:          ${opts.out}`);
 
   const boardItems = [];
@@ -557,37 +304,6 @@ async function main() {
   process.stdout.write('\n');
   layoutGrid(boardItems);
 
-  const audioSources = await loadAudioSources(opts, audioDir);
-  const audioMedia = [];
-  const audioMeta = [];
-  let audioBytesTotal = 0;
-  for (let i = 0; i < audioSources.length; i++) {
-    const src = audioSources[i];
-    const mediaId = uid('media-audio', i + 1);
-    const dest = src.path || path.join(audioDir, src.name);
-    if (!src.path) await fsp.writeFile(dest, src.bytes);
-    audioBytesTotal += src.bytes.length;
-    audioMedia.push({
-      id: mediaId,
-      type: src.type,
-      name: src.name,
-      w: 0,
-      h: 0,
-      size: src.bytes.length,
-      filePath: dest,
-    });
-    audioMeta.push({
-      mediaId,
-      name: src.name,
-      type: src.type,
-      duration: src.duration,
-    });
-  }
-
-  const animatics = buildAnimatics({ boardItems, opts, audioMeta });
-  const animaticsJsonPath = path.join(opts.out, 'stress-animatics.json');
-  await fsp.writeFile(animaticsJsonPath, JSON.stringify(animatics, null, 2));
-
   const core = {
     app: 'refboard',
     version: 3,
@@ -595,32 +311,22 @@ async function main() {
     boardGray: false,
     snapEnabled: false,
     gridAppearance: 'dots',
-    animatics,
     items: boardItems,
   };
 
   const refboardPath = path.join(opts.out, 'stress-board.refboard');
   console.log('  writing .refboard (streamed)…');
-  await writeRefboard(refboardPath, core, [...imageMedia, ...audioMedia]);
+  await writeRefboard(refboardPath, core, imageMedia);
 
   const refStat = await fsp.stat(refboardPath);
   const summary = {
     boardImages: opts.boardImages,
     hugeImages: hugeSet.size,
-    animClips: animatics.clips.length,
-    texts: animatics.texts.length,
-    audioClips: animatics.audio.length,
-    videoTracks: animatics.videoTracks,
-    audioTracks: animatics.audioTracks,
-    sequenceDurationSec: animatics.sequenceDuration,
     imageBytesOnDisk: imageBytesTotal,
-    audioBytesOnDisk: audioBytesTotal,
     refboardBytes: refStat.size,
     paths: {
       refboard: refboardPath,
-      animaticsJson: animaticsJsonPath,
       imagesDir,
-      audioDir,
     },
   };
   await fsp.writeFile(
@@ -631,21 +337,14 @@ async function main() {
   console.log('\n=== Stress fixture summary ===');
   console.log(`Images:        ${summary.boardImages} (${summary.hugeImages} huge)`);
   console.log(`Image bytes:   ${(summary.imageBytesOnDisk / 1e6).toFixed(1)} MB (loose files)`);
-  console.log(`Anim clips:    ${summary.animClips}`);
-  console.log(`Texts:         ${summary.texts}`);
-  console.log(`Audio clips:   ${summary.audioClips} (${(summary.audioBytesOnDisk / 1e6).toFixed(2)} MB)`);
-  console.log(`Sequence:      ${summary.sequenceDurationSec?.toFixed?.(1) ?? summary.sequenceDurationSec}s`);
   console.log(`Refboard size: ${(summary.refboardBytes / 1e6).toFixed(1)} MB`);
   console.log(`Output:`);
   console.log(`  ${refboardPath}`);
-  console.log(`  ${animaticsJsonPath}  (embedded copy only — not separately importable)`);
   console.log(`  ${imagesDir}`);
-  console.log(`  ${audioDir}`);
   if (summary.refboardBytes >= WARN_BYTES) {
     console.warn(`\n[warn] .refboard is large (${(summary.refboardBytes / 1e6).toFixed(0)} MB). Opening may take a while and use substantial RAM.`);
   }
   console.log('\nOpen in RefBoard: File / Open board → stress-board.refboard');
-  console.log('Then open Animatics to stress the timeline/viewer.');
 }
 
 main().catch((err) => {

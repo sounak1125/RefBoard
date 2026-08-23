@@ -370,10 +370,6 @@ async function run() {
   await revealToolbarForSmoke(win);
   await clickElement(win, '#btnArrange');
   await clickElement(win, '#btnFit');
-  await clickElement(win, '#btnAnimatics');
-  await delay(100);
-  await win.webContents.executeJavaScript(`(() => { window.RefBoard.animatics?.close?.(); return true; })()`);
-  await revealToolbarForSmoke(win);
   await clickElement(win, '#btnExport');
   await waitFor(win, "document.querySelector('#exportModal').classList.contains('show')", 'Export toolbar button');
   await clickElement(win, '#expCancel');

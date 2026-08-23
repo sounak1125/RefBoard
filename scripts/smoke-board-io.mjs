@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 
 const require = createRequire(import.meta.url);
 const { scanBoardFile } = require('./board-open-stream.js');
@@ -73,6 +74,10 @@ const smokeExpression = `(async()=>{
   const filePath=${JSON.stringify(boardPath)};
   for(let attempt=0;attempt<100&&!window.RefBoard;attempt++)await wait(50);
   if(!window.RefBoard)throw new Error('RefBoard API unavailable');
+  // init() ends by navigating to the landing view; anything done before
+  // that point gets torn down again. Wait for startup to finish.
+  for(let attempt=0;attempt<300&&!window.RefBoard.startupComplete;attempt++)await wait(50);
+  if(!window.RefBoard.startupComplete)throw new Error('RefBoard startup did not complete');
   if(typeof window.RefBoard.saveBoardFile!=='function'||typeof window.RefBoard.openBoardFromPath!=='function'){
     throw new Error('RefBoard save/open hooks are missing');
   }
@@ -162,5 +167,5 @@ try {
 } finally {
   if (child.exitCode === null) child.kill();
   await Promise.race([once(child, 'exit'), delay(3000)]).catch(() => {});
-  await rm(profile, { recursive: true, force: true });
+  await removeProfileDir(profile);
 }

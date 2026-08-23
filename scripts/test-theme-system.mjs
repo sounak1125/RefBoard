@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-const animatics = await readFile(new URL('./animatics.mjs', import.meta.url), 'utf8');
 
 const themes = [
   ['midnight', 'Midnight'],
@@ -77,14 +76,5 @@ assert.match(html, /graphite:\s*'black'/, 'saved Ember/graphite choices should m
 assert.match(html, /plum:\s*'ocean'/, 'saved Aubergine/plum choices should migrate to Tide');
 assert.match(html, /setAttribute\('aria-pressed',\s*String\(active\)\)/, 'theme cards should expose their selected state');
 assert.match(html, /localStorage\.setItem\('refboard\.theme',\s*theme\)/, 'theme choice should persist immediately');
-assert.match(animatics, /--an-bg:var\(--bg\)/, 'Animatics should inherit the selected application background');
-assert.match(animatics, /--an-accent:var\(--acc\)/, 'Animatics should inherit the selected accent');
-assert.match(animatics, /\.an-btn\.primary \{ color:var\(--an-accent-contrast\);[^}]*background:var\(--an-accent\)/, 'Animatics primary actions should use accessible shared theme tokens');
-assert.match(animatics, /\.an-top,\.an-side,\.an-timeline,\.an-tl-head \{ background:var\(--an-surface-1\)/, 'Animatics chrome should use shared semantic surfaces');
-assert.match(animatics, /\.an-stage-row \{[^}]*background:#0d0f13/, 'the preview workspace should retain its neutral production background');
-assert.doesNotMatch(animatics, /\.an-stage(?:-row)?,\.an-empty-stage \{ background:var\(--an-workspace\)/, 'the theme must not flood the preview workspace with accent tint');
-assert.doesNotMatch(animatics, /\.an-side-resizer,\.an-timeline-resizer \{ background:/, 'resize hit areas should remain invisible');
-assert.match(animatics, /\.an-play \{[^}]*background:#f0f2f7; color:#101217/, 'the central playback control should retain its neutral visual hierarchy');
-assert.doesNotMatch(animatics, /\.an-btn\.primary,\.an-play/, 'playback and export actions should not be flattened into one color treatment');
 
 console.log('theme system contract and contrast tests passed');

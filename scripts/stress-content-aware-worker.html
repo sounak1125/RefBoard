@@ -1,0 +1,169 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>content-aware fill stress</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #141519; color: #d7dde8; font: 13px/1.45 ui-sans-serif, system-ui, sans-serif; }
+  #status { padding: 18px 22px; white-space: pre-wrap; }
+</style>
+<pre id="status">Preparing stress scene…</pre>
+<script>
+const { ipcRenderer } = require('electron');
+const params = new URLSearchParams(location.search);
+const W = Math.max(64, Number(params.get('w')) || 3840);
+const H = Math.max(64, Number(params.get('h')) || 2160);
+const MASK = params.get('mask') || 'large';
+const QUALITY = params.get('quality') || 'balanced';
+const BOARD_MB = Math.max(0, Number(params.get('boardMb')) || 300);
+const CONTENT_AWARE_ATTEMPT_MS = 150000;
+const WORKER_URL = './content-aware/fill-worker.js?v=exemplar-v1';
+const MASK_SHARE = { small: 0.05, medium: 0.16, large: 0.34 }[MASK] || 0.34;
+
+const status = document.getElementById('status');
+function setStatus(text) { status.textContent = text; }
+function send(channel, payload) {
+  try { ipcRenderer.send(channel, payload); } catch (err) {}
+}
+
+setInterval(() => send('stress-heartbeat'), 1000);
+
+/* Extra renderer buffers standing in for other board images. Kept on window
+ * so the collector cannot drop them mid-run. */
+window.__stressKeep = [];
+if (BOARD_MB > 0) {
+  const chunk = 16 * 1024 * 1024;
+  let left = BOARD_MB * 1024 * 1024;
+  while (left > 0) {
+    const n = Math.min(chunk, left);
+    window.__stressKeep.push(new Uint8Array(n));
+    left -= n;
+  }
+}
+
+function texturedScene(width, height) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  let seed = 23;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const p = (y * width + x) * 4;
+      const base = 90 + 50 * Math.sin(x / 23) * Math.cos(y / 19) + 18 * Math.sin((x + y) / 11);
+      const grain = rnd() * 40;
+      data[p] = 34 + base * 0.3 + grain * 0.4;
+      data[p + 1] = 92 + base * 0.5 + grain;
+      data[p + 2] = 30 + base * 0.2 + grain * 0.3;
+      data[p + 3] = 255;
+    }
+  }
+  return data;
+}
+
+function ellipseMask(width, height, cx, cy, rx, ry) {
+  const mask = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const dx = (x - cx) / rx, dy = (y - cy) / ry;
+      if (dx * dx + dy * dy <= 1) mask[y * width + x] = 1;
+    }
+  }
+  return mask;
+}
+
+function countMask(mask) {
+  let n = 0;
+  for (let i = 0; i < mask.length; i++) if (mask[i]) n++;
+  return n;
+}
+
+function fillTimeBudget(holeArea) {
+  const scaled = 20000 + holeArea * 0.6;
+  return Math.max(1200, Math.min(CONTENT_AWARE_ATTEMPT_MS * 4, scaled));
+}
+
+/* Same host protocol as runContentAwareFillWork in index.html: transferable
+ * copies, a budget cancel, then terminate() if the worker does not answer. */
+function runFill(session) {
+  return new Promise((resolve, reject) => {
+    const jobId = 'caf-stress-1';
+    let worker;
+    try { worker = new Worker(WORKER_URL); }
+    catch (err) { reject(new Error(`Could not start the fill engine: ${err?.message || err}`)); return; }
+    let done = false;
+    const release = () => {
+      if (done) return true;
+      done = true;
+      clearTimeout(timer);
+      try { worker.terminate(); } catch (e) {}
+      return false;
+    };
+    const timer = setTimeout(() => {
+      try { worker.postMessage({ type: 'cancel', id: jobId }); } catch (e) {}
+      if (!release()) reject(new Error('Content-aware fill timed out'));
+    }, Math.max(2500, session.timeBudgetMs + 2500));
+    worker.onmessage = event => {
+      const data = event.data || {};
+      if (data.id && data.id !== jobId) return;
+      if (data.type === 'progress') {
+        send('stress-progress', { stage: data.stage, percent: data.percent });
+        setStatus(`${data.stage || 'Reconstructing'}\n${Math.round(data.percent || 0)}% · ${W}×${H} ${QUALITY} · hole ${session.holeArea.toLocaleString()} px`);
+        return;
+      }
+      if (release()) return;
+      if (data.type === 'error') { reject(new Error(data.error || 'The fill engine failed')); return; }
+      resolve(data.result || {});
+    };
+    worker.onerror = err => {
+      if (release()) return;
+      reject(new Error(err?.message || 'The fill engine crashed'));
+    };
+    const pixels = session.pixels;
+    const mask = session.mask;
+    worker.postMessage({
+      type: 'fill', id: jobId,
+      width: W, height: H,
+      pixels, mask, samplingMask: null,
+      timeBudgetMs: session.timeBudgetMs,
+      options: { quality: QUALITY, seed: 1337, maskExpansion: 0 },
+    }, [pixels.buffer, mask.buffer]);
+  });
+}
+
+(async () => {
+  try {
+    setStatus(`Building ${W}×${H} ${MASK} scene…`);
+    const source = texturedScene(W, H);
+    const shortEdge = Math.min(W, H);
+    const rx = Math.round(shortEdge * MASK_SHARE);
+    const ry = Math.round(rx * 0.78);
+    const mask = ellipseMask(W, H, W >> 1, H >> 1, rx, ry);
+    const holeArea = countMask(mask);
+    for (let i = 0; i < W * H; i++) {
+      if (!mask[i]) continue;
+      source[i * 4] = 220; source[i * 4 + 1] = 30; source[i * 4 + 2] = 120;
+    }
+    const timeBudgetMs = fillTimeBudget(holeArea);
+    setStatus(`Starting worker\n${W}×${H} ${QUALITY} ${MASK}\nhole ${holeArea.toLocaleString()} px\nbudget ${(timeBudgetMs / 1000).toFixed(0)}s\nboard ballast ${BOARD_MB}MB`);
+    const result = await runFill({
+      pixels: new Uint8ClampedArray(source),
+      mask: new Uint8Array(mask),
+      holeArea,
+      timeBudgetMs,
+    });
+    send('stress-result', {
+      algorithmUsed: result.algorithmUsed,
+      processingTime: result.processingTime,
+      confidence: result.confidence,
+      status: result.status,
+      holeArea,
+      timeBudgetMs,
+      width: W,
+      height: H,
+      quality: QUALITY,
+    });
+    setStatus(`Complete · ${result.algorithmUsed}\n${result.processingTime} ms · confidence ${result.confidence}`);
+  } catch (err) {
+    const message = String(err && err.stack || err);
+    setStatus(`Failed\n${message}`);
+    send('stress-result', { error: message });
+  }
+})();
+</script>
