@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
+import vm from 'node:vm';
 import { moduleOrder } from './content-aware-harness.mjs';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
@@ -85,6 +86,17 @@ const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url
   assert.match(html, /CONTENT_AWARE_WORKER_URL = '\.\/scripts\/content-aware\/fill-worker\.js/,
     'the renderer runs the exemplar worker');
   assert.match(html, /new Worker\(CONTENT_AWARE_WORKER_URL\)/, 'and constructs it as a classic worker');
+  assert.match(html, /CONTENT_AWARE_MAX_WORKING_PIXELS = 3840 \* 2160/,
+    'the worker is not asked to solve native frames above 4K');
+  assert.match(html, /function contentAwareWorkingSize\(/, 'oversized crops pick a working size');
+  assert.match(html, /function resizeRgbaForFill\(/, 'colour is scaled with the working size');
+  assert.match(html, /function resizePlaneNearest\(/, 'masks are scaled with nearest neighbour');
+  assert.match(html, /const working = contentAwareWorkingSize\(srcW, srcH\)/,
+    'the host downscales before posting to the worker');
+  assert.match(html, /outPixels = resizeRgbaForFill\(outPixels, workW, workH, srcW, srcH\)/,
+    'and scales the result back to crop space');
+  assert.match(main, /render-process-gone/,
+    'a renderer crash reloads the window instead of leaving the app dead');
   assert.match(html, /worker\.postMessage\(\{\s*\n?\s*type: 'fill'/, 'it posts a typed fill job');
   assert.match(html, /\[pixels\.buffer, mask\.buffer\]/, 'heavy buffers are transferred, not copied');
   assert.match(html, /data\.type === 'progress'/, 'progress updates drive the status bar');
@@ -121,7 +133,7 @@ const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url
 {
   assert.match(html, /function paintSamplingArea\(/, 'the sampling area is paintable');
   assert.match(html, /function drawSamplingOverlay\(/, 'and shown as an overlay');
-  assert.match(html, /samplingMask = session\.samplingMask\.slice\(\)/,
+  assert.match(html, /samplingMask = scaled[\s\S]*?session\.samplingMask\.slice\(\)/,
     'the painted area is sent to the engine');
   assert.match(html, /transfer\.push\(samplingMask\.buffer\)/, 'transferred like the other buffers');
   assert.match(html, /mode = \{ type: 'samplingPaint'/, 'painting is its own pointer mode');
@@ -170,6 +182,40 @@ const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url
   }
   assert.ok(!/model:verify|content-aware-model-smoke/.test(JSON.stringify(pkg.scripts)),
     'model tooling must be gone');
+}
+
+/* --- working-size cap ---------------------------------------------------- */
+{
+  const start = html.indexOf('const CONTENT_AWARE_MAX_WORKING_PIXELS');
+  const end = html.indexOf('function nativeFillContextBounds', start);
+  assert.ok(start >= 0 && end > start, 'working-size helpers must sit next to the fill constants');
+  const sandbox = { Math, Uint8Array };
+  vm.createContext(sandbox);
+  vm.runInContext(`${html.slice(start, end)}
+    this.CONTENT_AWARE_MAX_WORKING_PIXELS = CONTENT_AWARE_MAX_WORKING_PIXELS;
+    this.contentAwareWorkingSize = contentAwareWorkingSize;
+    this.resizePlaneNearest = resizePlaneNearest;
+  `, sandbox);
+
+  const small = sandbox.contentAwareWorkingSize(1920, 1080);
+  assert.equal(small.scale, 1, 'a 1080p crop stays native');
+  assert.equal(small.width, 1920);
+  assert.equal(small.height, 1080);
+
+  const fourK = sandbox.contentAwareWorkingSize(3840, 2160);
+  assert.equal(fourK.scale, 1, 'a 4K crop is the largest native size');
+
+  const huge = sandbox.contentAwareWorkingSize(6000, 4000);
+  assert.ok(huge.scale < 1, 'a 24MP crop is reduced');
+  assert.ok(huge.width * huge.height <= sandbox.CONTENT_AWARE_MAX_WORKING_PIXELS,
+    'the working area never exceeds the 4K budget');
+  assert.ok(Math.abs(huge.width / huge.height - 6000 / 4000) < 0.02,
+    'aspect ratio is preserved');
+
+  const plane = new Uint8Array([1, 1, 0, 0, 1, 1, 0, 0]);
+  const scaled = sandbox.resizePlaneNearest(plane, 4, 2, 2, 1);
+  assert.equal(scaled.length, 2);
+  assert.equal(scaled[0], 1, 'nearest mask resize keeps hole pixels');
 }
 
 console.log('content-aware fill contract tests passed');

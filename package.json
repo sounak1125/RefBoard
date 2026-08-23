@@ -38,6 +38,7 @@
     "release:ship": "powershell -ExecutionPolicy Bypass -File scripts/ship-release.ps1 -DistDir dist -Draft",
     "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0",
     "bench:content-aware": "node scripts/bench-content-aware.mjs",
+    "stress:content-aware": "node scripts/stress-content-aware.mjs",
     "test:content-aware-worker-smoke": "electron scripts/smoke-content-aware-worker.js",
     "test:content-aware-ui-smoke": "electron scripts/smoke-content-aware-ui.js"
   },

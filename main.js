@@ -1640,8 +1640,21 @@ async function createWindow(startupFilePath = null) {
     }
   });
 
+  let rendererCrashReloads = 0;
+  win.webContents.on('render-process-gone', (_event, details) => {
+    const reason = details?.reason || 'unknown';
+    console.error('[window] renderer gone:', reason, details?.exitCode);
+    if (closing || win.isDestroyed()) return;
+    if (rendererCrashReloads >= 2) return;
+    rendererCrashReloads++;
+    win.loadFile('index.html', { query: { wid: windowId, recovered: '1' } }).catch(err => {
+      console.warn('RefBoard window reload after renderer crash failed:', err?.message || err);
+    });
+  });
+
   win.on('close', (e) => {
     if (closing) return;
+    if (win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
     e.preventDefault();
     win.webContents.send('close-request');
   });

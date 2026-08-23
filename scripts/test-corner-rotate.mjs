@@ -27,11 +27,13 @@ vm.runInNewContext(`
   ${extractFunction('rotateVec')}
   ${extractFunction('rotateItemAroundOrigin')}
   ${extractFunction('rotateCursorForHandle')}
+  ${extractFunction('selectionIsAxisAligned')}
   this.handlesHitOnPts = handlesHitOnPts;
   this.rotateHitOnPts = rotateHitOnPts;
   this.snapRotateDelta = snapRotateDelta;
   this.rotateItemAroundOrigin = rotateItemAroundOrigin;
   this.rotateCursorForHandle = rotateCursorForHandle;
+  this.selectionIsAxisAligned = selectionIsAxisAligned;
 `, context);
 
 const pts = [[0, 0], [200, 0], [200, 100], [0, 100]];
@@ -117,8 +119,17 @@ assert.match(html, /Rotate from a corner \(Shift snaps 90°\)/);
 const multiSelDraw = html.match(/if \(selectedCount > 1 && !lightDrag\) \{[\s\S]*?\} else if \(selectedCount === 1\)/);
 assert.ok(multiSelDraw, 'multi-select drawing should remain a distinct branch');
 assert.match(multiSelDraw[0], /drawSelectionOutline\(it\)/, 'multi-select should still outline each item');
-assert.doesNotMatch(multiSelDraw[0], /drawSelectionUi\(/, 'multi-select should not stroke the outer bounding box');
-assert.match(multiSelDraw[0], /drawCornerHandles/, 'multi-select should still show the corner cubes');
-assert.match(multiSelDraw[0], /drawEdgePills/, 'multi-select should still show the edge handles');
+assert.match(multiSelDraw[0], /mode\?\.type !== 'rotate'/, 'multi-select should not stroke the group box during rotate');
+assert.match(multiSelDraw[0], /selectionIsAxisAligned\(drawSelectedItems\)/, 'tilted multi-select should not keep the axis-aligned group box');
+assert.match(multiSelDraw[0], /drawSelectionUi\(pts, box\)/, 'multi-select should still draw handles when the group box is hidden');
+const selectionUi = extractFunction('drawSelectionUi');
+assert.match(selectionUi, /if \(box\) strokeScreenPoly/, 'the group box stroke should be optional');
+assert.match(selectionUi, /drawCornerHandles/, 'group selection UI should still show the corner cubes');
+assert.match(selectionUi, /drawEdgePills/, 'group selection UI should still show the edge handles');
+
+assert.equal(context.selectionIsAxisAligned([{ rot: 0 }, { rot: 90 }, { rot: 180 }]), true, '90° steps stay axis-aligned');
+assert.equal(context.selectionIsAxisAligned([{ rot: 20 }, { rot: 20 }]), false, 'a leftover tilt is not axis-aligned');
+assert.equal(context.selectionIsAxisAligned([{ rot: 0 }, { rot: 15 }]), false, 'any tilted item hides the group box');
+assert.equal(context.selectionIsAxisAligned([{ rot: -90 }, { rot: 270.2 }]), true, 'wrapped 90° steps stay axis-aligned');
 
 console.log('corner rotate contract tests passed');

@@ -6858,6 +6858,49 @@ function fillLassoBounds(pts, w, h, pad) {
 const CONTENT_AWARE_ATTEMPT_MS = 150000;
 const CONTENT_AWARE_WORKER_URL = './scripts/content-aware/fill-worker.js?v=exemplar-v1';
 const CONTENT_AWARE_QUALITY_PRESETS = ['preview', 'balanced', 'high'];
+/* The worker shares the renderer process. A 24MP native fill peaked at 3.4GB
+ * and closed the app on machines that could not absorb the spike. 4K (~8.3MP)
+ * survived at 1.8GB, so anything larger is solved at that budget and scaled back. */
+const CONTENT_AWARE_MAX_WORKING_PIXELS = 3840 * 2160;
+
+function contentAwareWorkingSize(width, height) {
+  const w = Math.max(1, width | 0), h = Math.max(1, height | 0);
+  const area = w * h;
+  if (area <= CONTENT_AWARE_MAX_WORKING_PIXELS) return { width: w, height: h, scale: 1 };
+  const scale = Math.sqrt(CONTENT_AWARE_MAX_WORKING_PIXELS / area);
+  const widthOut = Math.max(1, Math.floor(w * scale));
+  const heightOut = Math.max(1, Math.floor(h * scale));
+  return { width: widthOut, height: heightOut, scale: widthOut / w };
+}
+
+function resizeRgbaForFill(pixels, srcW, srcH, dstW, dstH) {
+  if (srcW === dstW && srcH === dstH) return new Uint8ClampedArray(pixels);
+  const src = document.createElement('canvas');
+  src.width = srcW; src.height = srcH;
+  const srcData = pixels instanceof Uint8ClampedArray && pixels.length === srcW * srcH * 4
+    ? pixels : new Uint8ClampedArray(pixels);
+  src.getContext('2d').putImageData(new ImageData(srcData, srcW, srcH), 0, 0);
+  const dst = document.createElement('canvas');
+  dst.width = dstW; dst.height = dstH;
+  const g = dst.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(src, 0, 0, srcW, srcH, 0, 0, dstW, dstH);
+  return new Uint8ClampedArray(g.getImageData(0, 0, dstW, dstH).data);
+}
+
+function resizePlaneNearest(plane, srcW, srcH, dstW, dstH) {
+  if (srcW === dstW && srcH === dstH) return plane.slice();
+  const out = new Uint8Array(dstW * dstH);
+  for (let y = 0; y < dstH; y++) {
+    const sy = Math.min(srcH - 1, (y * srcH / dstH) | 0);
+    const srcRow = sy * srcW, dstRow = y * dstW;
+    for (let x = 0; x < dstW; x++) {
+      out[dstRow + x] = plane[srcRow + Math.min(srcW - 1, (x * srcW / dstW) | 0)];
+    }
+  }
+  return out;
+}
 
 function nativeFillContextBounds(pts, w, h) {
   const b = fillLassoBounds(pts, w, h, 0);
@@ -7440,11 +7483,17 @@ function contentAwareFillOptions(session, seed) {
 }
 
 /* Runs the exemplar engine over the crop. Everything the worker needs travels as
- * transferable buffers, and only session.mask pixels come back changed. */
+ * transferable buffers, and only session.mask pixels come back changed. Large
+ * crops are solved at CONTENT_AWARE_MAX_WORKING_PIXELS and scaled back so the
+ * renderer is not asked to hold a multi-gigabyte native solve. */
 function runContentAwareFillWork(session, seed, timeBudgetMs, token) {
   return new Promise((resolve, reject) => {
     const owner = session.owner || session;
     const jobId = `caf-${token}-${seed}`;
+    const srcW = session.bounds.cropW, srcH = session.bounds.cropH;
+    const working = contentAwareWorkingSize(srcW, srcH);
+    const workW = working.width, workH = working.height;
+    const scaled = working.scale < 1;
     let worker;
     try { worker = new Worker(CONTENT_AWARE_WORKER_URL); }
     catch (err) { reject(new Error(`Could not start the fill engine: ${err?.message || err}`)); return; }
@@ -7463,21 +7512,26 @@ function runContentAwareFillWork(session, seed, timeBudgetMs, token) {
       try { worker.postMessage({ type: 'cancel', id: jobId }); } catch (e) {}
       if (!release()) reject(new Error('Content-aware fill timed out'));
     }, Math.max(2500, timeBudgetMs + 2500));
+    const sizeLabel = scaled ? `${workW}×${workH}` : 'native resolution';
     worker.onmessage = event => {
       const data = event.data || {};
       if (data.id && data.id !== jobId) return;
       if (data.type === 'progress') {
         if (fillSession === owner && owner.runToken === token) {
           setFillPreviewStatus(data.stage || 'Reconstructing',
-            `${Math.round(data.percent || 0)}% · native resolution`, {});
+            `${Math.round(data.percent || 0)}% · ${sizeLabel}`, {});
         }
         return;
       }
       if (release()) return;
       if (data.type === 'error') { reject(new Error(data.error || 'The fill engine failed')); return; }
       const result = data.result || {};
+      let outPixels = new Uint8ClampedArray(result.pixels || []);
+      if (scaled && outPixels.length === workW * workH * 4) {
+        outPixels = resizeRgbaForFill(outPixels, workW, workH, srcW, srcH);
+      }
       resolve({
-        pixels: new Uint8ClampedArray(result.pixels),
+        pixels: outPixels,
         metrics: result.metrics || {},
         confidence: Number(result.confidence) || 0,
         lowConfidence: !!result.lowConfidence,
@@ -7494,17 +7548,23 @@ function runContentAwareFillWork(session, seed, timeBudgetMs, token) {
       if (release()) return;
       reject(new Error(err?.message || 'The fill engine crashed'));
     };
-    const pixels = session.sourcePixels.slice();
-    const mask = session.mask.slice();
+    let pixels = scaled
+      ? resizeRgbaForFill(session.sourcePixels, srcW, srcH, workW, workH)
+      : session.sourcePixels.slice();
+    let mask = scaled
+      ? resizePlaneNearest(session.mask, srcW, srcH, workW, workH)
+      : session.mask.slice();
     const transfer = [pixels.buffer, mask.buffer];
     let samplingMask = null;
     if (session.samplingMask) {
-      samplingMask = session.samplingMask.slice();
+      samplingMask = scaled
+        ? resizePlaneNearest(session.samplingMask, srcW, srcH, workW, workH)
+        : session.samplingMask.slice();
       transfer.push(samplingMask.buffer);
     }
     worker.postMessage({
       type: 'fill', id: jobId,
-      width: session.bounds.cropW, height: session.bounds.cropH,
+      width: workW, height: workH,
       pixels, mask, samplingMask,
       timeBudgetMs,
       options: contentAwareFillOptions(session, seed),
@@ -7532,7 +7592,10 @@ async function buildFillCandidates(session, { append = false } = {}) {
    * result, so the ceiling scales with the region and the Preview preset stays
    * the way to trade quality for speed. */
   const holeArea = session.mask ? session.mask.reduce((n, v) => n + (v ? 1 : 0), 0) : 0;
-  const scaled = 20000 + holeArea * 0.6;
+  const working = contentAwareWorkingSize(session.bounds.cropW, session.bounds.cropH);
+  const areaScale = (working.width * working.height) / Math.max(1, session.bounds.cropW * session.bounds.cropH);
+  const workingHole = Math.max(1, Math.round(holeArea * areaScale));
+  const scaled = 20000 + workingHole * 0.6;
   const budget = Math.max(1200, Math.min(CONTENT_AWARE_ATTEMPT_MS * 4, scaled));
   const seed = (session.seedBase || 41) + (session.generationCount || 0) * 97;
   session.generationCount = (session.generationCount || 0) + 1;
@@ -14294,8 +14357,8 @@ function drawSelectionOutline(it) {
   strokeScreenPoly(pts, ACC, SEL_OUTLINE_W);
 }
 
-function drawSelectionUi(pts) {
-  strokeScreenPoly(pts, ACC, SEL_OUTLINE_W);
+function drawSelectionUi(pts, box = true) {
+  if (box) strokeScreenPoly(pts, ACC, SEL_OUTLINE_W);
   drawCornerHandles(pts);
   drawEdgePills(pts);
 }
@@ -14513,8 +14576,8 @@ function draw() {
     for (const it of drawVisibleSelectedItems) drawSelectionOutline(it);
     const pts = selectionBBoxScreenPts(drawSelectedItems);
     if (pts) {
-      drawCornerHandles(pts);
-      drawEdgePills(pts);
+      const box = mode?.type !== 'rotate' && selectionIsAxisAligned(drawSelectedItems);
+      drawSelectionUi(pts, box);
     }
   } else if (selectedCount === 1) {
     const it = drawSelectedItems[0];
@@ -14710,6 +14773,13 @@ function selectionBBoxRect(items = selectedItems()) {
   if (items.length < 2) return null;
   const bb = bboxOf(items);
   return { x: bb.x, y: bb.y, w: bb.w, h: bb.h, rot: 0 };
+}
+
+function selectionIsAxisAligned(items = selectedItems()) {
+  return items.every(it => {
+    const r = ((Number(it.rot) || 0) % 90 + 90) % 90;
+    return r < 0.5 || r > 89.5;
+  });
 }
 
 function selectionBBoxScreenPts(items = selectedItems()) {
@@ -15893,8 +15963,10 @@ window.addEventListener('pointerup', e => {
       }
     }
   }
+  const restoreIdleSelectionUi = mode.type === 'rotate';
   mode = null;
   updateCursor(...clientToCanvas(e.clientX, e.clientY));
+  if (restoreIdleSelectionUi) invalidate();
 });
 
 window.addEventListener('blur', () => {
@@ -17951,6 +18023,11 @@ async function init() {
   } else {
     await refreshWhatsNew();
   }
+  try {
+    if (new URLSearchParams(location.search).get('recovered') === '1') {
+      toast('Recovered after a crash. The last fill was not applied');
+    }
+  } catch (e) {}
 
   const info = await window.RefBoardAPI?.getAppInfo?.();
   if (info) setPerfOverlayPackaged(!!info.isPackaged);
