@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   loadEngine, grassScene, wallScene, skyScene, horizonScene, blankImage,
   ellipseMask, rectMask, scratchMask, countMask, meanColor, textureEnergy,
+  makeRandom,
 } from './content-aware-harness.mjs';
 
 const CAF = await loadEngine();
@@ -245,6 +246,53 @@ const fill = (scene, mask, options) => CAF.fill(
   const r = fill(scene, mask);
   const [fr, fg, fb] = meanColor(r.pixels, W, H, mask);
   assert.ok(fb > fr, `sky stays blue-dominant (r ${fr.toFixed(0)} b ${fb.toFixed(0)})`);
+}
+
+/* --- image noise must not be scored as a bad fill ----------------------- */
+{
+  /* Patch cost is an absolute distance, so a grainy photograph pushes it up on
+   * its own: the same fill that scored 0.21 clean scored 1.69 at +/-64, which
+   * the raw thresholds read as "no good matches were found" and hard-rejected.
+   * Normalising against the boundary's own adjacent-pixel step has to hold a
+   * correct fill flat while leaving a genuinely wrong one detectable. */
+  const grain = (scene, amount) => {
+    if (!amount) return scene;
+    const rnd = makeRandom(99);
+    for (let i = 0; i < scene.width * scene.height; i++) {
+      const n = (rnd() - 0.5) * 2 * amount;
+      for (let c = 0; c < 3; c++) {
+        scene.data[i * 4 + c] = Math.max(0, Math.min(255, scene.data[i * 4 + c] + n));
+      }
+    }
+    return scene;
+  };
+
+  let sawRawCross = false;
+  for (const amount of [0, 24, 48, 64]) {
+    const scene = grain(grassScene(W, H), amount);
+    const mask = ellipseMask(W, H, 75, 55, 20, 16);
+    const r = fill(scene, mask);
+    const m = r.metrics;
+    if (m.patchCostMean > 0.6) sawRawCross = true;
+    assert.ok(m.patchCostNormalized < 0.4,
+      `grain +/-${amount} must not inflate patch cost (raw ${m.patchCostMean.toFixed(2)}, normalised ${m.patchCostNormalized.toFixed(2)})`);
+    assert.ok(!r.unsafeReasons.includes('no good matches were found for this region'),
+      `and must not be rejected for it (grain +/-${amount})`);
+  }
+  assert.ok(sawRawCross,
+    'the sweep must actually reach the noise level the raw threshold used to fail at');
+
+  // The same measure still catches a hole spliced in from an incompatible region.
+  for (const amount of [0, 24]) {
+    const scene = grain(horizonScene(W, H), amount);
+    const mask = ellipseMask(W, H, 75, 80, 15, 11);
+    const samplingMask = new Uint8Array(W * H);
+    for (let y = 0; y < 40; y++) for (let x = 0; x < W; x++) samplingMask[y * W + x] = 255;
+    const r = fill(scene, mask, { samplingMask });
+    assert.ok(r.metrics.patchCostNormalized > 1.2,
+      `ground filled from sky stays detectable at grain +/-${amount} (${r.metrics.patchCostNormalized.toFixed(2)})`);
+    assert.ok(r.hardRejected, 'and is still rejected');
+  }
 }
 
 console.log('content-aware regression tests passed');
