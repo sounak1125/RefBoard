@@ -3248,6 +3248,9 @@ const imageResidency = createImageResidencyController({
 });
 let fullBitmapEvictTimer = 0;
 let lastBoardOpenError = null;
+/* init() finishes by navigating to the landing view, which tears down any
+   board opened before that point. Automation must wait for this. */
+let appStartupComplete = false;
 let lastBoardRenderError = null;
 function prepareImageRecord(im, imgId) {
   if (!im) return im;
@@ -18199,6 +18202,7 @@ async function init() {
   const info = await window.RefBoardAPI?.getAppInfo?.();
   if (info) setPerfOverlayPackaged(!!info.isPackaged);
   if (info) await window.RefBoardAPI?.updaterInit?.({ checkOnStartup: !!appSettings.checkUpdatesOnStartup });
+  appStartupComplete = true;
 }
 
 /* ================= palette extraction ================= */
@@ -18632,6 +18636,7 @@ window.RefBoard = {
   get fillSamplingMode() { return fillSamplingMode; },
   invalidate,
   runAutosaveTick,
+  get startupComplete() { return appStartupComplete; },
   extractPaletteForTest: extractPaletteFromItem,
   /* Benchmark hooks: bypass the note text memos, and drive draw() directly so a
      measurement is not pinned to the vsync interval. */

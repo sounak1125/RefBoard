@@ -74,6 +74,10 @@ const smokeExpression = `(async()=>{
   const filePath=${JSON.stringify(boardPath)};
   for(let attempt=0;attempt<100&&!window.RefBoard;attempt++)await wait(50);
   if(!window.RefBoard)throw new Error('RefBoard API unavailable');
+  // init() ends by navigating to the landing view; anything done before
+  // that point gets torn down again. Wait for startup to finish.
+  for(let attempt=0;attempt<300&&!window.RefBoard.startupComplete;attempt++)await wait(50);
+  if(!window.RefBoard.startupComplete)throw new Error('RefBoard startup did not complete');
   if(typeof window.RefBoard.saveBoardFile!=='function'||typeof window.RefBoard.openBoardFromPath!=='function'){
     throw new Error('RefBoard save/open hooks are missing');
   }

@@ -70,6 +70,10 @@ const smokeExpression = String.raw`(async()=>{
   const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   for(let attempt=0;attempt<100&&!window.RefBoard;attempt++)await wait(50);
   if(!window.RefBoard)throw new Error('RefBoard API unavailable');
+  // init() ends by navigating to the landing view; anything done before
+  // that point gets torn down again. Wait for startup to finish.
+  for(let attempt=0;attempt<300&&!window.RefBoard.startupComplete;attempt++)await wait(50);
+  if(!window.RefBoard.startupComplete)throw new Error('RefBoard startup did not complete');
   const normalize=color=>{const probe=document.createElement('i');probe.style.color=color;document.body.append(probe);const value=getComputedStyle(probe).color;probe.remove();return value;};
   const ids=['midnight','slate','black','pine','ocean','dim'];
   const results=[];
