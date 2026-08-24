@@ -471,10 +471,19 @@
     }
   },
   "2.0.7": {
-    "headline": "Lighter and steadier",
-    "summary": "Content-aware fill is removed from the product so boards stay fast and reliable.",
+    "headline": "Find it, name it",
+    "summary": "Home gets a search field and in-place board renaming, and content-aware fill is gone so boards stay fast.",
     "sections": {
-      "new": [],
+      "new": [
+        {
+          "title": "Search your boards from Home",
+          "description": "Filter Recent Works by board name or the folder it lives in. Ctrl+F jumps to the field, and matches are highlighted on the cards."
+        },
+        {
+          "title": "Rename a board without leaving RefBoard",
+          "description": "The pencil on a Home card (or F2) renames the board in place. It renames the real .refboard file on disk, keeps its backup and thumbnail, and refuses names the file system would reject."
+        }
+      ],
       "improved": [],
       "fixed": [
         {

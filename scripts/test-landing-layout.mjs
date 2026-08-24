@@ -23,7 +23,7 @@ assert.doesNotMatch(source, /heading\.textContent = focusLayout \? 'Focus Flow'/
 assert.doesNotMatch(source, /id="rwSettings"|\$\('#rwSettings'\)/, 'Home should not expose a separate Settings entry');
 assert.match(
   source,
-  /async function renderRecentWorks\(\)[\s\S]*?focusLayout[\s\S]*?renderFocusRecentWorks\(list, renderSeq\)[\s\S]*?renderClassicRecentWorks\(list, renderSeq\)/,
+  /async function renderRecentWorks\(\)[\s\S]*?focusLayout[\s\S]*?renderFocusRecentWorks\(list, renderSeq, \{ showCurrent, searching \}\)[\s\S]*?renderClassicRecentWorks\(list, renderSeq, \{ showCurrent, searching \}\)/,
   'both layouts should render from the same recent-board source',
 );
 assert.match(
