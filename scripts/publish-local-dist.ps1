@@ -30,7 +30,20 @@ foreach ($path in @($setup, $blockmap, $latest)) {
   }
 }
 
-$wantNames = @('latest.yml', (Split-Path $blockmap -Leaf), (Split-Path $setup -Leaf))
+# The cinematic bootstrapper ships alongside the auto-update trio. Its
+# electron-builder output is pinned to the dist/bootstrapper folder, so look
+# there as well as under $DistDir when the caller built somewhere else.
+$installerName = "RefBoard-Installer-$version.exe"
+$installer = $null
+$installerDirs = @((Join-Path $DistDir 'bootstrapper'), (Join-Path 'dist' 'bootstrapper'))
+foreach ($dir in $installerDirs) {
+  $candidate = Join-Path $dir $installerName
+  if (Test-Path $candidate) { $installer = $candidate; break }
+}
+
+# $installerName is listed as wanted whether or not it was built this time, so
+# -ReplaceAssets never deletes an installer already attached to the release.
+$wantNames = @('latest.yml', (Split-Path $blockmap -Leaf), (Split-Path $setup -Leaf), $installerName)
 
 gh release view $Tag --repo $Repo 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
@@ -47,8 +60,15 @@ if ($ReplaceAssets) {
   }
 }
 
-Write-Host "Uploading $($wantNames -join ', ')..."
-gh release upload $Tag $latest $blockmap $setup --repo $Repo --clobber
+$uploads = @($latest, $blockmap, $setup)
+if ($installer) {
+  $uploads += $installer
+} else {
+  Write-Warning "No $installerName found - skipping the bootstrapper. Build it with: cd bootstrapper; npm run dist"
+}
+
+Write-Host "Uploading $(($uploads | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')..."
+gh release upload $Tag @uploads --repo $Repo --clobber
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $assetNames = gh release view $Tag --repo $Repo --json assets -q '.assets[].name'
