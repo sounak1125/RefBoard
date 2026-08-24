@@ -110,10 +110,13 @@ Push-Location bootstrapper; npm run dist; Pop-Location
 npm run release:ship
 ```
 
-   `release:ship` refuses to upload when the bootstrapper wraps a setup other
-   than the one in `dist/` — that is the stale-payload case above. Pass
-   `-SkipPayloadCheck` only when re-uploading assets for a release whose
-   installer you deliberately are not rebuilding.
+   `release:ship` checks that the bootstrapper wraps the setup in `dist/`, and
+   refreshes the payload and rebuilds it when it does not — so step 5 is only
+   needed when you want the installer built before this point. It re-checks the
+   hash after rebuilding and uploads nothing if it still disagrees. Pass
+   `-NoBootstrapperRebuild` to make a stale payload an error instead of a
+   rebuild, or `-SkipPayloadCheck` to skip the whole thing when re-uploading
+   assets for a release whose installer you deliberately are not touching.
 
    Requires `gh auth login` (repo scope). Review the draft on GitHub, then publish it so installed apps can auto-update:
 

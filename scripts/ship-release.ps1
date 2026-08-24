@@ -5,7 +5,8 @@ param(
   [switch]$Draft,
   [switch]$Publish,
   [switch]$DryRun,
-  [switch]$SkipPayloadCheck
+  [switch]$SkipPayloadCheck,
+  [switch]$NoBootstrapperRebuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,61 +24,105 @@ function Require-GhAuth {
   }
 }
 
-function Assert-BootstrapperPayload {
+function Find-BootstrapperDir {
+  param([string]$DistDir, [string]$InstallerName)
+  foreach ($dir in @((Join-Path $DistDir 'bootstrapper'), (Join-Path 'dist' 'bootstrapper'))) {
+    if (Test-Path (Join-Path $dir $InstallerName)) { return $dir }
+  }
+  return $null
+}
+
+# The file whose hash represents what the installer actually wraps, or $null when
+# that cannot be established. win-unpacked holds the copy the portable exe was
+# built around, so it also catches a payload refreshed without a rebuild. The
+# payload file is only evidence when the installer was built after it.
+function Get-WrappedSetup {
+  param([string]$InstallerDir, [string]$Installer, [string]$Payload)
+
+  $embedded = Join-Path $InstallerDir (Join-Path 'win-unpacked' (Join-Path 'resources' 'RefBoard-Setup.exe'))
+  if (Test-Path $embedded) { return $embedded }
+  if (-not (Test-Path $Payload)) { return $null }
+  if ((Get-Item -LiteralPath $Installer).LastWriteTimeUtc -lt (Get-Item -LiteralPath $Payload).LastWriteTimeUtc) { return $null }
+  return $Payload
+}
+
+function Sync-BootstrapperPayload {
   param(
     [string]$SetupPath,
     [string]$DistDir,
-    [string]$Version
+    [string]$Version,
+    [switch]$NoRebuild
   )
 
   $installerName = "RefBoard-Installer-$Version.exe"
-  $installerDir = $null
-  foreach ($dir in @((Join-Path $DistDir 'bootstrapper'), (Join-Path 'dist' 'bootstrapper'))) {
-    if (Test-Path (Join-Path $dir $installerName)) { $installerDir = $dir; break }
-  }
+  $installerDir = Find-BootstrapperDir -DistDir $DistDir -InstallerName $installerName
   if (-not $installerDir) {
-    Write-Warning "No $installerName built - the bootstrapper will be skipped."
+    Write-Warning "No $installerName built - the bootstrapper will be skipped. Build it with: Push-Location bootstrapper; npm run dist; Pop-Location"
     return
   }
 
   $installer = Join-Path $installerDir $installerName
   $payload = Join-Path 'bootstrapper' (Join-Path 'payload' 'RefBoard-Setup.exe')
+  $setupHash = (Get-FileHash -LiteralPath $SetupPath).Hash
 
-  # win-unpacked holds the copy the portable exe actually wrapped, so it also
-  # catches a payload refreshed without rebuilding the bootstrapper. Fall back to
-  # the payload file when the unpacked tree has been cleaned away.
-  $embedded = Join-Path $installerDir (Join-Path 'win-unpacked' (Join-Path 'resources' 'RefBoard-Setup.exe'))
-  if (Test-Path $embedded) {
-    $checked = $embedded
-  } else {
-    if (-not (Test-Path $payload)) {
-      Write-Error "$installer exists but $payload is missing - nothing proves which setup it wraps."
-      exit 1
-    }
-    if ((Get-Item -LiteralPath $installer).LastWriteTimeUtc -lt (Get-Item -LiteralPath $payload).LastWriteTimeUtc) {
-      Write-Error "$installer is older than $payload - rebuild it: Push-Location bootstrapper; npm run dist; Pop-Location"
-      exit 1
-    }
-    $checked = $payload
+  $wrapped = Get-WrappedSetup -InstallerDir $installerDir -Installer $installer -Payload $payload
+  if ($wrapped -and (Get-FileHash -LiteralPath $wrapped).Hash -eq $setupHash) {
+    Write-Host "Bootstrapper payload matches RefBoard-Setup-$Version.exe."
+    return
   }
 
-  $setupHash = (Get-FileHash -LiteralPath $SetupPath).Hash
-  $checkedHash = (Get-FileHash -LiteralPath $checked).Hash
-  if ($setupHash -ne $checkedHash) {
+  if ($wrapped) {
     Write-Host ''
     Write-Host "  $SetupPath" -ForegroundColor Yellow
     Write-Host "    $setupHash"
-    Write-Host "  $checked" -ForegroundColor Yellow
-    Write-Host "    $checkedHash"
+    Write-Host "  $wrapped" -ForegroundColor Yellow
+    Write-Host "    $((Get-FileHash -LiteralPath $wrapped).Hash)"
     Write-Host ''
-    Write-Host 'The payload does not refresh itself. Rebuild it with:'
+  } else {
+    Write-Host ''
+    Write-Host "Cannot establish which setup $installerName wraps." -ForegroundColor Yellow
+  }
+
+  if ($NoRebuild) {
+    Write-Host 'Refresh it with:'
     Write-Host "  Copy-Item $SetupPath bootstrapper\payload\RefBoard-Setup.exe -Force" -ForegroundColor Cyan
     Write-Host '  Push-Location bootstrapper; npm run dist; Pop-Location' -ForegroundColor Cyan
-    Write-Error "$installerName wraps a different setup than $SetupPath - it would install the wrong version."
+    Write-Error "$installerName does not wrap $SetupPath - it would install the wrong version. Drop -NoBootstrapperRebuild to have this script fix it."
     exit 1
   }
 
-  Write-Host "Bootstrapper payload matches RefBoard-Setup-$Version.exe."
+  Write-Host "Refreshing the bootstrapper payload from $SetupPath..."
+  New-Item -ItemType Directory -Force (Split-Path $payload) | Out-Null
+  Copy-Item -LiteralPath $SetupPath -Destination $payload -Force
+
+  Write-Host 'Rebuilding the bootstrapper...'
+  Push-Location 'bootstrapper'
+  try { & npm run dist -- --publish never; $buildExit = $LASTEXITCODE } finally { Pop-Location }
+  if ($buildExit -ne 0) {
+    Write-Error "Bootstrapper build failed (exit $buildExit) - nothing was uploaded."
+    exit 1
+  }
+
+  # A rebuild is not evidence. Re-resolve and re-hash, because the whole point
+  # of this function is that the release must never carry an installer nobody
+  # proved wraps this version.
+  $installerDir = Find-BootstrapperDir -DistDir $DistDir -InstallerName $installerName
+  if (-not $installerDir) {
+    Write-Error "Bootstrapper build reported success but $installerName is not there."
+    exit 1
+  }
+  $installer = Join-Path $installerDir $installerName
+  $wrapped = Get-WrappedSetup -InstallerDir $installerDir -Installer $installer -Payload $payload
+  if (-not $wrapped) {
+    Write-Error "Rebuilt $installerName but nothing proves which setup it wraps."
+    exit 1
+  }
+  if ((Get-FileHash -LiteralPath $wrapped).Hash -ne $setupHash) {
+    Write-Error "Rebuilt $installerName still does not wrap $SetupPath."
+    exit 1
+  }
+
+  Write-Host "Bootstrapper rebuilt around RefBoard-Setup-$Version.exe." -ForegroundColor Green
 }
 
 function ConvertTo-ReleaseNoteText {
@@ -156,7 +201,7 @@ foreach ($path in @($setup, $blockmap, $latest)) {
 }
 
 if (-not $SkipPayloadCheck) {
-  Assert-BootstrapperPayload -SetupPath $setup -DistDir $DistDir -Version $version
+  Sync-BootstrapperPayload -SetupPath $setup -DistDir $DistDir -Version $version -NoRebuild:$NoBootstrapperRebuild
 }
 
 $notesFile = Join-Path $env:TEMP "refboard-release-$version.md"
