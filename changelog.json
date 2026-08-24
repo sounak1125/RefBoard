@@ -533,5 +533,41 @@
         }
       ]
     }
+  },
+  "2.0.8": {
+    "headline": "Large boards stay sharp",
+    "summary": "On a board of a few hundred images, some images used to render visibly blurry while their neighbours stayed crisp — and which ones shifted as you moved around. Decoded image memory is now sized to your machine instead of to a fixed 31 MB, and adjustable.",
+    "sections": {
+      "new": [
+        {
+          "title": "Decoded image memory setting",
+          "description": "Settings → Performance gains a Decoded image memory control. Auto sizes it from your machine's RAM — 512 MB on 8 GB and up, 256 MB on smaller machines — and you can pin it to 256 MB, 512 MB, 1 GB or 2 GB instead. Raising it lets more images stay sharp at the same time on a large board. RefBoard only uses what the current view actually needs, so the number is a ceiling rather than a reservation."
+        }
+      ],
+      "improved": [
+        {
+          "title": "Sharpening follows what you are looking at",
+          "description": "Pending image work is now started in order of how close each image sits to the middle of your view, and the queue holds eight times as much. Before, work ran strictly in the order it was requested, and an overfull queue threw away the oldest request — which was usually the image right in front of you."
+        },
+        {
+          "title": "A missed budget costs sharpness, not legibility",
+          "description": "An image that cannot be decoded at the resolution your current zoom wants now falls back to a 512px surface rather than the 256px preview, so it reads as slightly soft instead of plainly blurry. RefBoard also stops reclaiming a surface the instant it loses its place for a single frame, so panning back over an image no longer re-decodes it from nothing."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Images stop going blurry on boards of 200 or more",
+          "description": "Decoded images were rationed by two fixed 31 MB budgets. Because an image smaller than the resolution it needs is decoded whole, an ordinary board of 600–900px references pushed nearly every visible image into one of those budgets, about a dozen fit, and everything else was drawn from a 256px preview. On a 240-image test board with 32 images on screen, 14 were being drawn from the preview at less than half the resolution they needed; now none are, and none are during a pan either."
+        },
+        {
+          "title": "One oversized image no longer softens the whole screen",
+          "description": "An image larger than the entire decode budget was accepted anyway whenever it happened to be nearest the pointer, which spent the whole budget on that one image and dropped every other image on screen to its preview in the same frame. It now waits until the budget would otherwise go unused, so it still sharpens on its own but never at the cost of its neighbours."
+        },
+        {
+          "title": "The image under the cursor stops hogging priority",
+          "description": "Scroll-zooming over an image gave it absolute priority for five seconds afterwards, holding the images around it on their previews long after you had moved on. That window is now 1.2 seconds — long enough to outlast the gesture, short enough that where the pointer came to rest stops mattering."
+        }
+      ]
+    }
   }
 }
