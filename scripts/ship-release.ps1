@@ -4,7 +4,8 @@ param(
   [string]$Repo = 'sounak1125/RefBoard',
   [switch]$Draft,
   [switch]$Publish,
-  [switch]$DryRun
+  [switch]$DryRun,
+  [switch]$SkipPayloadCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +21,63 @@ function Require-GhAuth {
     Write-Host 'Then re-run: npm run release:ship'
     exit 1
   }
+}
+
+function Assert-BootstrapperPayload {
+  param(
+    [string]$SetupPath,
+    [string]$DistDir,
+    [string]$Version
+  )
+
+  $installerName = "RefBoard-Installer-$Version.exe"
+  $installerDir = $null
+  foreach ($dir in @((Join-Path $DistDir 'bootstrapper'), (Join-Path 'dist' 'bootstrapper'))) {
+    if (Test-Path (Join-Path $dir $installerName)) { $installerDir = $dir; break }
+  }
+  if (-not $installerDir) {
+    Write-Warning "No $installerName built - the bootstrapper will be skipped."
+    return
+  }
+
+  $installer = Join-Path $installerDir $installerName
+  $payload = Join-Path 'bootstrapper' (Join-Path 'payload' 'RefBoard-Setup.exe')
+
+  # win-unpacked holds the copy the portable exe actually wrapped, so it also
+  # catches a payload refreshed without rebuilding the bootstrapper. Fall back to
+  # the payload file when the unpacked tree has been cleaned away.
+  $embedded = Join-Path $installerDir (Join-Path 'win-unpacked' (Join-Path 'resources' 'RefBoard-Setup.exe'))
+  if (Test-Path $embedded) {
+    $checked = $embedded
+  } else {
+    if (-not (Test-Path $payload)) {
+      Write-Error "$installer exists but $payload is missing - nothing proves which setup it wraps."
+      exit 1
+    }
+    if ((Get-Item -LiteralPath $installer).LastWriteTimeUtc -lt (Get-Item -LiteralPath $payload).LastWriteTimeUtc) {
+      Write-Error "$installer is older than $payload - rebuild it: Push-Location bootstrapper; npm run dist; Pop-Location"
+      exit 1
+    }
+    $checked = $payload
+  }
+
+  $setupHash = (Get-FileHash -LiteralPath $SetupPath).Hash
+  $checkedHash = (Get-FileHash -LiteralPath $checked).Hash
+  if ($setupHash -ne $checkedHash) {
+    Write-Host ''
+    Write-Host "  $SetupPath" -ForegroundColor Yellow
+    Write-Host "    $setupHash"
+    Write-Host "  $checked" -ForegroundColor Yellow
+    Write-Host "    $checkedHash"
+    Write-Host ''
+    Write-Host 'The payload does not refresh itself. Rebuild it with:'
+    Write-Host "  Copy-Item $SetupPath bootstrapper\payload\RefBoard-Setup.exe -Force" -ForegroundColor Cyan
+    Write-Host '  Push-Location bootstrapper; npm run dist; Pop-Location' -ForegroundColor Cyan
+    Write-Error "$installerName wraps a different setup than $SetupPath - it would install the wrong version."
+    exit 1
+  }
+
+  Write-Host "Bootstrapper payload matches RefBoard-Setup-$Version.exe."
 }
 
 function ConvertTo-ReleaseNoteText {
@@ -95,6 +153,10 @@ foreach ($path in @($setup, $blockmap, $latest)) {
     Write-Error "Missing $path - run: npx electron-builder --win --config.directories.output=$DistDir"
     exit 1
   }
+}
+
+if (-not $SkipPayloadCheck) {
+  Assert-BootstrapperPayload -SetupPath $setup -DistDir $DistDir -Version $version
 }
 
 $notesFile = Join-Path $env:TEMP "refboard-release-$version.md"
