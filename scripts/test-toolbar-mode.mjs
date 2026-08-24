@@ -30,7 +30,7 @@ assert.match(
 
 const buttons = [
   'sidebarHome', 'btnAdd', 'btnSelectTool', 'btnHandTool', 'btnDraw', 'btnPaste', 'btnNote',
-  'btnArrange', 'btnFit', 'btnExport', 'btnSave', 'btnOpen', 'btnClear',
+  'btnArrange', 'btnFit', 'btnSearch', 'btnExport', 'btnSave', 'btnOpen', 'btnClear',
 ];
 for (const id of buttons) {
   assert.match(source, new RegExp(`id=["']${id}["']`), `${id} should remain in the toolbar`);

@@ -747,9 +747,8 @@ body.board-instant-open #titlebarPeek{
   scrollbar-color:rgba(122,136,168,.46) rgba(9,11,15,.42);
   scroll-behavior:smooth;
   background:
-    radial-gradient(ellipse 50% 42% at 18% 0%, color-mix(in srgb, var(--acc) 13%, transparent), transparent 72%),
-    radial-gradient(ellipse 42% 36% at 100% 100%, color-mix(in srgb, var(--acc) 5.5%, transparent), transparent 74%),
-    linear-gradient(135deg, rgba(255,255,255,.018), transparent 42%),
+    radial-gradient(ellipse 38% 28% at 18% 0%, color-mix(in srgb, var(--acc) 3.2%, transparent), transparent 74%),
+    radial-gradient(ellipse 30% 22% at 100% 100%, color-mix(in srgb, var(--acc) 1.4%, transparent), transparent 76%),
     var(--bg);
   opacity:1;
   visibility:visible;
@@ -783,18 +782,18 @@ body.board-instant-open #titlebarPeek{
 body.board-active #recentWorks{ display:none; }
 
 .rw-inner{
-  width:min(1080px, calc(100vw - 48px));
-  padding:64px 0 72px;
+  width:min(1160px, calc(100vw - 48px));
+  padding:56px 0 72px;
 }
-.rw-header{ margin-bottom:20px; }
+.rw-header{ margin-bottom:12px; }
 .rw-brand{
-  display:inline-flex; align-items:center; gap:12px;
-  color:var(--txt); margin-bottom:20px;
+  display:inline-flex; align-items:center; gap:10px;
+  color:var(--txt); margin-bottom:14px;
 }
 .rw-brand-icon{
-  width:52px; height:52px; display:block; flex:0 0 auto; object-fit:cover;
-  border-radius:14px; user-select:none; pointer-events:none;
-  box-shadow:0 1px 0 rgba(255,255,255,.18) inset, 0 10px 30px rgba(0,0,0,.36), 0 0 28px color-mix(in srgb, var(--acc) 16%, transparent);
+  width:36px; height:36px; display:block; flex:0 0 auto; object-fit:cover;
+  border-radius:10px; user-select:none; pointer-events:none;
+  box-shadow:0 1px 0 rgba(255,255,255,.12) inset, 0 4px 12px rgba(0,0,0,.28);
 }
 .rw-brand-copy{
   display:flex; flex-direction:column; gap:3px;
@@ -812,8 +811,7 @@ body.board-active #recentWorks{ display:none; }
 }
 .rw-heading-row{
   display:flex; align-items:flex-end; justify-content:space-between; gap:24px;
-  padding-bottom:16px;
-  border-bottom:1px solid var(--line);
+  padding-bottom:8px;
 }
 .rw-heading-copy{ min-width:0; }
 .rw-sub{
@@ -902,7 +900,7 @@ body.board-active #recentWorks{ display:none; }
 .rw-card{
   position:relative;
   display:flex; flex-direction:column; gap:10px;
-  padding:10px; border-radius:12px;
+  padding:12px; border-radius:14px;
   background:var(--panel);
   border:1px solid var(--line);
   cursor:pointer;
@@ -1002,17 +1000,24 @@ body.board-active #recentWorks{ display:none; }
 }
 .rw-title mark{ background:transparent; color:var(--acc); font-weight:700; }
 .rw-card:hover{
-  border-color:color-mix(in srgb, var(--acc) 28%, transparent);
-  transform:translateY(-4px) scale(1.025);
-  box-shadow:0 1px 0 rgba(255,255,255,.07) inset, 0 14px 36px var(--shadow), 0 0 0 1px color-mix(in srgb, var(--acc) 12%, transparent);
+  border-color:color-mix(in srgb, var(--acc) 22%, var(--line));
+  transform:translateY(-2px);
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 8px 22px rgba(0,0,0,.28);
   background:color-mix(in srgb, var(--surface-2) 92%, transparent);
 }
 .rw-card:active{
-  transform:translateY(-1px) scale(1.01);
+  transform:translateY(0);
   transition-duration:.1s;
-  box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 6px 16px rgba(0,0,0,.28);
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 4px 12px rgba(0,0,0,.22);
 }
-.rw-card-current{ outline:2px solid var(--acc); outline-offset:-2px; }
+.rw-card-current{
+  border-color:color-mix(in srgb, var(--acc) 42%, var(--line));
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--acc) 38%, transparent), 0 1px 0 rgba(255,255,255,.05) inset, 0 2px 10px rgba(0,0,0,.2);
+}
+.rw-card-current:hover{
+  transform:translateY(-2px);
+  box-shadow:0 0 0 1px color-mix(in srgb, var(--acc) 42%, transparent), 0 1px 0 rgba(255,255,255,.06) inset, 0 8px 22px rgba(0,0,0,.28);
+}
 .rw-card-current .rw-badge{
   position:absolute; top:8px; left:8px; z-index:1;
   font-size:10.5px; font-weight:600; letter-spacing:.3px;
@@ -1025,14 +1030,14 @@ body.board-active #recentWorks{ display:none; }
 }
 
 .rw-thumb{
-  aspect-ratio:4/3; border-radius:8px; overflow:hidden;
+  aspect-ratio:4/3; border-radius:10px; overflow:hidden;
   background:#1b1d24; border:1px solid var(--line);
   display:flex; align-items:center; justify-content:center;
   transition:box-shadow .22s ease, border-color .22s ease;
 }
 .rw-card:hover .rw-thumb{
-  border-color:rgba(90,162,255,.18);
-  box-shadow:0 0 24px rgba(90,162,255,.14);
+  border-color:rgba(255,255,255,.12);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);
 }
 .rw-thumb img{
   width:100%; height:100%; min-width:0; flex:1 1 100%; object-fit:cover; display:block;
@@ -1042,19 +1047,22 @@ body.board-active #recentWorks{ display:none; }
   width:36px; height:36px; stroke:#3a3e4c; stroke-width:1.5; fill:none;
   stroke-linecap:round; stroke-linejoin:round;
 }
-.rw-meta{ min-width:0; }
+.rw-meta{ min-width:0; padding:2px 4px 4px; }
 .rw-title{
   font-size:13px; font-weight:600; color:var(--txt);
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
-.rw-date{ font-size:11.5px; color:var(--dim); margin-top:3px; }
+.rw-date{
+  font-size:11.5px; color:var(--dim); margin-top:3px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
 
 .rw-empty{
   display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:16px; padding:64px 32px; margin-bottom:8px;
-  background:color-mix(in srgb, var(--panel) 54%, transparent);
-  border:1px solid var(--line); border-radius:16px;
-  color:var(--dim); text-align:center;
+  background:color-mix(in srgb, var(--panel) 62%, transparent);
+  border:1px solid var(--line); border-radius:14px;
+  color:var(--mut); text-align:center;
 }
 .rw-empty.hide{ display:none; }
 .rw-empty .frame{
@@ -1068,10 +1076,16 @@ body.board-active #recentWorks{ display:none; }
   stroke-linecap:round; stroke-linejoin:round;
 }
 .rw-empty h2{
-  font-size:16px; font-weight:500; letter-spacing:-.01em; color:var(--mut);
+  font-size:16px; font-weight:550; letter-spacing:-.01em; color:var(--txt);
 }
 .rw-empty p{
-  font-size:13px; color:var(--dim); max-width:340px; line-height:1.55;
+  font-size:13px; color:var(--mut); max-width:340px; line-height:1.55;
+}
+.rw-empty .rw-btn{ margin-top:4px; }
+.rw-empty .rw-btn.primary{
+  padding:11px 18px;
+  font-size:13px;
+  min-height:40px;
 }
 
 .rw-actions{
@@ -1079,9 +1093,16 @@ body.board-active #recentWorks{ display:none; }
   gap:10px;
   flex:0 0 auto;
 }
-.rw-actions .rw-btn{
-  padding:8px 16px;
-  font-size:12.5px;
+.rw-actions .rw-btn:not(.primary){
+  padding:8px 13px;
+  font-size:12px;
+  min-height:34px;
+}
+.rw-actions .rw-btn.primary{
+  padding:11px 18px;
+  font-size:13px;
+  min-height:40px;
+  letter-spacing:-.01em;
 }
 @media (max-width:520px){
   .rw-heading-row{ flex-direction:column; align-items:stretch; }
@@ -1098,6 +1119,17 @@ body.board-active #recentWorks{ display:none; }
   background:rgba(40,44,56,.9);
   border-color:rgba(255,255,255,.12);
 }
+.rw-btn.ghost{
+  background:transparent;
+  border-color:color-mix(in srgb, var(--line) 80%, transparent);
+  color:var(--mut);
+  box-shadow:none;
+}
+.rw-btn.ghost:hover{
+  background:rgba(255,255,255,.04);
+  border-color:rgba(255,255,255,.12);
+  color:var(--txt);
+}
 .rw-btn.primary{
   background:var(--acc); border-color:rgba(255,255,255,.08); color:#0b1524;
   font-weight:600;
@@ -1110,10 +1142,11 @@ body.board-active #recentWorks{ display:none; }
 .rw-restore{
   display:flex; justify-content:space-between; align-items:center; gap:16px;
   margin:0 0 16px;
-  padding:14px 16px;
-  border-radius:12px;
+  padding:14px 16px 14px 15px;
+  border-radius:14px;
   border:1px solid var(--line);
-  background:var(--surface-2);
+  border-left:3px solid color-mix(in srgb, var(--acc) 70%, transparent);
+  background:color-mix(in srgb, var(--panel) 72%, transparent);
 }
 .rw-restore[hidden]{ display:none !important; }
 .rw-restore-copy{
@@ -1143,8 +1176,8 @@ body.board-active #recentWorks{ display:none; }
   overflow:hidden;
   isolation:isolate;
   background:
-    radial-gradient(ellipse 46% 34% at 50% 60%, color-mix(in srgb, var(--acc) 4%, transparent), transparent 74%),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg) 98%, #fff 2%), var(--bg) 48%, color-mix(in srgb, var(--bg) 96%, #000 4%));
+    radial-gradient(ellipse 40% 28% at 50% 62%, color-mix(in srgb, var(--acc) 2.4%, transparent), transparent 76%),
+    var(--bg);
 }
 #recentWorks.layout-focus::after{
   content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
@@ -1167,7 +1200,7 @@ body.board-active #recentWorks{ display:none; }
   flex:0 0 auto;
 }
 #recentWorks.layout-focus .rw-brand{ margin-bottom:12px; }
-#recentWorks.layout-focus .rw-brand-icon{ width:42px; height:42px; border-radius:12px; }
+#recentWorks.layout-focus .rw-brand-icon{ width:36px; height:36px; border-radius:10px; }
 #recentWorks.layout-focus .rw-heading-row{ padding-bottom:10px; border-bottom:none; align-items:center; }
 #recentWorks.layout-focus .rw-header h1{ font-size:29px; }
 #recentWorks.layout-focus .rw-sub{ max-width:560px; }
@@ -1214,10 +1247,11 @@ body.board-active #recentWorks{ display:none; }
     border-color .16s ease, box-shadow .16s ease, background .16s ease;
 }
 .ff-card.is-active{
-  border-color:color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.12));
+  border-color:color-mix(in srgb, var(--acc) 22%, rgba(255,255,255,.12));
   box-shadow:
-    0 1px 0 rgba(255,255,255,.075) inset,
-    0 30px 84px rgba(0,0,0,.52);
+    0 1px 0 rgba(255,255,255,.08) inset,
+    0 36px 90px rgba(0,0,0,.58),
+    0 0 0 1px color-mix(in srgb, var(--acc) 18%, transparent);
 }
 .ff-card.is-active:hover{
   background:color-mix(in srgb, var(--card) 94%, #fff 6%);
@@ -1258,12 +1292,12 @@ body.board-active #recentWorks{ display:none; }
   text-transform:uppercase;
 }
 .ff-arrow{
-  position:absolute; z-index:70; top:50%; width:42px; height:42px;
+  position:absolute; z-index:70; top:50%; width:40px; height:40px;
   display:flex; align-items:center; justify-content:center;
-  border-radius:50%; border:1px solid rgba(255,255,255,.105);
-  background:color-mix(in srgb, var(--panel) 66%, transparent); color:var(--mut);
-  backdrop-filter:blur(18px); cursor:pointer;
-  box-shadow:0 10px 30px rgba(0,0,0,.24);
+  border-radius:50%; border:1px solid rgba(255,255,255,.08);
+  background:color-mix(in srgb, var(--panel) 52%, transparent); color:var(--dim);
+  backdrop-filter:blur(16px); cursor:pointer;
+  box-shadow:0 6px 18px rgba(0,0,0,.18);
   transform:translateY(-50%); transition:opacity .2s ease, color .2s ease, background .2s ease, transform .2s ease;
 }
 .ff-arrow svg{ width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.8; }
@@ -1279,8 +1313,8 @@ body.board-active #recentWorks{ display:none; }
   width:min(520px, calc(100vw - 64px)); transform:translateX(-50%);
   display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px 18px;
 }
-.ff-position{ color:var(--mut); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ff-hint{ color:var(--dim); font-size:10.5px; white-space:nowrap; }
+.ff-position{ color:var(--dim); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ff-hint{ color:var(--dim); font-size:10px; letter-spacing:.02em; white-space:nowrap; }
 .ff-progress{
   grid-column:1 / -1; height:2px; overflow:hidden; border-radius:999px;
   background:rgba(255,255,255,.07);
@@ -2440,8 +2474,8 @@ body.board-active #whatsNewNotice{ display:none; }
           <p class="rw-sub">Pick a board to continue, or start fresh</p>
         </div>
         <div class="rw-actions">
-          <button type="button" class="rw-btn" id="rwNewWindow" title="Open another RefBoard window (up to 4)">New window</button>
-          <button type="button" class="rw-btn" id="rwOpenFile">Open board</button>
+          <button type="button" class="rw-btn ghost" id="rwNewWindow" title="Open another RefBoard window (up to 4)">New window</button>
+          <button type="button" class="rw-btn ghost" id="rwOpenFile">Open board</button>
           <button type="button" class="rw-btn primary" id="rwNewBoard">New board</button>
         </div>
       </div>
@@ -2496,6 +2530,7 @@ body.board-active #whatsNewNotice{ display:none; }
       </div>
       <h2>Create your first board</h2>
       <p>Start a new moodboard or open a saved .refboard file from disk.</p>
+      <button type="button" class="rw-btn primary" id="rwEmptyNewBoard">New board</button>
     </div>
   </div>
 </div>
@@ -2563,6 +2598,9 @@ body.board-active #whatsNewNotice{ display:none; }
   </button>
   <button class="tb" id="btnFit" data-tip-title="Fit view" data-tip-sub="F">
     <svg viewBox="0 0 24 24"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>
+  </button>
+  <button class="tb" id="btnSearch" data-tip-title="Search" data-tip-sub="Ctrl+F">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
   </button>
   <span class="sep"></span>
   <button class="tb" id="btnExport" data-tip-title="Export" data-tip-sub="Ctrl+E">
@@ -11718,6 +11756,20 @@ function formatWorkRelative(work) {
   return formatEditedRelative(opened, 'Opened');
 }
 
+function formatItemCount(n) {
+  const count = Number(n);
+  if (!Number.isFinite(count) || count < 0) return '';
+  const rounded = Math.round(count);
+  return rounded === 1 ? '1 item' : `${rounded} items`;
+}
+
+function formatWorkMeta(work) {
+  const count = formatItemCount(work?.itemCount);
+  const when = formatWorkRelative(work);
+  if (count && when) return `${count} · ${when}`;
+  return count || when || '';
+}
+
 async function thumbSrcForWork(work, opts = {}) {
   if (opts.preferBoardPreview && work.path && window.RefBoardAPI?.getBoardPreview) {
     try {
@@ -12127,7 +12179,7 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
     setRwTitleText(title, cardTitle, recentSearchQuery);
     const date = document.createElement('div');
     date.className = 'rw-date';
-    date.textContent = formatWorkRelative(work);
+    date.textContent = formatWorkMeta(work);
     meta.append(title, date);
     card.append(rwRenameButton(work, cardTitle), clearBtn, thumb, meta);
     card.addEventListener('click', (e) => {
@@ -12174,7 +12226,7 @@ function recentFocusEntry(work) {
     key: 'recent:' + recentPathKey(work.path),
     current: false,
     title: work.title || boardTitleFromPath(work.path) || 'Untitled',
-    detail: formatWorkRelative(work) || 'Ready to open',
+    detail: formatWorkMeta(work) || 'Ready to open',
     path: work.path,
     work,
   };
@@ -17197,6 +17249,7 @@ $('#btnPaste').addEventListener('click', () => menuPaste(null));
 $('#btnNote').addEventListener('click', () => createNote(mouseOnCanvas() ? toBoard(mouse.x, mouse.y) : null));
 $('#btnArrange').addEventListener('click', arrangeAll);
 $('#btnFit').addEventListener('click', () => fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i))));
+$('#btnSearch').addEventListener('click', () => openBoardSearch());
 $('#btnExport').addEventListener('click', openExport);
 $('#btnSave').addEventListener('click', () => manualSaveBoardFile(() => saveBoardFile()));
 $('#btnOpen').addEventListener('click', () => openBoardFromDialog());
@@ -17342,6 +17395,7 @@ boardPick.addEventListener('change', async () => {
 });
 
 $('#rwNewBoard').addEventListener('click', () => openNewBoard());
+$('#rwEmptyNewBoard').addEventListener('click', () => openNewBoard());
 $('#rwOpenFile').addEventListener('click', () => openBoardFromDialog());
 $('#rwNewWindow').addEventListener('click', async () => {
   if (!window.RefBoardAPI?.openBoardInNewWindow) return;

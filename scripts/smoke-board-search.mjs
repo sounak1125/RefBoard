@@ -114,6 +114,16 @@ const smokeExpression = `(async()=>{
   await wait(120);
   const openedByShortcut=modal.classList.contains('show');
   const focused=document.activeElement===input;
+  key(input,'Escape');
+  await wait(100);
+
+  // --- open from the toolbar icon ---
+  document.querySelector('#btnSearch')?.click();
+  await wait(120);
+  const openedByToolbar=modal.classList.contains('show');
+  const toolbarFocused=document.activeElement===input;
+  key(input,'Escape');
+  await wait(100);
 
   const startView={...window.RefBoard.state.view};
 
@@ -173,7 +183,7 @@ const smokeExpression = `(async()=>{
   await wait(100);
 
   return {
-    openedByShortcut,focused,noteHits,nameHits,manyHits,secondActive,
+    openedByShortcut,focused,openedByToolbar,toolbarFocused,noteHits,nameHits,manyHits,secondActive,
     closedOnEnter,selectedAfterCommit,paletteNoteId:paletteNote.id,onScreen,
     movedWhilePreviewing,closedOnEscape,restored,shortcutsSuppressed,
     startZoom:startView.s,committedZoom:committedView.s,
@@ -185,6 +195,8 @@ try {
 
   assert.equal(r.openedByShortcut, true, 'Ctrl+F must open board search');
   assert.equal(r.focused, true, 'the search field must take focus on open');
+  assert.equal(r.openedByToolbar, true, 'the toolbar Search button must open board search');
+  assert.equal(r.toolbarFocused, true, 'the search field must take focus when opened from the toolbar');
 
   assert.equal(r.noteHits.length, 1, `"palette" should match one note (got ${JSON.stringify(r.noteHits)})`);
   assert.match(r.noteHits[0], /note/, 'a note match should be labelled as a note');
