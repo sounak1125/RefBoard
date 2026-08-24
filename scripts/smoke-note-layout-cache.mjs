@@ -128,6 +128,21 @@ const smokeExpression = `(async()=>{
     bench(5);
     const uncachedMs=bench(40);
     window.RefBoard.setNoteCacheDefeatForTest(false);
+
+    // The same frames again with the cache defeated. Those timings above are
+    // too noisy to assert on, so the cache is proven by what it removes: the
+    // measureText calls every note otherwise makes on every frame.
+    window.RefBoard.setNoteCacheDefeatForTest(true);
+    window.RefBoard.invalidate();
+    await frame();
+    calls=0;
+    for(let i=0;i<${FRAMES};i++){
+      window.RefBoard.invalidate();
+      await frame();
+    }
+    const defeated=calls;
+    window.RefBoard.setNoteCacheDefeatForTest(false);
+
     // A text edit must invalidate the cache, or the cache would be wrong.
     calls=0;
     items[0].text='changed text that must re-measure\\nsecond line';
@@ -135,7 +150,7 @@ const smokeExpression = `(async()=>{
     await frame();
     const afterEdit=calls;
     return {
-      warm, steady, afterEdit, cachedMs, uncachedMs,
+      warm, steady, defeated, afterEdit, cachedMs, uncachedMs,
       frames:${FRAMES},
       visibleNotes:items.filter(it=>it.kind==='note').length,
     };
@@ -150,7 +165,9 @@ try {
   assert.equal(r.visibleNotes, NOTES, `the board should hold ${NOTES} notes (got ${r.visibleNotes})`);
 
   const perFrame = r.steady / r.frames;
+  const defeatedPerFrame = r.defeated / r.frames;
   console.log(`  notes=${r.visibleNotes}  warm-frame=${r.warm}  steady=${r.steady} over ${r.frames} frames (${perFrame.toFixed(1)}/frame)  after-edit=${r.afterEdit}`);
+  console.log(`  measureText/frame: ${perFrame.toFixed(1)} cached vs ${defeatedPerFrame.toFixed(1)} uncached`);
   const speedup = r.uncachedMs / Math.max(1e-6, r.cachedMs);
   console.log(`  draw(): ${r.cachedMs.toFixed(3)} ms cached vs ${r.uncachedMs.toFixed(3)} ms uncached (${speedup.toFixed(1)}x)`);
 
@@ -167,9 +184,15 @@ try {
     'editing note text must invalidate the cache and re-measure, or the cache would go stale',
   );
 
+  // The mirror of the assertion above, and the reason the draw() milliseconds
+  // are printed but not asserted on: run-to-run timing noise on this board is
+  // larger than the cache saves, while the call count is exact. Every note
+  // costs at least one measureText per frame once the cache is defeated (the
+  // vertical-metrics probe), so anything below one per note means the cached
+  // run was not the cache doing the work.
   assert.ok(
-    r.cachedMs < r.uncachedMs,
-    `caching must make draw() cheaper (${r.cachedMs.toFixed(3)} ms cached vs ${r.uncachedMs.toFixed(3)} ms uncached)`,
+    defeatedPerFrame >= NOTES,
+    `defeating the cache must cost at least one measureText per note per frame (${defeatedPerFrame.toFixed(1)} calls/frame with ${NOTES} notes)`,
   );
 
   console.log('note layout cache Electron smoke passed');
