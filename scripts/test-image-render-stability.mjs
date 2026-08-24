@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import {
   IMAGE_DYNAMIC_TIERS,
+  IMAGE_FLOOR_TIER,
   IMAGE_FULL_TIER,
   IMAGE_NAV_PREWARM_DELAY_MS,
   IMAGE_PROXY_TIER,
@@ -32,11 +33,51 @@ for (const count of [200, 500]) {
   assert([...a.selected].join(',') === [...b.selected].join(','), `${count}-image demand is deterministic`);
 }
 
+// An image bigger than the whole budget cannot share it. Admitting it because it
+// happened to be nearest spent the entire budget on one image and dropped every
+// other visible image to its 256px proxy in the same frame.
 const oversized = selectImageRenderDemand([
   { key: 'near', pixels: 20_000_000, distance: 0 },
   { key: 'far', pixels: 1, distance: 1 },
 ], 8_000_000);
-assert(oversized.selected.size === 1 && oversized.selected.has('near'), 'one oversized nearest image may sharpen');
+assert(oversized.selected.size === 1 && oversized.selected.has('far'),
+  'an over-budget image never starves the images that do fit');
+assert(oversized.usedPixels === 1, 'the deferred oversized image is not charged to the budget');
+
+// It still sharpens when nothing else wants the budget, so zooming into one huge
+// image on a sparse board behaves as before.
+const oversizedAlone = selectImageRenderDemand([
+  { key: 'near', pixels: 20_000_000, distance: 0 },
+], 8_000_000);
+assert(oversizedAlone.selected.size === 1 && oversizedAlone.selected.has('near'),
+  'a lone oversized image may still sharpen');
+
+// The nearest of several over-budget images is the one that gets the fallback.
+const oversizedChoice = selectImageRenderDemand([
+  { key: 'far-huge', pixels: 20_000_000, distance: 500 },
+  { key: 'near-huge', pixels: 20_000_000, distance: 5 },
+], 8_000_000);
+assert(oversizedChoice.selected.size === 1 && oversizedChoice.selected.has('near-huge'),
+  'the nearest over-budget image wins the last-resort slot');
+
+// The floor tier is what a refused image falls back to instead of the proxy.
+// Callers rank it with a large negative bias, so it must be admitted before any
+// competitive demand however close that demand is to the pointer.
+const FLOOR_PRIORITY = 3e15;
+const floorPixels = IMAGE_FLOOR_TIER * IMAGE_FLOOR_TIER;
+const floored = selectImageRenderDemand([
+  ...Array.from({ length: 40 }, (_, i) => ({
+    key: `floor-${i}`, pixels: floorPixels, distance: i * 1000 - FLOOR_PRIORITY,
+  })),
+  ...Array.from({ length: 40 }, (_, i) => ({
+    key: `sharp-${i}`, pixels: 1_000_000, distance: i * 1000 - 2e15,
+  })),
+], 60_000_000);
+for (let i = 0; i < 40; i++) {
+  assert(floored.selected.has(`floor-${i}`), `every visible image keeps its floor tier (${i})`);
+}
+assert([...floored.selected].some(key => key.startsWith('sharp-')),
+  'the floor does not consume the whole budget');
 
 const duplicates = selectImageRenderDemand([
   { key: 'same', pixels: 10, distance: 20 },
@@ -219,8 +260,42 @@ assert(html.includes('if (!im.bitmap && allowedImageFullDemand.has(imageFullDema
 assert(html.includes('im.historyRestoring'), 'history restoration may temporarily prefer its restored full bitmap');
 assert(html.includes('im?.pixelUpdateInProgress'), 'drawing publication temporarily blocks stale derived surfaces');
 assert(html.includes('if (opts.noLod) requestImageDecode(im, it);'), 'noLod export paths always drive a full-resolution decode');
-assert(html.includes('{ previous: allowedImageLodDemand }'), 'LOD admissions carry across frames');
-assert(html.includes('{ previous: allowedImageFullDemand }'), 'full-resolution admissions carry across frames');
+assert(html.includes('{ previous: allowedImageDemand }'), 'admissions carry across frames');
+assert(html.includes('[...floorCandidates, ...lodCandidates, ...fullCandidates]'),
+  'full bitmaps and LOD tiers are rationed from one pool, so a small original is priced as the cheap surface it is');
+assert(html.includes("if (key.startsWith('full:')) allowedImageFullDemand.add(key);"),
+  'the combined admission set still splits per pool for its callers');
+assert(html.includes('const IMAGE_DECODE_MIN_POOL_PIXELS = 8_000_000;'),
+  'the old fixed budget survives only as a per-pool floor');
+assert(html.includes('function imageMemoryBudgetPixels()'), 'the decoded-image budget follows a setting');
+assert(html.includes("imageMemoryMB: 'auto',"), 'decoded-image memory is a user setting');
+assert(html.includes("set('imageMemoryMB', normalizeImageMemory(e.target.value))"),
+  'the decoded-image memory setting is wired to the settings pane');
+assert(html.includes('const WHEEL_FOCUS_PRIORITY_MS = 1200;'),
+  'pointer focus outranks other demand for a gesture, not for seconds afterwards');
+
+// Floor tier: the fallback below an admitted surface must never be the proxy.
+assert(html.includes('const floorTier = target === IMAGE_PROXY_TIER ? null : imageFloorTierFor(im);'),
+  'every visible image above proxy size declares floor demand');
+assert(html.includes('distance: distance - IMAGE_FLOOR_DEMAND_PRIORITY,'),
+  'floor demand outranks pointer focus and selection');
+assert(html.includes('const IMAGE_FLOOR_DEMAND_PRIORITY = 3e15;'),
+  'floor priority stays above the 2e15 wheel-focus bonus');
+assert(html.includes('requestFloor();'), 'a missing target surface warms the floor instead of settling for the proxy');
+assert(html.includes('imageFloorDemand.has(key)'), 'floor jobs survive while their image is visible');
+assert(html.includes('if (imageLodSurfaceProtected(im.id, bucket)) continue;'),
+  'eviction honours the floor and the multi-frame grace window');
+assert(html.includes('const IMAGE_LOD_PROTECT_FRAMES = 3;'),
+  'a surface that misses one frame is not reclaimed before the next');
+assert(html.includes('beginImageLodFrame();'), 'each frame rotates the protection window instead of clearing it');
+
+// Sharpening order must follow the viewport, not enqueue order.
+assert(html.includes('function imageLodJobRank(job)'), 'queued LOD work is ranked by live importance');
+assert(html.includes('function dropWorstQueuedImageLodJob()'),
+  'queue overflow drops the least important request, not the oldest');
+assert(html.includes('const job = extractQueuedImageLodJob(false);'),
+  'the pump starts the most important queued job');
+assert(!html.includes('imageLodQueue.shift()'), 'strict FIFO LOD scheduling must not return');
 assert(html.includes('updateImageRenderDemandPlan(drawVisibleItems);'), 'each frame has a bounded high-quality demand plan');
 assert(html.includes('previousTier: imageDisplayTargets.get(it.id)'), 'screen-sized targets retain hysteresis state per item');
 assert(html.includes('const navigating = isNavigatingView();'), 'quality changes pause during navigation');

@@ -39,11 +39,25 @@ export function selectImageRenderDemand(candidates, maxPixels, {
     rank(a) - rank(b) || a.key.localeCompare(b.key));
   const selected = new Set();
   let usedPixels = 0;
+  let lastResort = null;
 
   for (const candidate of ordered) {
-    if (selected.size && usedPixels + candidate.pixels > budget) continue;
+    // A surface larger than the entire budget can never share it. Admitting the
+    // nearest one on sight spent the whole budget on one image and dropped every
+    // other visible image to its stable proxy in the same frame, which on a
+    // dense board reads as the screen going soft all at once. Such a candidate
+    // now waits: it sharpens only if the budget would otherwise go unspent.
+    if (candidate.pixels > budget) {
+      if (!lastResort) lastResort = candidate;
+      continue;
+    }
+    if (usedPixels + candidate.pixels > budget) continue;
     selected.add(candidate.key);
     usedPixels += candidate.pixels;
+  }
+  if (!selected.size && lastResort) {
+    selected.add(lastResort.key);
+    usedPixels = lastResort.pixels;
   }
 
   return { selected, usedPixels };
@@ -51,6 +65,18 @@ export function selectImageRenderDemand(candidates, maxPixels, {
 
 export const IMAGE_PROXY_TIER = 256;
 export const IMAGE_DYNAMIC_TIERS = Object.freeze([512, 1024, 2048]);
+
+/**
+ * Worst surface a visible image is allowed to fall back to.
+ *
+ * The 256px stable proxy is a memory backstop, not a display surface: stretched
+ * past roughly 400 screen px it is plainly soft, and a budget miss used to drop
+ * straight onto it. Every visible image that wants better than the proxy keeps
+ * this tier resident, ranked ahead of all competitive demand, so missing the
+ * budget costs sharpness rather than legibility. Sources at or below this size
+ * are excluded: their full bitmap is already cheaper than a same-size copy.
+ */
+export const IMAGE_FLOOR_TIER = 512;
 export const IMAGE_FULL_TIER = 'full';
 export const IMAGE_NAV_PREWARM_DELAY_MS = 48;
 

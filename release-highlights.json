@@ -1,63 +1,35 @@
 {
-  "headline": "Lighter, faster, easier to find things in",
-  "summary": "RefBoard is a moodboard app again: animatics and content-aware fill are gone, images snap to each other properly, and Home gets search and renaming.",
+  "headline": "Large boards stay sharp",
+  "summary": "On a board of a few hundred images, some images used to render visibly blurry while their neighbours stayed crisp — and which ones shifted as you moved around. Decoded image memory is now sized to your machine instead of to a fixed 31 MB, and adjustable.",
   "sections": {
     "new": [
       {
-        "title": "Search your boards from Home",
-        "description": "Filter Recent Works by board name or the folder it lives in. Ctrl+F jumps to the field, and matches are highlighted on the cards."
-      },
-      {
-        "title": "Rename a board without leaving RefBoard",
-        "description": "The pencil on a Home card (or F2) renames the board in place. It renames the real .refboard file on disk, keeps its backup and thumbnail, and refuses names the file system would reject."
-      },
-      {
-        "title": "Search a board from the toolbar",
-        "description": "A search button sits in the left toolbar, so finding notes and images on a board no longer depends on knowing Ctrl+F."
+        "title": "Decoded image memory setting",
+        "description": "Settings → Performance gains a Decoded image memory control. Auto sizes it from your machine's RAM — 512 MB on 8 GB and up, 256 MB on smaller machines — and you can pin it to 256 MB, 512 MB, 1 GB or 2 GB instead. Raising it lets more images stay sharp at the same time on a large board. RefBoard only uses what the current view actually needs, so the number is a ceiling rather than a reservation."
       }
     ],
     "improved": [
       {
-        "title": "Images snap to each other, not to a grid",
-        "description": "Edge magnetism is rebuilt PureRef-style and is on by default: images butt together with no gap, edges line up down a column, and a snap holds until you clearly pull away. The dot grid is decoration only now, so it no longer quantizes every drag to 10px."
+        "title": "Sharpening follows what you are looking at",
+        "description": "Pending image work is now started in order of how close each image sits to the middle of your view, and the queue holds eight times as much. Before, work ran strictly in the order it was requested, and an overfull queue threw away the oldest request — which was usually the image right in front of you."
       },
       {
-        "title": "A lighter install",
-        "description": "Dropping animatics and content-aware fill takes the installer from 115 MB to 86 MB, and RefBoard no longer loads a video toolchain at startup whether or not you ever used one."
-      },
-      {
-        "title": "A quieter Home",
-        "description": "The landing page is reworked into a calmer recents workspace."
-      },
-      {
-        "title": "Autosave admits when it fails",
-        "description": "A failed session autosave used to report success anyway. It now raises a warning that offers Save board... and names the cause, including running out of storage quota."
-      },
-      {
-        "title": "Leaner undo on big boards",
-        "description": "Undo history is capped by memory as well as by step count, so a long session on a large board no longer holds hundreds of megabytes of snapshots."
+        "title": "A missed budget costs sharpness, not legibility",
+        "description": "An image that cannot be decoded at the resolution your current zoom wants now falls back to a 512px surface rather than the 256px preview, so it reads as slightly soft instead of plainly blurry. RefBoard also stops reclaiming a surface the instant it loses its place for a single frame, so panning back over an image no longer re-decodes it from nothing."
       }
     ],
     "fixed": [
       {
-        "title": "Animatics removed",
-        "description": "The timeline, audio, time remap and Premiere/After Effects export are gone — a second app had grown inside a moodboard app. Boards saved by 2.0.6 still open, but any audio and video they held is skipped."
+        "title": "Images stop going blurry on boards of 200 or more",
+        "description": "Decoded images were rationed by two fixed 31 MB budgets. Because an image smaller than the resolution it needs is decoded whole, an ordinary board of 600–900px references pushed nearly every visible image into one of those budgets, about a dozen fit, and everything else was drawn from a 256px preview. On a 240-image test board with 32 images on screen, 14 were being drawn from the preview at less than half the resolution they needed; now none are, and none are during a pan either."
       },
       {
-        "title": "Content-aware fill removed",
-        "description": "The lasso fill tool is no longer in the toolbar. It was too heavy and unreliable for everyday moodboard work."
+        "title": "One oversized image no longer softens the whole screen",
+        "description": "An image larger than the entire decode budget was accepted anyway whenever it happened to be nearest the pointer, which spent the whole budget on that one image and dropped every other image on screen to its preview in the same frame. It now waits until the budget would otherwise go unused, so it still sharpens on its own but never at the cost of its neighbours."
       },
       {
-        "title": "Groups keep their contents",
-        "description": "Arrow-keying a selected group moved the frame and left the images behind, and resizing one dropped them too. Both now move what they contain, and a nudge can be undone."
-      },
-      {
-        "title": "Group selection frame rotates with the images",
-        "description": "The multi-select box stayed axis-aligned during a rotate, so it swelled and shrank under itself and the corner handles slid away from the pointer."
-      },
-      {
-        "title": "Copied images keep their original bytes",
-        "description": "Copying an image to the clipboard re-encoded it. It now hands over the original file data."
+        "title": "The image under the cursor stops hogging priority",
+        "description": "Scroll-zooming over an image gave it absolute priority for five seconds afterwards, holding the images around it on their previews long after you had moved on. That window is now 1.2 seconds — long enough to outlast the gesture, short enough that where the pointer came to rest stops mattering."
       }
     ]
   }
