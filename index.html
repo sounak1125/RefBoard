@@ -11449,7 +11449,13 @@ async function browseExportDir() {
     toast('Folder picker works in the desktop app (RefBoard.exe)');
     return;
   }
-  const dir = await window.RefBoardAPI.chooseFolder();
+  let dir = null;
+  try {
+    dir = await window.RefBoardAPI.chooseFolder();
+  } catch (e) {
+    toast('Could not open the folder picker');
+    return;
+  }
   if (dir) {
     $('#expImgDir').value = dir;
     localStorage.setItem('refboard.exportDir', dir);
@@ -11461,7 +11467,7 @@ async function runExportImages() {
   const format = $('#expImgFormat').value;
   const useCrop = $('#expImgCrop').checked;
   const pattern = $('#expImgName').value || '%N_%0';
-  const useDesktop = !!(window.RefBoardAPI?.writeExportFiles && dir);
+  const useDesktop = !!window.RefBoardAPI?.writeExportFiles;
   if (useDesktop && !dir) { toast('Choose a save location first'); return; }
 
   const goBtn = $('#expImgGo');

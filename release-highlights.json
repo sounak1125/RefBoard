@@ -1,6 +1,6 @@
 {
   "headline": "Large boards stay sharp",
-  "summary": "On a board of a few hundred images, some images used to render visibly blurry while their neighbours stayed crisp — and which ones shifted as you moved around. Decoded image memory is now sized to your machine instead of to a fixed 31 MB, and adjustable.",
+  "summary": "On a board of a few hundred images, some images used to render visibly blurry while their neighbours stayed crisp — and which ones shifted as you moved around. Decoded image memory is now sized to your machine instead of to a fixed 31 MB, and adjustable. Image export, which 2.0.7 broke outright, works again.",
   "sections": {
     "new": [
       {
@@ -30,6 +30,18 @@
       {
         "title": "The image under the cursor stops hogging priority",
         "description": "Scroll-zooming over an image gave it absolute priority for five seconds afterwards, holding the images around it on their previews long after you had moved on. That window is now 1.2 seconds — long enough to outlast the gesture, short enough that where the pointer came to rest stops mattering."
+      },
+      {
+        "title": "Choosing an export folder works again",
+        "description": "In 2.0.7 the Browse button in Export images did nothing at all. The main process had stopped answering the folder-picker request, so the click failed silently — and because the folder field is read-only, Browse was the only way to fill it. Exporting images was effectively unusable in the desktop app. The picker opens again, parented to the window you started it from, and a picker that cannot open now says so instead of failing quietly."
+      },
+      {
+        "title": "One export, not one save dialog per image",
+        "description": "With no folder set, Export fell back to saving each image as a separate browser download, which opened its own Save As dialog for every image — exporting twenty references meant dismissing twenty dialogs. RefBoard now writes the whole batch to the chosen folder in one step, and if the folder is empty it asks you to pick one instead of starting anything."
+      },
+      {
+        "title": "Export starts in a real folder by default",
+        "description": "The export folder no longer opens blank on a machine that has never exported. It defaults to Documents\\RefBoard Exports again, and still remembers the last folder you chose."
       }
     ]
   }

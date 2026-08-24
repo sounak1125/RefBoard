@@ -429,6 +429,27 @@ function setupIpc() {
     session.firstImage = false;
   }
 
+  ipcMain.handle('choose-folder', async event => {
+    const r = await dialog.showOpenDialog(windowForEvent(event), {
+      title: 'Choose export folder',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (r.canceled || !r.filePaths.length) return null;
+    return r.filePaths[0];
+  });
+
+  ipcMain.handle('get-default-export-dir', async () => {
+    return path.join(app.getPath('documents'), 'RefBoard Exports');
+  });
+
+  ipcMain.handle('get-process-memory-info', async () => {
+    return app.getAppMetrics().map(metric => ({
+      pid: metric.pid,
+      type: metric.type,
+      memory: metric.memory,
+    }));
+  });
+
   ipcMain.handle('write-export-files', async (_, { dir, files }) => {
     await fs.mkdir(dir, { recursive: true });
     const used = new Set();
