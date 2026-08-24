@@ -3,6 +3,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const { replaceBoardFile, recoverBoardFileIfMissing } = require('./scripts/board-file-replace');
+const { boardRenameFailureText, renameBoardFile } = require('./scripts/board-rename');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -686,6 +687,60 @@ function setupIpc() {
     }
     await saveRecentWorks(list);
     return list;
+  });
+
+  ipcMain.handle('rename-recent-work', async (_, { filePath, name } = {}) => {
+    if (!filePath) return { ok: false, reason: 'invalid-path', message: boardRenameFailureText('invalid-path') };
+    const from = path.resolve(String(filePath));
+    // Moving a file out from under an in-flight save or streamed open would
+    // leave the session writing to (or reading from) a path that no longer
+    // names this board.
+    for (const session of boardSaveSessions.values()) {
+      if (path.resolve(session.target) === from) return { ok: false, reason: 'busy', message: boardRenameFailureText('busy') };
+    }
+    for (const session of boardOpenSessions.values()) {
+      if (path.resolve(session.filePath) === from) return { ok: false, reason: 'busy', message: boardRenameFailureText('busy') };
+    }
+
+    const result = await renameBoardFile(from, name);
+    if (!result.ok) {
+      return { ...result, message: boardRenameFailureText(result.reason), list: await loadRecentWorks() };
+    }
+
+    const oldId = recentIdForPath(result.from);
+    const newId = recentIdForPath(result.to);
+    let list = await loadRecentWorks();
+    const idx = list.findIndex(w => w.id === oldId || path.resolve(w.path) === result.from);
+    if (idx !== -1) {
+      const entry = list[idx];
+      let thumbnail = entry.thumbnail || null;
+      if (thumbnail && oldId !== newId) {
+        const next = `${newId}${path.extname(thumbnail) || '.jpg'}`;
+        try {
+          await ensureThumbDir();
+          await fs.rename(path.join(thumbnailsDir(), thumbnail), path.join(thumbnailsDir(), next));
+          thumbnail = next;
+        } catch {
+          // A missing cached thumbnail is not worth failing a completed rename
+          // over; the card falls back to the preview inside the board file.
+          thumbnail = null;
+        }
+      }
+      const updated = { ...entry, id: newId, path: result.to, title: result.name, thumbnail };
+      // A stale entry may already point at the new path (a board that used to
+      // live there). Drop it so the same file cannot appear twice.
+      list = list
+        .filter((_w, i) => i !== idx)
+        .filter(w => w.id !== newId && path.resolve(w.path) !== result.to);
+      list.splice(Math.min(idx, list.length), 0, updated);
+      await saveRecentWorks(list);
+    }
+
+    if (!result.unchanged) {
+      refreshShellIcons(result.from);
+      refreshShellIcons(result.to);
+    }
+    return { ok: true, unchanged: !!result.unchanged, from: result.from, path: result.to, title: result.name, list };
   });
 
   ipcMain.handle('touch-recent-work-edited', async (_, filePath) => {
