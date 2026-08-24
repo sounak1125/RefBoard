@@ -24,7 +24,7 @@ git push -u origin main
 
 3. Create the first release (builds the installer and uploads it):
 
-Follow **Shipping a new version** below (build into `dist-release`, then `npm run release:ship`, then publish the draft).
+Follow **Shipping a new version** below (build into `dist/`, then `npm run release:ship`, then publish the draft).
 Do not create releases by pushing a `v*` tag — that Actions path is unreliable.
 
 ### Shipping a new version
@@ -69,14 +69,42 @@ git commit -m "[highlight:new] Feature name | What it lets people do."
 git commit -m "[highlight:improved] Improvement name | What now feels better."
 git commit -m "[highlight:fixed] Bug name | What now works correctly."
 ```
-4. Build the installer into `dist-release` (not the default `dist/`):
+4. Build the installer into `dist/`:
 
 ```powershell
-npx electron-builder --win --config.directories.output=dist-release
+npm run dist
 ```
 
-   Or run `node scripts/sync-changelog.mjs` first if you skip `npm run dist` (that command does not run `predist`).
-5. Create a **draft** GitHub release and upload auto-update assets (`latest.yml`, setup `.exe`, `.blockmap`):
+   That runs `predist` first: `npm test`, then `sync-changelog.mjs`, which copies
+   `release-highlights.json` into `changelog.json`. If you call `electron-builder`
+   directly instead, run `node scripts/sync-changelog.mjs` yourself — `predist`
+   will not fire. Do not redirect the output elsewhere: `release:ship` reads
+   `dist`, and the bootstrapper writes to `dist/bootstrapper`, so a different
+   output directory splits the two artifacts apart.
+
+   `dist/` keeps older builds and `latest.yml` is not version-stamped, so check
+   that the feed describes the version you just built:
+
+```powershell
+Get-Content dist\latest.yml -TotalCount 1
+```
+5. Refresh the bootstrapper payload and build it. `release:ship` uploads
+   `RefBoard-Installer-<ver>.exe` alongside the setup, and the payload does not
+   update itself — a stale one ships the previous version inside a correctly
+   named installer:
+
+```powershell
+Copy-Item dist\RefBoard-Setup-1.0.3.exe bootstrapper\payload\RefBoard-Setup.exe -Force
+Push-Location bootstrapper; npm run dist; Pop-Location
+```
+
+   (Use your own version.) Output: `dist\bootstrapper\RefBoard-Installer-<ver>.exe`.
+   Confirm the payload matches the setup you just built:
+
+```powershell
+(Get-FileHash dist\RefBoard-Setup-1.0.3.exe).Hash -eq (Get-FileHash bootstrapper\payload\RefBoard-Setup.exe).Hash
+```
+6. Create a **draft** GitHub release and upload auto-update assets (`latest.yml`, setup `.exe`, `.blockmap`):
 
 ```powershell
 npm run release:ship
