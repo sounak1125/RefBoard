@@ -471,8 +471,8 @@
     }
   },
   "2.0.7": {
-    "headline": "Find it, name it",
-    "summary": "Home gets a search field and in-place board renaming, and content-aware fill is gone so boards stay fast.",
+    "headline": "Lighter, faster, easier to find things in",
+    "summary": "RefBoard is a moodboard app again: animatics and content-aware fill are gone, images snap to each other properly, and Home gets search and renaming.",
     "sections": {
       "new": [
         {
@@ -482,13 +482,54 @@
         {
           "title": "Rename a board without leaving RefBoard",
           "description": "The pencil on a Home card (or F2) renames the board in place. It renames the real .refboard file on disk, keeps its backup and thumbnail, and refuses names the file system would reject."
+        },
+        {
+          "title": "Search a board from the toolbar",
+          "description": "A search button sits in the left toolbar, so finding notes and images on a board no longer depends on knowing Ctrl+F."
         }
       ],
-      "improved": [],
+      "improved": [
+        {
+          "title": "Images snap to each other, not to a grid",
+          "description": "Edge magnetism is rebuilt PureRef-style and is on by default: images butt together with no gap, edges line up down a column, and a snap holds until you clearly pull away. The dot grid is decoration only now, so it no longer quantizes every drag to 10px."
+        },
+        {
+          "title": "A lighter install",
+          "description": "Dropping animatics and content-aware fill takes the installer from 115 MB to 86 MB, and RefBoard no longer loads a video toolchain at startup whether or not you ever used one."
+        },
+        {
+          "title": "A quieter Home",
+          "description": "The landing page is reworked into a calmer recents workspace."
+        },
+        {
+          "title": "Autosave admits when it fails",
+          "description": "A failed session autosave used to report success anyway. It now raises a warning that offers Save board... and names the cause, including running out of storage quota."
+        },
+        {
+          "title": "Leaner undo on big boards",
+          "description": "Undo history is capped by memory as well as by step count, so a long session on a large board no longer holds hundreds of megabytes of snapshots."
+        }
+      ],
       "fixed": [
+        {
+          "title": "Animatics removed",
+          "description": "The timeline, audio, time remap and Premiere/After Effects export are gone — a second app had grown inside a moodboard app. Boards saved by 2.0.6 still open, but any audio and video they held is skipped."
+        },
         {
           "title": "Content-aware fill removed",
           "description": "The lasso fill tool is no longer in the toolbar. It was too heavy and unreliable for everyday moodboard work."
+        },
+        {
+          "title": "Groups keep their contents",
+          "description": "Arrow-keying a selected group moved the frame and left the images behind, and resizing one dropped them too. Both now move what they contain, and a nudge can be undone."
+        },
+        {
+          "title": "Group selection frame rotates with the images",
+          "description": "The multi-select box stayed axis-aligned during a rotate, so it swelled and shrank under itself and the corner handles slid away from the pointer."
+        },
+        {
+          "title": "Copied images keep their original bytes",
+          "description": "Copying an image to the clipboard re-encoded it. It now hands over the original file data."
         }
       ]
     }
