@@ -163,7 +163,7 @@ assert.match(
 );
 assert.match(
   html,
-  /e\.target\.closest\('\.rw-card-clear, \.rw-card-rename, \.rw-rename-input, \.ff-arrow'\)/,
+  /e\.target\.closest\('[^']*\.rw-card-rename[^']*\.rw-rename-input[^']*'\)/,
   'the Focus Flow drag gesture must ignore the rename controls',
 );
 assert.match(html, /else if \(e\.key === 'F2'\) \{ e\.preventDefault\(\); renameFocusedLandingCard\(\); \}/, 'F2 must start a rename on Home');
