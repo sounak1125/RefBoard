@@ -3132,6 +3132,8 @@ body.board-active #whatsNewNotice{ display:none; }
             <div class="s2-control"><div class="ui-num"><input type="number" id="setUndoLimit" min="10" max="1000" step="10"><div class="ui-num-steps"><button type="button" class="ui-num-up" tabindex="-1" aria-label="Increase">▲</button><button type="button" class="ui-num-down" tabindex="-1" aria-label="Decrease">▼</button></div></div></div></div>
           <div class="s2-row"><div><div class="s2-label">Image render quality</div><div class="s2-sub">Lower = smoother panning with many images</div></div>
             <div class="s2-control"><select id="setRenderQuality"><option value="high">High</option><option value="balanced">Balanced</option><option value="fast">Fast</option></select></div></div>
+          <div class="s2-row"><div><div class="s2-label">Decoded image memory</div><div class="s2-sub">Higher keeps more images sharp at once on large boards</div></div>
+            <div class="s2-control"><select id="setImageMemory"><option value="auto">Auto</option><option value="256">256 MB</option><option value="512">512 MB</option><option value="1024">1 GB</option><option value="2048">2 GB</option></select></div></div>
           <div class="s2-row"><div><div class="s2-label">Pause rendering when unfocused</div><div class="s2-sub">Stop redrawing the canvas while the app is in the background</div></div>
             <div class="s2-control"><button class="s2-toggle" id="setPauseHidden" role="switch"></button></div></div>
           <div class="s2-row"><div><div class="s2-label">Hide grid while navigating</div><div class="s2-sub">Skip dot grid during pan and zoom for smoother view moves</div></div>
@@ -3326,6 +3328,7 @@ import {
 } from './scripts/landing-search.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
 import {
+  IMAGE_FLOOR_TIER,
   IMAGE_FULL_TIER,
   IMAGE_NAV_PREWARM_DELAY_MS,
   IMAGE_PROXY_TIER,
@@ -3393,9 +3396,11 @@ function effectiveZoomMin() {
   return Math.max(ZOOM_ABS_FLOOR, Math.min(ZOOM_MIN, fitS * 0.18));
 }
 const images = new Map();       // imgId -> disk-backed image record; full bitmap is an LRU working-set entry
-const FULL_BITMAP_MAX_PIXELS = 8_000_000; // ~31 MiB RGBA, plus one protected oversized image when required
 const imageResidency = createImageResidencyController({
-  maxFullPixels: FULL_BITMAP_MAX_PIXELS,
+  // Full bitmaps and LOD tiers share one ceiling, so the cap is resolved per
+  // call from the setting and from what the LOD pool currently holds. See
+  // imageFullBitmapBudgetPixels().
+  maxFullPixels: () => imageFullBitmapBudgetPixels(),
   records: () => images.values(),
   closeBitmap: bitmap => bitmap?.close?.(),
 });
@@ -3451,6 +3456,10 @@ function imageMemoryStats() {
     stableProxyMiB: Math.round(proxyPixels * 4 / 104857.6) / 10,
     lodCount,
     lodMiB: Math.round(lodPixels * 4 / 104857.6) / 10,
+    imageMemorySetting: appSettings.imageMemoryMB,
+    imageMemoryBudgetMiB: Math.round(imageMemoryBudgetPixels() * 4 / 104857.6) / 10,
+    imageWorkingBudgetMiB: Math.round(imageWorkingBudgetPixels() * 4 / 104857.6) / 10,
+    floorTierCount: imageFloorDemand.size,
     residentBlobMiB: Math.round(residentBlobBytes / 104857.6) / 10,
     diskBackedOriginalMiB: Math.round(diskBlobBytes / 104857.6) / 10,
     undoEntries: undoStack.length,
@@ -3482,6 +3491,8 @@ function imageRenderDiagnostics(itemId) {
     lodAllowed: displayTarget !== IMAGE_FULL_TIER
       && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, displayTarget)),
     fullAllowed: allowedImageFullDemand.has(imageFullDemandKey(it.imgId)),
+    floorTier: imageFloorTierFor(images.get(it.imgId)),
+    floorResident: !!images.get(it.imgId)?.lod?.entries?.has(IMAGE_FLOOR_TIER),
   };
 }
 
@@ -4600,7 +4611,11 @@ let saveTimer = 0;
 let recentEditedTimer = 0;
 let autosaveTimer = null;
 const WHEEL_NAV_SETTLE_MS = 220;
-const WHEEL_FOCUS_PRIORITY_MS = 5000;
+/* Long enough to outlast a wheel gesture plus its settle, short enough that the
+   pointer's last resting place stops overriding demand for everything else.
+   At the old 5s an image under the cursor held absolute priority long after the
+   user had moved on, holding its neighbours on the proxy. */
+const WHEEL_FOCUS_PRIORITY_MS = 1200;
 let wheelNavUntil = 0;
 let wheelFocusImageId = null;
 let wheelFocusPriorityUntil = 0;
@@ -4633,6 +4648,7 @@ const SETTINGS_DEFAULTS = {
   toolbarMode: 'floating',
   checkUpdatesOnStartup: true,
   minimap: false,
+  imageMemoryMB: 'auto',
 };
 let appSettings = { ...SETTINGS_DEFAULTS };
 let undoLimit = SETTINGS_DEFAULTS.undoLimit;
@@ -4654,12 +4670,38 @@ function normalizeToolbarMode(v) {
   return v === 'pinned' ? 'pinned' : 'floating';
 }
 
+const IMAGE_MEMORY_CHOICES = [256, 512, 1024, 2048];
+
+function normalizeImageMemory(v) {
+  const n = parseInt(v, 10);
+  return IMAGE_MEMORY_CHOICES.includes(n) ? n : 'auto';
+}
+
+/**
+ * navigator.deviceMemory is Chromium's coarse RAM estimate in GiB, rounded to a
+ * power of two and capped at 8. 64 MiB of decoded surfaces per GiB puts a 4 GiB
+ * machine at 256 MB and anything 8 GiB or larger at 512 MB.
+ */
+function autoImageMemoryMB() {
+  const gib = Number(navigator.deviceMemory);
+  if (!Number.isFinite(gib) || gib <= 0) return 512;
+  return Math.max(256, Math.min(1024, Math.round(gib * 64)));
+}
+
+function resolvedImageMemoryMB() {
+  const v = appSettings?.imageMemoryMB;
+  if (v === 'auto' || v == null) return autoImageMemoryMB();
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : autoImageMemoryMB();
+}
+
 function loadAppSettings() {
   try { appSettings = { ...SETTINGS_DEFAULTS, ...JSON.parse(localStorage.getItem('refboard.settings') || '{}') }; }
   catch (e) { appSettings = { ...SETTINGS_DEFAULTS }; }
   appSettings.autosaveIntervalMin = normalizeAutosaveInterval(appSettings.autosaveIntervalMin);
   appSettings.landingLayout = normalizeLandingLayout(appSettings.landingLayout);
   appSettings.toolbarMode = normalizeToolbarMode(appSettings.toolbarMode);
+  appSettings.imageMemoryMB = normalizeImageMemory(appSettings.imageMemoryMB);
 }
 function saveAppSettings() {
   try { localStorage.setItem('refboard.settings', JSON.stringify(appSettings)); } catch (e) {}
@@ -4675,6 +4717,10 @@ function applyAppSettings() {
   applyToolbarMode();
   setMinimapOn(!!appSettings.minimap);
   startAutosaveTimer();
+  // A lowered decoded-image budget must reclaim now rather than waiting for the
+  // next decode to notice; a raised one must be visible on the next frame.
+  recomputeImageMemoryBudgets();
+  scheduleFullBitmapEviction();
   invalidate();
 }
 function applyRenderSmoothing(g) {
@@ -4682,10 +4728,81 @@ function applyRenderSmoothing(g) {
   g.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
 }
 
-const IMAGE_LOD_MAX_PIXELS = 8_000_000; // ~31 MiB RGBA; disk-backed originals remain lossless
-const IMAGE_LOD_MAX_CONCURRENT = 2;
-const IMAGE_LOD_MAX_QUEUE = 16;
+/**
+ * Decoded-image budgets.
+ *
+ * Full bitmaps and LOD tiers used to hold 8M px (~31 MiB) each, fixed. Because
+ * an image whose original is smaller than its chosen tier decodes at full
+ * resolution instead, an ordinary board of 600-900px references put nearly
+ * every visible image into the full-bitmap pool: about a dozen fit, and the rest
+ * were refused and drawn from the 256px proxy. Both pools now draw from one
+ * ceiling sized to the machine, because an image renders from exactly one of
+ * them and a 900px full bitmap is genuinely cheaper than a 1024 LOD.
+ *
+ * IMAGE_DECODE_MIN_POOL_PIXELS is the old fixed cap, kept as a per-pool floor so
+ * a pathological board cannot squeeze either pool to nothing.
+ */
+const IMAGE_DECODE_MIN_POOL_PIXELS = 8_000_000;
+const IMAGE_LOD_MAX_CONCURRENT = 4;
+const IMAGE_LOD_MAX_QUEUE = 128;
 const IMAGE_STABLE_PROXY_MAX_DIM = IMAGE_PROXY_TIER;
+/** Ranks the floor tier ahead of wheel focus (2e15) and selection (1e15). */
+const IMAGE_FLOOR_DEMAND_PRIORITY = 3e15;
+/**
+ * Frames a drawn surface stays safe from eviction. At one frame a tier that lost
+ * its budget slot for a single frame was reclaimed immediately, so panning back
+ * over it re-decoded from scratch: a visible blur-sharpen-blur cycle.
+ */
+const IMAGE_LOD_PROTECT_FRAMES = 3;
+let imageWorkingBudgetCache = IMAGE_DECODE_MIN_POOL_PIXELS;
+
+function imageMemoryBudgetPixels() {
+  return Math.max(IMAGE_DECODE_MIN_POOL_PIXELS,
+    Math.round(resolvedImageMemoryMB() * 1048576 / 4));
+}
+
+/**
+ * Stable proxies are mandatory residency, so they are charged to the budget
+ * before anything competes for what is left. Recomputed once per plan rather
+ * than tracked incrementally: the loop is a few hundred entries of arithmetic
+ * and cannot drift out of sync with the records.
+ */
+function recomputeImageMemoryBudgets() {
+  let proxyPixels = 0;
+  for (const im of images.values()) {
+    if (!im.proxy) continue;
+    proxyPixels += Math.max(1, im.proxyW || im.proxy.width || 1)
+      * Math.max(1, im.proxyH || im.proxy.height || 1);
+  }
+  imageWorkingBudgetCache = Math.max(IMAGE_DECODE_MIN_POOL_PIXELS,
+    imageMemoryBudgetPixels() - proxyPixels);
+  return imageWorkingBudgetCache;
+}
+
+/** Pixels available to full bitmaps and LOD tiers together. */
+function imageWorkingBudgetPixels() {
+  return imageWorkingBudgetCache;
+}
+
+/** Admission ceiling for one frame's high-quality demand. */
+function imageDemandBudgetPixels() {
+  return imageWorkingBudgetPixels();
+}
+
+/* Each evictor is capped by what the other pool currently holds, so the two
+   together stay inside the working budget without either needing a fixed share
+   of it. Both floor at IMAGE_DECODE_MIN_POOL_PIXELS to rule out a spiral where
+   the pools evict each other to zero. */
+function imageFullBitmapBudgetPixels() {
+  return Math.max(IMAGE_DECODE_MIN_POOL_PIXELS,
+    imageWorkingBudgetPixels() - imageLodTotalPixels);
+}
+
+function imageLodBudgetPixels() {
+  return Math.max(IMAGE_DECODE_MIN_POOL_PIXELS,
+    imageWorkingBudgetPixels() - imageResidency.stats().fullPixels);
+}
+
 let imageLodTotalPixels = 0;
 let imageLodClock = 0;
 let imageLodActiveJobs = 0;
@@ -4700,17 +4817,58 @@ let imageDecodeActiveCount = 0;
 let imageDecodePumpScheduled = false;
 /** @type {{ im: object, priority: number, display: boolean, itemId: string|null, started: boolean, resolveSlot: () => void }[]} */
 const imageDecodeQueue = [];
+/* One admitted set, split by key prefix for the callers that only care about
+   one pool. See the budget block above for why the pools are not rationed
+   separately. */
+let allowedImageDemand = new Set();
 let allowedImageLodDemand = new Set();
 let allowedImageFullDemand = new Set();
+/* Floor tiers for every visible image that wants better than the proxy. Held
+   outside the frame-by-frame protection window so a budget miss cannot reclaim
+   the surface that exists precisely to survive a budget miss. */
+let imageFloorDemand = new Set();
 const imageDisplayTargets = new Map();
 const imageDesiredTargets = new Map();
 const imagePrewarmStates = new Map();
 const imagePrewarmTargets = new Map();
 let imagePrewarmWakeTimer = 0;
 let activeImageLodDemand = new Set();
+const recentImageLodDemand = [];
 
 const imageLodDemandKey = (imgId, bucket) => `lod:${imgId}:${bucket}`;
 const imageFullDemandKey = imgId => `full:${imgId}`;
+
+/** True while a LOD entry is still needed by a recent frame or by the floor. */
+function imageLodSurfaceProtected(imgId, bucket) {
+  const key = imageLodDemandKey(imgId, bucket);
+  if (activeImageLodDemand.has(key) || imageFloorDemand.has(key)) return true;
+  for (const frame of recentImageLodDemand) {
+    if (frame.has(key)) return true;
+  }
+  return false;
+}
+
+/** Retire the finished frame's protections and open a fresh set for this one. */
+function beginImageLodFrame() {
+  recentImageLodDemand.push(activeImageLodDemand);
+  while (recentImageLodDemand.length > IMAGE_LOD_PROTECT_FRAMES) recentImageLodDemand.shift();
+  activeImageLodDemand = new Set();
+}
+
+function resetImageLodProtection() {
+  activeImageLodDemand = new Set();
+  recentImageLodDemand.length = 0;
+  imageFloorDemand = new Set();
+}
+
+/**
+ * The tier a budget-starved image falls back to instead of the 256px proxy.
+ * Sources at or below the floor are excluded: their full bitmap is no larger
+ * than the copy would be, so it competes on price and wins.
+ */
+function imageFloorTierFor(im) {
+  return Math.max(1, im?.w || 1, im?.h || 1) > IMAGE_FLOOR_TIER ? IMAGE_FLOOR_TIER : null;
+}
 
 function imageTierIsReady(im, tier) {
   if (!im) return false;
@@ -4746,11 +4904,13 @@ function imageTargetForItem(it) {
 }
 
 /**
- * Admit only the closest high-quality surfaces that fit the decoded budgets.
- * Every other visible image keeps drawing its stable proxy, so a fixed view can
- * never create an evict/redecode loop.
+ * Admit the closest high-quality surfaces that fit the decoded budget, and keep
+ * a floor tier resident for every visible image that misses it. A fixed view
+ * still cannot create an evict/redecode loop, but a refused image now falls back
+ * to 512px rather than to the 256px stable proxy.
  */
 function updateImageRenderDemandPlan(items) {
+  recomputeImageMemoryBudgets();
   const visibleImageIds = new Set((items || []).filter(isImageItem).map(it => it.id));
   const liveImageIds = new Set(state.items.filter(isImageItem).map(it => it.id));
   for (const itemId of imagePrewarmTargets.keys()) {
@@ -4763,6 +4923,8 @@ function updateImageRenderDemandPlan(items) {
   }
   const lodCandidates = [];
   const fullCandidates = [];
+  const floorCandidates = [];
+  const floorDemand = new Set();
   const prewarmRequests = [];
   const navigating = isNavigatingView();
   const now = performance.now();
@@ -4807,6 +4969,25 @@ function updateImageRenderDemandPlan(items) {
     const distance = imageDemandDistance(it, demandNow);
     addCandidate(it, im, target, distance);
 
+    // Anything asking for better than the proxy also asks for its floor. The
+    // floor outranks pointer focus and selection so it is admitted first: it is
+    // cheap (a 512 tier is well under a fifth of a 1024 one) and it is the only
+    // thing standing between a budget miss and a visibly soft image.
+    const floorTier = target === IMAGE_PROXY_TIER ? null : imageFloorTierFor(im);
+    if (floorTier) {
+      const floorKey = imageLodDemandKey(it.imgId, floorTier);
+      floorDemand.add(floorKey);
+      const fd = imageLodDims(im, floorTier);
+      // Pushed even when the floor IS the target: the candidate is deduplicated
+      // by key at the nearest distance, so this simply promotes that image's own
+      // request to floor priority instead of leaving it to compete and lose.
+      floorCandidates.push({
+        key: floorKey,
+        pixels: fd.w * fd.h,
+        distance: distance - IMAGE_FLOOR_DEMAND_PRIORITY,
+      });
+    }
+
     const previousPrewarm = imagePrewarmStates.get(it.id);
     const prewarmState = updateImagePrewarmState({
       previousTier: previousPrewarm?.tier,
@@ -4838,12 +5019,21 @@ function updateImageRenderDemandPlan(items) {
       invalidate();
     }, Math.max(1, Math.ceil(prewarmWakeDelay)));
   }
-  // Carry the prior frame's admissions forward so budget-boundary images stop
-  // oscillating as pointer-anchored zoom reorders them.
-  allowedImageLodDemand = selectImageRenderDemand(lodCandidates, IMAGE_LOD_MAX_PIXELS,
-    { previous: allowedImageLodDemand }).selected;
-  allowedImageFullDemand = selectImageRenderDemand(fullCandidates, FULL_BITMAP_MAX_PIXELS,
-    { previous: allowedImageFullDemand }).selected;
+  imageFloorDemand = floorDemand;
+  // One pass over one pool, carrying the prior frame's admissions forward so
+  // budget-boundary images stop oscillating as pointer-anchored zoom reorders
+  // them. Floor demand is ranked into the same pass rather than exempted, so the
+  // admitted total is exactly what the budget says it is.
+  allowedImageDemand = selectImageRenderDemand(
+    [...floorCandidates, ...lodCandidates, ...fullCandidates],
+    imageDemandBudgetPixels(),
+    { previous: allowedImageDemand }).selected;
+  allowedImageLodDemand = new Set();
+  allowedImageFullDemand = new Set();
+  for (const key of allowedImageDemand) {
+    if (key.startsWith('full:')) allowedImageFullDemand.add(key);
+    else allowedImageLodDemand.add(key);
+  }
   for (const { it, im, target } of prewarmRequests) {
     const demandAllowed = target === IMAGE_FULL_TIER
       ? allowedImageFullDemand.has(imageFullDemandKey(it.imgId))
@@ -5288,8 +5478,11 @@ function isImageLodJobStillNeeded(job) {
   if (ensureImageVersion(job.im) !== job.version) return false;
   const it = state.items.find(x => x.id === job.itemId && isImageItem(x) && images.get(x.imgId) === job.im);
   if (!it || !isItemVisible(it, currentLodViewport())) return false;
-  return (imageTargetForItem(it) === job.bucket || imagePrewarmTargets.get(it.id) === job.bucket)
-    && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, job.bucket));
+  const key = imageLodDemandKey(it.imgId, job.bucket);
+  return (imageTargetForItem(it) === job.bucket
+      || imagePrewarmTargets.get(it.id) === job.bucket
+      || imageFloorDemand.has(key))
+    && allowedImageLodDemand.has(key);
 }
 
 function scheduleImageLodPump() {
@@ -5301,10 +5494,35 @@ function scheduleImageLodPump() {
   }, 0);
 }
 
-function dropOldestQueuedImageLodJob() {
-  const job = imageLodQueue.shift();
-  if (job?.im?.lod?.pending?.get(job.bucket) === job) job.im.lod.pending.delete(job.bucket);
-  job?.resolve?.(null);
+/**
+ * Live importance of a queued job: viewport-centre distance, with floor work
+ * ahead of everything. The queue used to be strict FIFO in draw order, so an
+ * overflow dropped the request enqueued longest ago -- typically the image
+ * nearest the centre -- and sharpening arrived in an order unrelated to what the
+ * user was looking at.
+ */
+function imageLodJobRank(job) {
+  if (!job) return Number.POSITIVE_INFINITY;
+  const isFloor = imageFloorDemand.has(imageLodDemandKey(job.im?.id, job.bucket));
+  return imageDecodeItemDist2(job.itemId) - (isFloor ? IMAGE_FLOOR_DEMAND_PRIORITY : 0);
+}
+
+function extractQueuedImageLodJob(pickWorst) {
+  if (!imageLodQueue.length) return null;
+  let index = 0;
+  let best = imageLodJobRank(imageLodQueue[0]);
+  for (let i = 1; i < imageLodQueue.length; i++) {
+    const rank = imageLodJobRank(imageLodQueue[i]);
+    if (pickWorst ? rank > best : rank < best) { best = rank; index = i; }
+  }
+  return imageLodQueue.splice(index, 1)[0];
+}
+
+function dropWorstQueuedImageLodJob() {
+  const job = extractQueuedImageLodJob(true);
+  if (!job) return;
+  if (job.im?.lod?.pending?.get(job.bucket) === job) job.im.lod.pending.delete(job.bucket);
+  job.resolve?.(null);
 }
 
 function queueImageLod(im, it, bucket) {
@@ -5313,7 +5531,7 @@ function queueImageLod(im, it, bucket) {
   const lod = ensureImageLodState(im);
   if (lod.entries.has(bucket)) return Promise.resolve(lod.entries.get(bucket));
   if (lod.pending.has(bucket)) return lod.pending.get(bucket).promise;
-  while (imageLodQueue.length >= IMAGE_LOD_MAX_QUEUE) dropOldestQueuedImageLodJob();
+  while (imageLodQueue.length >= IMAGE_LOD_MAX_QUEUE) dropWorstQueuedImageLodJob();
   let resolve;
   const promise = new Promise(r => { resolve = r; });
   const job = { im, itemId: it.id, bucket, version: ensureImageVersion(im), promise, resolve };
@@ -5325,7 +5543,8 @@ function queueImageLod(im, it, bucket) {
 
 function pumpImageLodQueue() {
   while (imageLodActiveJobs < IMAGE_LOD_MAX_CONCURRENT && imageLodQueue.length) {
-    const job = imageLodQueue.shift();
+    const job = extractQueuedImageLodJob(false);
+    if (!job) break;
     if (!isImageLodJobStillNeeded(job)) {
       if (job?.im?.lod?.pending?.get(job.bucket) === job) job.im.lod.pending.delete(job.bucket);
       job?.resolve?.(null);
@@ -5440,14 +5659,15 @@ async function runImageLodJob(job) {
 }
 
 function evictImageLods(protectIm = null, protectBucket = null) {
-  while (imageLodTotalPixels > IMAGE_LOD_MAX_PIXELS) {
+  const cap = imageLodBudgetPixels();
+  while (imageLodTotalPixels > cap) {
     let oldest = null;
     for (const im of images.values()) {
       const lod = im.lod;
       if (!lod) continue;
       for (const [bucket, entry] of lod.entries) {
         if (im === protectIm && bucket === protectBucket) continue;
-        if (activeImageLodDemand.has(imageLodDemandKey(im.id, bucket))) continue;
+        if (imageLodSurfaceProtected(im.id, bucket)) continue;
         if (!oldest || entry.lastUsed < oldest.entry.lastUsed) oldest = { im, bucket, entry };
       }
     }
@@ -5465,13 +5685,28 @@ function getImageLodForDraw(im, it, cr) {
     let best = null, bestBucket = null, bestDistance = Infinity;
     for (const [entryBucket, entry] of lod.entries) {
       const distance = Math.abs(Math.log(Math.max(1, entryBucket) / Math.max(1, target)));
-      if (distance < bestDistance) { best = entry; bestBucket = entryBucket; bestDistance = distance; }
+      // Log distance ties a tier one step above the target against one step
+      // below it. Downscaling a sharper surface beats upscaling a softer one.
+      const better = distance < bestDistance
+        || (distance === bestDistance && entryBucket > bestBucket);
+      if (better) { best = entry; bestBucket = entryBucket; bestDistance = distance; }
     }
     if (best) {
       best.lastUsed = ++imageLodClock;
       activeImageLodDemand.add(imageLodDemandKey(it.imgId, bestBucket));
     }
     return best;
+  };
+  // Whenever the requested surface is not available yet, the floor is what stops
+  // the fallback landing on the 256px proxy. nearestLod() then finds it, because
+  // it is the closest resident tier to anything above it.
+  const requestFloor = () => {
+    const floorTier = imageFloorTierFor(im);
+    if (!floorTier || lod.entries.has(floorTier)) return;
+    const key = imageLodDemandKey(it.imgId, floorTier);
+    if (imageFloorDemand.has(key) && allowedImageLodDemand.has(key)) {
+      void queueImageLod(im, it, floorTier);
+    }
   };
   if (target === IMAGE_PROXY_TIER) return null;
   if (target === IMAGE_FULL_TIER) {
@@ -5480,7 +5715,9 @@ function getImageLodForDraw(im, it, cr) {
     if (!im.bitmap && allowedImageFullDemand.has(imageFullDemandKey(it.imgId))) {
       requestImageDecode(im, it);
     }
-    return im.bitmap ? null : nearestLod(Math.max(im.w, im.h));
+    if (im.bitmap) return null;
+    requestFloor();
+    return nearestLod(Math.max(im.w, im.h));
   }
   const entry = lod.entries.get(target);
   if (entry) {
@@ -5489,6 +5726,7 @@ function getImageLodForDraw(im, it, cr) {
     return entry;
   }
   if (allowedImageLodDemand.has(imageLodDemandKey(it.imgId, target))) queueImageLod(im, it, target);
+  requestFloor();
   return nearestLod(target);
 }
 
@@ -5501,6 +5739,13 @@ async function warmVisibleImageProxies() {
     if (!im) continue;
     await ensureStableImageProxy(im);
     const target = imageTargetForItem(it);
+    // Warm the floor first: it is the surface the image will actually draw if
+    // its target misses the budget or has not finished decoding.
+    const floorTier = target === IMAGE_PROXY_TIER ? null : imageFloorTierFor(im);
+    if (floorTier && floorTier !== target
+        && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, floorTier))) {
+      await queueImageLod(im, it, floorTier);
+    }
     if (target !== IMAGE_PROXY_TIER && target !== IMAGE_FULL_TIER
         && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, target))) {
       await queueImageLod(im, it, target);
@@ -5658,7 +5903,11 @@ function releaseAllImages() {
   imageDesiredTargets.clear();
   imagePrewarmStates.clear();
   imagePrewarmTargets.clear();
-  activeImageLodDemand = new Set();
+  resetImageLodProtection();
+  allowedImageDemand = new Set();
+  allowedImageLodDemand = new Set();
+  allowedImageFullDemand = new Set();
+  recomputeImageMemoryBudgets();
 }
 
 async function restoreSessionImages(imgIds, imageNames, savedImageMeta = []) {
@@ -14065,7 +14314,7 @@ function draw() {
   applyRenderSmoothing(ctx);
   collectVisibleItems(viewport);
   updateImageRenderDemandPlan(drawVisibleItems);
-  activeImageLodDemand = new Set();
+  beginImageLodFrame();
   for (const it of drawVisibleItems) {
     if (isGroupItem(it)) {
       drawGroupFrame(it, { pulse: it.id === dropTargetGroupId });
@@ -16242,6 +16491,7 @@ function syncSettingsUi() {
   const $$ = id => document.getElementById(id);
   $$('setUndoLimit').value = appSettings.undoLimit;
   $$('setRenderQuality').value = appSettings.renderQuality;
+  $$('setImageMemory').value = String(appSettings.imageMemoryMB);
   $$('setLargeMP').value = appSettings.largeImageMP;
   $$('setPauseHidden')?.classList.toggle('on', appSettings.pauseWhenHidden);
   $$('setHideGridNav')?.classList.toggle('on', appSettings.hideGridWhileNavigating);
@@ -16411,6 +16661,7 @@ function wireSettingsControls() {
   const set = (k, v) => { appSettings[k] = v; saveAppSettings(); applyAppSettings(); };
   document.getElementById('setUndoLimit').addEventListener('change', e => set('undoLimit', clamp(parseInt(e.target.value, 10) || 200, 10, 1000)));
   document.getElementById('setRenderQuality').addEventListener('change', e => set('renderQuality', e.target.value));
+  document.getElementById('setImageMemory').addEventListener('change', e => set('imageMemoryMB', normalizeImageMemory(e.target.value)));
   document.getElementById('setLargeMP').addEventListener('change', e => set('largeImageMP', clamp(parseInt(e.target.value, 10) || 40, 5, 200)));
   const toggle = (id, k) => document.getElementById(id).addEventListener('click', () => { set(k, !appSettings[k]); syncSettingsUi(); });
   toggle('setPauseHidden', 'pauseWhenHidden');

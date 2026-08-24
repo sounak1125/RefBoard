@@ -22,6 +22,7 @@
     "test:image-edit-isolation-smoke": "electron scripts/smoke-image-edit-isolation.js",
     "test:draw-zoom-smoke": "electron scripts/smoke-draw-zoom-continuity.js",
     "test:zoom-flicker-smoke": "electron scripts/smoke-zoom-flicker.js",
+    "test:sharpness-smoke": "electron scripts/smoke-large-board-sharpness.js",
     "test:theme-smoke": "node scripts/smoke-theme-system.mjs",
     "test:pin-smoke": "node scripts/smoke-pin-window.mjs",
     "test:content-aware-fill": "node scripts/test-content-aware-fill.mjs && node scripts/test-content-aware-mask.mjs && node scripts/test-content-aware-sampling.mjs && node scripts/test-content-aware-patchmatch.mjs && node scripts/test-content-aware-blend.mjs && node scripts/test-content-aware-composite.mjs && node scripts/test-content-aware-regressions.mjs && node scripts/test-content-aware-scenes.mjs",

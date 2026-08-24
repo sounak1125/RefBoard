@@ -1,6 +1,10 @@
 /**
  * Small policy object for RefBoard's decoded-image working set.
  * Records are owned by the renderer; this module only tracks/pins/evicts them.
+ *
+ * `maxFullPixels` accepts a function so the ceiling can follow a user setting
+ * and the live size of the other decoded pools instead of being frozen at
+ * construction time.
  */
 export function createImageResidencyController({
   maxFullPixels = 24_000_000,
@@ -9,6 +13,12 @@ export function createImageResidencyController({
 } = {}) {
   if (typeof records !== 'function') throw new TypeError('records() is required');
   let clock = 0;
+
+  function budget() {
+    const raw = typeof maxFullPixels === 'function' ? maxFullPixels() : maxFullPixels;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
 
   function prepare(record) {
     if (!record) return record;
@@ -55,19 +65,20 @@ export function createImageResidencyController({
       }
       if (record?.fullPinCount > 0) pinnedCount++;
     }
-    return { fullPixels, decodedCount, pinnedCount, maxFullPixels };
+    return { fullPixels, decodedCount, pinnedCount, maxFullPixels: budget() };
   }
 
   function evict({ protect = null } = {}) {
+    const cap = budget();
     let { fullPixels, decodedCount } = stats();
-    if (fullPixels <= maxFullPixels) return 0;
+    if (fullPixels <= cap) return 0;
     const candidates = [...records()]
       .map(prepare)
       .filter(record => record?.bitmap && record !== protect && !record.decodePromise && record.fullPinCount === 0)
       .sort((a, b) => a.fullLastUsed - b.fullLastUsed);
     let count = 0;
     for (const record of candidates) {
-      if (fullPixels <= maxFullPixels) break;
+      if (fullPixels <= cap) break;
       // A single source may exceed the whole budget. Retain the most-recent
       // working image so high zoom does not enter a decode/evict loop.
       if (decodedCount <= 1) break;
