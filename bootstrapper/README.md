@@ -38,17 +38,17 @@ Your NSIS installer is UNCHANGED. This wraps around whatever it produces.
 
 1. Build your normal RefBoard NSIS installer as usual (from the repo root):
 
-       npx electron-builder --win --config.directories.output=dist-release
+       npm run dist
 
 2. Copy the produced setup into the bootstrapper payload, renamed generically:
 
-       Copy-Item dist-release\RefBoard-Setup-1.1.3.exe bootstrapper\payload\RefBoard-Setup.exe
+       Copy-Item dist\RefBoard-Setup-<ver>.exe bootstrapper\payload\RefBoard-Setup.exe -Force
 
 3. Build the bootstrapper (from bootstrapper/):
 
        npm run dist
 
-   Output: bootstrapper/dist-installer/RefBoard-Installer-<ver>.exe
+   Output: dist/bootstrapper/RefBoard-Installer-<ver>.exe
 
 `npm run dist` auto-runs sync-ui.js, which copies build/installer-ui -> bootstrapper/ui
 so the reel is always current. You never hand-copy the UI.
