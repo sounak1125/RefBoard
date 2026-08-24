@@ -70,8 +70,8 @@ function New-StructuredReleaseNotes {
   return $lines -join [Environment]::NewLine
 }
 
-$version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-$changelog = Get-Content changelog.json -Raw | ConvertFrom-Json
+$version = (Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
+$changelog = Get-Content changelog.json -Raw -Encoding UTF8 | ConvertFrom-Json
 $entry = $changelog.$version
 if ($null -eq $entry) {
   Write-Error "No changelog.json entry for $version"
