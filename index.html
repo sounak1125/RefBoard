@@ -821,6 +821,76 @@ body.board-active #recentWorks{ display:none; }
   color:var(--mut); max-width:420px;
 }
 
+.rw-toolrow{
+  display:flex; align-items:center; justify-content:space-between; gap:16px;
+  margin-top:14px;
+}
+.rw-search{
+  position:relative; display:flex; align-items:center;
+  flex:1 1 auto; max-width:420px; min-width:0;
+}
+.rw-search-icon{
+  position:absolute; left:11px; width:15px; height:15px; pointer-events:none;
+  stroke:var(--dim); stroke-width:1.9; fill:none; stroke-linecap:round;
+  transition:stroke .18s ease;
+}
+.rw-search:focus-within .rw-search-icon{ stroke:var(--acc); }
+.rw-search-input{
+  width:100%; min-width:0;
+  padding:9px 32px 9px 34px; border-radius:10px;
+  border:1px solid var(--line); background:var(--panel); color:var(--txt);
+  font-size:13px; font-family:inherit; outline:none;
+  transition:border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+.rw-search-input::placeholder{ color:var(--dim); }
+.rw-search-input:focus{
+  border-color:color-mix(in srgb, var(--acc) 55%, transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 14%, transparent);
+}
+/* The native clear affordance sits under our own button and cannot be themed. */
+.rw-search-input::-webkit-search-cancel-button{ display:none; }
+.rw-search-clear{
+  position:absolute; right:6px;
+  width:22px; height:22px; border:0; border-radius:6px;
+  background:transparent; color:var(--dim);
+  font-size:15px; line-height:1; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+}
+.rw-search-clear[hidden]{ display:none; }
+.rw-search-clear:hover{ background:rgba(255,255,255,.08); color:var(--txt); }
+.rw-search-count{
+  flex:0 0 auto; font-size:11.5px; color:var(--dim); white-space:nowrap;
+}
+@media (max-width:520px){
+  .rw-toolrow{ flex-direction:column; align-items:stretch; gap:8px; }
+  .rw-search{ max-width:none; }
+  .rw-search-count{ text-align:right; }
+}
+
+.rw-noresults{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px; padding:52px 32px; margin-bottom:8px;
+  background:color-mix(in srgb, var(--panel) 54%, transparent);
+  border:1px solid var(--line); border-radius:16px;
+  color:var(--dim); text-align:center;
+}
+.rw-noresults.hide{ display:none; }
+.rw-noresults .frame{
+  width:72px; height:60px;
+  border:1px solid rgba(255,255,255,.06); border-radius:12px;
+  background:rgba(255,255,255,.02);
+  display:flex; align-items:center; justify-content:center;
+}
+.rw-noresults .frame svg{
+  width:26px; height:26px; stroke:#454a58; stroke-width:1.7; fill:none;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.rw-noresults h2{
+  font-size:15px; font-weight:500; letter-spacing:-.01em; color:var(--mut);
+}
+.rw-noresults h2 span{ color:var(--txt); }
+.rw-noresults p{ font-size:12.5px; color:var(--dim); max-width:340px; line-height:1.55; }
+
 .rw-grid{
   display:grid;
   grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));
@@ -853,6 +923,27 @@ body.board-active #recentWorks{ display:none; }
   backdrop-filter:blur(8px);
   border:1px solid rgba(255,255,255,.06);
 }
+.rw-card-rename{
+  position:absolute; top:14px; right:46px; z-index:2;
+  width:26px; height:26px; border-radius:7px;
+  background:var(--panel); color:var(--dim);
+  cursor:pointer;
+  opacity:0; transition:opacity .18s ease, background .18s ease, color .18s ease, border-color .18s ease;
+  display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.06);
+}
+.rw-card-rename svg{
+  width:13px; height:13px; stroke:currentColor; stroke-width:1.8; fill:none;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.rw-card:hover .rw-card-rename,
+.rw-card-rename:focus-visible{ opacity:1; }
+.rw-card-rename:hover,
+.rw-card-rename:focus-visible{
+  background:color-mix(in srgb, var(--acc) 80%, transparent); color:var(--acc-contrast);
+  border-color:color-mix(in srgb, var(--acc) 45%, transparent);
+}
 .rw-card:hover .rw-card-clear,
 .rw-card-clear:focus-visible{ opacity:1; }
 .rw-card-clear:hover,
@@ -860,6 +951,56 @@ body.board-active #recentWorks{ display:none; }
   background:var(--danger); color:#fff;
   border-color:rgba(255,107,107,.45);
 }
+.rw-rename-confirm,
+.rw-rename-cancel{
+  position:absolute; top:14px; z-index:3;
+  width:26px; height:26px; border-radius:7px;
+  background:var(--panel); color:var(--dim);
+  cursor:pointer; border:1px solid rgba(255,255,255,.06);
+  opacity:1;
+  display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(8px);
+  transition:background .18s ease, color .18s ease, border-color .18s ease;
+}
+.rw-rename-confirm{ right:46px; }
+.rw-rename-cancel{ right:14px; }
+.rw-rename-confirm svg,
+.rw-rename-cancel svg{
+  width:13px; height:13px; stroke:currentColor; stroke-width:2; fill:none;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.rw-rename-confirm:hover,
+.rw-rename-confirm:focus-visible{
+  background:#39b26a; color:#fff;
+  border-color:rgba(57,178,106,.55);
+}
+.rw-rename-cancel:hover,
+.rw-rename-cancel:focus-visible{
+  background:var(--danger); color:#fff;
+  border-color:rgba(255,107,107,.45);
+}
+.rw-card.is-renaming .rw-card-rename,
+.rw-card.is-renaming .rw-card-clear{ display:none; }
+/* A card in rename mode must not react to hover/click like an open target. */
+.rw-card.is-renaming{ cursor:default; }
+.rw-card.is-renaming:hover{ transform:none; }
+.rw-rename-input{
+  /* The negative margin cancels the field's own padding so the text sits
+     exactly where the title did — no jump when the field opens. */
+  width:calc(100% + 14px); min-width:0; display:block;
+  padding:3px 6px; margin:-4px -7px;
+  border-radius:7px;
+  border:1px solid color-mix(in srgb, var(--acc) 55%, transparent);
+  background:var(--input,#0f1116); color:var(--txt);
+  font:inherit; font-size:13px; font-weight:600; letter-spacing:inherit;
+  outline:none;
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 14%, transparent);
+}
+.rw-rename-input.invalid{
+  border-color:var(--danger);
+  box-shadow:0 0 0 3px color-mix(in srgb, var(--danger) 20%, transparent);
+}
+.rw-title mark{ background:transparent; color:var(--acc); font-weight:700; }
 .rw-card:hover{
   border-color:color-mix(in srgb, var(--acc) 28%, transparent);
   transform:translateY(-4px) scale(1.025);
@@ -1099,8 +1240,16 @@ body.board-active #recentWorks{ display:none; }
 .ff-card .rw-title{ font-size:17px; letter-spacing:-.015em; }
 .ff-card .rw-date{ margin-top:5px; font-size:12px; }
 .ff-card .rw-card-clear{ top:17px; right:17px; }
+.ff-card .rw-card-rename{ top:17px; right:51px; }
+.ff-card .rw-rename-confirm{ top:17px; right:51px; }
+.ff-card .rw-rename-cancel{ top:17px; right:17px; }
 .ff-card:hover .rw-card-clear,
-.ff-card.is-active .rw-card-clear:focus-visible{ opacity:1; }
+.ff-card:hover .rw-card-rename,
+.ff-card.is-active .rw-card-clear:focus-visible,
+.ff-card.is-active .rw-card-rename:focus-visible{ opacity:1; }
+/* Meta is faded out on inactive cards; a rename in progress must stay legible. */
+.ff-card.is-renaming .rw-meta{ opacity:1; }
+.ff-card .rw-rename-input{ font-size:17px; letter-spacing:-.015em; }
 .ff-card-badge{
   position:absolute; left:22px; top:22px; z-index:3;
   padding:5px 9px; border-radius:8px;
@@ -2296,6 +2445,15 @@ body.board-active #whatsNewNotice{ display:none; }
           <button type="button" class="rw-btn primary" id="rwNewBoard">New board</button>
         </div>
       </div>
+      <div class="rw-toolrow" id="rwToolrow" hidden>
+        <div class="rw-search" id="rwSearch">
+          <svg class="rw-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+          <input type="search" id="rwSearchInput" class="rw-search-input" spellcheck="false" autocomplete="off"
+                 placeholder="Search boards by name or folder…" aria-label="Search your boards">
+          <button type="button" class="rw-search-clear" id="rwSearchClear" title="Clear search" aria-label="Clear search" hidden>&times;</button>
+        </div>
+        <div class="rw-search-count" id="rwSearchCount" aria-live="polite"></div>
+      </div>
     </header>
     <div class="rw-restore" id="rwRestore" hidden>
       <div class="rw-restore-copy">
@@ -2324,6 +2482,14 @@ body.board-active #whatsNewNotice{ display:none; }
         <div class="ff-progress" aria-hidden="true"><span class="ff-progress-fill" id="focusProgressFill"></span></div>
       </div>
     </section>
+    <div class="rw-noresults hide" id="recentNoResults">
+      <div class="frame">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+      </div>
+      <h2>No boards match <span id="rwNoResultsQuery"></span></h2>
+      <p>Try a shorter search, or clear it to see every board.</p>
+      <button type="button" class="rw-btn" id="rwNoResultsClear">Clear search</button>
+    </div>
     <div class="rw-empty" id="recentEmpty">
       <div class="frame">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M3.5 17.5 9 12l4 4 3-3 4.5 4.5"/></svg>
@@ -3113,6 +3279,13 @@ import {
   createAsyncQueue,
   promiseWithTimeout,
 } from './scripts/navigation-guards.mjs';
+import {
+  boardQueryTokens,
+  filterRecentWorks,
+  highlightSegments,
+  matchesBoardQuery,
+  normalizeBoardQuery,
+} from './scripts/landing-search.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
 import {
   IMAGE_FULL_TIER,
@@ -10713,6 +10886,7 @@ async function prepareBoardOpen(opts = {}) {
 async function transitionToBoard(opts = {}) {
   const board = $('#board');
   const recent = $('#recentWorks');
+  cancelCardRename();
   document.body.classList.add('board-instant-open');
   await prepareBoardOpen(opts);
   onLanding = false;
@@ -11593,16 +11767,303 @@ function setRwThumbImage(thumbEl, src) {
   img.src = src;
 }
 
-async function renderClassicRecentWorks(listOverride = null, renderSeq = 0) {
+/* ---------- Home: search + rename ---------- */
+
+let recentSearchQuery = '';
+let landingSearchTimer = 0;
+let activeCardRename = null;
+let renameClosedAt = 0;
+
+/**
+ * Renders `text` into `el`, wrapping the parts that matched the current search
+ * so a hit is visible without the user re-reading every card title.
+ */
+function setRwTitleText(el, text, query) {
+  el.textContent = '';
+  const segments = highlightSegments(text, query);
+  if (segments.length === 1 && !segments[0].hit) {
+    el.textContent = segments[0].text;
+    return;
+  }
+  for (const segment of segments) {
+    if (!segment.hit) {
+      el.appendChild(document.createTextNode(segment.text));
+      continue;
+    }
+    const mark = document.createElement('mark');
+    mark.textContent = segment.text;
+    el.appendChild(mark);
+  }
+}
+
+function rwRenameButton(work, title) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'rw-card-rename';
+  btn.title = 'Rename board (F2)';
+  btn.setAttribute('aria-label', `Rename ${title}`);
+  btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7.5 18.5 3 20l1.5-4.5z"/></svg>';
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    beginCardRename(btn.closest('.rw-card, .ff-card'), work);
+  });
+  return btn;
+}
+
+function mountRenameActionButtons(card) {
+  const stop = e => e.stopPropagation();
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.className = 'rw-rename-confirm';
+  confirmBtn.title = 'Save rename';
+  confirmBtn.setAttribute('aria-label', 'Save rename');
+  confirmBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'rw-rename-cancel';
+  cancelBtn.title = 'Cancel rename';
+  cancelBtn.setAttribute('aria-label', 'Cancel rename');
+  cancelBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+  for (const btn of [confirmBtn, cancelBtn]) {
+    for (const type of ['click', 'pointerdown', 'dblclick', 'mousedown']) {
+      btn.addEventListener(type, stop);
+    }
+    btn.addEventListener('mousedown', e => {
+      if (e.button === 0) e.preventDefault();
+    });
+  }
+  confirmBtn.addEventListener('click', e => {
+    e.preventDefault();
+    void commitCardRename();
+  });
+  cancelBtn.addEventListener('click', e => {
+    e.preventDefault();
+    cancelCardRename();
+  });
+
+  card.append(confirmBtn, cancelBtn);
+  return { confirmBtn, cancelBtn };
+}
+
+/**
+ * Swaps a card's title for a text field. The card itself opens the board on
+ * click, so the field has to stop every event it would otherwise inherit.
+ */
+function beginCardRename(card, work) {
+  if (!card || !work?.path) return;
+  if (activeCardRename) {
+    if (activeCardRename.card === card) {
+      activeCardRename.input.focus();
+      activeCardRename.input.select();
+      return;
+    }
+    cancelCardRename();
+  }
+  const titleEl = card.querySelector('.rw-title');
+  if (!titleEl) return;
+
+  const original = work.title || boardTitleFromPath(work.path) || 'Untitled';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'rw-rename-input';
+  input.value = original;
+  input.spellcheck = false;
+  input.autocomplete = 'off';
+  input.setAttribute('aria-label', `Board name for ${original}`);
+
+  titleEl.hidden = true;
+  titleEl.after(input);
+  card.classList.add('is-renaming');
+  const { confirmBtn, cancelBtn } = mountRenameActionButtons(card);
+  activeCardRename = { card, work, input, titleEl, path: work.path, original, settled: false, confirmBtn, cancelBtn };
+
+  for (const type of ['click', 'pointerdown', 'dblclick', 'mousedown']) {
+    input.addEventListener(type, e => e.stopPropagation());
+  }
+  input.addEventListener('input', () => { input.classList.remove('invalid'); });
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); void commitCardRename(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelCardRename(); }
+  });
+  // Clicking straight onto another card should still save what was typed,
+  // matching how Explorer and Finder treat an in-place rename.
+  input.addEventListener('blur', () => { void commitCardRename(); });
+
+  input.focus();
+  input.select();
+}
+
+function teardownCardRename(session) {
+  if (!session || session.settled) return;
+  session.settled = true;
+  if (activeCardRename === session) activeCardRename = null;
+  session.input.remove();
+  session.confirmBtn?.remove();
+  session.cancelBtn?.remove();
+  session.titleEl.hidden = false;
+  session.card.classList.remove('is-renaming');
+  // Clicking off the field blurs it, which closes the rename before the card's
+  // own click handler runs. Without this the dismissing click would open the
+  // board the user was only trying to stop renaming.
+  renameClosedAt = performance.now();
+}
+
+function clickClosedARename() {
+  return performance.now() - renameClosedAt < 250;
+}
+
+function cancelCardRename() {
+  teardownCardRename(activeCardRename);
+}
+
+async function commitCardRename() {
+  const session = activeCardRename;
+  if (!session || session.settled) return;
+  const next = session.input.value;
+  teardownCardRename(session);
+  if (next.trim() === session.original.trim()) return;
+  await renameRecentWork(session.path, next);
+}
+
+async function renameRecentWork(filePath, name) {
+  const wanted = String(name ?? '').trim();
+  if (!wanted) {
+    toast('Enter a board name');
+    return false;
+  }
+
+  if (window.RefBoardAPI?.renameRecentWork) {
+    let result;
+    try {
+      result = await window.RefBoardAPI.renameRecentWork(filePath, wanted);
+    } catch {
+      toast('Could not rename that board');
+      return false;
+    }
+    if (!result?.ok) {
+      toast(result?.message || 'Could not rename that board');
+      return false;
+    }
+    if (result.unchanged) return true;
+    // The renamed board may be the one still loaded in this window; leaving the
+    // old path in place would make the next Ctrl+S write to a file that is gone.
+    if (sameFilePath(currentBoardPath, result.from)) {
+      currentBoardPath = result.path;
+      currentBoardTitle = result.title;
+      // Rewrite the session record too, or a crash-restore would still point at
+      // the old file name. This is not an edit, so it must not mark the board
+      // dirty or bump its "last edited" time.
+      if (state.items.length) void persistBoardNow();
+    }
+    await renderRecentWorks();
+    toast(`Renamed to "${result.title}"`);
+    return true;
+  }
+
+  // Browser fallback: there is no file to move, so only the stored label changes.
+  const list = await getRecentWorksList();
+  const entry = list.find(w => recentPathKey(w.path) === recentPathKey(filePath));
+  if (!entry) return false;
+  entry.title = wanted;
+  try { localStorage.setItem(RECENT_LOCAL_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+  await renderRecentWorks();
+  toast(`Renamed to "${wanted}"`);
+  return true;
+}
+
+function syncLandingSearchUi({ total, shown, searching, hasAnyBoards }) {
+  const row = $('#rwToolrow');
+  const input = $('#rwSearchInput');
+  const clear = $('#rwSearchClear');
+  const count = $('#rwSearchCount');
+  // With nothing saved yet there is nothing to search; the field would only be
+  // one more empty control above the "Create your first board" panel.
+  if (row) row.hidden = !hasAnyBoards && !searching;
+  if (input && input.value !== recentSearchQuery) input.value = recentSearchQuery;
+  if (clear) clear.hidden = !recentSearchQuery;
+  if (count) {
+    count.textContent = searching
+      ? `${shown} of ${total} board${total === 1 ? '' : 's'}`
+      : (total ? `${total} board${total === 1 ? '' : 's'}` : '');
+  }
+  const echo = $('#rwNoResultsQuery');
+  if (echo) echo.textContent = `"${String(recentSearchQuery).trim()}"`;
+}
+
+function setLandingSearchQuery(value, { immediate = false } = {}) {
+  const next = String(value ?? '');
+  if (next === recentSearchQuery) return;
+  recentSearchQuery = next;
+  clearTimeout(landingSearchTimer);
+  if (immediate) {
+    void renderRecentWorks();
+    return;
+  }
+  landingSearchTimer = setTimeout(() => { void renderRecentWorks(); }, 110);
+}
+
+function focusLandingSearch() {
+  const input = $('#rwSearchInput');
+  if (!input || $('#rwToolrow')?.hidden) return;
+  input.focus();
+  input.select();
+}
+
+function wireLandingSearch() {
+  const input = $('#rwSearchInput');
+  if (!input) return;
+  input.addEventListener('input', () => setLandingSearchQuery(input.value));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (recentSearchQuery) setLandingSearchQuery('', { immediate: true });
+      else input.blur();
+    }
+  });
+  const clearSearch = () => {
+    setLandingSearchQuery('', { immediate: true });
+    input.focus();
+  };
+  $('#rwSearchClear')?.addEventListener('click', clearSearch);
+  $('#rwNoResultsClear')?.addEventListener('click', clearSearch);
+}
+
+/** Starts a rename on whichever Home card the user is currently on (F2). */
+function renameFocusedLandingCard() {
+  if (activeCardRename) {
+    activeCardRename.input.focus();
+    activeCardRename.input.select();
+    return;
+  }
+  if (appSettings.landingLayout === 'focus') {
+    const entry = focusFlowEntries[focusFlowIndex];
+    if (!entry || entry.current || !entry.path) return;
+    beginCardRename($('#focusTrack')?.children[focusFlowIndex] || null, entry.work || entry);
+    return;
+  }
+  const card = document.activeElement?.closest?.('.rw-card');
+  if (!card || card.classList.contains('rw-card-current')) return;
+  card.querySelector('.rw-card-rename')?.click();
+}
+
+async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts = {}) {
   const grid = $('#recentGrid');
   const empty = $('#recentEmpty');
   const list = listOverride || await getRecentWorksList();
-  const hasCurrent = state.items.length > 0;
+  // renderRecentWorks decides whether the in-memory board survives the current
+  // search; without a caller it falls back to the old unconditional rule.
+  const hasCurrent = opts.showCurrent ?? state.items.length > 0;
   grid.innerHTML = '';
 
   if (!list.length && !hasCurrent) {
     grid.classList.add('hide');
-    empty.classList.remove('hide');
+    if (!opts.searching) empty.classList.remove('hide');
     return;
   }
   empty.classList.add('hide');
@@ -11660,16 +12121,21 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0) {
     const thumb = rwPlaceholderThumb();
     const meta = document.createElement('div');
     meta.className = 'rw-meta';
+    const cardTitle = work.title || boardTitleFromPath(work.path) || 'Untitled';
     const title = document.createElement('div');
     title.className = 'rw-title';
-    title.textContent = work.title || boardTitleFromPath(work.path) || 'Untitled';
+    setRwTitleText(title, cardTitle, recentSearchQuery);
     const date = document.createElement('div');
     date.className = 'rw-date';
     date.textContent = formatWorkRelative(work);
     meta.append(title, date);
-    card.append(clearBtn, thumb, meta);
-    card.addEventListener('click', () => openBoardFromPath(work.path));
+    card.append(rwRenameButton(work, cardTitle), clearBtn, thumb, meta);
+    card.addEventListener('click', (e) => {
+      if (card.classList.contains('is-renaming') || clickClosedARename()) return;
+      openBoardFromPath(work.path);
+    });
     card.addEventListener('keydown', (e) => {
+      if (card.classList.contains('is-renaming')) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         openBoardFromPath(work.path);
@@ -11742,7 +12208,8 @@ function focusCardMeta(entry) {
   copy.className = 'ff-card-copy';
   const title = document.createElement('div');
   title.className = 'rw-title';
-  title.textContent = entry.title;
+  if (entry.current) title.textContent = entry.title;
+  else setRwTitleText(title, entry.title, recentSearchQuery);
   const date = document.createElement('div');
   date.className = 'rw-date';
   date.textContent = entry.detail;
@@ -11791,6 +12258,8 @@ function syncFocusFlowUi(opts = {}) {
     else card.removeAttribute('aria-current');
     const clearBtn = card.querySelector('.rw-card-clear');
     if (clearBtn) clearBtn.tabIndex = distance === 0 ? 0 : -1;
+    const renameBtn = card.querySelector('.rw-card-rename');
+    if (renameBtn) renameBtn.tabIndex = distance === 0 ? 0 : -1;
   }
   const active = focusFlowEntries[focusFlowIndex];
   const activeCard = cards[focusFlowIndex];
@@ -11804,14 +12273,15 @@ function syncFocusFlowUi(opts = {}) {
 
 function setFocusFlowIndex(index, opts = {}) {
   if (!focusFlowEntries.length) return;
+  cancelCardRename();
   focusFlowIndex = clamp(Math.round(index), 0, focusFlowEntries.length - 1);
   syncFocusFlowUi(opts);
 }
 
-async function renderFocusRecentWorks(list, renderSeq) {
+async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
   const track = $('#focusTrack');
   const previousKey = focusFlowEntries[focusFlowIndex]?.key;
-  const current = currentFocusEntry();
+  const current = (opts.showCurrent ?? true) ? currentFocusEntry() : null;
   const recent = current?.path
     ? list.filter(work => !sameFilePath(work.path, current.path))
     : list;
@@ -11839,6 +12309,7 @@ async function renderFocusRecentWorks(list, renderSeq) {
       card.appendChild(badge);
       if (entry.thumbnailSrc) setRwThumbImage(thumb, entry.thumbnailSrc);
     } else {
+      card.appendChild(rwRenameButton(entry.work || entry, entry.title));
       card.appendChild(focusRemoveButton(entry));
       thumbJobs.push(thumbSrcForWork(entry.work, { preferBoardPreview: true }).then(src => {
         if (src && renderSeq === recentWorksRenderSeq && thumb.isConnected) setRwThumbImage(thumb, src);
@@ -11847,6 +12318,7 @@ async function renderFocusRecentWorks(list, renderSeq) {
     card.append(thumb, focusCardMeta(entry));
     card.addEventListener('click', () => {
       if (focusFlowSuppressClick) return;
+      if (card.classList.contains('is-renaming') || clickClosedARename()) return;
       openFocusEntry(entry);
     });
     track.appendChild(card);
@@ -11860,30 +12332,51 @@ async function renderRecentWorks() {
   const grid = $('#recentGrid');
   const flow = $('#focusFlow');
   const empty = $('#recentEmpty');
+  const noResults = $('#recentNoResults');
   const heading = document.querySelector('.rw-heading-copy h1');
   const subheading = document.querySelector('.rw-heading-copy .rw-sub');
-  const list = await getRecentWorksList();
+  const all = await getRecentWorksList();
   if (renderSeq !== recentWorksRenderSeq) return;
+  // This rebuild replaces every card, detaching an open rename field while
+  // activeCardRename still pointed at it — which left rename dead until
+  // something else cleared the session. A superseded render must not do this,
+  // hence its position after the sequence guard.
+  cancelCardRename();
+
+  const query = recentSearchQuery;
+  const searching = !!normalizeBoardQuery(query);
+  const list = searching ? filterRecentWorks(all, query) : all;
   const hasCurrent = state.items.length > 0;
-  const hasBoards = list.length > 0 || hasCurrent;
+  // The in-memory board is a card like any other, so a search has to be able to
+  // filter it out too — otherwise it is the one result that never narrows.
+  const showCurrent = hasCurrent && (!searching || matchesBoardQuery(
+    { title: currentBoardTitle || 'Current board', path: currentBoardPath || '' },
+    boardQueryTokens(query),
+  ));
+  const hasAnyBoards = all.length > 0 || hasCurrent;
+  const hasVisibleBoards = list.length > 0 || showCurrent;
   const focusLayout = appSettings.landingLayout === 'focus';
+
+  syncLandingSearchUi({ total: all.length + (hasCurrent ? 1 : 0), shown: list.length + (showCurrent ? 1 : 0), searching, hasAnyBoards });
+
   $('#recentWorks').classList.toggle('layout-focus', focusLayout);
-  grid.hidden = focusLayout || !hasBoards;
-  grid.classList.toggle('hide', focusLayout || !hasBoards);
-  flow.hidden = !focusLayout || !hasBoards;
-  empty.classList.toggle('hide', hasBoards);
+  grid.hidden = focusLayout || !hasVisibleBoards;
+  grid.classList.toggle('hide', focusLayout || !hasVisibleBoards);
+  flow.hidden = !focusLayout || !hasVisibleBoards;
+  empty.classList.toggle('hide', hasAnyBoards);
+  noResults.classList.toggle('hide', !(searching && hasAnyBoards && !hasVisibleBoards));
   if (heading) heading.textContent = 'Recent Works';
   if (subheading) subheading.textContent = focusLayout
     ? 'Your latest board, centered and ready to continue'
     : 'Pick a board to continue, or start fresh';
-  if (!hasBoards) {
+  if (!hasVisibleBoards) {
     grid.innerHTML = '';
     $('#focusTrack').innerHTML = '';
     focusFlowEntries = [];
     return;
   }
-  if (focusLayout) await renderFocusRecentWorks(list, renderSeq);
-  else await renderClassicRecentWorks(list, renderSeq);
+  if (focusLayout) await renderFocusRecentWorks(list, renderSeq, { showCurrent, searching });
+  else await renderClassicRecentWorks(list, renderSeq, { showCurrent, searching });
 }
 
 function wireFocusFlowControls() {
@@ -11927,7 +12420,7 @@ function wireFocusFlowControls() {
 
   stage.addEventListener('pointerdown', e => {
     if (e.button !== 0 || appSettings.landingLayout !== 'focus') return;
-    if (e.target.closest('.rw-card-clear, .ff-arrow')) return;
+    if (e.target.closest('.rw-card-clear, .rw-card-rename, .rw-rename-confirm, .rw-rename-cancel, .rw-rename-input, .ff-arrow')) return;
     focusFlowDrag = { pointerId: e.pointerId, startX: e.clientX, startIndex: focusFlowIndex, moved: false };
   });
   stage.addEventListener('pointermove', e => {
@@ -15821,6 +16314,8 @@ const SHORTCUTS = [
   { cat:'Files', label:'Open board', keys:['Ctrl','O'] },
   { cat:'Files', label:'Export PNG', keys:['Ctrl','E'] },
   { cat:'Files', label:'Export images', keys:['Ctrl','Shift','I'] },
+  { cat:'Home', label:'Search your boards', keys:['Ctrl','F'] },
+  { cat:'Home', label:'Rename the selected board', keys:['F2'] },
 ];
 function renderShortcutsList(){
   const pane = document.querySelector('.s2-pane[data-pane="shortcuts"]');
@@ -16044,6 +16539,9 @@ window.addEventListener('keydown', e => {
 
   if (onLanding) {
     if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
+    else if (mod && k === 'f') { e.preventDefault(); focusLandingSearch(); }
+    else if (e.key === 'F2') { e.preventDefault(); renameFocusedLandingCard(); }
+    else if (k === 'escape' && recentSearchQuery) { e.preventDefault(); setLandingSearchQuery('', { immediate: true }); }
     return;
   }
 
@@ -17126,6 +17624,7 @@ async function init() {
   wireSettingsControls();
   setupToolbarBehavior();
   wireFocusFlowControls();
+  wireLandingSearch();
   renderShortcutsList();
   syncSettingsUi();
   syncChromeLayout();
@@ -17649,6 +18148,10 @@ window.RefBoard = {
     });
   },
   reconcileNotesForTest: reconcileAllNoteBoxes,
+  /* Home hooks: a harness that seeds recent-work entries has to be able to
+     redraw the landing grid without navigating away and back. */
+  renderRecentWorksForTest: renderRecentWorks,
+  landingSearchStateForTest: () => ({ query: recentSearchQuery, renaming: !!activeCardRename }),
   selectAllForTest: selectAll,
   rotateSelectionForTest: rotateSelection,
   undoForTest: undo,
