@@ -119,5 +119,23 @@ assert.match(
   /if \(renderSeq !== recentWorksRenderSeq\) return;[\s\S]{0,340}?cancelCardRename\(\);/,
   'a grid rebuild must discard an open rename instead of stranding its detached field, and a superseded render must not',
 );
+assert.match(
+  html,
+  /\.rw-card\.is-renaming \.rw-card-rename,\s*\.rw-card\.is-renaming \.rw-card-clear\{ display:none;/,
+  'rename mode must hide the pencil and remove button',
+);
+assert.match(html, /\.rw-rename-confirm/, 'rename mode must expose a confirm chip');
+assert.match(html, /\.rw-rename-cancel/, 'rename mode must expose a cancel chip');
+assert.match(
+  html,
+  /\.rw-rename-confirm:hover[\s\S]*background:#39b26a/,
+  'the confirm chip must turn green on hover',
+);
+assert.match(
+  html,
+  /\.rw-rename-cancel:hover[\s\S]*background:var\(--danger\)/,
+  'the cancel chip must turn red on hover',
+);
+assert.match(html, /mountRenameActionButtons\(card\)/, 'rename chips must be mounted with the active rename session');
 
 console.log('landing search contract ok');

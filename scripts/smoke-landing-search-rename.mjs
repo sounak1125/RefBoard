@@ -134,8 +134,12 @@ const smokeExpression = `(async()=>{
   const renameField=card.querySelector('.rw-rename-input');
   const renameOpened=!!renameField&&document.activeElement===renameField;
   const prefilled=renameField?renameField.value:null;
+  const pencilHidden=getComputedStyle(card.querySelector('.rw-card-rename')).display==='none';
+  const clearHidden=getComputedStyle(card.querySelector('.rw-card-clear')).display==='none';
+  const confirmVisible=!!card.querySelector('.rw-rename-confirm');
+  const cancelVisible=!!card.querySelector('.rw-rename-cancel');
   renameField.value='Iceland trip';
-  renameField.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+  card.querySelector('.rw-rename-confirm').click();
   await wait(700);
   const afterRename=titles();
 
@@ -159,6 +163,18 @@ const smokeExpression = `(async()=>{
   bad.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
   await wait(600);
   const afterIllegal=titles();
+
+  // --- cancel abandons a rename without touching the file ---
+  const cancelCard=cardFor('Lighting study');
+  cancelCard.querySelector('.rw-card-rename').click();
+  await wait(120);
+  const cancelField=cancelCard.querySelector('.rw-rename-input');
+  cancelField.value='Should not save';
+  cancelCard.querySelector('.rw-rename-cancel').click();
+  await wait(300);
+  const afterCancel=titles();
+  const cancelClosedField=!cancelCard.querySelector('.rw-rename-input');
+  const pencilBack=!!cancelCard.querySelector('.rw-card-rename');
 
   // --- Escape abandons a rename without touching the file ---
   const escCard=cardFor('Character sheet');
@@ -226,7 +242,8 @@ const smokeExpression = `(async()=>{
     ffCards,ffFiltered,ffHighlighted,ffPosition,ffRenameOpened,ffAfterRename,
     seeded,searchVisible,focusedByShortcut,kitchenOnly,kitchenHighlighted,countText,
     noneShown,noResultsShown,emptyStateHidden,restored,
-    renameOpened,prefilled,afterRename,afterCollision,collisionToast,afterIllegal,
+    renameOpened,prefilled,pencilHidden,clearHidden,confirmVisible,cancelVisible,afterRename,afterCollision,collisionToast,afterIllegal,
+    afterCancel,cancelClosedField,pencilBack,
     afterEscape,escapeClosedField,stayedOnHome,
     recentPaths:recents.map(w=>w.path),
     recentTitles:recents.map(w=>w.title),
@@ -251,6 +268,10 @@ try {
 
   assert.equal(r.renameOpened, true, 'the pencil must open a focused rename field');
   assert.equal(r.prefilled, 'Trip moodboard', 'the rename field must start from the current name');
+  assert.equal(r.pencilHidden, true, 'the pencil must hide while renaming');
+  assert.equal(r.clearHidden, true, 'the remove button must hide while renaming');
+  assert.equal(r.confirmVisible, true, 'the confirm chip must appear while renaming');
+  assert.equal(r.cancelVisible, true, 'the cancel chip must appear while renaming');
   assert.ok(r.afterRename.includes('Iceland trip'), `the card must show the new name (got ${JSON.stringify(r.afterRename)})`);
   assert.ok(!r.afterRename.includes('Trip moodboard'), 'the old name must be gone from Home');
 
@@ -265,6 +286,10 @@ try {
   assert.equal(existsSync(path.join(boardsDir, 'Kitchen refs.refboard')), true, 'a refused rename must not move the file');
 
   assert.ok(r.afterIllegal.includes('Kitchen refs'), 'an illegal name must leave the card alone');
+
+  assert.ok(r.afterCancel.includes('Lighting study'), 'the cancel chip must abandon the rename');
+  assert.equal(r.cancelClosedField, true, 'the cancel chip must close the rename field');
+  assert.equal(r.pencilBack, true, 'the pencil must return after cancel');
 
   assert.ok(r.afterEscape.includes('Character sheet'), 'Escape must abandon the rename');
   assert.equal(r.escapeClosedField, true, 'Escape must close the rename field');

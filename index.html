@@ -951,6 +951,36 @@ body.board-active #recentWorks{ display:none; }
   background:var(--danger); color:#fff;
   border-color:rgba(255,107,107,.45);
 }
+.rw-rename-confirm,
+.rw-rename-cancel{
+  position:absolute; top:14px; z-index:3;
+  width:26px; height:26px; border-radius:7px;
+  background:var(--panel); color:var(--dim);
+  cursor:pointer; border:1px solid rgba(255,255,255,.06);
+  opacity:1;
+  display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(8px);
+  transition:background .18s ease, color .18s ease, border-color .18s ease;
+}
+.rw-rename-confirm{ right:46px; }
+.rw-rename-cancel{ right:14px; }
+.rw-rename-confirm svg,
+.rw-rename-cancel svg{
+  width:13px; height:13px; stroke:currentColor; stroke-width:2; fill:none;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.rw-rename-confirm:hover,
+.rw-rename-confirm:focus-visible{
+  background:#39b26a; color:#fff;
+  border-color:rgba(57,178,106,.55);
+}
+.rw-rename-cancel:hover,
+.rw-rename-cancel:focus-visible{
+  background:var(--danger); color:#fff;
+  border-color:rgba(255,107,107,.45);
+}
+.rw-card.is-renaming .rw-card-rename,
+.rw-card.is-renaming .rw-card-clear{ display:none; }
 /* A card in rename mode must not react to hover/click like an open target. */
 .rw-card.is-renaming{ cursor:default; }
 .rw-card.is-renaming:hover{ transform:none; }
@@ -1211,6 +1241,8 @@ body.board-active #recentWorks{ display:none; }
 .ff-card .rw-date{ margin-top:5px; font-size:12px; }
 .ff-card .rw-card-clear{ top:17px; right:17px; }
 .ff-card .rw-card-rename{ top:17px; right:51px; }
+.ff-card .rw-rename-confirm{ top:17px; right:51px; }
+.ff-card .rw-rename-cancel{ top:17px; right:17px; }
 .ff-card:hover .rw-card-clear,
 .ff-card:hover .rw-card-rename,
 .ff-card.is-active .rw-card-clear:focus-visible,
@@ -11779,6 +11811,44 @@ function rwRenameButton(work, title) {
   return btn;
 }
 
+function mountRenameActionButtons(card) {
+  const stop = e => e.stopPropagation();
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.className = 'rw-rename-confirm';
+  confirmBtn.title = 'Save rename';
+  confirmBtn.setAttribute('aria-label', 'Save rename');
+  confirmBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'rw-rename-cancel';
+  cancelBtn.title = 'Cancel rename';
+  cancelBtn.setAttribute('aria-label', 'Cancel rename');
+  cancelBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+
+  for (const btn of [confirmBtn, cancelBtn]) {
+    for (const type of ['click', 'pointerdown', 'dblclick', 'mousedown']) {
+      btn.addEventListener(type, stop);
+    }
+    btn.addEventListener('mousedown', e => {
+      if (e.button === 0) e.preventDefault();
+    });
+  }
+  confirmBtn.addEventListener('click', e => {
+    e.preventDefault();
+    void commitCardRename();
+  });
+  cancelBtn.addEventListener('click', e => {
+    e.preventDefault();
+    cancelCardRename();
+  });
+
+  card.append(confirmBtn, cancelBtn);
+  return { confirmBtn, cancelBtn };
+}
+
 /**
  * Swaps a card's title for a text field. The card itself opens the board on
  * click, so the field has to stop every event it would otherwise inherit.
@@ -11808,7 +11878,8 @@ function beginCardRename(card, work) {
   titleEl.hidden = true;
   titleEl.after(input);
   card.classList.add('is-renaming');
-  activeCardRename = { card, work, input, titleEl, path: work.path, original, settled: false };
+  const { confirmBtn, cancelBtn } = mountRenameActionButtons(card);
+  activeCardRename = { card, work, input, titleEl, path: work.path, original, settled: false, confirmBtn, cancelBtn };
 
   for (const type of ['click', 'pointerdown', 'dblclick', 'mousedown']) {
     input.addEventListener(type, e => e.stopPropagation());
@@ -11832,6 +11903,8 @@ function teardownCardRename(session) {
   session.settled = true;
   if (activeCardRename === session) activeCardRename = null;
   session.input.remove();
+  session.confirmBtn?.remove();
+  session.cancelBtn?.remove();
   session.titleEl.hidden = false;
   session.card.classList.remove('is-renaming');
   // Clicking off the field blurs it, which closes the rename before the card's
@@ -12347,7 +12420,7 @@ function wireFocusFlowControls() {
 
   stage.addEventListener('pointerdown', e => {
     if (e.button !== 0 || appSettings.landingLayout !== 'focus') return;
-    if (e.target.closest('.rw-card-clear, .rw-card-rename, .rw-rename-input, .ff-arrow')) return;
+    if (e.target.closest('.rw-card-clear, .rw-card-rename, .rw-rename-confirm, .rw-rename-cancel, .rw-rename-input, .ff-arrow')) return;
     focusFlowDrag = { pointerId: e.pointerId, startX: e.clientX, startIndex: focusFlowIndex, moved: false };
   });
   stage.addEventListener('pointermove', e => {
