@@ -110,6 +110,11 @@ Push-Location bootstrapper; npm run dist; Pop-Location
 npm run release:ship
 ```
 
+   `release:ship` refuses to upload when the bootstrapper wraps a setup other
+   than the one in `dist/` — that is the stale-payload case above. Pass
+   `-SkipPayloadCheck` only when re-uploading assets for a release whose
+   installer you deliberately are not rebuilding.
+
    Requires `gh auth login` (repo scope). Review the draft on GitHub, then publish it so installed apps can auto-update:
 
 ```powershell
