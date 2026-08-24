@@ -16,7 +16,7 @@ if (-not $token) {
   exit 1
 }
 
-$version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+$version = (Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json).version
 if (-not $Tag) { $Tag = "v$version" }
 
 $setup = Join-Path $DistDir "RefBoard-Setup-$version.exe"
