@@ -69,3 +69,6 @@ jobs:
 
       - name: Focus dock smoke
         run: npm run test:focus-dock-smoke
+
+      - name: Home search and rename smoke
+        run: npm run test:home-smoke
