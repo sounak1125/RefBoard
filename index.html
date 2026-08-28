@@ -413,6 +413,107 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 #sDragOut:active{ cursor:grabbing; transform:none; }
 .tb[hidden]{ display:none; }
 #selbar:not(.has-images) .sel-images-only{ display:none; }
+#selbar:not(.has-taggable) .sel-taggable-only{ display:none; }
+#sTags.on{ background:color-mix(in srgb, var(--acc) 22%, transparent); color:#fff; }
+
+/* The filter panel sits beside the toolbar rather than over the board: while
+   you are choosing tags you need to watch what dims. */
+.tag-panel{
+  display:none; position:fixed; left:74px; top:64px; z-index:24;
+  width:250px; max-height:min(60vh, 520px);
+  padding:10px; flex-direction:column; gap:8px;
+  background:var(--panel); border:1px solid var(--line); border-radius:14px;
+  box-shadow:0 8px 30px rgba(0,0,0,.45); backdrop-filter:blur(16px);
+}
+.tag-panel.open{ display:flex; }
+.tag-panel-head{ display:flex; align-items:center; gap:8px; }
+.tag-panel-title{ font-size:12px; color:var(--dim); flex:1; }
+.tag-mode{ display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+.tag-mode-btn{
+  border:0; background:transparent; color:var(--dim);
+  font-size:11px; padding:3px 8px; cursor:pointer;
+}
+.tag-mode-btn.on{ background:color-mix(in srgb, var(--acc) 24%, transparent); color:#fff; }
+.tag-panel-list{ display:flex; flex-wrap:wrap; gap:6px; overflow-y:auto; padding:2px 0; }
+.tag-panel-empty{ font-size:11.5px; color:var(--dim); padding:6px 2px; line-height:1.5; }
+.tag-panel-foot{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  font-size:11.5px; color:var(--dim); border-top:1px solid var(--line); padding-top:8px;
+}
+.tag-clear{
+  border:1px solid var(--line); background:transparent; color:var(--dim);
+  font-size:11px; padding:3px 9px; border-radius:7px; cursor:pointer;
+}
+.tag-clear:hover{ color:#fff; }
+.tag-clear[disabled]{ opacity:.4; cursor:default; }
+
+.tag-chip{
+  display:inline-flex; align-items:center; gap:6px;
+  border:1px solid var(--line); background:rgba(255,255,255,.04); color:#cfd3dd;
+  font-size:11.5px; padding:4px 9px; border-radius:999px; cursor:pointer;
+  max-width:100%;
+}
+.tag-chip:hover{ background:rgba(255,255,255,.09); color:#fff; }
+.tag-chip.on{
+  background:color-mix(in srgb, var(--acc) 26%, transparent);
+  border-color:color-mix(in srgb, var(--acc) 55%, transparent); color:#fff;
+}
+.tag-chip-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tag-chip-count{ opacity:.6; font-variant-numeric:tabular-nums; }
+/* A partial chip marks a tag only some of the selection carries, so removing
+   it does not look like it is doing nothing to the rest. */
+.tag-chip.partial .tag-chip-label{ opacity:.65; font-style:italic; }
+
+/* A tag row is a colour well joined to the filter chip, so setting a colour
+   and filtering by the tag are one control rather than two lists. */
+.tag-row{
+  display:inline-flex; align-items:stretch;
+  border:1px solid var(--line); border-radius:999px; overflow:hidden;
+  background:rgba(255,255,255,.04); max-width:100%;
+}
+.tag-row:hover{ background:rgba(255,255,255,.09); }
+.tag-row.on{
+  background:color-mix(in srgb, var(--acc) 26%, transparent);
+  border-color:color-mix(in srgb, var(--acc) 55%, transparent);
+}
+.tag-row .tag-chip{ border:0; background:transparent; border-radius:0; padding-left:5px; }
+.tag-row.on .tag-chip{ background:transparent; color:#fff; }
+.tag-dot{
+  border:0; background:transparent; cursor:pointer;
+  display:flex; align-items:center; padding:0 3px 0 8px;
+}
+.tag-dot::before{
+  content:''; width:10px; height:10px; border-radius:50%;
+  background:var(--dot, transparent);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);
+}
+.tag-dot:hover::before{ box-shadow:inset 0 0 0 1px rgba(255,255,255,.75); }
+
+.tag-panel-labels{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  font-size:11.5px; color:var(--dim); border-top:1px solid var(--line); padding-top:8px;
+}
+
+.tag-color-pop{ width:180px; }
+.tag-color-title{ font-size:11.5px; color:var(--dim); margin-bottom:8px; }
+.tag-color-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:7px; margin-bottom:9px; }
+.tag-color-sw{
+  width:100%; aspect-ratio:1; border-radius:8px; border:1px solid rgba(255,255,255,.18);
+  cursor:pointer; padding:0;
+}
+.tag-color-sw.on{ box-shadow:0 0 0 2px var(--panel), 0 0 0 4px #fff; }
+.tag-color-none{ width:100%; }
+
+.tag-pop{ width:264px; }
+.tag-pop-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.tag-pop-chips:empty{ display:none; }
+.tag-pop-input{
+  width:100%; box-sizing:border-box;
+  background:var(--void); border:1px solid var(--line); border-radius:8px;
+  color:#e7eaf2; font-size:12px; padding:7px 9px; outline:none;
+}
+.tag-pop-input:focus{ border-color:color-mix(in srgb, var(--acc) 55%, transparent); }
+.tag-pop-hint{ font-size:10.5px; color:var(--dim); margin-top:7px; line-height:1.5; }
 
 #selbar .sel-multi-only{ display:none; }
 #selbar.multi .sel-multi-only.tb{ display:flex; }
@@ -2608,6 +2709,9 @@ body.board-active #whatsNewNotice{ display:none; }
   <button class="tb" id="btnSearch" data-tip-title="Search" data-tip-sub="Ctrl+F">
     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
   </button>
+  <button class="tb" id="btnTags" data-tip-title="Tags" data-tip-sub="Ctrl+Shift+T">
+    <svg viewBox="0 0 24 24"><path d="M3.5 11.2V5.5a2 2 0 0 1 2-2h5.7a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-5.7 5.7a2 2 0 0 1-2.8 0L4.1 12.6a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.5"/></svg>
+  </button>
   <span class="sep"></span>
   <button class="tb" id="btnExport" data-tip-title="Export" data-tip-sub="Ctrl+E">
     <svg viewBox="0 0 24 24"><path d="M12 3v11M8 10l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
@@ -2720,6 +2824,19 @@ body.board-active #whatsNewNotice{ display:none; }
   </div>
   <div class="draw-cp-presets" id="drawCpPresets"></div>
 </div>
+<div id="tagColorPop" class="draw-color-pop tag-color-pop" aria-hidden="true">
+  <div class="tag-color-title" id="tagColorTitle"></div>
+  <div class="tag-color-grid" id="tagColorGrid"></div>
+  <button type="button" class="tag-clear tag-color-none" id="tagColorNone">No colour</button>
+</div>
+<div id="tagPop" class="draw-color-pop tag-pop" aria-hidden="true">
+  <div class="tag-pop-chips" id="tagPopChips"></div>
+  <input type="text" id="tagPopInput" class="tag-pop-input" list="tagPopSuggest"
+    placeholder="Add tags, comma separated" maxlength="240"
+    spellcheck="false" autocomplete="off" aria-label="Add tags to the selection">
+  <datalist id="tagPopSuggest"></datalist>
+  <div class="tag-pop-hint" id="tagPopHint"></div>
+</div>
 <div id="groupColorPop" class="draw-color-pop" aria-hidden="true">
   <div class="draw-cp-row">
     <span class="draw-cp-preview" id="groupCpPreview"></span>
@@ -2742,6 +2859,9 @@ body.board-active #whatsNewNotice{ display:none; }
   <span class="tb sel-images-only" id="sDragOut" role="button" tabindex="0" draggable="true" data-tip="Drag out to another app" aria-label="Drag out to another app">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M15 3h6v6M21 3l-9 9"/></svg>
   </span>
+  <button class="tb sel-taggable-only" id="sTags" data-tip="Tags">
+    <svg viewBox="0 0 24 24"><path d="M3.5 11.2V5.5a2 2 0 0 1 2-2h5.7a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-5.7 5.7a2 2 0 0 1-2.8 0L4.1 12.6a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.5"/></svg>
+  </button>
   <span class="sep sel-multi-only"></span>
   <button class="tb sel-multi-only" id="sAlignH" data-tip="Align in a row">
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2798,6 +2918,28 @@ body.board-active #whatsNewNotice{ display:none; }
   </button>
 </div>
 
+<div id="tagPanel" class="tag-panel" aria-hidden="true">
+  <div class="tag-panel-head">
+    <span class="tag-panel-title">Filter by tag</span>
+    <div class="tag-mode" role="group" aria-label="Match mode">
+      <button type="button" id="tagModeAny" class="tag-mode-btn on" aria-pressed="true">Any</button>
+      <button type="button" id="tagModeAll" class="tag-mode-btn" aria-pressed="false">All</button>
+    </div>
+  </div>
+  <div class="tag-panel-list" id="tagPanelList" role="group" aria-label="Tags on this board"></div>
+  <div class="tag-panel-labels">
+    <span>Labels</span>
+    <div class="tag-mode" role="group" aria-label="When to show tag labels">
+      <button type="button" id="tagLabelsAlways" class="tag-mode-btn">Always</button>
+      <button type="button" id="tagLabelsSelected" class="tag-mode-btn">Selected</button>
+      <button type="button" id="tagLabelsNever" class="tag-mode-btn">Off</button>
+    </div>
+  </div>
+  <div class="tag-panel-foot">
+    <span id="tagPanelCount"></span>
+    <button type="button" class="tag-clear" id="tagClear">Clear</button>
+  </div>
+</div>
 <div id="status"></div>
 <div id="minimap" aria-hidden="true"><canvas id="minimapCanvas"></canvas></div>
 <button type="button" id="minimapToggle" title="Minimap (M)" aria-label="Toggle minimap" aria-pressed="false">
@@ -3079,6 +3221,10 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks">Locked group</span><span class="d">Select children individually; unlock to move, resize, or drop items in/out</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>A</kbd></span><span class="d">Select all</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>F</kbd></span><span class="d">Find on board</span>
+      <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Filter the board by tag — matching items stay lit, the rest dim and stop responding</span>
+      <span class="ks">Selection bar → tag</span><span class="d">Tag the selected images and notes; Ctrl+F searches tags too</span>
+      <span class="ks">Tag panel → colour well</span><span class="d">Give a tag a colour and every item wearing it gets a soft glow behind it</span>
+      <span class="ks">Tag panel → Labels</span><span class="d">Show tag labels on the board always, only on the selection, or not at all</span>
       <span class="ks"><kbd>Del</kbd></span><span class="d">Delete selection</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Z</kbd> / <kbd>Y</kbd></span><span class="d">Undo / redo</span>
       <span class="ks"><kbd>Wheel</kbd></span><span class="d">Zoom at cursor</span>
@@ -3359,6 +3505,21 @@ import {
 import { buildDragOutNames, dragOutStem } from './scripts/drag-out.mjs';
 import { exportEncoding } from './scripts/export-encoding.mjs';
 import {
+  addTags,
+  collectBoardTags,
+  normalizeTags,
+  parseTagInput,
+  normalizeTagColor,
+  normalizeTagColors,
+  pruneActiveTags,
+  pruneTagColors,
+  tagKey,
+  removeTag,
+  suggestTagColor,
+  tagGlowColor,
+  TAG_COLOR_PALETTE,
+} from './scripts/tags.mjs';
+import {
   initPerfOverlay,
   isPerfOverlayEnabled,
   noteDrawMs,
@@ -3390,6 +3551,9 @@ const state = {
   boardGray: false,
   // Object snapping is an app setting (appSettings.snapEnabled), not board data.
   gridAppearance: 'dots', // 'none' | 'dots'
+  // Tag identity -> #rrggbb. Board data, not app data: the same word can mean
+  // different things on different boards, so its colour travels with the board.
+  tagColors: {},
 };
 let selectionOrderIds = [];
 const ZOOM_MIN = 0.004;
@@ -3698,6 +3862,7 @@ function marqueeSelectionIds(bx1, by1, bx2, by2, keep = new Set()) {
 
   for (const it of state.items) {
     if (isGroupItem(it)) continue;
+    if (!itemPassesTagFilter(it)) continue;
     const b = boundsOf(it);
     if (b.x < bx2 && b.x + b.w > bx1 && b.y < by2 && b.y + b.h > by1) {
       const group = groupOfItem(it);
@@ -3947,6 +4112,7 @@ function groupFrameAt(sx, sy) {
   for (let i = state.items.length - 1; i >= 0; i--) {
     const it = state.items[i];
     if (!isGroupItem(it)) continue;
+    if (!itemPassesTagFilter(it)) continue;
     const r = itemUiRect(it);
     const [x1, y1] = toScreen(r.x, r.y);
     const [x2, y2] = toScreen(r.x + r.w, r.y + r.h);
@@ -4415,6 +4581,7 @@ function normalizeItem(it) {
       bold: !!it.bold, italic: !!it.italic, underline: !!it.underline,
       textAlign: ['left', 'center', 'right'].includes(it.textAlign) ? it.textAlign : 'left',
       groupId: it.groupId || null,
+      tags: normalizeTags(it.tags),
     };
   }
   if (it.kind === 'arrow') {
@@ -4436,6 +4603,7 @@ function normalizeItem(it) {
     flipX: !!it.flipX, flipY: !!it.flipY, gray: !!it.gray,
     crop: cropOf(it),
     groupId: it.groupId || null,
+    tags: normalizeTags(it.tags),
   };
 }
 function bboxOf(items) {
@@ -4662,6 +4830,8 @@ const SETTINGS_DEFAULTS = {
   checkUpdatesOnStartup: true,
   minimap: false,
   imageMemoryMB: 'auto',
+  // How long tag labels stay up: 'always' | 'selected' | 'never'.
+  tagLabels: 'always',
 };
 let appSettings = { ...SETTINGS_DEFAULTS };
 let undoLimit = SETTINGS_DEFAULTS.undoLimit;
@@ -4681,6 +4851,10 @@ function normalizeLandingLayout(v) {
 
 function normalizeToolbarMode(v) {
   return v === 'pinned' ? 'pinned' : 'floating';
+}
+
+function normalizeTagLabels(v) {
+  return v === 'selected' || v === 'never' ? v : 'always';
 }
 
 const IMAGE_MEMORY_CHOICES = [256, 512, 1024, 2048];
@@ -4713,6 +4887,7 @@ function loadAppSettings() {
   catch (e) { appSettings = { ...SETTINGS_DEFAULTS }; }
   appSettings.autosaveIntervalMin = normalizeAutosaveInterval(appSettings.autosaveIntervalMin);
   appSettings.landingLayout = normalizeLandingLayout(appSettings.landingLayout);
+  appSettings.tagLabels = normalizeTagLabels(appSettings.tagLabels);
   appSettings.toolbarMode = normalizeToolbarMode(appSettings.toolbarMode);
   appSettings.imageMemoryMB = normalizeImageMemory(appSettings.imageMemoryMB);
 }
@@ -6024,11 +6199,13 @@ function resetLiveSessionToBlank() {
   closeImageRecordBitmaps(images);
   images.clear();
   state.items = [];
+  resetTagFilterState();
   invalidateWorkspaceBBox();
   state.sel.clear();
   resetSelectionOrder();
   state.boardGray = false;
   state.gridAppearance = 'dots';
+  state.tagColors = {};
   cropItemId = null;
   noteEditId = null;
   noteTextLive = false;
@@ -6103,6 +6280,7 @@ async function restoreSession() {
     invalidateWorkspaceBBox();
     state.boardGray = !!meta.boardGray;
     state.gridAppearance = normalizeGridAppearance(meta.gridAppearance) || 'dots';
+    state.tagColors = normalizeTagColors(meta.tagColors);
     if (savedView) {
       state.view.tx = savedView.tx;
       state.view.ty = savedView.ty;
@@ -6252,7 +6430,12 @@ function scheduleSave(markDirty = true) {
 
 /* ================= undo / redo ================= */
 const undoStack = [], redoStack = [];
-const snap = () => JSON.stringify({ items: state.items, boardGray: state.boardGray, gridAppearance: state.gridAppearance });
+const snap = () => JSON.stringify({
+  items: state.items,
+  boardGray: state.boardGray,
+  gridAppearance: state.gridAppearance,
+  tagColors: state.tagColors,
+});
 function normalizeUndoEntry(entry) {
   return typeof entry === 'string' ? { snap: entry } : entry;
 }
@@ -6362,6 +6545,7 @@ function restoreSnap(raw) {
   state.items = (s.items || []).map(normalizeItem);
   invalidateWorkspaceBBox();
   state.boardGray = !!s.boardGray;
+  state.tagColors = normalizeTagColors(s.tagColors);
   const ga = normalizeGridAppearance(s.gridAppearance);
   if (ga) state.gridAppearance = ga;
   for (const it of state.items) {
@@ -8462,6 +8646,7 @@ function deleteItemsByIds(idIterable) {
     else syncGroupFrame(g);
   }
   invalidateWorkspaceBBox();
+  syncTagFilterToBoard();
   // Drop only deleted ids from the live selection; keep unrelated newly selected items.
   for (const id of toDelete) state.sel.delete(id);
   if (state.anchorId && toDelete.has(state.anchorId)) state.anchorId = null;
@@ -8734,6 +8919,15 @@ function openGroupColorPop(anchorEl, clientX, clientY) {
   pop.classList.add('open');
   pop.setAttribute('aria-hidden', 'false');
   btn?.classList.add('open');
+  placePopNear(pop, anchorEl, clientX, clientY);
+}
+
+/**
+ * Put a fixed popover under its button, flipping above when it would run off
+ * the bottom, and keep it inside the window either way. Measured while hidden
+ * so the reflow is never visible.
+ */
+function placePopNear(pop, anchorEl, clientX, clientY) {
   pop.style.visibility = 'hidden';
   pop.style.left = '0';
   pop.style.top = '0';
@@ -11393,6 +11587,7 @@ async function clearBoard() {
   if (!ok) return;
   pushUndo();
   state.items = [];
+  resetTagFilterState();
   invalidateWorkspaceBBox();
   state.sel.clear();
   resetSelectionOrder();
@@ -11814,6 +12009,7 @@ function boardSaveSnapshot() {
       // Emitted for older builds that still read it as board state.
       snapEnabled: !!appSettings.snapEnabled,
       gridAppearance: state.gridAppearance,
+      tagColors: { ...state.tagColors },
       items,
     },
     imageRefs,
@@ -13165,12 +13361,14 @@ async function openNewBoardImpl() {
   const ownedBlobIds = new Set(images.keys());
   releaseAllImages();
   state.items = [];
+  resetTagFilterState();
   invalidateWorkspaceBBox();
   cachedCurrentBoardThumb = null;
   state.sel.clear();
   resetSelectionOrder();
   state.boardGray = false;
   state.gridAppearance = 'dots';
+  state.tagColors = {};
   cropItemId = null;
   arrowTool = null;
   setDrawActive(false);
@@ -14477,21 +14675,44 @@ function draw() {
   collectVisibleItems(viewport);
   updateImageRenderDemandPlan(drawVisibleItems);
   beginImageLodFrame();
+  // One pass over the board, not one per visible item, and only while filtering.
+  refreshTagFilterPass();
+  const dimmed = it => (itemPassesTagFilter(it) ? 1 : TAG_DIM_ALPHA);
+  // Every glow under every item, so a neighbour's colour never lies on top.
+  for (const it of drawVisibleItems) {
+    if (!isTaggableItem(it) || !it.tags?.length) continue;
+    const glow = tagGlowColor(it.tags, state.tagColors);
+    if (!glow) continue;
+    ctx.globalAlpha = dimmed(it);
+    drawTagGlow(ctx, it, glow);
+  }
+  ctx.globalAlpha = 1;
   for (const it of drawVisibleItems) {
     if (isGroupItem(it)) {
+      ctx.globalAlpha = dimmed(it);
       drawGroupFrame(it, { pulse: it.id === dropTargetGroupId });
       drawGroupLabel(it);
     }
   }
   for (const it of drawVisibleItems) {
-    if (!isNoteItem(it) && !isArrowItem(it) && !isGroupItem(it)) drawBoardItem(ctx, it);
+    if (!isNoteItem(it) && !isArrowItem(it) && !isGroupItem(it)) {
+      ctx.globalAlpha = dimmed(it);
+      drawBoardItem(ctx, it);
+    }
   }
   for (const it of drawVisibleItems) {
-    if (isNoteItem(it)) drawBoardItem(ctx, it);
+    if (isNoteItem(it)) {
+      ctx.globalAlpha = dimmed(it);
+      drawBoardItem(ctx, it);
+    }
   }
   for (const it of drawVisibleItems) {
-    if (isArrowItem(it)) drawBoardItem(ctx, it);
+    if (isArrowItem(it)) {
+      ctx.globalAlpha = dimmed(it);
+      drawBoardItem(ctx, it);
+    }
   }
+  ctx.globalAlpha = 1;
   if (mode?.type === 'arrowCreate') {
     drawArrowShape(ctx, mode.x1, mode.y1, mode.x2, mode.y2, {
       color: drawColor,
@@ -14500,6 +14721,8 @@ function draw() {
     });
   }
   ctx.restore();
+
+  drawTagLabels();
 
   collectDrawSelection();
   const selectedCount = drawSelectedItems.length;
@@ -14646,12 +14869,16 @@ document.addEventListener('visibilitychange', () => {
 
 /* ================= hit testing ================= */
 function itemAt(sx, sy) {
+  // Isolation is the point of the filter: what is dimmed cannot be picked up,
+  // dragged or marquee-selected, so a filtered board can be rearranged safely.
+  ensureTagFilterPass();
   const frame = groupFrameAt(sx, sy);
   if (frame) return frame;
   const [bx, by] = toBoard(sx, sy);
   for (let i = state.items.length - 1; i >= 0; i--) {
     const it = state.items[i];
     if (isGroupItem(it)) continue;
+    if (!itemPassesTagFilter(it)) continue;
     if (isArrowItem(it)) {
       if (arrowHitTolerance(it) >= pointSegmentDistance(bx, by, it.x1, it.y1, it.x2, it.y2))
         return it;
@@ -14666,10 +14893,12 @@ function itemAt(sx, sy) {
 }
 
 function imageItemAt(sx, sy) {
+  ensureTagFilterPass();
   const [bx, by] = toBoard(sx, sy);
   for (let i = state.items.length - 1; i >= 0; i--) {
     const it = state.items[i];
     if (!isImageItem(it)) continue;
+    if (!itemPassesTagFilter(it)) continue;
     const r = itemUiRect(it);
     const frame = { x: r.x, y: r.y, w: r.w, h: r.h, rot: it.rot || 0 };
     const [lx, ly] = boardToLocalRect(frame, bx, by);
@@ -16937,6 +17166,11 @@ window.addEventListener('pointerdown', e => {
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
   if (!e.target.closest('#titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) window.closePinMenus?.();
+  if (!e.target.closest('#tagPop') && !e.target.closest('#sTags')) closeTagPop();
+  if (!e.target.closest('#tagColorPop') && !e.target.closest('.tag-dot')) closeTagColorPop();
+  // #tagColorPop belongs to the panel even though it is not nested inside it.
+  if (!e.target.closest('#tagPanel') && !e.target.closest('#btnTags')
+      && !e.target.closest('#tagColorPop')) setTagPanelOpen(false);
   if (e.target.closest('#drawColorBtn')) return;
   if (!e.target.closest('#drawCanvasPop')) closeDrawCanvasPop();
   if (!e.target.closest('#drawPen') && !e.target.closest('#drawBrushDrawer')) closeBrushDrawer();
@@ -17041,6 +17275,7 @@ window.addEventListener('keydown', e => {
   else if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
   else if (mod && k === 'e') { e.preventDefault(); openExport(); }
   else if (mod && e.shiftKey && k === 'i') { e.preventDefault(); exportOriginals(); }
+  else if (mod && e.shiftKey && k === 't') { e.preventDefault(); toggleTagPanel(); }
   else if (mod && e.shiftKey && k === 'g') { e.preventDefault(); ungroupFromSelection(); }
   else if (mod && k === 'g') { e.preventDefault(); createGroupFromSelection(); }
   else if (mod && k === '0') { e.preventDefault(); zoomAt(...boardCenter(), 1); }
@@ -17632,6 +17867,10 @@ function updateSelBar() {
   bar.classList.toggle('multi', n > 1);
   bar.classList.toggle('images-multi', selectedImages().length >= 2);
   bar.classList.toggle('has-images', n > 0 && selectionHasDragOutImages());
+  bar.classList.toggle('has-taggable', n > 0 && selectedTaggableItems().length > 0);
+  // A popover left open over an empty selection would act on nothing.
+  if (!n) closeTagPop();
+  else if (tagPopEl?.classList.contains('open')) renderTagPopover();
   bar.classList.toggle('group-sel', !!grp);
   if (n) $('#selcount').textContent = n === 1 ? '1 selected' : `${n} selected`;
   if (grp) {
@@ -17806,6 +18045,7 @@ $('#sGroupPack').addEventListener('click', () => {
   if (g) packGroup(g);
 });
 $('#sDel').addEventListener('click', deleteSelection);
+
 
 filePick.addEventListener('change', async () => {
   if (filePick.files.length) {
@@ -18419,6 +18659,561 @@ const endMinimapDrag = e => {
 minimapCanvas.addEventListener('pointerup', endMinimapDrag);
 minimapCanvas.addEventListener('pointercancel', endMinimapDrag);
 
+/* ================= tags ================= */
+/* A reference board of a few hundred images cannot be navigated by name alone.
+   Tags live on the item, save with the board, and drive a filter that dims and
+   deactivates everything not matching — so a filtered board can be worked on
+   directly rather than only looked at. */
+
+/* Arrows are decoration and groups are containers; neither carries meaning a
+   tag would describe. Tagging only what holds content also keeps the filter
+   answerable: a group shows while something inside it matches. */
+const isTaggableItem = it => isImageItem(it) || isNoteItem(it);
+
+/* Dimmed, not hidden. A hidden item loses its place, and on a moodboard the
+   layout is part of the meaning — you want to see the gap the filter left. */
+const TAG_DIM_ALPHA = 0.14;
+
+let tagFilter = [];              // session state: never written to the board file
+let tagFilterMode = 'any';
+let tagFilterKeys = [];
+const tagFilterPass = new Set();
+
+const tagFilterActive = () => tagFilter.length > 0;
+
+/* Recomputed rather than cached against item mutation: membership only changes
+   on a tag edit or a filter change, but items are added, deleted and replaced
+   from a dozen places, and a stale pass set silently hides real work. */
+function refreshTagFilterPass() {
+  tagFilterPass.clear();
+  if (!tagFilter.length) return;
+  const wantAll = tagFilterMode === 'all';
+  for (const it of state.items) {
+    if (!isTaggableItem(it)) continue;
+    const own = it.tags;
+    if (!own || !own.length) continue;
+    let hits = 0;
+    for (const key of tagFilterKeys) {
+      if (own.some(tag => tag.toLowerCase() === key)) hits++;
+    }
+    if (wantAll ? hits === tagFilterKeys.length : hits > 0) tagFilterPass.add(it.id);
+  }
+  // A group survives while anything inside it does, so the frame never dims
+  // away from items it still contains.
+  for (const it of state.items) {
+    if (!isGroupItem(it)) continue;
+    if (childrenOfGroup(it.id).some(child => tagFilterPass.has(child.id))) tagFilterPass.add(it.id);
+  }
+}
+
+const itemPassesTagFilter = it => !tagFilter.length || tagFilterPass.has(it.id);
+
+/** Hit tests run between frames, so they refresh rather than trust the frame. */
+function ensureTagFilterPass() {
+  if (tagFilter.length) refreshTagFilterPass();
+}
+
+function boardTagList() {
+  return collectBoardTags(state.items, isTaggableItem);
+}
+
+function setTagFilter(next, { mode = tagFilterMode } = {}) {
+  tagFilterMode = mode === 'all' ? 'all' : 'any';
+  tagFilter = pruneActiveTags(next, boardTagList());
+  tagFilterKeys = tagFilter.map(tag => tag.toLowerCase());
+  refreshTagFilterPass();
+  renderTagPanel();
+  updateSelBar();
+  invalidate();
+}
+
+function toggleTagFilter(tag) {
+  const key = String(tag || '').toLowerCase();
+  const next = tagFilterKeys.includes(key)
+    ? tagFilter.filter(existing => existing.toLowerCase() !== key)
+    : [...tagFilter, tag];
+  setTagFilter(next);
+}
+
+const clearTagFilter = () => setTagFilter([]);
+
+/* Called after anything that can change which tags exist, so a filter never
+   outlives the last item carrying its tag. */
+function syncTagFilterToBoard() {
+  state.tagColors = pruneTagColors(state.tagColors, boardTagList());
+  if (tagFilter.length) setTagFilter(tagFilter);
+  else renderTagPanel();
+}
+
+/** The taggable items a tag edit should apply to: a selected group means its contents. */
+function selectedTaggableItems() {
+  const seen = new Set();
+  const out = [];
+  for (const it of selectedItems()) {
+    const targets = isGroupItem(it)
+      ? childrenOfGroup(it.id).filter(isTaggableItem)
+      : (isTaggableItem(it) ? [it] : []);
+    for (const target of targets) {
+      if (seen.has(target.id)) continue;
+      seen.add(target.id);
+      out.push(target);
+    }
+  }
+  return out;
+}
+
+/** Tags across the selection, with how many of the selected items carry each. */
+function selectionTagList() {
+  return collectBoardTags(selectedTaggableItems(), isTaggableItem);
+}
+
+function applyTagsToSelection(mutate) {
+  const items = selectedTaggableItems();
+  if (!items.length) return 0;
+  const next = items.map(it => mutate(it.tags || [], it));
+  const changed = next.filter((after, i) => {
+    const before = items[i].tags || [];
+    return after.length !== before.length || after.some((tag, j) => tag !== before[j]);
+  }).length;
+  // Nothing to record: a no-op tag edit must not cost an undo step.
+  if (!changed) return 0;
+  pushUndo();
+  items.forEach((it, i) => { it.tags = next[i]; });
+  syncTagFilterToBoard();
+  renderTagPopover();
+  scheduleSave();
+  invalidate();
+  return changed;
+}
+
+/* ---------- painting tags on the board ---------- */
+
+/* Screen pixels, so the glow reads the same at any zoom. */
+const TAG_GLOW_BLUR = 38;
+const TAG_GLOW_ALPHA = 0.5;
+/* Deliberately small: the bed is what is left visible around the item, and past
+   about five pixels it stops reading as a glow and starts reading as a border. */
+const TAG_GLOW_SPREAD = 5;
+
+const TAG_LABEL_FONT = '500 11px "Segoe UI", system-ui, -apple-system, sans-serif';
+const TAG_LABEL_H = 17;
+const TAG_LABEL_PAD = 7;
+const TAG_LABEL_GAP = 4;
+const TAG_LABEL_MAX = 3;
+/* Below this a chip is wider than the thing it describes, and a zoomed-out
+   board becomes a wall of text. Chips give way to dots rather than to nothing:
+   at a distance you still want to see which items are tagged and in what
+   colour, which is the whole point of the glow. */
+const TAG_LABEL_MIN_ITEM_PX = 44;
+/* One dot is still an answer to "is this tagged?", so the floor is a single
+   dot wide rather than a whole row. Below it the item itself is a speck. */
+const TAG_DOT_MIN_ITEM_PX = 6;
+const TAG_DOT_SIZE = 5;
+const TAG_DOT_GAP = 3;
+const TAG_DOT_MAX = 4;
+
+const tagLabelMode = () => normalizeTagLabels(appSettings.tagLabels);
+
+/* measureText is the expensive part of a label pass and a tag's width never
+   changes, so each string is measured once for the life of the session. */
+const tagLabelWidths = new Map();
+function tagLabelWidth(g, tag) {
+  let width = tagLabelWidths.get(tag);
+  if (width === undefined) {
+    width = g.measureText(tag).width;
+    tagLabelWidths.set(tag, width);
+  }
+  return width;
+}
+
+/**
+ * A soft coloured bed behind a tagged item. Drawn in board space before any
+ * item so every glow sits under every image, never over a neighbour.
+ */
+function drawTagGlow(g, it, color) {
+  const r = itemUiRect(it);
+  const spread = TAG_GLOW_SPREAD / state.view.s;
+  g.save();
+  g.translate(r.x + r.w / 2, r.y + r.h / 2);
+  g.rotate(rotRad(it));
+  g.shadowColor = color;
+  g.shadowBlur = TAG_GLOW_BLUR / state.view.s;
+  g.fillStyle = color;
+  g.globalAlpha *= TAG_GLOW_ALPHA;
+  const w = r.w + spread * 2, h = r.h + spread * 2;
+  const rad = Math.min(spread * 1.6, w / 2, h / 2);
+  g.beginPath();
+  if (g.roundRect) g.roundRect(-w / 2, -h / 2, w, h, rad);
+  else g.rect(-w / 2, -h / 2, w, h);
+  g.fill();
+  g.restore();
+}
+
+/**
+ * Tag chips under each tagged item, painted in screen space so the text stays
+ * the same size however far the board is zoomed out.
+ */
+function drawTagLabels() {
+  const mode = tagLabelMode();
+  if (mode === 'never') return;
+  const onlySelected = mode === 'selected';
+
+  ctx.save();
+  ctx.font = TAG_LABEL_FONT;
+  ctx.textBaseline = 'middle';
+  for (const it of drawVisibleItems) {
+    if (!isTaggableItem(it)) continue;
+    const tags = it.tags;
+    if (!tags || !tags.length) continue;
+    if (onlySelected && !state.sel.has(it.id)) continue;
+
+    const b = boundsOf(it);
+    const [x1, y1] = toScreen(b.x, b.y);
+    const [x2, y2] = toScreen(b.x + b.w, b.y + b.h);
+    const itemPx = x2 - x1;
+    if (itemPx < TAG_DOT_MIN_ITEM_PX) continue;
+
+    ctx.globalAlpha = itemPassesTagFilter(it) ? 1 : TAG_DIM_ALPHA;
+
+    if (itemPx < TAG_LABEL_MIN_ITEM_PX) {
+      drawTagDots(tags, x1, y2 + 4, itemPx);
+      continue;
+    }
+
+    const shown = tags.slice(0, TAG_LABEL_MAX);
+    const hidden = tags.length - shown.length;
+    let x = x1;
+    const y = y2 + 6 + TAG_LABEL_H / 2;
+
+    for (const tag of shown) {
+      const w = tagLabelWidth(ctx, tag) + TAG_LABEL_PAD * 2;
+      if (x + w > x2 + 40) break;          // never run far past the item
+      const color = state.tagColors[tag.toLowerCase()] || '';
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y - TAG_LABEL_H / 2, w, TAG_LABEL_H, TAG_LABEL_H / 2);
+      else ctx.rect(x, y - TAG_LABEL_H / 2, w, TAG_LABEL_H);
+      ctx.fillStyle = color ? color : 'rgba(20,22,28,.82)';
+      ctx.fill();
+      if (!color) {
+        ctx.strokeStyle = 'rgba(255,255,255,.16)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      // A coloured chip carries its own contrast; a neutral one uses the board ink.
+      ctx.fillStyle = color ? tagLabelInk(color) : '#cfd3dd';
+      ctx.fillText(tag, x + TAG_LABEL_PAD, y + 0.5);
+      x += w + TAG_LABEL_GAP;
+    }
+
+    if (hidden > 0) {
+      const more = '+' + hidden;
+      const w = tagLabelWidth(ctx, more) + TAG_LABEL_PAD * 2;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y - TAG_LABEL_H / 2, w, TAG_LABEL_H, TAG_LABEL_H / 2);
+      else ctx.rect(x, y - TAG_LABEL_H / 2, w, TAG_LABEL_H);
+      ctx.fillStyle = 'rgba(20,22,28,.82)';
+      ctx.fill();
+      ctx.fillStyle = '#8b90a0';
+      ctx.fillText(more, x + TAG_LABEL_PAD, y + 0.5);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+/** What a tag row shrinks to when the item is too small to caption. */
+function drawTagDots(tags, x, y, itemPx) {
+  // Never wider than the thing it marks: a four-dot row beside an eight-pixel
+  // image would collide with its neighbours and mark nothing clearly.
+  const fits = Math.max(1, Math.floor(itemPx / (TAG_DOT_SIZE + TAG_DOT_GAP)));
+  const shown = Math.min(tags.length, TAG_DOT_MAX, fits);
+  for (let i = 0; i < shown; i++) {
+    const color = state.tagColors[tags[i].toLowerCase()] || '';
+    ctx.beginPath();
+    ctx.arc(x + TAG_DOT_SIZE / 2 + i * (TAG_DOT_SIZE + TAG_DOT_GAP), y + TAG_DOT_SIZE / 2, TAG_DOT_SIZE / 2, 0, Math.PI * 2);
+    ctx.fillStyle = color || 'rgba(190,196,210,.75)';
+    ctx.fill();
+  }
+}
+
+/* Same relative-luminance rule the palette swatches use, so a light tag colour
+   gets dark text instead of white-on-amber. */
+function tagLabelInk(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const lin = v => { const c = (v / 255); return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return L > 0.42 ? '#101217' : '#ffffff';
+}
+
+/* ---------- tag UI ---------- */
+
+const tagPanelEl = $('#tagPanel');
+const tagPanelListEl = $('#tagPanelList');
+const tagPanelCountEl = $('#tagPanelCount');
+const tagPopEl = $('#tagPop');
+const tagPopChipsEl = $('#tagPopChips');
+const tagPopInputEl = $('#tagPopInput');
+const tagPopSuggestEl = $('#tagPopSuggest');
+const tagPopHintEl = $('#tagPopHint');
+
+/* Built as nodes, not markup: a tag is user text and must never be parsed. */
+function tagChipEl(tag, opts) {
+  const o = opts || {};
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'tag-chip' + (o.active ? ' on' : '') + (o.partial ? ' partial' : '');
+  chip.dataset.tag = tag;
+  const label = document.createElement('span');
+  label.className = 'tag-chip-label';
+  label.textContent = tag;
+  chip.appendChild(label);
+  if (o.count) {
+    const count = document.createElement('span');
+    count.className = 'tag-chip-count';
+    count.textContent = String(o.count);
+    chip.appendChild(count);
+  }
+  if (o.removable) {
+    const cross = document.createElement('span');
+    cross.className = 'tag-chip-count';
+    cross.textContent = '×';
+    chip.appendChild(cross);
+  }
+  return chip;
+}
+
+function renderTagPanel() {
+  if (!tagPanelEl) return;
+  const board = boardTagList();
+  tagPanelListEl.textContent = '';
+  if (!board.length) {
+    const empty = document.createElement('div');
+    empty.className = 'tag-panel-empty';
+    empty.textContent = 'No tags yet. Select images or notes, then use the tag button in the selection bar.';
+    tagPanelListEl.appendChild(empty);
+  } else {
+    for (const entry of board) {
+      const active = tagFilterKeys.includes(entry.tag.toLowerCase());
+      const row = document.createElement('span');
+      row.className = 'tag-row' + (active ? ' on' : '');
+
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'tag-dot';
+      const color = state.tagColors[tagKey(entry.tag)] || '';
+      dot.style.setProperty('--dot', color || 'transparent');
+      dot.title = color ? 'Change the glow colour for this tag' : 'Give this tag a glow colour';
+      dot.setAttribute('aria-label', dot.title);
+      dot.addEventListener('click', e => { e.stopPropagation(); openTagColorPop(entry.tag, dot); });
+      row.appendChild(dot);
+
+      const chip = tagChipEl(entry.tag, { count: entry.count });
+      chip.addEventListener('click', () => toggleTagFilter(entry.tag));
+      row.appendChild(chip);
+
+      tagPanelListEl.appendChild(row);
+    }
+  }
+
+  const clearBtn = $('#tagClear');
+  if (clearBtn) clearBtn.disabled = !tagFilter.length;
+  const anyBtn = $('#tagModeAny');
+  const allBtn = $('#tagModeAll');
+  const wantAll = tagFilterMode === 'all';
+  if (anyBtn) { anyBtn.classList.toggle('on', !wantAll); anyBtn.setAttribute('aria-pressed', String(!wantAll)); }
+  if (allBtn) { allBtn.classList.toggle('on', wantAll); allBtn.setAttribute('aria-pressed', String(wantAll)); }
+
+  if (tagPanelCountEl) {
+    const taggable = state.items.filter(isTaggableItem);
+    tagPanelCountEl.textContent = tagFilter.length
+      ? 'Showing ' + taggable.filter(itemPassesTagFilter).length + ' of ' + taggable.length
+      : taggable.length + (taggable.length === 1 ? ' item' : ' items');
+  }
+  const mode = tagLabelMode();
+  for (const [id, value] of [['#tagLabelsAlways', 'always'], ['#tagLabelsSelected', 'selected'], ['#tagLabelsNever', 'never']]) {
+    const btn = $(id);
+    if (!btn) continue;
+    btn.classList.toggle('on', mode === value);
+    btn.setAttribute('aria-pressed', String(mode === value));
+  }
+  $('#btnTags')?.classList.toggle('on', tagFilterActive());
+}
+
+function setTagLabelMode(mode) {
+  appSettings.tagLabels = normalizeTagLabels(mode);
+  saveAppSettings();
+  renderTagPanel();
+  invalidate();
+}
+
+/* ---------- tag colours ---------- */
+
+let tagColorTarget = '';
+
+function closeTagColorPop() {
+  const pop = $('#tagColorPop');
+  if (!pop) return;
+  pop.classList.remove('open');
+  pop.setAttribute('aria-hidden', 'true');
+  tagColorTarget = '';
+}
+
+function openTagColorPop(tag, anchorEl) {
+  const pop = $('#tagColorPop');
+  if (!pop) return;
+  if (pop.classList.contains('open') && tagColorTarget === tag) { closeTagColorPop(); return; }
+  tagColorTarget = tag;
+  $('#tagColorTitle').textContent = tag;
+
+  const grid = $('#tagColorGrid');
+  grid.textContent = '';
+  const current = state.tagColors[tagKey(tag)] || '';
+  for (const color of TAG_COLOR_PALETTE) {
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.className = 'tag-color-sw' + (color === current ? ' on' : '');
+    sw.style.background = color;
+    sw.title = color;
+    sw.addEventListener('click', () => { setTagColor(tag, color); closeTagColorPop(); });
+    grid.appendChild(sw);
+  }
+
+  pop.classList.add('open');
+  pop.setAttribute('aria-hidden', 'false');
+  placePopNear(pop, anchorEl);
+}
+
+function setTagColor(tag, color) {
+  const key = tagKey(tag);
+  if (!key) return;
+  const next = normalizeTagColor(color);
+  const current = state.tagColors[key] || '';
+  if (next === current) return;
+  pushUndo();
+  const map = { ...state.tagColors };
+  if (next) map[key] = next;
+  else delete map[key];
+  state.tagColors = normalizeTagColors(map);
+  renderTagPanel();
+  scheduleSave();
+  invalidate();
+}
+
+function renderTagPopover() {
+  if (!tagPopEl) return;
+  const items = selectedTaggableItems();
+  tagPopChipsEl.textContent = '';
+  for (const entry of selectionTagList()) {
+    const partial = entry.count < items.length;
+    const chip = tagChipEl(entry.tag, { removable: true, partial });
+    chip.title = partial
+      ? 'On ' + entry.count + ' of ' + items.length + ' selected — click to remove from all'
+      : 'Click to remove';
+    chip.addEventListener('click', () => {
+      if (applyTagsToSelection(tags => removeTag(tags, entry.tag))) toast('Removed ' + entry.tag);
+    });
+    tagPopChipsEl.appendChild(chip);
+  }
+
+  if (tagPopHintEl) {
+    tagPopHintEl.textContent = items.length === 1
+      ? 'Enter to add. Click a tag to remove it.'
+      : 'Enter to add to all ' + items.length + ' selected. Click a tag to remove it from all.';
+  }
+}
+
+/**
+ * Fill the suggestion list. Deliberately not part of renderTagPopover: rebuilding
+ * a <datalist> while its popover is open crashes the renderer outright (an access
+ * violation, not an exception), and renderTagPopover runs after every tag edit.
+ * Refreshing once per open keeps the native autocomplete without that.
+ */
+function refreshTagSuggestions() {
+  if (!tagPopSuggestEl) return;
+  tagPopSuggestEl.textContent = '';
+  for (const entry of boardTagList()) {
+    const option = document.createElement('option');
+    option.value = entry.tag;
+    tagPopSuggestEl.appendChild(option);
+  }
+}
+
+function closeTagPop() {
+  if (!tagPopEl) return;
+  tagPopEl.classList.remove('open');
+  tagPopEl.setAttribute('aria-hidden', 'true');
+  $('#sTags')?.classList.remove('on');
+}
+
+function openTagPop(anchorEl) {
+  if (!tagPopEl) return;
+  if (tagPopEl.classList.contains('open')) { closeTagPop(); return; }
+  if (!selectedTaggableItems().length) { toast('Select an image or a note to tag'); return; }
+  closeMenu();
+  refreshTagSuggestions();
+  renderTagPopover();
+  tagPopEl.classList.add('open');
+  tagPopEl.setAttribute('aria-hidden', 'false');
+  $('#sTags')?.classList.add('on');
+  placePopNear(tagPopEl, anchorEl);
+  tagPopInputEl.value = '';
+  tagPopInputEl.focus();
+}
+
+function setTagPanelOpen(open) {
+  if (!tagPanelEl) return;
+  if (!open) closeTagColorPop();
+  tagPanelEl.classList.toggle('open', open);
+  tagPanelEl.setAttribute('aria-hidden', String(!open));
+  $('#btnTags')?.classList.toggle('open', open);
+  if (open) renderTagPanel();
+}
+
+function toggleTagPanel() {
+  if (onLanding) return;
+  setTagPanelOpen(!tagPanelEl?.classList.contains('open'));
+}
+
+/* A new or newly opened board has none of the previous board's tags, so the
+   filter must not survive into it and hide everything. */
+function resetTagFilterState() {
+  tagFilter = [];
+  tagFilterKeys = [];
+  tagFilterPass.clear();
+  renderTagPanel();
+}
+
+function commitTagInput() {
+  const incoming = parseTagInput(tagPopInputEl.value);
+  if (!incoming.length) return;
+  const changed = applyTagsToSelection(tags => addTags(tags, incoming));
+  tagPopInputEl.value = '';
+  renderTagPopover();
+  if (!changed) { toast('Already tagged'); return; }
+  toast(changed === 1 ? 'Tagged 1 item' : 'Tagged ' + changed + ' items');
+}
+
+$('#btnTags')?.addEventListener('click', e => { e.stopPropagation(); toggleTagPanel(); });
+$('#sTags')?.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openTagPop($('#sTags'));
+});
+$('#tagClear')?.addEventListener('click', clearTagFilter);
+$('#tagModeAny')?.addEventListener('click', () => setTagFilter(tagFilter, { mode: 'any' }));
+$('#tagModeAll')?.addEventListener('click', () => setTagFilter(tagFilter, { mode: 'all' }));
+$('#tagLabelsAlways')?.addEventListener('click', () => setTagLabelMode('always'));
+$('#tagLabelsSelected')?.addEventListener('click', () => setTagLabelMode('selected'));
+$('#tagLabelsNever')?.addEventListener('click', () => setTagLabelMode('never'));
+$('#tagColorNone')?.addEventListener('click', () => { setTagColor(tagColorTarget, ''); closeTagColorPop(); });
+tagPopInputEl?.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTagPop(); canvas.focus?.(); return; }
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  commitTagInput();
+});
+
 /* ================= board search (Ctrl+F) ================= */
 /* A reference board of a few hundred images has no other way to find anything.
    Matches note text, image file names and group names, then flies the view to
@@ -18446,6 +19241,14 @@ function searchableText(it) {
   return String(it.name || '').trim();
 }
 
+/* Ctrl+F finds an image by what it is, not only by the filename a camera
+   happened to give it. */
+function searchableTextWithTags(it) {
+  const base = searchableText(it);
+  const tags = (it.tags || []).map(tag => '#' + tag).join(' ');
+  return [base, tags].filter(Boolean).join('  ');
+}
+
 function searchKindLabel(it) {
   if (isNoteItem(it)) return 'note';
   if (isGroupItem(it)) return 'group';
@@ -18459,7 +19262,7 @@ function collectSearchHits(query) {
   const hits = [];
   for (const it of state.items) {
     if (isArrowItem(it)) continue;               // nothing textual to match on
-    const text = searchableText(it);
+    const text = searchableTextWithTags(it);
     if (!text) continue;
     const at = text.toLowerCase().indexOf(needle);
     if (at < 0) continue;
@@ -18595,6 +19398,16 @@ window.RefBoard = {
   /* Drag-out hooks: a harness cannot run a native OS drag, so it drives the
      staging half directly and reads the files that land on disk. */
   updateSelBarForTest: updateSelBar,
+  /* Tag hooks: the filter's effect is a pass set and a dim alpha, neither of
+     which a harness can read off the canvas. */
+  searchHitsForTest: query => collectSearchHits(query),
+  tagStateForTest: () => ({
+    filter: [...tagFilter],
+    mode: tagFilterMode,
+    passIds: [...tagFilterPass],
+    boardTags: boardTagList(),
+    dimAlpha: TAG_DIM_ALPHA,
+  }),
   dragOutItemsForTest: dragOutItems,
   stageDragOutForTest: stageDragOutFiles,
   /* Encoding hooks: the lossless guarantee is about actual pixels, so a

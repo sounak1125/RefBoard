@@ -37,6 +37,8 @@ const context = {
   groupOfItem: item => item?.groupId ? byId(item.groupId) : null,
   boundsOf: item => ({ x: item.x, y: item.y, w: item.w, h: item.h }),
   effectiveHitItem: item => item,
+  // No tag filter: everything on the board is selectable.
+  itemPassesTagFilter: () => true,
   Set,
 };
 vm.runInNewContext(`${extractFunction('marqueeSelectionIds')}; this.marqueeSelectionIds = marqueeSelectionIds;`, context);
@@ -102,5 +104,28 @@ assert.match(
   /state\.sel = marqueeSelectionIds\(bx1, by1, bx2, by2, mode\.keep\)/,
   'the live marquee path should use the group-aware resolver',
 );
+
+/* A tag filter dims what it excludes, and dimmed means gone as far as pointer
+   work is concerned — otherwise a marquee across a filtered board would sweep
+   up items the user cannot even see, and the next drag would move them. */
+{
+  const filtered = { ...context, itemPassesTagFilter: item => item.id !== 'free' };
+  vm.runInNewContext(
+    `${extractFunction('marqueeSelectionIds')}; this.marqueeSelectionIds = marqueeSelectionIds;`,
+    filtered,
+  );
+
+  assert.deepEqual(
+    ids(filtered.marqueeSelectionIds(210, 0, 260, 60)),
+    [],
+    'a marquee must not select an item the tag filter has dimmed out',
+  );
+
+  assert.deepEqual(
+    ids(filtered.marqueeSelectionIds(0, 0, 260, 60)),
+    ['g1', 'g2'],
+    'a marquee across the board still takes everything the filter kept',
+  );
+}
 
 console.log('group marquee selection tests passed');
