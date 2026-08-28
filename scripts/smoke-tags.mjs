@@ -195,6 +195,56 @@ const smokeExpression = `(async()=>{
   }
   const colorsBeforeSave={...RB.state.tagColors};
 
+  /* The glow must be the same size on screen however far the board is zoomed
+     out. shadowBlur is not scaled by the canvas transform, so dividing it by
+     the view scale made it grow as you zoomed out — 17px of reach at 100% and
+     over 400px at 25%. Measured by differencing a frame that has tag colours
+     against the same frame without them: whatever changed is the glow. */
+  const glowReach=async zoom=>{
+    const board=document.getElementById('board');
+    const bctx=board.getContext('2d');
+    const dpr=devicePixelRatio||1;
+    const it=added[0];
+    const strip=async withGlow=>{
+      RB.state.tagColors = withGlow ? {mood:'#5aa2ff'} : {};
+      RB.state.view.s=zoom;
+      const cx=it.x+it.w/2, cy=it.y+it.h/2;
+      RB.state.view.tx=board.clientWidth/2 - cx*zoom;
+      RB.state.view.ty=board.clientHeight/2 - cy*zoom;
+      RB.invalidate();
+      await wait(350);
+      const x0=Math.max(0, Math.round(((it.x+it.w)*zoom+RB.state.view.tx)*dpr));
+      const y0=Math.max(0, Math.round((cy*zoom+RB.state.view.ty)*dpr));
+      const w=Math.max(1, Math.min(600, board.width-x0));
+      return {data:bctx.getImageData(x0,y0,w,1).data, w};
+    };
+    const on=await strip(true), off=await strip(false);
+    let reach=0;
+    for(let d=0;d<on.w;d++){
+      const i=d*4;
+      const diff=Math.abs(on.data[i]-off.data[i])+Math.abs(on.data[i+1]-off.data[i+1])+Math.abs(on.data[i+2]-off.data[i+2]);
+      if(diff>8) reach=d;
+    }
+    return Math.round(reach/dpr);
+  };
+  /* Measured on a board of one. The strip runs to the right of the item, and
+     with neighbours present it crossed their glows too, which made the reading
+     the size of the board rather than of one halo. */
+  const allItems=RB.state.items.slice();
+  const savedSel=new Set(RB.state.sel);
+  RB.state.items=[added[0]];
+  RB.state.sel=new Set();
+  const glowNear=await glowReach(1);
+  const glowMid=await glowReach(0.25);
+  const glowFar=await glowReach(0.05);
+  RB.state.items=allItems;
+  RB.state.sel=savedSel;
+  RB.state.tagColors={...colorsBeforeSave};
+  RB.state.view.s=1;
+  RB.updateSelBarForTest();
+  RB.invalidate();
+  await wait(250);
+
   // The three label modes, through the panel's own buttons.
   const labelModes=[];
   for(const id of ['#tagLabelsNever','#tagLabelsSelected','#tagLabelsAlways']){
@@ -226,7 +276,7 @@ const smokeExpression = `(async()=>{
     afterTagging, afterDuplicate, selbarOffersTags, panelOpen, chipLabels,
     stillOpenBeforeToggle, openAfterSecondPress,
     colorPopOpen, chosen, colorsAfterPick, colorsAfterUndo, colorsBeforeSave, labelModes,
-    panelSurvivedColorPick,
+    panelSurvivedColorPick, glowNear, glowMid, glowFar,
     filtered, countText, anyMode, allMode, cleared,
     searchHits, noteTagsBefore, reloaded, reloadedBoardTags, reloadedColors,
     ids:{first:added[0].id,second:added[1].id,third:added[2].id},
@@ -273,6 +323,28 @@ try {
   assert.deepEqual(r.colorsAfterUndo, {},
     'a tag colour is board data, so undo must take it back');
 
+  /* ---- the glow keeps its size on screen ---- */
+  assert.ok(r.glowNear > 2, `no glow measured at 100% zoom (reach ${r.glowNear}px)`);
+
+  /* Dividing shadowBlur by the view scale goes wrong in two directions as the
+     board zooms out, and the crossover between them sits near 15% — which is
+     why both ends are sampled and 15% is not. Measured against the bug: 54px
+     of reach at 25% where a correct build gives 21px, then 1px at 5% where a
+     correct build still gives 15px, because a blur that wide smears the colour
+     below visibility entirely. The thresholds sit between the two measured
+     ratios rather than near either: correct is about 0.9 and 0.27, the bug is
+     about 1.8 and 0.06. */
+  assert.ok(
+    r.glowMid <= r.glowNear * 1.35,
+    `the glow grows as the board is zoomed out: ${r.glowNear}px of reach at 100% `
+    + `but ${r.glowMid}px at 25% — shadowBlur is being scaled by the view again`,
+  );
+  assert.ok(
+    r.glowFar >= r.glowNear * 0.15,
+    `the glow washes out when zoomed far out: ${r.glowNear}px of reach at 100% `
+    + `but only ${r.glowFar}px at 5% — the blur is being widened by the view scale`,
+  );
+
   /* ---- label modes ---- */
   assert.deepEqual(r.labelModes, ['never', 'selected', 'always'],
     'all three label modes must be reachable from the panel');
@@ -304,7 +376,9 @@ try {
 
   console.log(
     `tags Electron smoke passed — tagged through the popover, filtered to `
-    + `${r.filtered.passIds.length} of ${r.reloaded.length}, and survived a save and reopen`,
+    + `${r.filtered.passIds.length} of ${r.reloaded.length}, `
+    + `glow reach ${r.glowNear}/${r.glowMid}/${r.glowFar}px at 100/25/5% zoom, `
+    + `and survived a save and reopen`,
   );
 } catch (err) {
   // Electron's own output is the only thing that explains a renderer that

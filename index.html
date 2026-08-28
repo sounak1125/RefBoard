@@ -18789,11 +18789,12 @@ function applyTagsToSelection(mutate) {
 /* ---------- painting tags on the board ---------- */
 
 /* Screen pixels, so the glow reads the same at any zoom. */
-const TAG_GLOW_BLUR = 38;
-const TAG_GLOW_ALPHA = 0.5;
-/* Deliberately small: the bed is what is left visible around the item, and past
-   about five pixels it stops reading as a glow and starts reading as a border. */
-const TAG_GLOW_SPREAD = 5;
+const TAG_GLOW_BLUR = 30;
+const TAG_GLOW_ALPHA = 0.3;
+/* The bed is whatever is left visible around the item, so it reads as a stroke
+   rather than as light. Kept to a couple of pixels: enough to seat the glow
+   against the edge, not enough to look like a coloured border. */
+const TAG_GLOW_SPREAD = 2;
 
 const TAG_LABEL_FONT = '500 11px "Segoe UI", system-ui, -apple-system, sans-serif';
 const TAG_LABEL_H = 17;
@@ -18837,7 +18838,12 @@ function drawTagGlow(g, it, color) {
   g.translate(r.x + r.w / 2, r.y + r.h / 2);
   g.rotate(rotRad(it));
   g.shadowColor = color;
-  g.shadowBlur = TAG_GLOW_BLUR / state.view.s;
+  /* shadowBlur is NOT scaled by the canvas transform — it is device pixels, so
+     it needs the device ratio but never the view scale. Dividing by the zoom
+     here made the glow grow as the board was zoomed out: measured 17px of reach
+     at 100% and over 400px at 25%. The bed below is in board units and does
+     need the zoom, which is why only one of these two divides by it. */
+  g.shadowBlur = TAG_GLOW_BLUR * (devicePixelRatio || 1);
   g.fillStyle = color;
   g.globalAlpha *= TAG_GLOW_ALPHA;
   const w = r.w + spread * 2, h = r.h + spread * 2;
