@@ -12870,6 +12870,10 @@ function setRwTitleText(el, text, query) {
 
 /* Pins survive the recents cull, so this is the one control on a card that
    changes whether the board is still here next month. */
+/* Must equal MAX_PINNED in scripts/recent-works.js, which main enforces as a
+   backstop. Duplicated rather than imported because the preload is sandboxed
+   and cannot require local modules; test-pin-limit-contract.mjs holds the two
+   in step. If they drift the landing reports a pin that main refused. */
 const PIN_LIMIT = 12;
 
 function pinnedCount(list) {
@@ -13652,6 +13656,14 @@ async function renderRecentWorks() {
     grid.innerHTML = '';
     $('#focusTrack').innerHTML = '';
     focusFlowEntries = [];
+    // The dock and the counter live outside the track, so clearing the cards
+    // left them describing boards that are no longer on screen - a row of chips
+    // for a carousel with nothing in it, and a counter still reading 1 of 9.
+    focusFlowIndex = 0;
+    const dockRow = $('#focusDockRow');
+    if (dockRow) dockRow.textContent = '';
+    const position = $('#focusPosition');
+    if (position) position.textContent = '';
     return;
   }
   if (focusLayout) await renderFocusRecentWorks(list, renderSeq, { showCurrent, searching });
