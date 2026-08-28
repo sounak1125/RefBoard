@@ -1341,12 +1341,18 @@ body.board-active #recentWorks{ display:none; }
   backdrop-filter:blur(22px); background:color-mix(in srgb, var(--panel) 68%, transparent);
 }
 
+/* Stage above, footer below, both in flow. The footer used to be absolutely
+   positioned and the stage reserved a flat 54px for it - a number that never
+   matched what the footer actually measured, so on a short window the cards
+   sat on top of the counter. Letting flex do the reserving means the two can
+   never disagree again, whatever the dock ends up costing. */
 .ff-flow{
   position:relative; z-index:1; flex:1 1 auto; min-height:0;
   width:100%; overflow:hidden;
+  display:flex; flex-direction:column;
 }
 .ff-stage{
-  position:relative; height:calc(100% - 54px); min-height:370px;
+  position:relative; flex:1 1 auto; min-height:240px;
   width:100%; outline:none; perspective:1500px;
   touch-action:pan-y; user-select:none; cursor:grab;
 }
@@ -1441,8 +1447,9 @@ body.board-active #recentWorks{ display:none; }
 .ff-arrow.next:hover:not(:disabled){ transform:translate(2px,-50%); }
 .ff-arrow:disabled{ opacity:.18; cursor:default; }
 .ff-footer{
-  position:absolute; left:50%; bottom:4px; z-index:80;
-  width:min(520px, calc(100vw - 64px)); transform:translateX(-50%);
+  position:relative; z-index:80; flex:0 0 auto;
+  align-self:center; margin-bottom:4px;
+  width:min(520px, calc(100vw - 64px));
   display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px 18px;
 }
 /* The index carries the weight, the total sits under it, the title trails. */
@@ -1468,9 +1475,15 @@ body.board-active #recentWorks{ display:none; }
 /* One chip per board, magnifying under the cursor like a dock, with a light
    that follows the pointer along the row. Everything that moves is transform
    and opacity, so the whole effect stays on the compositor. */
+/* Tall enough for a chip at full excursion. The row is 20px and a chip that is
+   both current and under the cursor reaches 20 x (FF_DOCK_GROW + FF_ACTIVE_GROW)
+   + FF_DOCK_LIFT + FF_ACTIVE_LIFT above its baseline; the counter and the hint
+   sit one grid gap higher, and at 46px a chip climbed into them. Pinned by the
+   headroom check in smoke-focus-dock, which measures the real boxes rather than
+   trusting this sum to stay in step with the constants. */
 .ff-dock{
   grid-column:1 / -1; position:relative;
-  height:46px; display:flex; align-items:flex-end; justify-content:center;
+  height:60px; display:flex; align-items:flex-end; justify-content:center;
   isolation:isolate;
 }
 /* The light itself: a soft pool that tracks the cursor and fades out when the
@@ -1543,7 +1556,7 @@ body.board-active #recentWorks{ display:none; }
   #recentWorks.layout-focus .rw-header{ margin-bottom:0; }
   #recentWorks.layout-focus .rw-heading-row{ padding-bottom:2px; }
   .ff-card{ width:clamp(300px, 38vw, 500px); }
-  .ff-stage{ min-height:320px; }
+  .ff-stage{ min-height:200px; }
 }
 @media (prefers-reduced-motion:reduce){
   .ff-card, .ff-chip, .ff-dock-glow{ transition-duration:.01ms !important; }
