@@ -150,9 +150,25 @@ const smokeExpression = `(async()=>{
   const backActive=activeIndex();
   const backRaised=raised();
 
+  // --- the row reaches highest on the chip that is BOTH current and under
+  //     the cursor, and the counter and hint sit directly above it ---
+  const peakBox=chips()[activeIndex()].getBoundingClientRect();
+  move(peakBox.left+peakBox.width/2);
+  await frame(); await wait(200);
+  const peakChip=chips()[activeIndex()].getBoundingClientRect();
+  const peakNear=Number(chips()[activeIndex()].style.getPropertyValue('--near')||0);
+  const posRect=document.querySelector('#focusPosition').getBoundingClientRect();
+  const hintEl=document.querySelector('.ff-hint');
+  const hintVisible=!!hintEl&&getComputedStyle(hintEl).display!=='none';
+  const hintRect=hintVisible?hintEl.getBoundingClientRect():null;
+  const textBottom=Math.max(posRect.bottom,hintRect?hintRect.bottom:-Infinity);
+  const headroom=Math.round((peakChip.top-textBottom)*10)/10;
+  const dockHeight=Math.round(document.querySelector('#focusDock').getBoundingClientRect().height);
+  leave();
+
   return {chipCount,cardCount,initialRaised,initialActive,restRaised,restActive,restTransforms,hoverNear,peak,reached,
           monotoneLeft,monotoneRight,glowMoved,afterClickActive,afterClickRaised,
-          wheelSteps,backActive,backRaised};
+          wheelSteps,backActive,backRaised,peakNear,headroom,dockHeight,hintVisible};
 })()`;
 
 try {
@@ -188,6 +204,13 @@ try {
   }
   assert.equal(r.backActive, CLICK + 2, 'scrolling back must step back one board');
   assert.deepEqual(r.backRaised, [r.backActive], 'stepping backwards must move the lift too');
+
+  // The counter and the hint sit directly above the row. A chip at full
+  // excursion must not climb into them.
+  assert.ok(r.peakNear > 0.9, `the worst case needs the cursor on the current chip (near ${r.peakNear})`);
+  assert.ok(r.headroom >= 2,
+    `a chip at full lift must keep clear air under the counter and hint, but the gap is ${r.headroom}px `+
+    `(dock reserves ${r.dockHeight}px, hint shown: ${r.hintVisible})`);
 
   console.log('focus dock Electron smoke passed');
 } finally {
