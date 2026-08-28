@@ -85,4 +85,19 @@ assert.ok(at('if ($DryRun)') < syncCall, '-DryRun must return before the payload
 assert.match(readme, /-SkipPayloadCheck/, 'README must document the skip switch');
 assert.match(readme, /-NoBootstrapperRebuild/, 'README must document the no-rebuild switch');
 
+/* The bootstrapper names its artifact from its own package.json version while
+   this script looks for the root version's name, so a release where only the
+   root was bumped ships with no installer — and only warns about it. That trap
+   is invisible from the scripts alone, so the README has to call it out. */
+assert.match(
+  readme,
+  /bootstrapper\/package\.json/,
+  'README must tell the releaser to bump bootstrapper/package.json too',
+);
+assert.match(
+  ship,
+  /Write-Warning "No \$installerName built/,
+  'a missing installer must stay a warning, which is exactly why the README has to flag the version bump',
+);
+
 console.log('release payload contract ok - sync is default-on, ordered before upload, and re-verified after rebuild');
