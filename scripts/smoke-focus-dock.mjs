@@ -220,6 +220,18 @@ const smokeExpression = `(async()=>{
   })();
   const trackMask=maskOf(document.querySelector('#focusTrack')).slice(0,60);
 
+  // --- the receding cards must actually recede ---
+  // Dimming a card with a filter leaves it a solid rectangle, and its edges
+  // then read as hard horizontal bands against a flat page - measured at 4
+  // units of luminance out where nothing should be visible at all. Depth has
+  // to come off the alpha, not just the brightness.
+  const depthOpacity={};
+  for(const card of document.querySelectorAll('#focusTrack .ff-card')){
+    if(getComputedStyle(card).visibility!=='visible') continue;
+    const depth=card.dataset.depth;
+    if(depth!=null) depthOpacity[depth]=Math.round(Number(getComputedStyle(card).opacity)*100)/100;
+  }
+
   // --- a handful of boards must still look like a dock ---
   // With chips free to fill the row, three boards becomes three slabs with the
   // current one lit, which is the segmented progress bar the dock replaced.
@@ -245,7 +257,7 @@ const smokeExpression = `(async()=>{
           wheelSteps,backActive,backRaised,peakNear,headroom,dockHeight,hintVisible,
           manyWidest,fewCount,fewWidest,
           marksWhileStepping,clearsWhenSettled,guardSelector,guardOutranksHover,
-          cardBackgrounds,flatCardBackgrounds,gridMask,trackMask};
+          cardBackgrounds,flatCardBackgrounds,gridMask,trackMask,depthOpacity};
 })()`;
 
 try {
@@ -310,6 +322,11 @@ try {
     `the landing grid must fade out rather than stop (mask: ${r.gridMask.mask || 'none'})`);
   assert.ok(r.trackMask.includes('gradient'),
     `the card row must fade at its edges, or the far cards meet the window as slabs (mask: ${r.trackMask || 'none'})`);
+
+  assert.equal(r.depthOpacity['0'], 1, 'the current board is fully opaque');
+  assert.ok(r.depthOpacity['2'] === undefined || r.depthOpacity['2'] <= 0.4,
+    `a card two back must be faded, not merely dimmed, or its edges band against the page `
+    + `(depth opacities: ${JSON.stringify(r.depthOpacity)})`);
 
   // A chip must stay a chip whatever the board count.
   assert.equal(r.fewCount, 3, `expected three chips after reseeding (got ${r.fewCount})`);

@@ -888,9 +888,14 @@ body.board-instant-open #titlebarPeek{
 /* Film grain over the whole landing, straight from the installer's look: it
    breaks up the aurora gradients so they read as light in air rather than
    color bands on glass. */
+/* Above the cards, not behind them. A 96px shadow ramp over a near-black
+   page steps visibly - each 1/255 of alpha becomes a contour, and they read as
+   arcs around every card. Noise over the top dithers those steps away, which
+   it cannot do from underneath: the content sits at z-index 2, so the grain
+   was covering the background and nothing else. */
 #recentWorks::before{
-  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
-  opacity:.05; mix-blend-mode:overlay;
+  content:""; position:absolute; inset:0; z-index:4; pointer-events:none;
+  opacity:.07; mix-blend-mode:overlay;
   background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.34'/%3E%3C/svg%3E");
   background-size:180px 180px;
 }
@@ -1553,8 +1558,13 @@ body.board-active #recentWorks{ display:none; }
    the row dissolves into the background instead of being cut off by it. */
 .ff-track{
   position:absolute; inset:0; transform-style:preserve-3d;
-  -webkit-mask-image:linear-gradient(90deg, transparent 0%, #000 15%, #000 85%, transparent 100%);
-  mask-image:linear-gradient(90deg, transparent 0%, #000 15%, #000 85%, transparent 100%);
+  /* Eased rather than linear. A straight ramp still leaves roughly a quarter
+     of the alpha out at the window edge, which was enough for a far card's
+     rectangular edge to register as a step. */
+  -webkit-mask-image:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.12) 7%, rgba(0,0,0,.55) 15%,
+    #000 24%, #000 76%, rgba(0,0,0,.55) 85%, rgba(0,0,0,.12) 93%, transparent 100%);
+  mask-image:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.12) 7%, rgba(0,0,0,.55) 15%,
+    #000 24%, #000 76%, rgba(0,0,0,.55) 85%, rgba(0,0,0,.12) 93%, transparent 100%);
 }
 .ff-card{
   --ff-offset:0; --ff-scale:1; --ff-brightness:1; --ff-saturation:1;
@@ -1571,8 +1581,8 @@ body.board-active #recentWorks{ display:none; }
   border:1px solid rgba(255,255,255,.1);
   box-shadow:
     0 1px 0 rgba(255,255,255,.06) inset,
-    0 26px 70px rgba(0,0,0,.46),
-    0 8px 24px rgba(0,0,0,.26);
+    0 14px 34px rgba(0,0,0,.5),
+    0 4px 12px rgba(0,0,0,.3);
   transform:
     translate3d(calc(-50% + var(--ff-offset) * clamp(212px, 21.5vw, 336px) + var(--ff-drag-x, 0px)), -50%, 0)
     rotateY(calc(var(--ff-offset) * -5deg)) scale(var(--ff-scale));
@@ -1614,13 +1624,16 @@ body.board-active #recentWorks{ display:none; }
   transition:transform .08s linear, opacity .16s ease, filter .16s ease, visibility .16s,
     border-color .16s ease, box-shadow .16s ease, background .16s ease;
 }
+/* The accent bloom is gone and the drop is shorter. A wide, very soft, very
+   low-alpha shadow is the worst case for banding: the longer the ramp, the more
+   contours it has room to show. The 1px accent ring stays - it is a hard edge,
+   so it cannot band, and it is what actually marks the card as current. */
 .ff-card.is-active{
   border-color:color-mix(in srgb, var(--acc) 32%, rgba(255,255,255,.14));
   box-shadow:
     0 1px 0 rgba(255,255,255,.09) inset,
-    0 40px 96px rgba(0,0,0,.6),
-    0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent),
-    0 26px 72px color-mix(in srgb, var(--acc) 13%, transparent);
+    0 18px 44px rgba(0,0,0,.55),
+    0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent);
 }
 .ff-card.is-active::before{ opacity:.75; }
 /* A gradient, matching the base stop for stop, because the card's resting
@@ -13345,7 +13358,12 @@ function syncFocusFlowUi(opts = {}) {
     const scales = [1, .895, .79, .7];
     // Keep every visible card materially opaque so cards behind it cannot
     // ghost through; depth comes from tonal falloff, not blur or transparency.
-    const opacities = [1, .97, .92, .84];
+    /* Steep on purpose. These were [1, .97, .92, .84]: dimmed by the filter
+       but barely faded, so a far card stayed a solid rectangle and its edges
+       showed as hard horizontal steps against the page - measured at 4 units
+       of luminance in 4 pixels, out at x=60 where nothing should be visible
+       at all. Depth should read as receding, not as stacked slabs. */
+    const opacities = [1, .94, .34, .14];
     const brightness = [1, .82, .6, .44];
     const saturation = [1, .88, .66, .48];
     card.style.setProperty('--ff-offset', offset);
