@@ -166,6 +166,72 @@ const smokeExpression = `(async()=>{
   const dockHeight=Math.round(document.querySelector('#focusDock').getBoundingClientRect().height);
   leave();
 
+  // --- while the row is moving, cards must not offer their controls ---
+  // Cards slide under a stationary cursor, so each one passing briefly matches
+  // :hover and flashes its buttons. Two halves to this: the stage is marked
+  // while a step is in flight, and the rule that reads the mark has to outrank
+  // the hover reveal, which sits later in the sheet at the same specificity.
+  stage.dispatchEvent(new WheelEvent('wheel',{deltaY:120,bubbles:true,cancelable:true}));
+  await frame();
+  const marksWhileStepping=stage.classList.contains('is-stepping');
+  await wait(900);
+  const clearsWhenSettled=!stage.classList.contains('is-stepping');
+
+  const rules=[...document.styleSheets].flatMap(sheet=>{
+    try{ return [...sheet.cssRules]; }catch(e){ return []; }
+  }).filter(rule=>rule.selectorText);
+
+  // A card's resting background is a gradient. Every rule that repaints it on
+  // hover has to be one too: a flat colour sets background-image to none, and
+  // a gradient cannot interpolate to none, so it snaps. Scrolling moves hover
+  // from card to card, so one flat rule makes the whole row pop per step.
+  const cardBackgrounds=rules
+    .filter(rule=>/\.ff-card[^,{]*:hover/.test(rule.selectorText) || rule.selectorText.trim()==='.ff-card')
+    .map(rule=>({ selector:rule.selectorText, background:rule.style.background||rule.style.backgroundImage||'' }))
+    .filter(entry=>entry.background);
+  const flatCardBackgrounds=cardBackgrounds
+    .filter(entry=>!entry.background.includes('gradient'))
+    .map(entry=>entry.selector);
+  const guardIndex=rules.findIndex(rule=>rule.selectorText.includes('.ff-stage.is-stepping')
+    && rule.selectorText.includes('.rw-card-clear'));
+  const hoverIndex=rules.findIndex(rule=>rule.selectorText.includes('.ff-card:hover')
+    && rule.selectorText.includes('.rw-card-clear'));
+  const guardSelector=guardIndex>=0?rules[guardIndex].selectorText:null;
+  // Only matters when the hover reveal comes later; if it does, the guard needs
+  // the extra class to win, and without it the whole thing silently does nothing.
+  const guardOutranksHover=guardIndex>=0&&hoverIndex>=0
+    ? (hoverIndex<guardIndex||guardSelector.includes('.ff-card .rw-card-clear'))
+    : false;
+
+  // --- nothing on the landing may end in a hard edge ---
+  // The atmosphere is one masked layer rather than stacked gradients, because
+  // two falloffs crossing is what left a seam across the page before. The card
+  // row is masked for the same reason: the far cards are only dimmed, so
+  // unfaded they meet the window edge as slabs.
+  const maskOf=el=>{
+    if(!el) return '';
+    const cs=getComputedStyle(el);
+    return cs.maskImage&&cs.maskImage!=='none' ? cs.maskImage : (cs.webkitMaskImage||'');
+  };
+  const gridMask=(()=>{
+    const cs=getComputedStyle(document.querySelector('#recentWorks'),'::after');
+    const m=cs.maskImage&&cs.maskImage!=='none'?cs.maskImage:(cs.webkitMaskImage||'');
+    return { mask:m.slice(0,60), image:cs.backgroundImage.slice(0,60) };
+  })();
+  const trackMask=maskOf(document.querySelector('#focusTrack')).slice(0,60);
+
+  // --- the receding cards must actually recede ---
+  // Dimming a card with a filter leaves it a solid rectangle, and its edges
+  // then read as hard horizontal bands against a flat page - measured at 4
+  // units of luminance out where nothing should be visible at all. Depth has
+  // to come off the alpha, not just the brightness.
+  const depthOpacity={};
+  for(const card of document.querySelectorAll('#focusTrack .ff-card')){
+    if(getComputedStyle(card).visibility!=='visible') continue;
+    const depth=card.dataset.depth;
+    if(depth!=null) depthOpacity[depth]=Math.round(Number(getComputedStyle(card).opacity)*100)/100;
+  }
+
   // --- a handful of boards must still look like a dock ---
   // With chips free to fill the row, three boards becomes three slabs with the
   // current one lit, which is the segmented progress bar the dock replaced.
@@ -189,7 +255,9 @@ const smokeExpression = `(async()=>{
   return {chipCount,cardCount,initialRaised,initialActive,restRaised,restActive,restTransforms,hoverNear,peak,reached,
           monotoneLeft,monotoneRight,glowMoved,afterClickActive,afterClickRaised,
           wheelSteps,backActive,backRaised,peakNear,headroom,dockHeight,hintVisible,
-          manyWidest,fewCount,fewWidest};
+          manyWidest,fewCount,fewWidest,
+          marksWhileStepping,clearsWhenSettled,guardSelector,guardOutranksHover,
+          cardBackgrounds,flatCardBackgrounds,gridMask,trackMask,depthOpacity};
 })()`;
 
 try {
@@ -232,6 +300,33 @@ try {
   assert.ok(r.headroom >= 2,
     `a chip at full lift must keep clear air under the counter and hint, but the gap is ${r.headroom}px `+
     `(dock reserves ${r.dockHeight}px, hint shown: ${r.hintVisible})`);
+
+  // The carousel must go quiet while it moves.
+  assert.equal(r.marksWhileStepping, true, 'a step must mark the stage so hover reveals can be held back');
+  assert.equal(r.clearsWhenSettled, true, 'and the mark must clear once the row settles, or the controls never come back');
+  assert.ok(r.guardSelector, 'the stepping guard rule must exist in the sheet');
+  assert.equal(r.guardOutranksHover, true,
+    `the stepping guard must outrank the hover reveal that follows it: ${r.guardSelector}`);
+
+  assert.ok(r.cardBackgrounds.length >= 2,
+    `expected the card background rules to be found (got ${JSON.stringify(r.cardBackgrounds)})`);
+  assert.deepEqual(r.flatCardBackgrounds, [],
+    'a card background that changes on hover must stay a gradient; a flat colour sets '
+    + 'background-image to none, which cannot interpolate and snaps on every scroll step');
+
+  // The landing's atmosphere is one masked layer, and the card row fades at
+  // its edges. Both exist so nothing ends in a hard edge.
+  assert.ok(r.gridMask.image.includes('gradient'),
+    `the landing grid must be drawn (background-image: ${r.gridMask.image || 'none'})`);
+  assert.ok(r.gridMask.mask.includes('gradient'),
+    `the landing grid must fade out rather than stop (mask: ${r.gridMask.mask || 'none'})`);
+  assert.ok(r.trackMask.includes('gradient'),
+    `the card row must fade at its edges, or the far cards meet the window as slabs (mask: ${r.trackMask || 'none'})`);
+
+  assert.equal(r.depthOpacity['0'], 1, 'the current board is fully opaque');
+  assert.ok(r.depthOpacity['2'] === undefined || r.depthOpacity['2'] <= 0.4,
+    `a card two back must be faded, not merely dimmed, or its edges band against the page `
+    + `(depth opacities: ${JSON.stringify(r.depthOpacity)})`);
 
   // A chip must stay a chip whatever the board count.
   assert.equal(r.fewCount, 3, `expected three chips after reseeding (got ${r.fewCount})`);
