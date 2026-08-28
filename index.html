@@ -1445,18 +1445,83 @@ body.board-active #recentWorks{ display:none; }
   width:min(520px, calc(100vw - 64px)); transform:translateX(-50%);
   display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px 18px;
 }
-.ff-position{ color:var(--dim); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ff-hint{ color:var(--dim); font-size:10px; letter-spacing:.02em; white-space:nowrap; }
-.ff-progress{
-  grid-column:1 / -1; height:2px; overflow:hidden; border-radius:999px;
-  background:rgba(255,255,255,.07);
+/* The index carries the weight, the total sits under it, the title trails. */
+.ff-position{
+  display:flex; align-items:baseline; gap:8px; min-width:0;
+  white-space:nowrap; overflow:hidden;
 }
-.ff-progress-fill{
-  display:block; height:100%; width:0; border-radius:inherit;
-  background:linear-gradient(90deg, color-mix(in srgb, var(--acc) 62%, transparent), var(--acc));
-  box-shadow:0 0 12px color-mix(in srgb, var(--acc) 45%, transparent);
-  transition:width .42s cubic-bezier(.22,1,.36,1);
+.ff-index{
+  font-size:15px; font-weight:600; line-height:1; color:var(--txt);
+  font-variant-numeric:tabular-nums; letter-spacing:.005em;
 }
+.ff-total{ font-size:10.5px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.ff-title{
+  font-size:11.5px; color:var(--mut);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+}
+.ff-hint{ color:var(--dim); font-size:10px; letter-spacing:.02em; white-space:nowrap; opacity:.72; }
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+
+/* One chip per board, magnifying under the cursor like a dock, with a light
+   that follows the pointer along the row. Everything that moves is transform
+   and opacity, so the whole effect stays on the compositor. */
+.ff-dock{
+  grid-column:1 / -1; position:relative;
+  height:46px; display:flex; align-items:flex-end; justify-content:center;
+  isolation:isolate;
+}
+/* The light itself: a soft pool that tracks the cursor and fades out when the
+   pointer leaves, so the row is dark and quiet at rest. */
+.ff-dock-glow{
+  position:absolute; bottom:-14px; left:0; width:190px; height:64px;
+  border-radius:50%; pointer-events:none; opacity:0;
+  background:radial-gradient(closest-side,
+    color-mix(in srgb, var(--acc) 58%, transparent), transparent 74%);
+  filter:blur(13px);
+  transform:translate3d(0,0,0);
+  transition:opacity .42s ease;
+  will-change:transform, opacity;
+}
+.ff-dock:hover .ff-dock-glow{ opacity:1; }
+
+.ff-dock-row{
+  position:relative; display:flex; align-items:flex-end;
+  gap:clamp(3px, .8%, 7px); width:100%; height:20px;
+}
+.ff-chip{
+  flex:1 1 0; min-width:0; height:100%; padding:0; border:0;
+  border-radius:3px; cursor:pointer;
+  /* A top-lit face rather than a flat fill: it reads as an object catching
+     light, which is what makes the row respond rather than just change colour. */
+  background:linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
+  transform-origin:50% 100%;
+  transform:translate3d(0,0,0) scaleY(1);
+  box-shadow:0 0 0 0 transparent;
+  transition:background .3s ease, box-shadow .3s ease;
+  will-change:transform;
+}
+.ff-chip.is-past{ background:linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.13)); }
+/* The lit one. The bloom rides a custom property so the pointer can push it
+   brighter without touching any other declaration. */
+.ff-chip.is-active{
+  background:linear-gradient(180deg,
+    color-mix(in srgb, #fff 62%, var(--acc)), var(--acc) 62%,
+    color-mix(in srgb, var(--acc) 80%, #000));
+  box-shadow:
+    0 0 calc(26px + var(--near, 0) * 22px) color-mix(in srgb, var(--acc) 70%, transparent),
+    0 0 calc(9px + var(--near, 0) * 10px) color-mix(in srgb, var(--acc) 92%, transparent),
+    0 0 2px color-mix(in srgb, #fff 70%, transparent);
+}
+.ff-chip:not(.is-active){
+  filter:brightness(calc(1 + var(--near, 0) * 1.35));
+}
+.ff-chip:focus-visible{ outline:2px solid var(--acc); outline-offset:3px; }
+/* Leaving the row settles every chip back together rather than one by one. */
+.ff-dock:not(:hover) .ff-chip{ transition:transform .5s cubic-bezier(.16,1,.3,1), background .3s ease, box-shadow .3s ease, filter .3s ease; }
+
 
 @media (max-width:720px){
   #recentWorks.layout-focus .rw-inner{ padding-top:22px; }
@@ -1481,7 +1546,7 @@ body.board-active #recentWorks{ display:none; }
   .ff-stage{ min-height:320px; }
 }
 @media (prefers-reduced-motion:reduce){
-  .ff-card, .ff-progress-fill{ transition-duration:.01ms !important; }
+  .ff-card, .ff-chip, .ff-dock-glow{ transition-duration:.01ms !important; }
 }
 
 /* ---------- what's new (landing) ---------- */
@@ -2653,7 +2718,10 @@ body.board-active #whatsNewNotice{ display:none; }
       <div class="ff-footer">
         <div class="ff-position" id="focusPosition" aria-live="polite"></div>
         <div class="ff-hint">Scroll, drag, or use arrow keys</div>
-        <div class="ff-progress" aria-hidden="true"><span class="ff-progress-fill" id="focusProgressFill"></span></div>
+        <div class="ff-dock" id="focusDock" aria-hidden="true">
+          <span class="ff-dock-glow" id="focusDockGlow"></span>
+          <div class="ff-dock-row" id="focusDockRow"></div>
+        </div>
       </div>
     </section>
     <div class="rw-noresults hide" id="recentNoResults">
@@ -12973,9 +13041,140 @@ function syncFocusFlowUi(opts = {}) {
   if (activeCard) stage.setAttribute('aria-activedescendant', activeCard.id);
   $('#focusPrev').disabled = focusFlowIndex === 0;
   $('#focusNext').disabled = focusFlowIndex === focusFlowEntries.length - 1;
-  $('#focusPosition').textContent = `${focusFlowIndex + 1} of ${focusFlowEntries.length} · ${active.title}`;
-  $('#focusProgressFill').style.width = `${((focusFlowIndex + 1) / focusFlowEntries.length) * 100}%`;
+  renderFocusPosition(active);
+  renderFocusDock();
   if (opts.focusCard) activeCard?.focus({ preventScroll: true });
+}
+
+/* Built as nodes rather than one string so the index can carry its own weight
+   and a board title can never be read as markup. */
+function renderFocusPosition(active) {
+  const el = $('#focusPosition');
+  if (!el) return;
+  const total = focusFlowEntries.length;
+  el.textContent = '';
+  const index = document.createElement('span');
+  index.className = 'ff-index';
+  index.setAttribute('aria-hidden', 'true');
+  // Padded while the set is small enough for it to line up rather than look odd.
+  index.textContent = total < 100
+    ? String(focusFlowIndex + 1).padStart(2, '0')
+    : String(focusFlowIndex + 1);
+  const totalEl = document.createElement('span');
+  totalEl.className = 'ff-total';
+  totalEl.setAttribute('aria-hidden', 'true');
+  totalEl.textContent = '/ ' + total;
+  const title = document.createElement('span');
+  title.className = 'ff-title';
+  title.setAttribute('aria-hidden', 'true');
+  title.textContent = active?.title || '';
+  const spoken = document.createElement('span');
+  spoken.className = 'sr-only';
+  spoken.textContent = `${focusFlowIndex + 1} of ${total}${active?.title ? ', ' + active.title : ''}`;
+  el.append(index, totalEl, title, spoken);
+}
+
+/* Chips are rebuilt only when the number of boards changes; stepping between
+   them moves two classes. The magnification is separate and never touches the
+   DOM structure at all. */
+function renderFocusDock() {
+  const row = $('#focusDockRow');
+  if (!row) return;
+  const total = focusFlowEntries.length;
+  if (row.children.length !== total) {
+    row.textContent = '';
+    for (let i = 0; i < total; i++) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ff-chip';
+      chip.tabIndex = -1;                     // the stage owns keyboard travel
+      chip.addEventListener('click', e => { e.stopPropagation(); setFocusFlowIndex(i); });
+      row.appendChild(chip);
+    }
+  }
+  for (let i = 0; i < total; i++) {
+    const chip = row.children[i];
+    if (!chip) continue;
+    chip.classList.toggle('is-active', i === focusFlowIndex);
+    chip.classList.toggle('is-past', i < focusFlowIndex);
+    chip.title = focusFlowEntries[i]?.title || '';
+  }
+  /* The classes say which chip is current; the lift is an inline transform,
+     and without this the board you stepped away from stays standing up. */
+  scheduleFocusDockPaint();
+}
+
+/* How far the cursor's influence reaches, and how much it lifts a chip. Tuned
+   so three or four chips respond rather than the whole row heaving. */
+const FF_DOCK_REACH = 78;
+const FF_DOCK_LIFT = 13;
+const FF_DOCK_GROW = 1.9;
+/* The board you are on stands proud of the row whether or not a pointer is
+   anywhere near it — otherwise the row reads as flat until you touch it. */
+const FF_ACTIVE_LIFT = 5;
+const FF_ACTIVE_GROW = 0.55;
+let focusDockFrame = 0;
+let focusDockCursor = null;
+
+/* Runs on an animation frame while the pointer is over the row. Only transform,
+   opacity and a custom property are touched, so nothing here causes layout. */
+function paintFocusDock() {
+  focusDockFrame = 0;
+  const row = $('#focusDockRow');
+  const glow = $('#focusDockGlow');
+  const dock = $('#focusDock');
+  if (!row || !dock) return;
+  const chips = row.children;
+
+  /* Every rect is read before any style is written. Interleaving them would
+     force a layout flush per chip, since a rect read after a transform write
+     cannot be answered from the last frame. scaleY and translateY leave the
+     horizontal centre alone, so measuring mid-hover is still correct. */
+  const near = new Array(chips.length);
+  if (focusDockCursor !== null) {
+    const dockRect = dock.getBoundingClientRect();
+    for (let i = 0; i < chips.length; i++) {
+      const rect = chips[i].getBoundingClientRect();
+      const centre = rect.left + rect.width / 2 - dockRect.left;
+      const d = (centre - focusDockCursor) / FF_DOCK_REACH;
+      // A gaussian falloff: the chip under the cursor rises fully, its
+      // neighbours follow smoothly, and the rest of the row stays still.
+      near[i] = Math.exp(-d * d);
+    }
+  } else {
+    near.fill(0);
+  }
+
+  for (let i = 0; i < chips.length; i++) {
+    const chip = chips[i];
+    const isActive = i === focusFlowIndex;
+    const lift = FF_DOCK_LIFT * near[i] + FF_ACTIVE_LIFT * (isActive ? 1 : 0);
+    const grow = 1 + (FF_DOCK_GROW - 1) * near[i] + (isActive ? FF_ACTIVE_GROW : 0);
+    chip.style.transform = 'translate3d(0,' + (-lift) + 'px,0) scaleY(' + grow + ')';
+    chip.style.setProperty('--near', near[i].toFixed(3));
+  }
+
+  if (glow && focusDockCursor !== null) {
+    glow.style.transform = 'translate3d(' + (focusDockCursor - 95) + 'px,0,0)';
+  }
+}
+
+function scheduleFocusDockPaint() {
+  if (focusDockFrame) return;
+  focusDockFrame = requestAnimationFrame(paintFocusDock);
+}
+
+function bindFocusDock() {
+  const dock = $('#focusDock');
+  if (!dock) return;
+  dock.addEventListener('pointermove', e => {
+    focusDockCursor = e.clientX - dock.getBoundingClientRect().left;
+    scheduleFocusDockPaint();
+  });
+  dock.addEventListener('pointerleave', () => {
+    focusDockCursor = null;
+    scheduleFocusDockPaint();
+  });
 }
 
 function setFocusFlowIndex(index, opts = {}) {
@@ -13091,6 +13290,7 @@ function wireFocusFlowControls() {
   const recentWorks = $('#recentWorks');
   if (!stage || !recentWorks) return;
 
+  bindFocusDock();
   $('#focusPrev').addEventListener('click', e => {
     e.stopPropagation();
     setFocusFlowIndex(focusFlowIndex - 1);

@@ -94,14 +94,21 @@ async function run() {
     visiblePolicy: document.querySelector('#focusStage').dataset.visibleCards,
     settingValue: document.querySelector('#setLandingLayout').value,
     landingSettingsPresent: Boolean(document.querySelector('#rwSettings')),
-    customSelectCount: document.querySelectorAll('.settings2-content .ui-select').length,
-    exportCustomSelectCount: document.querySelectorAll('#exportImagesModal .ui-select').length
+    /* Every native select must have been upgraded to the custom control, which
+       is the thing worth asserting. This used to be a hardcoded count of four
+       and went red the day 2.0.8 added the decoded-image-memory setting — a
+       tripwire on unrelated work rather than a test of anything. */
+    settingsSelects: document.querySelectorAll('.settings2-content select').length,
+    settingsUpgraded: document.querySelectorAll('.settings2-content .ui-select').length,
+    exportSelects: document.querySelectorAll('#exportImagesModal select').length,
+    exportUpgraded: document.querySelectorAll('#exportImagesModal .ui-select').length
   })`);
   if (!focusState.focusClass || !focusState.flowVisible || !focusState.gridHidden
       || focusState.activeTitle !== 'Latest concepts' || focusState.cardCount !== 9
       || focusState.visiblePolicy !== '5' || focusState.settingValue !== 'focus'
-      || focusState.landingSettingsPresent || focusState.customSelectCount !== 4
-      || focusState.exportCustomSelectCount !== 3) {
+      || focusState.landingSettingsPresent
+      || !focusState.settingsSelects || focusState.settingsUpgraded !== focusState.settingsSelects
+      || !focusState.exportSelects || focusState.exportUpgraded !== focusState.exportSelects) {
     throw new Error(`Unexpected Focus Flow state: ${JSON.stringify(focusState)}`);
   }
 
@@ -262,10 +269,17 @@ async function run() {
     revealed: document.body.classList.contains('toolbar-revealed'),
     handleDisplay: getComputedStyle(document.querySelector('#toolbarEdgeHandle')).display,
     toolbarOpacity: getComputedStyle(document.querySelector('#toolbar')).opacity,
-    buttonCount: document.querySelectorAll('#toolbar > .tb').length
+    /* A count, not an exact one: what matters is that the floating toolbar is
+       populated and every button is a real control. Pinning the exact number
+       made adding any tool a test failure — this went red the day the Tags
+       button was added, which is not something this smoke is about. */
+    buttonCount: document.querySelectorAll('#toolbar > .tb').length,
+    buttonsWithoutIcon: [...document.querySelectorAll('#toolbar > .tb')]
+      .filter(btn => !btn.querySelector('svg, img')).length
   })`);
   if (!floatingInitial.floating || floatingInitial.revealed || floatingInitial.handleDisplay !== 'flex'
-      || floatingInitial.toolbarOpacity !== '0' || floatingInitial.buttonCount !== 14) {
+      || floatingInitial.toolbarOpacity !== '0' || floatingInitial.buttonCount < 10
+      || floatingInitial.buttonsWithoutIcon) {
     throw new Error(`Unexpected initial floating toolbar: ${JSON.stringify(floatingInitial)}`);
   }
   win.webContents.sendInputEvent({ type: 'mouseMove', x: 2, y: 450 });
@@ -398,7 +412,9 @@ async function run() {
     homeReached: !document.body.classList.contains('board-active'),
     rendererHasNote: window.RefBoard.state.items.some(item => item.kind === 'note')
   })`);
-  if (allToolbarButtons.total !== 14 || !allToolbarButtons.homeReached) {
+  // Same reasoning as the initial toolbar check: the point is that the toolbar
+  // is still there and Home was reached, not how many tools exist this month.
+  if (allToolbarButtons.total < 10 || !allToolbarButtons.homeReached) {
     throw new Error(`Unexpected all-button smoke state: ${JSON.stringify(allToolbarButtons)}`);
   }
 

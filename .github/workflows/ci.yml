@@ -66,3 +66,6 @@ jobs:
 
       - name: Palette extraction smoke
         run: npm run test:palette-smoke
+
+      - name: Focus dock smoke
+        run: npm run test:focus-dock-smoke
