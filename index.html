@@ -1542,6 +1542,10 @@ body.board-active #recentWorks{ display:none; }
   width:100%; overflow:hidden;
   display:flex; flex-direction:column;
 }
+/* display:flex above outranks what the hidden attribute asks for, so without
+   this the whole carousel - cards, arrows, hint, dock - keeps painting over the
+   classic grid while claiming to be hidden. Same reason .rw-restore needs it. */
+.ff-flow[hidden]{ display:none !important; }
 .ff-stage{
   position:relative; flex:1 1 auto; min-height:240px;
   width:100%; outline:none; perspective:1500px;

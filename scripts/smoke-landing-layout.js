@@ -202,7 +202,7 @@ async function run() {
   await waitFor(win, "document.querySelectorAll('#recentGrid .rw-card').length === 9", 'Classic Grid cards');
   const classicState = await win.webContents.executeJavaScript(`({
     focusClass: document.querySelector('#recentWorks').classList.contains('layout-focus'),
-    flowHidden: document.querySelector('#focusFlow').hidden,
+    flowHidden: getComputedStyle(document.querySelector('#focusFlow')).display === 'none',
     gridHidden: document.querySelector('#recentGrid').hidden,
     savedLayout: JSON.parse(localStorage.getItem('refboard.settings')).landingLayout,
     buttonLabel: document.querySelector('#setLandingLayout').closest('.ui-select').querySelector('.ui-select-button-label').textContent,
