@@ -203,28 +203,28 @@ assert.deepEqual(pruneTagColors({ mood: '#5aa2ff' }, []), {});
 
 /* Rebuilding a <datalist> while its popover is open crashes the renderer
    outright — an access violation, not an exception, so nothing is logged and
-   the window simply disappears. renderTagPopover runs after every tag edit,
+   the window simply disappears. renderTagSelection runs after every tag edit,
    which is exactly when the popover is open, so the suggestion rebuild has to
    stay out of it and happen once per open instead. Found the hard way. */
 {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  const start = html.indexOf('function renderTagPopover()');
-  assert.notEqual(start, -1, 'renderTagPopover should exist');
+  const start = html.indexOf('function renderTagSelection()');
+  assert.notEqual(start, -1, 'renderTagSelection should exist');
   let depth = 0;
   let body = '';
   for (let i = html.indexOf('{', start); i < html.length; i++) {
     if (html[i] === '{') depth++;
     else if (html[i] === '}' && --depth === 0) { body = html.slice(start, i + 1); break; }
   }
-  assert.ok(body, 'renderTagPopover should have a complete body');
+  assert.ok(body, 'renderTagSelection should have a complete body');
   assert.ok(
     !body.includes('tagPopSuggestEl'),
-    'renderTagPopover must not touch the suggestion datalist — rebuilding it while the '
-    + 'popover is open crashes the renderer; refresh it in openTagPop instead',
+    'renderTagSelection must not touch the suggestion datalist — rebuilding it while the '
+    + 'popover is open crashes the renderer; refresh it when the panel opens instead',
   );
   assert.ok(
-    /function openTagPop\([\s\S]{0,400}refreshTagSuggestions\(\)/.test(html),
-    'openTagPop must refresh the suggestions, or autocomplete never populates',
+    /function setTagPanelOpen\([\s\S]{0,400}refreshTagSuggestions\(\)/.test(html),
+    'opening the panel must refresh the suggestions, or autocomplete never populates',
   );
 }
 

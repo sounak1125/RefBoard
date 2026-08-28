@@ -88,23 +88,23 @@ const smokeExpression = `(async()=>{
     el.dispatchEvent(new PointerEvent('pointerdown',{button:0,bubbles:true}));
     el.dispatchEvent(new MouseEvent('click',{button:0,bubbles:true}));
   };
+  /* Tagging lives in the panel now, not a popover: the selection bar button
+     opens it and puts the cursor in the input. */
   const pressTagButton=async()=>{
     document.querySelector('#sTags').dispatchEvent(new PointerEvent('pointerdown',{button:0,bubbles:true}));
-    await wait(140);
-    return document.querySelector('#tagPop').classList.contains('open');
+    await wait(160);
+    return document.querySelector('#tagPanel').classList.contains('open');
   };
-  // The button toggles, so a second tagging pass has to reopen rather than
-  // press again blindly — pressing again is what closes it.
-  const ensureTagPopOpen=async()=>{
-    const pop=document.querySelector('#tagPop');
-    if(!pop.classList.contains('open'))await pressTagButton();
-    if(!pop.classList.contains('open')){
-      throw new Error('tag popover did not open — selbar="'+document.querySelector('#selbar').className
-        +'" sel='+RB.state.sel.size+' toast="'+document.querySelector('#toast').textContent+'"');
+  const ensureTagPanelOpen=async()=>{
+    const panel=document.querySelector('#tagPanel');
+    if(!panel.classList.contains('open'))await pressTagButton();
+    if(!panel.classList.contains('open')){
+      throw new Error('the tag panel did not open — sel='+RB.state.sel.size
+        +' toast="'+document.querySelector('#toast').textContent+'"');
     }
   };
   const typeTags=async(text)=>{
-    await ensureTagPopOpen();
+    await ensureTagPanelOpen();
     const input=document.querySelector('#tagPopInput');
     input.value=text;
     input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
@@ -129,12 +129,25 @@ const smokeExpression = `(async()=>{
 
   const selbarOffersTags=document.querySelector('#selbar').classList.contains('has-taggable');
 
-  // Pressing the button again closes it, so it cannot be left covering the board.
-  const stillOpenBeforeToggle=document.querySelector('#tagPop').classList.contains('open');
+  // The tag button always means "I want to tag": it opens the panel and keeps
+  // it open rather than toggling away the surface you just asked for.
+  const stillOpenBeforeToggle=document.querySelector('#tagPanel').classList.contains('open');
   const openAfterSecondPress=await pressTagButton();
 
+  // Clearing a selection outright, instead of picking chips off one at a time.
+  select([added[2].id]);
+  await wait(120);
+  press(document.querySelector('#tagSelClear'));
+  await wait(220);
+  const clearedItemTags=[...(added[2].tags||[])];
+  await typeTags('mood');           // put it back for the checks below
+
   // Filter to 'lighting': two images carry it, one does not.
-  press(document.querySelector('#btnTags'));
+  // The toolbar button toggles, and tagging above may have left the panel
+  // open already, so ensure rather than press blindly.
+  if(!document.querySelector('#tagPanel').classList.contains('open')){
+    press(document.querySelector('#btnTags'));
+  }
   await wait(150);
   const panelOpen=document.querySelector('#tagPanel').classList.contains('open');
   const chips=[...document.querySelectorAll('#tagPanelList .tag-chip')];
@@ -274,7 +287,7 @@ const smokeExpression = `(async()=>{
 
   return {
     afterTagging, afterDuplicate, selbarOffersTags, panelOpen, chipLabels,
-    stillOpenBeforeToggle, openAfterSecondPress,
+    stillOpenBeforeToggle, openAfterSecondPress, clearedItemTags,
     colorPopOpen, chosen, colorsAfterPick, colorsAfterUndo, colorsBeforeSave, labelModes,
     panelSurvivedColorPick, glowNear, glowMid, glowFar,
     filtered, countText, anyMode, allMode, cleared,
@@ -292,8 +305,9 @@ try {
   assert.deepEqual(r.afterTagging.third, ['mood'], 'the third image keeps only its own tag');
   assert.deepEqual(r.afterDuplicate, ['mood'], 'adding a case variant must not create a second tag');
   assert.equal(r.selbarOffersTags, true, 'the selection bar offers tagging when something taggable is selected');
-  assert.equal(r.stillOpenBeforeToggle, true, 'the popover stays open while tags are being added');
-  assert.equal(r.openAfterSecondPress, false, 'pressing the tag button again closes the popover');
+  assert.equal(r.stillOpenBeforeToggle, true, 'the panel stays open while tags are being added');
+  assert.equal(r.openAfterSecondPress, true, 'the tag button opens the panel and leaves it open');
+  assert.deepEqual(r.clearedItemTags, [], 'Clear tags must strip every tag from the selection');
 
   /* ---- the filter ---- */
   assert.equal(r.panelOpen, true, 'the tag button opens the filter panel');
@@ -375,7 +389,7 @@ try {
     'tag colours travel with the board, so they must survive save and reopen');
 
   console.log(
-    `tags Electron smoke passed — tagged through the popover, filtered to `
+    `tags Electron smoke passed — tagged through the panel, filtered to `
     + `${r.filtered.passIds.length} of ${r.reloaded.length}, `
     + `glow reach ${r.glowNear}/${r.glowMid}/${r.glowFar}px at 100/25/5% zoom, `
     + `and survived a save and reopen`,
