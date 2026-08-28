@@ -1,36 +1,19 @@
 {
-  "headline": "Drag images out, and a copy that keeps up",
-  "summary": "Images can now leave RefBoard by being dragged straight into another application. Copying is around eleven times faster than it was, and a cropped export no longer quietly costs you a generation of JPEG quality.",
-  "sections": {
-    "new": [
-      {
-        "title": "Drag images out into another app",
-        "description": "A grip in the selection bar drags the selected images out as real files — into Photoshop, Explorer, a browser upload field, anywhere that accepts a drop. An image you have not cropped or altered hands over its original file untouched; a cropped, rotated or painted one is written out to match what the board shows. Several selected images become several files, and two references that share a filename arrive as two files instead of one overwriting the other."
-      }
-    ],
-    "improved": [
-      {
-        "title": "Copying is about eleven times faster",
-        "description": "Copying one 4000×3000 photo took 1.45 seconds, and twenty-four references took 1.33; both now take roughly a tenth of a second. Nearly all of that time went on rendering and PNG-encoding the whole selection at up to 8192 pixels before copy would say anything at all. The flattened image placed on the clipboard is now capped at 1024 pixels. Pasting back into RefBoard is unaffected — it rebuilds the real images at their full size — and dragging an image out still hands over the untouched original."
-      },
-      {
-        "title": "A cropped export keeps every pixel",
-        "description": "Cropping forces an image to be encoded again, and a cropped JPEG used to be written back out as a JPEG, quietly costing a second generation of compression on pixels you asked to keep. It now comes out as a PNG, so the result is identical to the crop. A cropped WebP stays WebP, encoded losslessly, which is both exact and smaller than the same image as a PNG. Choosing JPEG or WebP yourself in the export dialog still gives you that format. The dialog now says when a JPEG is about to become a PNG, and the filename preview shows the extension you will actually get."
-      }
-    ],
-    "fixed": [
-      {
-        "title": "Copying a JPEG never kept its original bytes",
-        "description": "Copy tried to hand the clipboard the untouched JPEG file, which the clipboard has never accepted — PNG is the only image type it takes. Every JPEG copy therefore attempted a write that could not succeed, and then rendered the full-size PNG it had been trying to avoid, which is where most of the delay came from. Copy now goes straight to the render, and keeping the original bytes applies where it genuinely works: a single untouched PNG."
-      },
-      {
-        "title": "Copy stopped encoding an image it then threw away",
-        "description": "To keep its clipboard payload small, copy downscaled every large image to 2048 pixels, re-encoded it as a PNG, and kept that only if it came out smaller than the original. For a photograph it never does. On a 4000×3000 JPEG this was 336 milliseconds spent producing a 5.9 MB PNG that was discarded in favour of the 3.9 MB original. It is now only attempted for the source formats that can actually come out smaller."
-      },
-      {
-        "title": "Help stopped claiming it was version 1.0.1",
-        "description": "The footer of the keyboard-shortcuts window had the version written into it by hand and was never updated, so it has read \"RefBoard v1.0.1\" through eight releases while Settings showed the real one. It now reads the running version, like Settings does."
-      }
-    ]
-  }
+ "headline": "Every board on a dock, lit under your cursor",
+ "summary": "The carousel's progress bar is now a dock with one chip per board — the row lights up under the pointer, and a click on any chip goes straight to that board. On a short window, a card no longer prints across the counter beneath it.",
+ "sections": {
+  "new": [
+   {
+    "title": "Jump to any board from the dock",
+    "description": "Under the carousel there is now one chip per board instead of a progress bar. Move the pointer along the row and the chips rise to meet it — the one beneath the cursor fully, its neighbours less, the rest of the row still — with a pool of light following underneath. Clicking a chip goes straight to that board, which previously meant stepping through everything in between. The board you are on stands proud of the row whether or not the pointer is anywhere near it, so a glance tells you where you are."
+   }
+  ],
+  "improved": [],
+  "fixed": [
+   {
+    "title": "A card no longer prints over the counter on a short window",
+    "description": "On a window around 700 pixels tall or less, the centred card kept the height its width implied and overflowed the space it was given, printing across the position counter and the hint below it — a 46 pixel overlap on a 560 pixel tall window. The card is now capped by the room actually available and the thumbnail gives up the difference, so the board title, the counter and the hint stay readable however short the window gets. A normal sized window is unchanged."
+   }
+  ]
+ }
 }
