@@ -75,3 +75,6 @@ jobs:
 
       - name: Landing layout smoke
         run: npm run test:landing-smoke
+
+      - name: Pinned boards smoke
+        run: npm run test:pinned-smoke
