@@ -150,6 +150,12 @@ const smokeExpression = `(async()=>{
   }
   await wait(150);
   const panelOpen=document.querySelector('#tagPanel').classList.contains('open');
+  /* Filtering lives behind a disclosure now. Open it the way a user does,
+     rather than reaching into a collapsed section they cannot click. */
+  const more=document.querySelector('#tagMore');
+  if(!more.open)press(more.querySelector('summary'));
+  await wait(180);
+  const moreOpened=more.open;
   const chips=[...document.querySelectorAll('#tagPanelList .tag-chip')];
   const chipLabels=chips.map(c=>c.dataset.tag);
   const lightingChip=chips.find(c=>c.dataset.tag.toLowerCase()==='lighting');
@@ -158,6 +164,7 @@ const smokeExpression = `(async()=>{
   await wait(150);
 
   const filtered=RB.tagStateForTest();
+  const moreBadge=document.querySelector('#tagMoreBadge').textContent.trim();
   const countText=document.querySelector('#tagPanelCount').textContent;
 
   // 'all' must narrow where 'any' widened.
@@ -290,7 +297,7 @@ const smokeExpression = `(async()=>{
     stillOpenBeforeToggle, openAfterSecondPress, clearedItemTags,
     colorPopOpen, chosen, colorsAfterPick, colorsAfterUndo, colorsBeforeSave, labelModes,
     panelSurvivedColorPick, glowNear, glowMid, glowFar,
-    filtered, countText, anyMode, allMode, cleared,
+    filtered, countText, anyMode, allMode, cleared, moreOpened, moreBadge,
     searchHits, noteTagsBefore, reloaded, reloadedBoardTags, reloadedColors,
     ids:{first:added[0].id,second:added[1].id,third:added[2].id},
   };
@@ -311,12 +318,15 @@ try {
 
   /* ---- the filter ---- */
   assert.equal(r.panelOpen, true, 'the tag button opens the filter panel');
+  assert.equal(r.moreOpened, true, 'the Filter & labels disclosure must open when its summary is pressed');
   assert.ok(r.chipLabels.includes('lighting'), `panel is missing tags: ${r.chipLabels.join(', ')}`);
 
   assert.deepEqual(r.filtered.filter, ['lighting'], 'clicking a chip filters by that tag');
   assert.equal(r.filtered.passIds.length, 2, `expected two images to survive "lighting", got ${r.filtered.passIds.length}`);
   assert.ok(r.filtered.passIds.includes(r.ids.first) && r.filtered.passIds.includes(r.ids.second));
   assert.ok(!r.filtered.passIds.includes(r.ids.third), 'an image without the tag must not pass the filter');
+  // Collapsed, the disclosure is the only thing that can say a filter is on.
+  assert.equal(r.moreBadge, '1', `the disclosure must badge the active filter, got "${r.moreBadge}"`);
   assert.match(r.countText, /Showing 2 of/, `the panel must say what it is hiding, got "${r.countText}"`);
 
   // Dimmed rather than hidden: the layout is part of a moodboard's meaning.
