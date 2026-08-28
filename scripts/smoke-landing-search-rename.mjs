@@ -162,6 +162,11 @@ const smokeExpression = `(async()=>{
   const clickCard=cardFor('Character sheet');
   clickCard.querySelector('.rw-card-rename').click();
   await wait(120);
+  // Chromium fires blur only while the document itself has focus, so this leg
+  // is meaningless without focus emulation - it would report a rename that
+  // never closed when in truth the blur never happened. Recorded so a future
+  // failure says which of the two it was.
+  const dismissHadFocus=document.hasFocus();
   clickCard.querySelector('.rw-rename-input').blur();
   clickCard.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
   await wait(400);
@@ -215,14 +220,15 @@ const smokeExpression = `(async()=>{
     noneShown,noResultsShown,emptyStateHidden,restored,
     renameOpened,prefilled,pencilHidden,clearHidden,confirmVisible,cancelVisible,afterRename,afterCollision,collisionToast,afterIllegal,
     afterCancel,cancelClosedField,pencilBack,
-    afterEscape,escapeClosedField,stayedOnHome,
+    afterEscape,escapeClosedField,stayedOnHome,dismissHadFocus,
     recentPaths:recents.map(w=>w.path),
     recentTitles:recents.map(w=>w.title),
   };
 })()`;
 
 try {
-  const r = await evaluate(await debuggerPort(), smokeExpression);
+  // The dismiss leg blurs a rename field, and blur needs a focused document.
+  const r = await evaluate(await debuggerPort(), smokeExpression, { focusEmulation: true });
 
   assert.deepEqual(r.seeded.sort(), ['Character sheet', 'Colour keys', 'Kitchen refs', 'Lighting study', 'Trip moodboard'], 'every seeded board must appear on Home');
   assert.equal(r.searchVisible, true, 'the search field must be shown once boards exist');
@@ -269,6 +275,7 @@ try {
 
   assert.equal(r.stayedOnHome, true, 'the click that dismisses a rename must not open the board');
 
+  assert.equal(r.dismissHadFocus, true, 'the dismiss leg needs a focused document, or blur never fires and it tests nothing');
   assert.equal(r.noRenameOpen, true, 'blurring a rename field must close its session, not leave it open');
   assert.equal(r.f2Opened, true, 'F2 on a focused Home card must open its rename field');
   assert.ok(r.afterF2.includes('Colour script'), `F2 rename must take effect (got ${JSON.stringify(r.afterF2)})`);

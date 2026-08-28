@@ -67,12 +67,25 @@ async function connect(target) {
 // arrives - which is precisely the window this waits out.
 const READY = "/index\.html/.test(location.pathname) && document.readyState !== 'loading'";
 
-async function evaluateOnce(port, expression) {
+async function evaluateOnce(port, expression, focusEmulation) {
   const target = await pageTarget(port);
   if (!target) throw new Error('RefBoard page target was not available');
   const { send, close } = await connect(target);
   try {
     await send('Runtime.enable');
+    // Chromium dispatches focus and blur only while the document itself has
+    // focus, and a window spawned by a test rarely holds the OS focus - it
+    // loses it to whatever the machine does next. A smoke that puts the caret
+    // in a field and then blurs it therefore passes or fails on what else is
+    // running, which is no test at all. This tells the renderer to behave as
+    // though it were frontmost, which is the state such a test means.
+    if (focusEmulation) {
+      try {
+        await send('Emulation.setFocusEmulationEnabled', { enabled: true });
+      } catch (error) {
+        if (!TRANSIENT.test(error.message)) throw error;
+      }
+    }
     let ready = false;
     for (let attempt = 0; attempt < 300 && !ready; attempt++) {
       try {
@@ -94,11 +107,11 @@ async function evaluateOnce(port, expression) {
   }
 }
 
-export async function evaluate(port, expression, { attempts = 4 } = {}) {
+export async function evaluate(port, expression, { attempts = 4, focusEmulation = false } = {}) {
   let lastError = null;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      return await evaluateOnce(port, expression);
+      return await evaluateOnce(port, expression, focusEmulation);
     } catch (error) {
       lastError = error;
       // A page that throws is a test failure; a context that vanished is not.
