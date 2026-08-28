@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   getDefaultExportDir: () => ipcRenderer.invoke('get-default-export-dir'),
   getProcessMemoryInfo: () => ipcRenderer.invoke('get-process-memory-info'),
   writeExportFiles: (dir, files) => ipcRenderer.invoke('write-export-files', { dir, files }),
+  stageDragOut: (files) => ipcRenderer.invoke('stage-drag-out', { files }),
+  startDragOut: (paths, icon) => ipcRenderer.invoke('start-drag-out', { paths, icon }),
   saveBoardFile: (defaultName, data, filePath, forceDialog = false) => ipcRenderer.invoke('save-board-file', { defaultName, data, filePath, forceDialog }),
   beginBoardSave: (defaultName, filePath, core, preview, forceDialog = false) => ipcRenderer.invoke('begin-board-save', { defaultName, filePath, forceDialog, core, preview }),
   appendBoardSaveImage: (token, image, data) => ipcRenderer.invoke('append-board-save-image', { token, image, data }),

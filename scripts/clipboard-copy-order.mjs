@@ -86,8 +86,21 @@ export function deleteIdsAfterSuccessfulCutCopy(copyResult) {
 }
 
 /**
+ * The only image type the async clipboard API accepts.
+ *
+ * navigator.clipboard.write() rejects any other image type with
+ * NotAllowedError — image/png is the sole image format the Clipboard API
+ * requires implementations to support, and Chromium implements exactly that.
+ */
+export const CLIPBOARD_IMAGE_MIME = 'image/png';
+
+/**
  * Select the system clipboard image representation without touching pixels.
- * ORIGINAL_IMAGE_CLIPBOARD_BYTES marks the no-encode path for source images.
+ *
+ * "Hand over the original bytes" can therefore only apply to a PNG source.
+ * Offering it for a JPEG costs a write that is guaranteed to fail, and then
+ * the PNG render we were trying to avoid — measured at roughly a second of
+ * dead time on a 4000x3000 photo, for a path that never once succeeded.
  */
 export function chooseClipboardImageSource({
   itemCount,
@@ -103,8 +116,8 @@ export function chooseClipboardImageSource({
     && isCropped !== true
     && isTransformed !== true
     && isGrouped !== true
-    && originalType.startsWith('image/');
+    && originalType === CLIPBOARD_IMAGE_MIME;
   return useOriginal
     ? { mode: 'original', mimeType: originalType }
-    : { mode: 'render', mimeType: 'image/png' };
+    : { mode: 'render', mimeType: CLIPBOARD_IMAGE_MIME };
 }

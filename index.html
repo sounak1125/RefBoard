@@ -407,6 +407,12 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
   opacity:0; pointer-events:none; transition:opacity .12s .25s, transform .12s .25s;
 }
 #selbar .tb:hover::after{ opacity:1; transform:translateX(-50%) scale(1); }
+/* The drag grip is a drag source, not a click target, so it says so on hover
+   and never shows a text caret while the pointer is held on it. */
+#sDragOut{ cursor:grab; -webkit-user-drag:element; user-select:none; }
+#sDragOut:active{ cursor:grabbing; transform:none; }
+.tb[hidden]{ display:none; }
+#selbar:not(.has-images) .sel-images-only{ display:none; }
 
 #selbar .sel-multi-only{ display:none; }
 #selbar.multi .sel-multi-only.tb{ display:flex; }
@@ -2733,6 +2739,9 @@ body.board-active #whatsNewNotice{ display:none; }
   <button class="tb" id="sOrig" data-tip="Export images…  (Ctrl+Shift+I)">
     <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6M12 11v6M9 14.5l3 3 3-3"/></svg>
   </button>
+  <span class="tb sel-images-only" id="sDragOut" role="button" tabindex="0" draggable="true" data-tip="Drag out to another app" aria-label="Drag out to another app">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M15 3h6v6M21 3l-9 9"/></svg>
+  </span>
   <span class="sep sel-multi-only"></span>
   <button class="tb sel-multi-only" id="sAlignH" data-tip="Align in a row">
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3092,6 +3101,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks">2× click image</span><span class="d">Enter crop mode; drag edges, Esc to finish</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>E</kbd></span><span class="d">Export board as PNG</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>I</kbd></span><span class="d">Export selected images</span>
+      <span class="ks">Drag the selection-bar grip</span><span class="d">Drag selected images out as files, straight into another app</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>S</kbd> / <kbd>O</kbd></span><span class="d">Save / open board file</span>
       <span class="ks"><kbd>Alt</kbd>+<kbd>Arrows</kbd></span><span class="d">Pan the board view</span>
       <span class="ks">Right-click → Appearance</span><span class="d">None (plain) or Dots grid — the grid is visual only, it never snaps</span>
@@ -3101,7 +3111,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Shift</kbd><kbd>A</kbd></span><span class="d">Pin above a chosen window (desktop app)</span>
     </div>
     <div style="margin-top:16px;text-align:center;font-size:11.5px;color:var(--dim);">
-      RefBoard v1.0.1 &nbsp;·&nbsp; made with care by <b style="color:var(--acc);">Sounak</b>
+      <span id="helpVersion">RefBoard</span> &nbsp;·&nbsp; made with care by <b style="color:var(--acc);">Sounak</b>
     </div>
     <div class="row-btns">
       <button type="button" class="btn" id="helpClose">Close</button>
@@ -3312,6 +3322,7 @@ import {
   expandSelectionDeleteIds,
   deleteIdsAfterSuccessfulCutCopy,
   chooseClipboardImageSource,
+  CLIPBOARD_IMAGE_MIME,
 } from './scripts/clipboard-copy-order.mjs';
 import {
   sameFilePath,
@@ -3345,6 +3356,8 @@ import {
   resolveExportItems,
   sortItemsForExport,
 } from './scripts/export-order.mjs';
+import { buildDragOutNames, dragOutStem } from './scripts/drag-out.mjs';
+import { exportEncoding } from './scripts/export-encoding.mjs';
 import {
   initPerfOverlay,
   isPerfOverlayEnabled,
@@ -7513,6 +7526,23 @@ function buildItemClipboardPayload(roots) {
 
 const CLIPBOARD_IMAGE_DIM_LIMIT = 2048;
 
+/* Downscaling to PNG only pays off when the source is not already compressed.
+   For a JPEG or WebP the PNG comes out larger every time, so the encode is
+   thrown away — measured at 336 ms on a 4000x3000 JPEG for a result that was
+   discarded in full. Only these source types can actually win. */
+const CLIPBOARD_RECOMPRESSIBLE_TYPES = new Set(['image/png', 'image/bmp', 'image/gif', '']);
+
+/* How large the flattened image put on the system clipboard may be.
+   Encoding PNG is the whole cost of a copy and it scales with pixels: twelve
+   megapixels costs most of a second, two costs a fraction of it. A paste back
+   into RefBoard never reads this image — it reads the item payload — so this
+   size only decides how sharp a paste into another application is.
+
+   Measured on a 4000x3000 photo: 8192px cost ~1450ms, 2048px ~330ms, 1024px
+   ~150ms. Chosen for speed — dragging an image out hands over the untouched
+   original file, so the clipboard does not have to be the high-quality route. */
+const CLIPBOARD_IMAGE_DIM = 1024;
+
 function base64ToBytes(b64) {
   const bin = atob(String(b64 || ''));
   const arr = new Uint8Array(bin.length);
@@ -7523,7 +7553,8 @@ function base64ToBytes(b64) {
 /** Base64 of `blob`, downsized when possible so large boards stay clipboard-safe. */
 async function clipboardImageData(blob, w, h) {
   const maxDim = Math.max(1, Number(w) || 0, Number(h) || 0);
-  if (maxDim > CLIPBOARD_IMAGE_DIM_LIMIT) {
+  if (maxDim > CLIPBOARD_IMAGE_DIM_LIMIT
+      && CLIPBOARD_RECOMPRESSIBLE_TYPES.has(String(blob?.type || '').toLowerCase())) {
     try {
       const scale = CLIPBOARD_IMAGE_DIM_LIMIT / maxDim;
       const bitmap = await createImageBitmap(blob, {
@@ -7553,10 +7584,13 @@ async function clipboardImageData(blob, w, h) {
  * the real per-image sources instead of a flattened composite. Grayscale and
  * opacity stay as live item attributes, so raw pixels are correct here.
  */
-async function captureItemClipboardImages(payload) {
+async function captureItemClipboardImages(payload, { isCancelled } = {}) {
   const out = {};
   const seen = new Set();
   for (const it of payload?.items || []) {
+    // A newer copy makes this whole capture pointless; base64 of a large
+    // selection is long enough that finishing it would stall that copy.
+    if (isCancelled?.()) return out;
     if (!isImageItem(it) || !it.imgId || seen.has(it.imgId)) continue;
     seen.add(it.imgId);
     const im = images.get(it.imgId);
@@ -8092,6 +8126,134 @@ async function writeItemClipboard(imageBlob, imageMimeType, payload) {
  * @returns {Promise<false|{ ok: true, deleteIds: string[] }>}
  *   Winning successful write returns captured delete IDs for Cut; otherwise false.
  */
+/* ================= drag out ================= */
+
+/* Dropping into another application hands over real files, so the bytes have to
+   reach disk before the drag starts. A dragstart handler cannot await, which is
+   why staging begins on pointerdown: by the time the pointer has moved far
+   enough for Chromium to start a drag, the staged paths are usually already
+   back. If they are not, the drag simply does not start — nothing is dropped
+   half-written. */
+/* Mirrors the cap main.js enforces when staging, so the refusal message can
+   name the real limit instead of the drag silently dropping the tail. */
+const DRAG_OUT_MAX_FILES = 200;
+
+let dragOutStaging = null;
+
+const dragOutSupported = () => !!(window.RefBoardAPI?.stageDragOut && window.RefBoardAPI?.startDragOut);
+
+/* Same resolution the export dialog uses, so a drag and an export of the same
+   selection always hand over the same images in the same order. */
+/* updateSelBar runs on every pointermove of a marquee drag, so deciding
+   whether to show the grip must not build or sort the resolved list. This asks
+   only whether anything would resolve, and stops at the first image. */
+function selectionHasDragOutImages() {
+  for (const it of state.items) {
+    if (!state.sel.has(it.id)) continue;
+    if (isImageItem(it)) return true;
+    if (isGroupItem(it) && childrenOfGroup(it.id).some(isImageItem)) return true;
+  }
+  return false;
+}
+
+function dragOutItems() {
+  if (!state.sel.size) return [];
+  return resolveExportItems({
+    selectedItems: selectedItems(),
+    preferredIds: orderedSelectedIds(),
+    order: 'selection',
+    isImage: isImageItem,
+    isGroup: isGroupItem,
+    childrenOfGroup,
+    getBounds: boundsOf,
+  });
+}
+
+/* Windows shows one icon however many files are in the drop, so the first
+   image is enough. A failure here is not fatal — main falls back to the app
+   icon rather than losing the drag. */
+async function dragOutDragIcon(items) {
+  try {
+    const c = await boundedCompositeCanvas(items.slice(0, 1), { maxWidth: 96, maxHeight: 96 });
+    if (!c) return null;
+    const url = c.toDataURL('image/png');
+    c.width = 0; c.height = 0;
+    return url;
+  } catch (err) {
+    console.warn('[drag-out] drag icon failed:', err);
+    return null;
+  }
+}
+
+/* 'original' format means an untouched image hands over its own bytes, exactly
+   as Ctrl+C does. Cropped, rotated, flipped, greyscaled or painted images are
+   re-encoded so the file matches what the board shows. */
+async function stageDragOutFiles(items) {
+  const entries = [];
+  for (const [index, it] of items.entries()) {
+    const out = await itemToExportBlob(it, 'original', hasActiveCrop(it));
+    if (!out?.blob) continue;
+    entries.push({ it, index, blob: out.blob, ext: out.ext });
+  }
+  if (!entries.length) return null;
+
+  const names = buildDragOutNames(entries.map(e => ({
+    stem: dragOutStem(e.it, images.get(e.it.imgId), e.index),
+    ext: e.ext,
+  })));
+
+  const files = [];
+  for (const [i, e] of entries.entries()) {
+    files.push({ name: names[i], data: await blobToBase64(e.blob) });
+  }
+
+  const [staged, icon] = await Promise.all([
+    window.RefBoardAPI.stageDragOut(files),
+    dragOutDragIcon(items),
+  ]);
+  const paths = staged?.paths || [];
+  return paths.length ? { paths, icon } : null;
+}
+
+function beginDragOutStaging() {
+  dragOutStaging = null;
+  if (!dragOutSupported()) return;
+  const items = dragOutItems();
+  if (!items.length) return;
+  if (items.length > DRAG_OUT_MAX_FILES) {
+    toast(`Drag out handles up to ${DRAG_OUT_MAX_FILES} images — use Export images… instead`);
+    return;
+  }
+  if (items.length > 8) toast(`Preparing ${items.length} images…`, { duration: 20000 });
+  dragOutStaging = stageDragOutFiles(items).catch(err => {
+    console.error('[drag-out] staging failed:', err);
+    return null;
+  });
+}
+
+async function runDragOut(e) {
+  // Chromium's web drag is replaced by a native file drag started in main.
+  e.preventDefault();
+  const pending = dragOutStaging;
+  dragOutStaging = null;
+  if (!pending) return;
+  let staged = null;
+  try {
+    staged = await pending;
+  } catch (err) {
+    console.error('[drag-out] staging rejected:', err);
+  }
+  if (!staged) { toast('Could not prepare the images to drag'); return; }
+  try {
+    const r = await window.RefBoardAPI.startDragOut(staged.paths, staged.icon);
+    if (r?.started) toast(r.count > 1 ? `Dragging ${r.count} images` : 'Dragging image');
+    else toast('Could not start the drag');
+  } catch (err) {
+    console.error('[drag-out] startDrag failed:', err);
+    toast('Could not start the drag');
+  }
+}
+
 async function copySelection() {
   const op = copyOps.begin();
   const isCurrent = () => copyOps.isCurrent(op);
@@ -8127,48 +8289,33 @@ async function copySelection() {
     return { ok: true, deleteIds };
   }
 
-  if (isCurrent()) toast('Copying…', { duration: 60000 });
+  // Only announce a wait that is actually going to happen.
+  const slowNotice = setTimeout(() => { if (isCurrent()) toast('Copying…', { duration: 60000 }); }, 180);
 
   try {
     // Snapshot metadata + board-order items immediately (payload already deep-clones).
     const payload = buildItemClipboardPayload(items);
-    if (!isCurrent()) return false;
-    // Attach original pixels so a cross-window paste can rebuild real sources.
-    payload.images = await captureItemClipboardImages(payload);
     const compositeItems = payload.items;
     if (!isCurrent()) return false;
-
-    const drawableCount = compositeItems.filter(it => !isGroupItem(it)).length;
-    const directImage = await directClipboardImage(compositeItems);
-    let blob = directImage?.blob || await compositeBlob(compositeItems, {
-      isCancelled: () => !isCurrent(),
-      // Multi-item clipboard composites remain crisp while avoiding a 256 MB
-      // 8192×8192 canvas and its expensive PNG encode.
-      maxDimension: drawableCount > 1 ? 4096 : 8192,
-    });
-    let imageMimeType = directImage?.mimeType || 'image/png';
+    // Attach original pixels so a cross-window paste can rebuild real sources.
+    payload.images = await captureItemClipboardImages(payload, { isCancelled: () => !isCurrent() });
     if (!isCurrent()) return false;
-    if (!blob) {
+
+    // A single untouched PNG is the one case whose own bytes the clipboard will
+    // take, at full resolution and with no render at all.
+    const directImage = await directClipboardImage(compositeItems);
+    const imageBlob = directImage?.blob || await compositeBlob(compositeItems, {
+      isCancelled: () => !isCurrent(),
+      maxDimension: CLIPBOARD_IMAGE_DIM,
+    });
+    if (!isCurrent()) return false;
+    if (!imageBlob) {
       if (isCurrent()) toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
       return false;
     }
 
-    const result = await clipboardWrites.enqueue(op, copyOps.isCurrent.bind(copyOps), async () => {
-      try {
-        await writeItemClipboard(blob, imageMimeType, payload);
-      } catch (error) {
-        if (!directImage) throw error;
-        console.warn(`[clipboard] Original ${imageMimeType} write failed; falling back to PNG render`, error);
-        const fallbackBlob = await compositeBlob(compositeItems, {
-          isCancelled: () => !isCurrent(),
-          maxDimension: drawableCount > 1 ? 4096 : 8192,
-        });
-        if (!fallbackBlob) throw error;
-        await writeItemClipboard(fallbackBlob, 'image/png', payload);
-        blob = fallbackBlob;
-        imageMimeType = 'image/png';
-      }
-    });
+    const result = await clipboardWrites.enqueue(op, copyOps.isCurrent.bind(copyOps),
+      () => writeItemClipboard(imageBlob, CLIPBOARD_IMAGE_MIME, payload));
     if (!result.ok) {
       if (!result.stale && isCurrent()) {
         toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
@@ -8177,17 +8324,21 @@ async function copySelection() {
     }
     if (!isCurrent()) return false;
 
-    localItemClipboard = { payload, pngSize: blob.size };
+    localItemClipboard = { payload, pngSize: imageBlob.size };
     const copiedCount = payload.items.filter(it => !isGroupItem(it)).length;
+    clearTimeout(slowNotice);
     toast(items.length === 1 && isGroupItem(items[0])
       ? `Copied group (${copiedCount} items)`
       : copiedCount > 1 ? `Copied ${copiedCount} items` : 'Copied selection');
+
     return { ok: true, deleteIds };
   } catch (e) {
     if (isCurrent()) {
       toast('Clipboard blocked by browser — try Ctrl+C again after clicking the board');
     }
     return false;
+  } finally {
+    clearTimeout(slowNotice);
   }
 }
 
@@ -11284,18 +11435,6 @@ function sourcePixelRect(im, it, useCrop) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-function exportEncoding(format, sourceType) {
-  if (format === 'png') return { mime: 'image/png', ext: 'png' };
-  if (format === 'jpeg') return { mime: 'image/jpeg', ext: 'jpg' };
-  if (format === 'webp') return { mime: 'image/webp', ext: 'webp' };
-  // Cropping requires a re-encode. Chromium canvas reliably encodes these
-  // formats; GIF/SVG/BMP/AVIF originals safely fall back to a real PNG file.
-  if (sourceType === 'image/jpeg') return { mime: sourceType, ext: 'jpg' };
-  if (sourceType === 'image/webp') return { mime: sourceType, ext: 'webp' };
-  if (sourceType === 'image/png') return { mime: sourceType, ext: 'png' };
-  return { mime: 'image/png', ext: 'png' };
-}
-
 function sanitizeFilename(name) {
   return String(name || 'image').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || 'image';
 }
@@ -11343,8 +11482,7 @@ async function itemToExportBlob(it, format, useCrop) {
       c.height = src.h;
       c.getContext('2d').drawImage(bitmap, src.x, src.y, src.w, src.h, 0, 0, src.w, src.h);
       const enc = exportEncoding(format, im.type);
-      const quality = enc.mime === 'image/jpeg' || enc.mime === 'image/webp' ? 0.98 : undefined;
-      const blob = await new Promise(r => c.toBlob(r, enc.mime, quality));
+      const blob = await new Promise(r => c.toBlob(r, enc.mime, enc.quality));
       c.width = 0; c.height = 0;
       return blob ? { blob, ext: enc.ext } : null;
     }
@@ -11361,8 +11499,7 @@ async function itemToExportBlob(it, format, useCrop) {
     drawBoardItemExport(g, it, useCrop);
 
     const enc = exportEncoding(format, im.type);
-    const quality = enc.mime === 'image/jpeg' || enc.mime === 'image/webp' ? 0.98 : undefined;
-    const blob = await new Promise(r => c.toBlob(r, enc.mime, quality));
+    const blob = await new Promise(r => c.toBlob(r, enc.mime, enc.quality));
     c.width = 0; c.height = 0;
     return blob ? { blob, ext: enc.ext } : null;
   });
@@ -11375,11 +11512,24 @@ const blobToBase64 = blob => new Promise((res, rej) => {
   r.readAsDataURL(blob);
 });
 
+/* The extension the first image will really get, so the preview cannot promise
+   a .jpg that the encoder is about to turn into a .png. */
+function exportPreviewExt(format, item) {
+  if (format === 'jpeg') return 'jpg';
+  if (format === 'png' || format === 'webp') return format;
+  const im = item ? images.get(item.imgId) : null;
+  if (!im) return 'png';
+  const useCrop = $('#expImgCrop').checked && hasActiveCrop(item);
+  const noTransform = !item.rot && !item.flipX && !item.flipY && !item.gray && !state.boardGray;
+  if (!useCrop && noTransform) return EXT[im.type] || 'png';
+  return exportEncoding(format, im.type).ext;
+}
+
 function updateExportNamePreview() {
   const pattern = $('#expImgName').value || '%N_%0';
   const format = $('#expImgFormat').value;
-  const ext = format === 'original' ? 'png' : (format === 'jpeg' ? 'jpg' : format);
   const first = exportImageItems[0];
+  const ext = exportPreviewExt(format, first);
   const base = first ? (first.name || images.get(first.imgId)?.name || 'image') : 'image';
   let text = applyNamePattern(pattern, 1, base, ext, exportImageItems.length);
   if (exportImageItems.length > 1) {
@@ -11428,15 +11578,21 @@ async function openExportImagesDialog() {
   const cropCheck = $('#expImgCrop');
   cropCheck.disabled = croppedCount === 0;
   cropCheck.checked = croppedCount > 0;
+  // A crop forces a re-encode, and JPEG has no lossless mode, so keeping every
+  // pixel means handing back a PNG. Say so rather than surprising them.
+  const lossyRecoded = items.filter(it => hasActiveCrop(it) && images.get(it.imgId)?.type === 'image/jpeg').length;
+  const jpegNote = lossyRecoded
+    ? ` ${lossyRecoded === 1 ? 'The cropped JPEG becomes a PNG' : `${lossyRecoded} cropped JPEGs become PNGs`} so no quality is lost.`
+    : '';
   if (croppedCount === 1 && items.length === 1) {
     const im = images.get(items[0].imgId);
     const px = im ? sourcePixelRect(im, items[0], true) : null;
-    $('#expImgCropHint').textContent = px
+    $('#expImgCropHint').textContent = (px
       ? `Cropped image will export at ${px.w}×${px.h} source pixels.`
-      : 'Cropped image will export at full source resolution.';
+      : 'Cropped image will export at full source resolution.') + jpegNote;
   } else {
     $('#expImgCropHint').textContent = croppedCount
-      ? `${croppedCount} cropped images will export at full source resolution.`
+      ? `${croppedCount} cropped images will export at full source resolution.` + jpegNote
       : 'No crop is currently applied; the full frame will be exported.';
   }
   updateExportNamePreview();
@@ -16539,7 +16695,9 @@ async function syncSystemUi() {
   const vSub = document.getElementById('setVersionSub');
   const checkBtn = document.getElementById('setCheckUpdates');
   const startupTog = document.getElementById('setCheckOnStartup');
+  const helpVersion = document.getElementById('helpVersion');
   if (info && vText) vText.textContent = `${info.productName} ${info.version}`;
+  if (info && helpVersion) helpVersion.textContent = `${info.productName} v${info.version}`;
   if (info && vSub) vSub.textContent = info.isPackaged ? 'Installed build' : 'Development build';
   if (checkBtn) {
     checkBtn.disabled = !!(info && !info.isPackaged);
@@ -17473,6 +17631,7 @@ function updateSelBar() {
   bar.classList.toggle('show', n > 0);
   bar.classList.toggle('multi', n > 1);
   bar.classList.toggle('images-multi', selectedImages().length >= 2);
+  bar.classList.toggle('has-images', n > 0 && selectionHasDragOutImages());
   bar.classList.toggle('group-sel', !!grp);
   if (n) $('#selcount').textContent = n === 1 ? '1 selected' : `${n} selected`;
   if (grp) {
@@ -17585,6 +17744,15 @@ $('#unsavedClose').addEventListener('click', () => hideUnsavedModal('cancel'));
 $('#sCopy').addEventListener('click', copySelection);
 $('#sDup').addEventListener('click', duplicateSelection);
 $('#sOrig').addEventListener('click', exportOriginals);
+const dragOutBtn = $('#sDragOut');
+if (dragOutBtn) {
+  // Browser builds have no main process to stage files into.
+  if (!dragOutSupported()) dragOutBtn.hidden = true;
+  dragOutBtn.addEventListener('pointerdown', beginDragOutStaging);
+  dragOutBtn.addEventListener('dragstart', runDragOut);
+  // The grip is a drag source; a plain click must not fall through to the board.
+  dragOutBtn.addEventListener('click', e => e.preventDefault());
+}
 $('#sAlignH').addEventListener('click', alignSelectionHorizontal);
 $('#sAlignV').addEventListener('click', alignSelectionVertical);
 $('#sNormScale').addEventListener('click', normalizeImagesByScale);
@@ -18424,6 +18592,16 @@ window.RefBoard = {
   runAutosaveTick,
   get startupComplete() { return appStartupComplete; },
   extractPaletteForTest: extractPaletteFromItem,
+  /* Drag-out hooks: a harness cannot run a native OS drag, so it drives the
+     staging half directly and reads the files that land on disk. */
+  updateSelBarForTest: updateSelBar,
+  dragOutItemsForTest: dragOutItems,
+  stageDragOutForTest: stageDragOutFiles,
+  /* Encoding hooks: the lossless guarantee is about actual pixels, so a
+     harness has to run the real encode and compare against the real source. */
+  itemToExportBlobForTest: itemToExportBlob,
+  sourcePixelRectForTest: sourcePixelRect,
+  getImageBlobForTest: getImageBlob,
   // A getter, because loadAppSettings() reassigns the object wholesale.
   get appSettings() { return appSettings; },
   /* Geometry hooks: a harness aiming at a resize handle has to use the same

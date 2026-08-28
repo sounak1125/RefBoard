@@ -196,6 +196,10 @@ function assert(cond, msg) {
 }
 
 {
+  /* image/png is the only image type navigator.clipboard.write() accepts; a
+     JPEG write is rejected with NotAllowedError. Selecting 'original' for a
+     JPEG therefore bought a guaranteed failure followed by the PNG render it
+     was trying to skip, so a JPEG must go straight to the render path. */
   const originalJpeg = chooseClipboardImageSource({
     itemCount: 1,
     isImage: true,
@@ -204,8 +208,21 @@ function assert(cond, msg) {
     isGrouped: false,
     mimeType: 'image/jpeg',
   });
-  assert(originalJpeg.mode === 'original', 'single untouched JPEG selects original bytes');
-  assert(originalJpeg.mimeType === 'image/jpeg', 'single untouched JPEG keeps image/jpeg');
+  assert(originalJpeg.mode === 'render', 'a JPEG cannot be written to the clipboard as-is');
+  assert(originalJpeg.mimeType === 'image/png', 'a JPEG renders to the one type the clipboard takes');
+
+  /* A PNG source is the one case where the original bytes really can go on
+     the clipboard untouched. */
+  const originalPng = chooseClipboardImageSource({
+    itemCount: 1,
+    isImage: true,
+    isCropped: false,
+    isTransformed: false,
+    isGrouped: false,
+    mimeType: 'image/png',
+  });
+  assert(originalPng.mode === 'original', 'a single untouched PNG hands over its own bytes');
+  assert(originalPng.mimeType === 'image/png', 'the original PNG keeps image/png');
 
   const croppedJpeg = chooseClipboardImageSource({
     itemCount: 1,
@@ -216,6 +233,11 @@ function assert(cond, msg) {
     mimeType: 'image/jpeg',
   });
   assert(croppedJpeg.mode === 'render' && croppedJpeg.mimeType === 'image/png', 'cropped JPEG keeps the PNG render path');
+
+  const croppedPng = chooseClipboardImageSource({
+    itemCount: 1, isImage: true, isCropped: true, isTransformed: false, isGrouped: false, mimeType: 'image/png',
+  });
+  assert(croppedPng.mode === 'render', 'a cropped PNG still has to be re-rendered');
 
   const multiSelect = chooseClipboardImageSource({
     itemCount: 2,
