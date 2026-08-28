@@ -1,4 +1,6 @@
-/** Focused checks for source-resolution crop/export geometry. */
+/** Focused checks for source-resolution crop/export geometry and encoding. */
+
+import { exportEncoding, LOSSY_QUALITY } from './export-encoding.mjs';
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg || 'assertion failed');
@@ -26,16 +28,6 @@ function sourcePixelRect(im, it, useCrop) {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-function exportEncoding(format, sourceType) {
-  if (format === 'png') return { mime: 'image/png', ext: 'png' };
-  if (format === 'jpeg') return { mime: 'image/jpeg', ext: 'jpg' };
-  if (format === 'webp') return { mime: 'image/webp', ext: 'webp' };
-  if (sourceType === 'image/jpeg') return { mime: sourceType, ext: 'jpg' };
-  if (sourceType === 'image/webp') return { mime: sourceType, ext: 'webp' };
-  if (sourceType === 'image/png') return { mime: sourceType, ext: 'png' };
-  return { mime: 'image/png', ext: 'png' };
-}
-
 {
   const r = sourcePixelRect({ w: 4000, h: 3000 }, { crop: { l: .1, t: .2, r: .9, b: .8 } }, true);
   assert(r.x === 400 && r.y === 600, 'crop origin uses source pixels');
@@ -55,6 +47,35 @@ function exportEncoding(format, sourceType) {
 
 assert(exportEncoding('original', 'image/gif').ext === 'png', 're-encoded GIF crop uses honest PNG extension');
 assert(exportEncoding('original', 'image/svg+xml').mime === 'image/png', 're-encoded SVG crop falls back to PNG');
-assert(exportEncoding('original', 'image/jpeg').ext === 'jpg', 'JPEG crop preserves JPEG format');
+
+/* "Original" means no pixels lost. A crop forces a re-encode, so every lossy
+   source has to come out of a lossless encoder — never a second JPEG
+   generation over pixels the user asked to keep. */
+{
+  const jpeg = exportEncoding('original', 'image/jpeg');
+  assert(jpeg.mime === 'image/png', 'a cropped JPEG must re-encode losslessly, so it becomes a PNG');
+  assert(jpeg.ext === 'png', 'the extension must match the bytes actually written');
+  assert(jpeg.quality === undefined, 'a lossless encode must not carry a quality argument');
+
+  /* Chromium's WebP encoder is lossless at quality 1 (measured: a 256x256
+     noise image round-trips with zero changed channels), so WebP keeps its
+     own format instead of inflating into a PNG. */
+  const webp = exportEncoding('original', 'image/webp');
+  assert(webp.mime === 'image/webp', 'a cropped WebP stays WebP');
+  assert(webp.quality === 1, 'a cropped WebP must encode at the lossless quality');
+
+  const png = exportEncoding('original', 'image/png');
+  assert(png.mime === 'image/png' && png.quality === undefined, 'a cropped PNG stays a lossless PNG');
+}
+
+/* An explicit format choice is the user asking for that format, loss included.
+   Making 'jpeg' silently lossless would ignore what they picked. */
+{
+  const jpeg = exportEncoding('jpeg', 'image/png');
+  assert(jpeg.mime === 'image/jpeg' && jpeg.quality === LOSSY_QUALITY, 'an explicit JPEG choice stays JPEG');
+  const webp = exportEncoding('webp', 'image/png');
+  assert(webp.mime === 'image/webp' && webp.quality === LOSSY_QUALITY, 'an explicit WebP choice stays lossy WebP');
+  assert(exportEncoding('png', 'image/jpeg').quality === undefined, 'PNG never carries a quality');
+}
 
 console.log('cropped export tests passed');

@@ -48,8 +48,11 @@ assert.match(html, /window\.RefBoardAPI\.openBoardInNewWindow\(\)/, 'the landing
 assert.match(html, /r\?\.reason === 'window-limit'/, 'the renderer must surface the 4-window limit');
 
 // Cross-window copy/paste must rebuild real image sources, not blank placeholders.
-assert.match(html, /async function captureItemClipboardImages\(payload\)/, 'copy must capture per-image original pixels');
-assert.match(html, /payload\.images = await captureItemClipboardImages\(payload\);/, 'copy must attach originals to the item payload');
+assert.match(html, /async function captureItemClipboardImages\(payload, \{ isCancelled \} = \{\}\)/, 'copy must capture per-image original pixels');
+assert.match(html, /payload\.images = await captureItemClipboardImages\(payload, \{ isCancelled: \(\) => !isCurrent\(\) \}\);/, 'copy must attach originals to the item payload');
+/* Capturing every original is the slowest part of a copy, so it has to notice a
+   newer copy mid-loop instead of finishing a selection nobody is waiting for. */
+assert.match(html, /if \(isCancelled\?\.\(\)\) return out;/, 'the capture loop must abandon a superseded copy');
 assert.match(html, /images: j\.images && typeof j\.images === 'object' \? j\.images : null/, 'the item payload parser must carry embedded originals');
 assert.match(html, /async function pasteItemsRehydratingImages\(payload, snap, pos\)/, 'cross-window paste must rehydrate missing images');
 assert.match(html, /const info = payload\.images\?\.\[oldImgId\];/, 'paste must prefer each image\'s embedded original');

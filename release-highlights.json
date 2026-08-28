@@ -1,47 +1,35 @@
 {
-  "headline": "Large boards stay sharp",
-  "summary": "On a board of a few hundred images, some images used to render visibly blurry while their neighbours stayed crisp — and which ones shifted as you moved around. Decoded image memory is now sized to your machine instead of to a fixed 31 MB, and adjustable. Image export, which 2.0.7 broke outright, works again.",
+  "headline": "Drag images out, and a copy that keeps up",
+  "summary": "Images can now leave RefBoard by being dragged straight into another application. Copying is around eleven times faster than it was, and a cropped export no longer quietly costs you a generation of JPEG quality.",
   "sections": {
     "new": [
       {
-        "title": "Decoded image memory setting",
-        "description": "Settings → Performance gains a Decoded image memory control. Auto sizes it from your machine's RAM — 512 MB on 8 GB and up, 256 MB on smaller machines — and you can pin it to 256 MB, 512 MB, 1 GB or 2 GB instead. Raising it lets more images stay sharp at the same time on a large board. RefBoard only uses what the current view actually needs, so the number is a ceiling rather than a reservation."
+        "title": "Drag images out into another app",
+        "description": "A grip in the selection bar drags the selected images out as real files — into Photoshop, Explorer, a browser upload field, anywhere that accepts a drop. An image you have not cropped or altered hands over its original file untouched; a cropped, rotated or painted one is written out to match what the board shows. Several selected images become several files, and two references that share a filename arrive as two files instead of one overwriting the other."
       }
     ],
     "improved": [
       {
-        "title": "Sharpening follows what you are looking at",
-        "description": "Pending image work is now started in order of how close each image sits to the middle of your view, and the queue holds eight times as much. Before, work ran strictly in the order it was requested, and an overfull queue threw away the oldest request — which was usually the image right in front of you."
+        "title": "Copying is about eleven times faster",
+        "description": "Copying one 4000×3000 photo took 1.45 seconds, and twenty-four references took 1.33; both now take roughly a tenth of a second. Nearly all of that time went on rendering and PNG-encoding the whole selection at up to 8192 pixels before copy would say anything at all. The flattened image placed on the clipboard is now capped at 1024 pixels. Pasting back into RefBoard is unaffected — it rebuilds the real images at their full size — and dragging an image out still hands over the untouched original."
       },
       {
-        "title": "A missed budget costs sharpness, not legibility",
-        "description": "An image that cannot be decoded at the resolution your current zoom wants now falls back to a 512px surface rather than the 256px preview, so it reads as slightly soft instead of plainly blurry. RefBoard also stops reclaiming a surface the instant it loses its place for a single frame, so panning back over an image no longer re-decodes it from nothing."
+        "title": "A cropped export keeps every pixel",
+        "description": "Cropping forces an image to be encoded again, and a cropped JPEG used to be written back out as a JPEG, quietly costing a second generation of compression on pixels you asked to keep. It now comes out as a PNG, so the result is identical to the crop. A cropped WebP stays WebP, encoded losslessly, which is both exact and smaller than the same image as a PNG. Choosing JPEG or WebP yourself in the export dialog still gives you that format. The dialog now says when a JPEG is about to become a PNG, and the filename preview shows the extension you will actually get."
       }
     ],
     "fixed": [
       {
-        "title": "Images stop going blurry on boards of 200 or more",
-        "description": "Decoded images were rationed by two fixed 31 MB budgets. Because an image smaller than the resolution it needs is decoded whole, an ordinary board of 600–900px references pushed nearly every visible image into one of those budgets, about a dozen fit, and everything else was drawn from a 256px preview. On a 240-image test board with 32 images on screen, 14 were being drawn from the preview at less than half the resolution they needed; now none are, and none are during a pan either."
+        "title": "Copying a JPEG never kept its original bytes",
+        "description": "Copy tried to hand the clipboard the untouched JPEG file, which the clipboard has never accepted — PNG is the only image type it takes. Every JPEG copy therefore attempted a write that could not succeed, and then rendered the full-size PNG it had been trying to avoid, which is where most of the delay came from. Copy now goes straight to the render, and keeping the original bytes applies where it genuinely works: a single untouched PNG."
       },
       {
-        "title": "One oversized image no longer softens the whole screen",
-        "description": "An image larger than the entire decode budget was accepted anyway whenever it happened to be nearest the pointer, which spent the whole budget on that one image and dropped every other image on screen to its preview in the same frame. It now waits until the budget would otherwise go unused, so it still sharpens on its own but never at the cost of its neighbours."
+        "title": "Copy stopped encoding an image it then threw away",
+        "description": "To keep its clipboard payload small, copy downscaled every large image to 2048 pixels, re-encoded it as a PNG, and kept that only if it came out smaller than the original. For a photograph it never does. On a 4000×3000 JPEG this was 336 milliseconds spent producing a 5.9 MB PNG that was discarded in favour of the 3.9 MB original. It is now only attempted for the source formats that can actually come out smaller."
       },
       {
-        "title": "The image under the cursor stops hogging priority",
-        "description": "Scroll-zooming over an image gave it absolute priority for five seconds afterwards, holding the images around it on their previews long after you had moved on. That window is now 1.2 seconds — long enough to outlast the gesture, short enough that where the pointer came to rest stops mattering."
-      },
-      {
-        "title": "Choosing an export folder works again",
-        "description": "In 2.0.7 the Browse button in Export images did nothing at all. The main process had stopped answering the folder-picker request, so the click failed silently — and because the folder field is read-only, Browse was the only way to fill it. Exporting images was effectively unusable in the desktop app. The picker opens again, parented to the window you started it from, and a picker that cannot open now says so instead of failing quietly."
-      },
-      {
-        "title": "One export, not one save dialog per image",
-        "description": "With no folder set, Export fell back to saving each image as a separate browser download, which opened its own Save As dialog for every image — exporting twenty references meant dismissing twenty dialogs. RefBoard now writes the whole batch to the chosen folder in one step, and if the folder is empty it asks you to pick one instead of starting anything."
-      },
-      {
-        "title": "Export starts in a real folder by default",
-        "description": "The export folder no longer opens blank on a machine that has never exported. It defaults to Documents\\RefBoard Exports again, and still remembers the last folder you chose."
+        "title": "Help stopped claiming it was version 1.0.1",
+        "description": "The footer of the keyboard-shortcuts window had the version written into it by hand and was never updated, so it has read \"RefBoard v1.0.1\" through eight releases while Settings showed the real one. It now reads the running version, like Settings does."
       }
     ]
   }

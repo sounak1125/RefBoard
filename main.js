@@ -476,6 +476,66 @@ function setupIpc() {
     return { count, dir };
   });
 
+  /* ---------- drag out ---------- */
+
+  /* The receiving application reads the dropped path after the drop finishes,
+     so the bytes cannot be handed over from memory — they are staged on disk.
+     One directory per renderer, rebuilt on every drag, keeps a long session
+     from accumulating every image the user has ever dragged out. */
+  const dragOutDirs = new Map();
+
+  async function dragOutDirFor(contentsId) {
+    let dir = dragOutDirs.get(contentsId);
+    if (!dir) {
+      dir = path.join(dragOutStagingRoot(), `${process.pid}-${contentsId}`);
+      dragOutDirs.set(contentsId, dir);
+    }
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  }
+
+  ipcMain.handle('stage-drag-out', async (event, { files } = {}) => {
+    const list = Array.isArray(files) ? files.slice(0, DRAG_OUT_MAX_FILES) : [];
+    if (!list.length) return { paths: [] };
+    const root = path.resolve(await dragOutDirFor(event.sender.id));
+    const paths = [];
+    for (const f of list) {
+      const name = path.basename(String(f?.name || ''));
+      if (!name || name === '.' || name === '..') continue;
+      const target = path.resolve(root, name);
+      // A crafted name must not write outside the staging directory.
+      if (!target.startsWith(root + path.sep)) continue;
+      await fs.writeFile(target, Buffer.from(String(f?.data || ''), 'base64'));
+      paths.push(target);
+    }
+    return { paths };
+  });
+
+  ipcMain.handle('start-drag-out', async (event, { paths, icon } = {}) => {
+    const dir = dragOutDirs.get(event.sender.id);
+    if (!dir) return { started: false };
+    const root = path.resolve(dir);
+    // Only paths this renderer just staged may be dragged, and only if the
+    // write actually landed — startDrag on a missing file drops nothing.
+    const files = (Array.isArray(paths) ? paths : [])
+      .map(entry => path.resolve(String(entry || '')))
+      .filter(entry => entry.startsWith(root + path.sep) && fsSync.existsSync(entry));
+    if (!files.length) return { started: false };
+
+    // Windows refuses startDrag without a real icon, so a thumbnail that failed
+    // to decode has to fall back to the app icon rather than abort the drag.
+    let image = null;
+    if (typeof icon === 'string' && icon.startsWith('data:image/')) {
+      try { image = nativeImage.createFromDataURL(icon); } catch { image = null; }
+    }
+    if (!image || image.isEmpty()) image = nativeImage.createFromPath(appIconPath());
+    if (image.isEmpty()) return { started: false };
+
+    event.sender.startDrag({ file: files[0], files, icon: image });
+    return { started: true, count: files.length };
+  });
+
   ipcMain.handle('save-board-file', async (event, { defaultName, data, filePath, forceDialog = false }) => {
     let target = forceDialog ? null : filePath;
     if (!target) {
@@ -971,6 +1031,24 @@ function setupIpc() {
   });
 }
 
+const DRAG_OUT_MAX_FILES = 200;
+
+/* Staged drag-out files must outlive the drop, so they cannot be deleted when
+   the drag ends — a slow copy would read a file that is already gone. They are
+   swept at startup instead, which bounds them to a single session's leftovers
+   without ever racing a drop in progress. */
+function dragOutStagingRoot() {
+  return path.join(app.getPath('temp'), 'RefBoard-DragOut');
+}
+
+function sweepDragOutStaging() {
+  try {
+    fsSync.rmSync(dragOutStagingRoot(), { recursive: true, force: true });
+  } catch (err) {
+    console.warn('RefBoard could not clear drag-out staging:', err?.message || err);
+  }
+}
+
 function appIconPath() {
   if (app.isPackaged) return path.join(process.resourcesPath, 'icon.png');
   return path.join(__dirname, 'build', 'icon.png');
@@ -1177,6 +1255,7 @@ app.on('open-file', (e, filePath) => {
 app.whenReady().then(async () => {
   const argvPath = extractArgvBoardPath(process.argv);
   if (argvPath) pendingOpenPath = argvPath;
+  sweepDragOutStaging();
   setupIpc();
   await createWindow();
   registerFileTypeIntegration();
