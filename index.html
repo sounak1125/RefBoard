@@ -512,7 +512,22 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 .tag-sel.empty .tag-pop-chips,
 .tag-sel.empty .tag-pop-input{ display:none; }
 .tag-sel.empty #tagSelClear{ display:none; }
-.tag-board-head{ padding-top:2px; }
+.tag-more{ border-top:1px solid var(--line); }
+.tag-more-head{
+  display:flex; align-items:center; gap:7px;
+  padding:8px 0 2px; font-size:11.5px; color:var(--dim);
+  cursor:pointer; list-style:none; user-select:none;
+}
+.tag-more-head::-webkit-details-marker{ display:none; }
+.tag-more-head:hover{ color:var(--txt); }
+.tag-more-chev{ font-size:9px; transition:transform .12s; }
+.tag-more[open] .tag-more-chev{ transform:rotate(90deg); }
+.tag-more-badge{
+  margin-left:auto; font-size:10.5px; padding:1px 7px; border-radius:999px;
+  background:color-mix(in srgb, var(--acc) 26%, transparent); color:#fff;
+}
+.tag-more-badge:empty{ display:none; }
+.tag-more-body{ display:flex; flex-direction:column; gap:8px; padding-top:4px; }
 .tag-pop-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
 .tag-pop-chips:empty{ display:none; }
 .tag-pop-input{
@@ -522,6 +537,8 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 }
 .tag-pop-input:focus{ border-color:color-mix(in srgb, var(--acc) 55%, transparent); }
 .tag-pop-hint{ font-size:10.5px; color:var(--dim); margin-top:7px; line-height:1.5; }
+/* Empty most of the time now, and an empty line still takes up a line. */
+.tag-pop-hint:empty{ display:none; }
 
 #selbar .sel-multi-only{ display:none; }
 #selbar.multi .sel-multi-only.tb{ display:flex; }
@@ -2939,26 +2956,35 @@ body.board-active #whatsNewNotice{ display:none; }
     <datalist id="tagPopSuggest"></datalist>
     <div class="tag-pop-hint" id="tagPopHint"></div>
   </div>
-  <div class="tag-panel-head tag-board-head">
-    <span class="tag-panel-title">Filter by tag</span>
-    <div class="tag-mode" role="group" aria-label="Match mode">
-      <button type="button" id="tagModeAny" class="tag-mode-btn on" aria-pressed="true">Any</button>
-      <button type="button" id="tagModeAll" class="tag-mode-btn" aria-pressed="false">All</button>
+  <details class="tag-more" id="tagMore">
+    <summary class="tag-more-head">
+      <span class="tag-more-chev" aria-hidden="true">▸</span>
+      <span>Filter &amp; labels</span>
+      <span class="tag-more-badge" id="tagMoreBadge"></span>
+    </summary>
+    <div class="tag-more-body">
+      <div class="tag-panel-head">
+        <span class="tag-panel-title">Filter</span>
+        <div class="tag-mode" role="group" aria-label="Match mode">
+          <button type="button" id="tagModeAny" class="tag-mode-btn on" aria-pressed="true">Any</button>
+          <button type="button" id="tagModeAll" class="tag-mode-btn" aria-pressed="false">All</button>
+        </div>
+      </div>
+      <div class="tag-panel-list" id="tagPanelList" role="group" aria-label="Tags on this board"></div>
+      <div class="tag-panel-labels">
+        <span>Labels</span>
+        <div class="tag-mode" role="group" aria-label="When to show tag labels">
+          <button type="button" id="tagLabelsAlways" class="tag-mode-btn">Always</button>
+          <button type="button" id="tagLabelsSelected" class="tag-mode-btn">Selected</button>
+          <button type="button" id="tagLabelsNever" class="tag-mode-btn">Off</button>
+        </div>
+      </div>
+      <div class="tag-panel-foot">
+        <span id="tagPanelCount"></span>
+        <button type="button" class="tag-clear" id="tagClear">Clear</button>
+      </div>
     </div>
-  </div>
-  <div class="tag-panel-list" id="tagPanelList" role="group" aria-label="Tags on this board"></div>
-  <div class="tag-panel-labels">
-    <span>Labels</span>
-    <div class="tag-mode" role="group" aria-label="When to show tag labels">
-      <button type="button" id="tagLabelsAlways" class="tag-mode-btn">Always</button>
-      <button type="button" id="tagLabelsSelected" class="tag-mode-btn">Selected</button>
-      <button type="button" id="tagLabelsNever" class="tag-mode-btn">Off</button>
-    </div>
-  </div>
-  <div class="tag-panel-foot">
-    <span id="tagPanelCount"></span>
-    <button type="button" class="tag-clear" id="tagClear">Clear</button>
-  </div>
+  </details>
 </div>
 <div id="status"></div>
 <div id="minimap" aria-hidden="true"><canvas id="minimapCanvas"></canvas></div>
@@ -19100,7 +19126,7 @@ function renderTagPanel() {
   if (!board.length) {
     const empty = document.createElement('div');
     empty.className = 'tag-panel-empty';
-    empty.textContent = 'No tags yet. Select images or notes, then use the tag button in the selection bar.';
+    empty.textContent = 'No tags yet.';
     tagPanelListEl.appendChild(empty);
   } else {
     for (const entry of board) {
@@ -19147,6 +19173,10 @@ function renderTagPanel() {
     btn.classList.toggle('on', mode === value);
     btn.setAttribute('aria-pressed', String(mode === value));
   }
+  const badge = $('#tagMoreBadge');
+  if (badge) badge.textContent = tagFilter.length ? String(tagFilter.length) : '';
+  const more = $('#tagMore');
+  if (more && tagFilter.length) more.open = true;
   $('#btnTags')?.classList.toggle('on', tagFilterActive());
 }
 
@@ -19226,15 +19256,11 @@ function renderTagSelection() {
   }
 
   if (tagPopHintEl) {
-    tagPopHintEl.textContent = !items.length
-      ? 'Select images or notes on the board to tag them.'
-      : items.length === 1
-        ? 'Enter to add. Click a tag to remove it.'
-        : 'Enter to add to all ' + items.length + ' selected. Click a tag to remove it from all.';
+    tagPopHintEl.textContent = items.length ? '' : 'Select images or notes to tag them.';
   }
   if (tagSelTitleEl) {
     tagSelTitleEl.textContent = items.length
-      ? (items.length === 1 ? 'Selection · 1 item' : 'Selection · ' + items.length + ' items')
+      ? (items.length === 1 ? '1 selected' : items.length + ' selected')
       : 'Selection';
   }
   // An empty selection hides the input rather than offering a box that would
