@@ -1445,18 +1445,48 @@ body.board-active #recentWorks{ display:none; }
   width:min(520px, calc(100vw - 64px)); transform:translateX(-50%);
   display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px 18px;
 }
-.ff-position{ color:var(--dim); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ff-hint{ color:var(--dim); font-size:10px; letter-spacing:.02em; white-space:nowrap; }
-.ff-progress{
-  grid-column:1 / -1; height:2px; overflow:hidden; border-radius:999px;
-  background:rgba(255,255,255,.07);
+/* The index carries the weight, the total sits under it, the title trails. */
+.ff-position{
+  display:flex; align-items:baseline; gap:8px; min-width:0;
+  white-space:nowrap; overflow:hidden;
 }
-.ff-progress-fill{
-  display:block; height:100%; width:0; border-radius:inherit;
-  background:linear-gradient(90deg, color-mix(in srgb, var(--acc) 62%, transparent), var(--acc));
-  box-shadow:0 0 12px color-mix(in srgb, var(--acc) 45%, transparent);
-  transition:width .42s cubic-bezier(.22,1,.36,1);
+.ff-index{
+  font-size:15px; font-weight:600; line-height:1; color:var(--txt);
+  font-variant-numeric:tabular-nums; letter-spacing:.005em;
 }
+.ff-total{ font-size:10.5px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.ff-title{
+  font-size:11.5px; color:var(--mut);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+}
+.ff-hint{ color:var(--dim); font-size:10px; letter-spacing:.02em; white-space:nowrap; opacity:.72; }
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+}
+
+/* One tick per board rather than a single fill: it shows where you are and how
+   much there is in the same glance, and every tick is a jump target. */
+.ff-ticks{
+  grid-column:1 / -1;
+  display:flex; align-items:center; gap:clamp(2px, .55%, 6px);
+  height:12px;
+}
+.ff-tick{
+  flex:1 1 0; min-width:0; height:3px; padding:0; border:0;
+  border-radius:999px; cursor:pointer;
+  background:rgba(255,255,255,.085);
+  transition:flex-grow .42s cubic-bezier(.22,1,.36,1), background .28s ease,
+    height .28s ease, box-shadow .28s ease;
+}
+.ff-tick.is-past{ background:rgba(255,255,255,.24); }
+.ff-tick:hover{ background:rgba(255,255,255,.5); }
+.ff-tick.is-active{
+  flex-grow:3.4; height:4px;
+  background:linear-gradient(90deg, color-mix(in srgb, var(--acc) 55%, transparent), var(--acc));
+  box-shadow:0 0 14px color-mix(in srgb, var(--acc) 52%, transparent);
+}
+.ff-tick:focus-visible{ outline:2px solid var(--acc); outline-offset:3px; }
 
 @media (max-width:720px){
   #recentWorks.layout-focus .rw-inner{ padding-top:22px; }
@@ -1481,7 +1511,7 @@ body.board-active #recentWorks{ display:none; }
   .ff-stage{ min-height:320px; }
 }
 @media (prefers-reduced-motion:reduce){
-  .ff-card, .ff-progress-fill{ transition-duration:.01ms !important; }
+  .ff-card, .ff-tick{ transition-duration:.01ms !important; }
 }
 
 /* ---------- what's new (landing) ---------- */
@@ -2653,7 +2683,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <div class="ff-footer">
         <div class="ff-position" id="focusPosition" aria-live="polite"></div>
         <div class="ff-hint">Scroll, drag, or use arrow keys</div>
-        <div class="ff-progress" aria-hidden="true"><span class="ff-progress-fill" id="focusProgressFill"></span></div>
+        <div class="ff-ticks" id="focusTicks" role="tablist" aria-label="Jump to board"></div>
       </div>
     </section>
     <div class="rw-noresults hide" id="recentNoResults">
@@ -12973,9 +13003,65 @@ function syncFocusFlowUi(opts = {}) {
   if (activeCard) stage.setAttribute('aria-activedescendant', activeCard.id);
   $('#focusPrev').disabled = focusFlowIndex === 0;
   $('#focusNext').disabled = focusFlowIndex === focusFlowEntries.length - 1;
-  $('#focusPosition').textContent = `${focusFlowIndex + 1} of ${focusFlowEntries.length} · ${active.title}`;
-  $('#focusProgressFill').style.width = `${((focusFlowIndex + 1) / focusFlowEntries.length) * 100}%`;
+  renderFocusPosition(active);
+  renderFocusTicks();
   if (opts.focusCard) activeCard?.focus({ preventScroll: true });
+}
+
+/* Built as nodes rather than one string so the index can carry its own weight
+   and a board title can never be read as markup. */
+function renderFocusPosition(active) {
+  const el = $('#focusPosition');
+  if (!el) return;
+  const total = focusFlowEntries.length;
+  el.textContent = '';
+  const index = document.createElement('span');
+  index.className = 'ff-index';
+  index.setAttribute('aria-hidden', 'true');
+  // Padded while the set is small enough for it to line up rather than look odd.
+  index.textContent = total < 100
+    ? String(focusFlowIndex + 1).padStart(2, '0')
+    : String(focusFlowIndex + 1);
+  const totalEl = document.createElement('span');
+  totalEl.className = 'ff-total';
+  totalEl.setAttribute('aria-hidden', 'true');
+  totalEl.textContent = '/ ' + total;
+  const title = document.createElement('span');
+  title.className = 'ff-title';
+  title.setAttribute('aria-hidden', 'true');
+  title.textContent = active?.title || '';
+  const spoken = document.createElement('span');
+  spoken.className = 'sr-only';
+  spoken.textContent = `${focusFlowIndex + 1} of ${total}${active?.title ? ', ' + active.title : ''}`;
+  el.append(index, totalEl, title, spoken);
+}
+
+/* Rebuilt only when the number of boards changes; stepping through them just
+   moves two classes, so a drag does not thrash the layout. */
+function renderFocusTicks() {
+  const strip = $('#focusTicks');
+  if (!strip) return;
+  const total = focusFlowEntries.length;
+  if (strip.children.length !== total) {
+    strip.textContent = '';
+    for (let i = 0; i < total; i++) {
+      const tick = document.createElement('button');
+      tick.type = 'button';
+      tick.className = 'ff-tick';
+      tick.tabIndex = -1;                       // the stage owns keyboard travel
+      tick.setAttribute('role', 'tab');
+      tick.addEventListener('click', () => setFocusFlowIndex(i));
+      strip.appendChild(tick);
+    }
+  }
+  for (let i = 0; i < total; i++) {
+    const tick = strip.children[i];
+    if (!tick) continue;
+    tick.classList.toggle('is-active', i === focusFlowIndex);
+    tick.classList.toggle('is-past', i < focusFlowIndex);
+    tick.setAttribute('aria-selected', String(i === focusFlowIndex));
+    tick.title = focusFlowEntries[i]?.title || '';
+  }
 }
 
 function setFocusFlowIndex(index, opts = {}) {
