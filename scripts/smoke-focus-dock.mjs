@@ -203,6 +203,23 @@ const smokeExpression = `(async()=>{
     ? (hoverIndex<guardIndex||guardSelector.includes('.ff-card .rw-card-clear'))
     : false;
 
+  // --- nothing on the landing may end in a hard edge ---
+  // The atmosphere is one masked layer rather than stacked gradients, because
+  // two falloffs crossing is what left a seam across the page before. The card
+  // row is masked for the same reason: the far cards are only dimmed, so
+  // unfaded they meet the window edge as slabs.
+  const maskOf=el=>{
+    if(!el) return '';
+    const cs=getComputedStyle(el);
+    return cs.maskImage&&cs.maskImage!=='none' ? cs.maskImage : (cs.webkitMaskImage||'');
+  };
+  const gridMask=(()=>{
+    const cs=getComputedStyle(document.querySelector('#recentWorks'),'::after');
+    const m=cs.maskImage&&cs.maskImage!=='none'?cs.maskImage:(cs.webkitMaskImage||'');
+    return { mask:m.slice(0,60), image:cs.backgroundImage.slice(0,60) };
+  })();
+  const trackMask=maskOf(document.querySelector('#focusTrack')).slice(0,60);
+
   // --- a handful of boards must still look like a dock ---
   // With chips free to fill the row, three boards becomes three slabs with the
   // current one lit, which is the segmented progress bar the dock replaced.
@@ -228,7 +245,7 @@ const smokeExpression = `(async()=>{
           wheelSteps,backActive,backRaised,peakNear,headroom,dockHeight,hintVisible,
           manyWidest,fewCount,fewWidest,
           marksWhileStepping,clearsWhenSettled,guardSelector,guardOutranksHover,
-          cardBackgrounds,flatCardBackgrounds};
+          cardBackgrounds,flatCardBackgrounds,gridMask,trackMask};
 })()`;
 
 try {
@@ -284,6 +301,15 @@ try {
   assert.deepEqual(r.flatCardBackgrounds, [],
     'a card background that changes on hover must stay a gradient; a flat colour sets '
     + 'background-image to none, which cannot interpolate and snaps on every scroll step');
+
+  // The landing's atmosphere is one masked layer, and the card row fades at
+  // its edges. Both exist so nothing ends in a hard edge.
+  assert.ok(r.gridMask.image.includes('gradient'),
+    `the landing grid must be drawn (background-image: ${r.gridMask.image || 'none'})`);
+  assert.ok(r.gridMask.mask.includes('gradient'),
+    `the landing grid must fade out rather than stop (mask: ${r.gridMask.mask || 'none'})`);
+  assert.ok(r.trackMask.includes('gradient'),
+    `the card row must fade at its edges, or the far cards meet the window as slabs (mask: ${r.trackMask || 'none'})`);
 
   // A chip must stay a chip whatever the board count.
   assert.equal(r.fewCount, 3, `expected three chips after reseeding (got ${r.fewCount})`);

@@ -894,6 +894,34 @@ body.board-instant-open #titlebarPeek{
   background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.34'/%3E%3C/svg%3E");
   background-size:180px 180px;
 }
+/* The board canvas is a grid, so the landing is drawn on the same surface the
+   work happens on - faded almost to nothing, present mostly as structure.
+
+   One layer does both the grid and the light: the mask is what fades it, so
+   the brightness falls off from the top exactly where the lines do. That is
+   deliberate. The version this replaces used two drifting radial fields, and
+   where their falloffs crossed they left a visible seam across the middle of
+   the page. A single masked layer has nothing to meet. */
+#recentWorks::after{
+  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--acc) 14%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--acc) 14%, transparent) 1px, transparent 1px);
+  background-size:48px 48px;
+  background-position:50% 0;
+  -webkit-mask-image:radial-gradient(116% 64% at 50% -8%, #000 0%, rgba(0,0,0,.5) 40%, transparent 74%);
+  mask-image:radial-gradient(116% 64% at 50% -8%, #000 0%, rgba(0,0,0,.5) 40%, transparent 74%);
+}
+/* A hairline where the header ends and the work begins. Fades out at both ends
+   so it never reads as a box edge. */
+#recentWorks.layout-focus .rw-header::after{
+  content:""; display:block; height:1px; margin:14px 0 0;
+  background:linear-gradient(90deg,
+    transparent,
+    color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.13)) 22%,
+    color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.13)) 78%,
+    transparent);
+}
 #recentWorks::-webkit-scrollbar{ width:10px; height:10px; }
 #recentWorks::-webkit-scrollbar-track{ background:rgba(9,11,15,.42); }
 #recentWorks::-webkit-scrollbar-thumb{
@@ -1519,7 +1547,15 @@ body.board-active #recentWorks{ display:none; }
   content:""; position:absolute; inset:10px 26px; border-radius:22px;
   border:1px solid color-mix(in srgb, var(--acc) 48%, transparent); pointer-events:none;
 }
-.ff-track{ position:absolute; inset:0; transform-style:preserve-3d; }
+/* The receding cards are only dimmed, not faded - at 84% opacity the far ones
+   met the window edge as hard-edged slabs running off both sides. The old
+   vignette hid that; with the page flat there is nothing to hide behind, so
+   the row dissolves into the background instead of being cut off by it. */
+.ff-track{
+  position:absolute; inset:0; transform-style:preserve-3d;
+  -webkit-mask-image:linear-gradient(90deg, transparent 0%, #000 15%, #000 85%, transparent 100%);
+  mask-image:linear-gradient(90deg, transparent 0%, #000 15%, #000 85%, transparent 100%);
+}
 .ff-card{
   --ff-offset:0; --ff-scale:1; --ff-brightness:1; --ff-saturation:1;
   position:absolute; left:50%; top:50%;
