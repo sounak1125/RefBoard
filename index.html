@@ -504,7 +504,15 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 .tag-color-sw.on{ box-shadow:0 0 0 2px var(--panel), 0 0 0 4px #fff; }
 .tag-color-none{ width:100%; }
 
-.tag-pop{ width:264px; }
+.tag-panel{ width:266px; }
+.tag-sel{
+  display:flex; flex-direction:column; gap:7px;
+  padding-bottom:9px; border-bottom:1px solid var(--line);
+}
+.tag-sel.empty .tag-pop-chips,
+.tag-sel.empty .tag-pop-input{ display:none; }
+.tag-sel.empty #tagSelClear{ display:none; }
+.tag-board-head{ padding-top:2px; }
 .tag-pop-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
 .tag-pop-chips:empty{ display:none; }
 .tag-pop-input{
@@ -2837,14 +2845,6 @@ body.board-active #whatsNewNotice{ display:none; }
   <div class="tag-color-grid" id="tagColorGrid"></div>
   <button type="button" class="tag-clear tag-color-none" id="tagColorNone">No colour</button>
 </div>
-<div id="tagPop" class="draw-color-pop tag-pop" aria-hidden="true">
-  <div class="tag-pop-chips" id="tagPopChips"></div>
-  <input type="text" id="tagPopInput" class="tag-pop-input" list="tagPopSuggest"
-    placeholder="Add tags, comma separated" maxlength="240"
-    spellcheck="false" autocomplete="off" aria-label="Add tags to the selection">
-  <datalist id="tagPopSuggest"></datalist>
-  <div class="tag-pop-hint" id="tagPopHint"></div>
-</div>
 <div id="groupColorPop" class="draw-color-pop" aria-hidden="true">
   <div class="draw-cp-row">
     <span class="draw-cp-preview" id="groupCpPreview"></span>
@@ -2927,7 +2927,19 @@ body.board-active #whatsNewNotice{ display:none; }
 </div>
 
 <div id="tagPanel" class="tag-panel" aria-hidden="true">
-  <div class="tag-panel-head">
+  <div class="tag-sel" id="tagSelSection">
+    <div class="tag-panel-head">
+      <span class="tag-panel-title" id="tagSelTitle">Selection</span>
+      <button type="button" class="tag-clear" id="tagSelClear">Clear tags</button>
+    </div>
+    <div class="tag-pop-chips" id="tagPopChips"></div>
+    <input type="text" id="tagPopInput" class="tag-pop-input" list="tagPopSuggest"
+      placeholder="Add tags, comma separated" maxlength="240"
+      spellcheck="false" autocomplete="off" aria-label="Add tags to the selection">
+    <datalist id="tagPopSuggest"></datalist>
+    <div class="tag-pop-hint" id="tagPopHint"></div>
+  </div>
+  <div class="tag-panel-head tag-board-head">
     <span class="tag-panel-title">Filter by tag</span>
     <div class="tag-mode" role="group" aria-label="Match mode">
       <button type="button" id="tagModeAny" class="tag-mode-btn on" aria-pressed="true">Any</button>
@@ -3230,8 +3242,9 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>Ctrl</kbd><kbd>A</kbd></span><span class="d">Select all</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>F</kbd></span><span class="d">Find on board</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Filter the board by tag — matching items stay lit, the rest dim and stop responding</span>
-      <span class="ks">Selection bar → tag</span><span class="d">Tag the selected images and notes; Ctrl+F searches tags too</span>
+      <span class="ks">Selection bar → tag</span><span class="d">Opens the tag panel with the cursor ready — tag the selection, clear its tags, set colours and filter, all in one place</span>
       <span class="ks">Right-click → Tags</span><span class="d">Add a tag, switch one on or off for the whole selection, or set its colour</span>
+      <span class="ks">Tag panel → Clear tags</span><span class="d">Strip every tag from the selection in one go</span>
       <span class="ks">Tag panel → colour well</span><span class="d">Give a tag a colour and every item wearing it gets a soft glow behind it</span>
       <span class="ks">Tag panel → Labels</span><span class="d">Show tag labels on the board always, only on the selection, or not at all</span>
       <span class="ks"><kbd>Del</kbd></span><span class="d">Delete selection</span>
@@ -16764,7 +16777,7 @@ function showMenu(x, y, hitItem) {
       d.addEventListener('click', e => {
         e.stopPropagation();
         closeAppearMenu();
-        const items = [{ l: 'Add tag…', f: () => openTagPop(null, x, y) }];
+        const items = [{ l: 'Add tag…', f: openTagPanelForSelection }];
         const board = boardTagList();
         if (board.length) {
           items.push({ sep: true });
@@ -17239,7 +17252,6 @@ window.addEventListener('pointerdown', e => {
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
   if (!e.target.closest('#titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) window.closePinMenus?.();
-  if (!e.target.closest('#tagPop') && !e.target.closest('#sTags')) closeTagPop();
   if (!e.target.closest('#tagColorPop') && !e.target.closest('.tag-dot')) closeTagColorPop();
   // #tagColorPop belongs to the panel even though it is not nested inside it.
   if (!e.target.closest('#tagPanel') && !e.target.closest('#btnTags')
@@ -17941,9 +17953,8 @@ function updateSelBar() {
   bar.classList.toggle('images-multi', selectedImages().length >= 2);
   bar.classList.toggle('has-images', n > 0 && selectionHasDragOutImages());
   bar.classList.toggle('has-taggable', n > 0 && selectedTaggableItems().length > 0);
-  // A popover left open over an empty selection would act on nothing.
-  if (!n) closeTagPop();
-  else if (tagPopEl?.classList.contains('open')) renderTagPopover();
+  // The panel's selection half follows whatever is selected, including nothing.
+  if (tagPanelEl?.classList.contains('open')) renderTagSelection();
   bar.classList.toggle('group-sel', !!grp);
   if (n) $('#selcount').textContent = n === 1 ? '1 selected' : `${n} selected`;
   if (grp) {
@@ -18872,7 +18883,7 @@ function applyTagsToSelection(mutate) {
   pushUndo();
   items.forEach((it, i) => { it.tags = next[i]; });
   syncTagFilterToBoard();
-  renderTagPopover();
+  renderTagSelection();
   scheduleSave();
   invalidate();
   return changed;
@@ -19048,7 +19059,8 @@ function tagLabelInk(hex) {
 const tagPanelEl = $('#tagPanel');
 const tagPanelListEl = $('#tagPanelList');
 const tagPanelCountEl = $('#tagPanelCount');
-const tagPopEl = $('#tagPop');
+const tagSelSectionEl = $('#tagSelSection');
+const tagSelTitleEl = $('#tagSelTitle');
 const tagPopChipsEl = $('#tagPopChips');
 const tagPopInputEl = $('#tagPopInput');
 const tagPopSuggestEl = $('#tagPopSuggest');
@@ -19082,6 +19094,7 @@ function tagChipEl(tag, opts) {
 
 function renderTagPanel() {
   if (!tagPanelEl) return;
+  renderTagSelection();
   const board = boardTagList();
   tagPanelListEl.textContent = '';
   if (!board.length) {
@@ -19197,8 +19210,7 @@ function setTagColor(tag, color) {
   invalidate();
 }
 
-function renderTagPopover() {
-  if (!tagPopEl) return;
+function renderTagSelection() {
   const items = selectedTaggableItems();
   tagPopChipsEl.textContent = '';
   for (const entry of selectionTagList()) {
@@ -19214,17 +19226,38 @@ function renderTagPopover() {
   }
 
   if (tagPopHintEl) {
-    tagPopHintEl.textContent = items.length === 1
-      ? 'Enter to add. Click a tag to remove it.'
-      : 'Enter to add to all ' + items.length + ' selected. Click a tag to remove it from all.';
+    tagPopHintEl.textContent = !items.length
+      ? 'Select images or notes on the board to tag them.'
+      : items.length === 1
+        ? 'Enter to add. Click a tag to remove it.'
+        : 'Enter to add to all ' + items.length + ' selected. Click a tag to remove it from all.';
   }
+  if (tagSelTitleEl) {
+    tagSelTitleEl.textContent = items.length
+      ? (items.length === 1 ? 'Selection · 1 item' : 'Selection · ' + items.length + ' items')
+      : 'Selection';
+  }
+  // An empty selection hides the input rather than offering a box that would
+  // do nothing, but the section stays so the panel does not jump about.
+  tagSelSectionEl?.classList.toggle('empty', !items.length);
+}
+
+/* Strip every tag from the selection in one go — the way out of a board that
+   has been over-tagged, without clicking each chip. */
+function clearTagsOnSelection() {
+  const items = selectedTaggableItems();
+  if (!items.length) { toast('Select images or notes first'); return; }
+  const carrying = items.filter(it => (it.tags || []).length).length;
+  if (!carrying) { toast('Nothing tagged in the selection'); return; }
+  applyTagsToSelection(() => []);
+  toast(carrying === 1 ? 'Cleared tags on 1 item' : 'Cleared tags on ' + carrying + ' items');
 }
 
 /**
- * Fill the suggestion list. Deliberately not part of renderTagPopover: rebuilding
- * a <datalist> while its popover is open crashes the renderer outright (an access
- * violation, not an exception), and renderTagPopover runs after every tag edit.
- * Refreshing once per open keeps the native autocomplete without that.
+ * Fill the suggestion list. Deliberately not part of renderTagSelection:
+ * rebuilding a <datalist> while its popover is open crashes the renderer
+ * outright — an access violation, not an exception — and renderTagSelection
+ * runs after every tag edit. Refreshing when the panel opens avoids that.
  */
 function refreshTagSuggestions() {
   if (!tagPopSuggestEl) return;
@@ -19236,34 +19269,24 @@ function refreshTagSuggestions() {
   }
 }
 
-function closeTagPop() {
-  if (!tagPopEl) return;
-  tagPopEl.classList.remove('open');
-  tagPopEl.setAttribute('aria-hidden', 'true');
-  $('#sTags')?.classList.remove('on');
-}
-
-function openTagPop(anchorEl, clientX, clientY) {
-  if (!tagPopEl) return;
-  if (tagPopEl.classList.contains('open')) { closeTagPop(); return; }
-  if (!selectedTaggableItems().length) { toast('Select an image or a note to tag'); return; }
+/* One way in: open the panel and put the cursor where tags are typed. Both the
+   selection bar and the right-click menu land here, so there is a single place
+   to learn rather than a popover and a panel that overlap. */
+function openTagPanelForSelection() {
   closeMenu();
-  refreshTagSuggestions();
-  renderTagPopover();
-  tagPopEl.classList.add('open');
-  tagPopEl.setAttribute('aria-hidden', 'false');
-  $('#sTags')?.classList.add('on');
-  placePopNear(tagPopEl, anchorEl, clientX, clientY);
+  setTagPanelOpen(true);
   tagPopInputEl.value = '';
-  tagPopInputEl.focus();
+  if (selectedTaggableItems().length) tagPopInputEl.focus();
 }
 
 function setTagPanelOpen(open) {
   if (!tagPanelEl) return;
   if (!open) closeTagColorPop();
+  if (open) refreshTagSuggestions();
   tagPanelEl.classList.toggle('open', open);
   tagPanelEl.setAttribute('aria-hidden', String(!open));
   $('#btnTags')?.classList.toggle('open', open);
+  $('#sTags')?.classList.toggle('on', open);
   if (open) renderTagPanel();
 }
 
@@ -19286,7 +19309,7 @@ function commitTagInput() {
   if (!incoming.length) return;
   const changed = applyTagsToSelection(tags => addTags(tags, incoming));
   tagPopInputEl.value = '';
-  renderTagPopover();
+  renderTagSelection();
   if (!changed) { toast('Already tagged'); return; }
   toast(changed === 1 ? 'Tagged 1 item' : 'Tagged ' + changed + ' items');
 }
@@ -19296,9 +19319,10 @@ $('#sTags')?.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   e.preventDefault();
   e.stopPropagation();
-  openTagPop($('#sTags'));
+  openTagPanelForSelection();
 });
 $('#tagClear')?.addEventListener('click', clearTagFilter);
+$('#tagSelClear')?.addEventListener('click', clearTagsOnSelection);
 $('#tagModeAny')?.addEventListener('click', () => setTagFilter(tagFilter, { mode: 'any' }));
 $('#tagModeAll')?.addEventListener('click', () => setTagFilter(tagFilter, { mode: 'all' }));
 $('#tagLabelsAlways')?.addEventListener('click', () => setTagLabelMode('always'));
@@ -19306,7 +19330,12 @@ $('#tagLabelsSelected')?.addEventListener('click', () => setTagLabelMode('select
 $('#tagLabelsNever')?.addEventListener('click', () => setTagLabelMode('never'));
 $('#tagColorNone')?.addEventListener('click', () => { setTagColor(tagColorTarget, ''); closeTagColorPop(); });
 tagPopInputEl?.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeTagPop(); canvas.focus?.(); return; }
+  if (e.key === 'Escape') {
+    e.preventDefault(); e.stopPropagation();
+    setTagPanelOpen(false);
+    canvas.focus?.();
+    return;
+  }
   if (e.key !== 'Enter') return;
   e.preventDefault();
   commitTagInput();

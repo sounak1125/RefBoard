@@ -133,11 +133,11 @@ const smokeExpression = `(async()=>{
   await wait(280);
   const colors={...RB.state.tagColors};
 
-  // 'Add tag…' opens the same popover the selection bar uses.
+  // 'Add tag…' opens the same panel the selection bar uses.
   await openTagsSub();
   press([...document.querySelectorAll('#ctxSub .mi')].find(r=>r.textContent.includes('Add tag')));
   await wait(300);
-  const addOpensPop=document.querySelector('#tagPop').classList.contains('open');
+  const addOpensPop=document.querySelector('#tagPanel').classList.contains('open');
 
   return {subShown,rows,partialMark,afterToggle,afterSecondToggle,colorPopOpen,colors,addOpensPop};
 })()`;
@@ -162,7 +162,7 @@ try {
   assert.equal(Object.keys(r.colors).length, 1, `picking a swatch must assign a colour, got ${JSON.stringify(r.colors)}`);
   assert.match(Object.values(r.colors)[0], /^#[0-9a-f]{6}$/, 'the colour must be stored as hex');
 
-  assert.equal(r.addOpensPop, true, '"Add tag…" must open the same popover the selection bar uses');
+  assert.equal(r.addOpensPop, true, '"Add tag…" must open the same panel the selection bar uses');
 
   console.log('tag context menu Electron smoke passed — add, toggle from partial, and colour, all from right-click');
 } finally {
