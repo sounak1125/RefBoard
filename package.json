@@ -52,7 +52,8 @@
     "test:drag-out-smoke": "node scripts/smoke-drag-out.mjs",
     "test:lossless-crop-smoke": "node scripts/smoke-lossless-crop.mjs",
     "test:clipboard-latency-smoke": "node scripts/smoke-clipboard-latency.mjs",
-    "test:tags-smoke": "node scripts/smoke-tags.mjs"
+    "test:tags-smoke": "node scripts/smoke-tags.mjs",
+    "test:tags-menu-smoke": "node scripts/smoke-tags-menu.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.6.2",

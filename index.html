@@ -1710,6 +1710,14 @@ body.board-active #whatsNewNotice{ display:none; }
 .mi.has-sub .sub-arrow{ font-size:11px; color:var(--dim); margin-left:8px; }
 .mi.on{ color:var(--txt); }
 .mi.on .k{ color:var(--acc); }
+/* A tag row is dot, label, then the tick — the label takes the slack so the
+   tick stays on the right whatever the tag is called. */
+.mi-tag{ gap:0; padding-left:6px; }
+.mi-tag > span:not(.k){
+  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  margin-right:18px;
+}
+.mi-tag .tag-dot{ padding:0 8px 0 2px; }
 .mhr{ height:1px; background:var(--line); margin:5px 8px; }
 
 /* ---------- appearance submenu ---------- */
@@ -3223,6 +3231,7 @@ body.board-active #whatsNewNotice{ display:none; }
       <span class="ks"><kbd>Ctrl</kbd><kbd>F</kbd></span><span class="d">Find on board</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Filter the board by tag — matching items stay lit, the rest dim and stop responding</span>
       <span class="ks">Selection bar → tag</span><span class="d">Tag the selected images and notes; Ctrl+F searches tags too</span>
+      <span class="ks">Right-click → Tags</span><span class="d">Add a tag, switch one on or off for the whole selection, or set its colour</span>
       <span class="ks">Tag panel → colour well</span><span class="d">Give a tag a colour and every item wearing it gets a soft glow behind it</span>
       <span class="ks">Tag panel → Labels</span><span class="d">Show tag labels on the board always, only on the selection, or not at all</span>
       <span class="ks"><kbd>Del</kbd></span><span class="d">Delete selection</span>
@@ -16536,6 +16545,13 @@ function openCtxSubMenu(anchorEl, x, y, { title, items }) {
   head.textContent = title;
   subEl.appendChild(head);
   for (const m of items) {
+    if (m.sep) {
+      const hr = document.createElement('div');
+      hr.className = 'mhr';
+      subEl.appendChild(hr);
+      continue;
+    }
+    if (m.node) { subEl.appendChild(m.node); continue; }
     const d = document.createElement('div');
     d.className = 'mi';
     d.innerHTML = `<span>${m.l}</span><span class="k">${m.k || ''}</span>`;
@@ -16598,6 +16614,46 @@ window.addEventListener('contextmenu', e => {
   showMenu(e.clientX, e.clientY, it);
 });
 
+/**
+ * One row of the right-click Tags submenu: a colour well on the left and the
+ * tag itself as a toggle. Deliberately the same pair as the tag panel — one
+ * interaction to learn, wherever you reach tags from.
+ */
+function ctxTagRow(entry) {
+  const state3 = selectionTagState(entry.tag);
+  const row = document.createElement('div');
+  row.className = 'mi mi-tag' + (state3 === 'all' ? ' on' : '');
+
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.className = 'tag-dot';
+  const color = state.tagColors[tagKey(entry.tag)] || '';
+  dot.style.setProperty('--dot', color || 'transparent');
+  dot.title = color ? 'Change the glow colour for this tag' : 'Give this tag a glow colour';
+  dot.addEventListener('click', e => {
+    e.stopPropagation();
+    // The colour popover outlives the menu, so the menu gets out of its way.
+    const anchor = dot.getBoundingClientRect();
+    closeMenu();
+    openTagColorPop(entry.tag, null, anchor.left, anchor.bottom);
+  });
+  row.appendChild(dot);
+
+  const label = document.createElement('span');
+  label.textContent = entry.tag;          // user text: never innerHTML
+  row.appendChild(label);
+
+  const mark = document.createElement('span');
+  mark.className = 'k';
+  // A partial mark matters: without it, one click looks like it did nothing to
+  // the items that already carried the tag.
+  mark.textContent = state3 === 'all' ? '✓' : state3 === 'some' ? '–' : '';
+  row.appendChild(mark);
+
+  row.addEventListener('click', () => { closeMenu(); toggleTagOnSelection(entry.tag); });
+  return row;
+}
+
 function showMenu(x, y, hitItem) {
   const pos = clientToBoard(x, y);
   menuBoardPos = pos;
@@ -16631,6 +16687,9 @@ function showMenu(x, y, hitItem) {
     entries.push(
       { l: sel > 1 ? 'Export images' : 'Export image', k: 'Ctrl+Shift+I', f: exportOriginals },
     );
+    if (selectedTaggableItems().length) {
+      entries.push({ l: 'Tags', sub: 'tags' });
+    }
     if (sel === 1 && isImageItem(selItems[0])) {
       entries.push({ l: 'Extract palette', f: () => void extractPaletteFromItem(selItems[0]) });
     }
@@ -16699,6 +16758,20 @@ function showMenu(x, y, hitItem) {
             { l: 'Align vertical', f: alignSelectionVertical },
           ],
         });
+      });
+    } else if (en.sub === 'tags') {
+      d.innerHTML = `<span>${en.l}</span><span class="sub-arrow">▸</span>`;
+      d.addEventListener('click', e => {
+        e.stopPropagation();
+        closeAppearMenu();
+        const items = [{ l: 'Add tag…', f: () => openTagPop(null, x, y) }];
+        const board = boardTagList();
+        if (board.length) {
+          items.push({ sep: true });
+          for (const entry of board) items.push({ node: ctxTagRow(entry) });
+        }
+        items.push({ sep: true }, { l: 'Tag panel…', k: 'Ctrl+Shift+T', f: () => setTagPanelOpen(true) });
+        openCtxSubMenu(d, x, y, { title: 'Tags', items });
       });
     } else if (en.sub === 'normalize') {
       d.innerHTML = `<span>${en.l}</span><span class="sub-arrow">▸</span>`;
@@ -18767,6 +18840,25 @@ function selectionTagList() {
   return collectBoardTags(selectedTaggableItems(), isTaggableItem);
 }
 
+/** 'all' | 'some' | 'none' — how much of the selection carries this tag. */
+function selectionTagState(tag) {
+  const items = selectedTaggableItems();
+  if (!items.length) return 'none';
+  const key = tagKey(tag);
+  const carrying = items.filter(it => (it.tags || []).some(t => t.toLowerCase() === key)).length;
+  if (!carrying) return 'none';
+  return carrying === items.length ? 'all' : 'some';
+}
+
+/* Partly-applied counts as off, so one click brings the whole selection up to
+   the tag rather than stripping it from the items that already had it. */
+function toggleTagOnSelection(tag) {
+  const removing = selectionTagState(tag) === 'all';
+  const changed = applyTagsToSelection(tags => (removing ? removeTag(tags, tag) : addTags(tags, tag)));
+  if (!changed) return;
+  toast((removing ? 'Removed ' : 'Tagged ') + tag);
+}
+
 function applyTagsToSelection(mutate) {
   const items = selectedTaggableItems();
   if (!items.length) return 0;
@@ -19064,7 +19156,7 @@ function closeTagColorPop() {
   tagColorTarget = '';
 }
 
-function openTagColorPop(tag, anchorEl) {
+function openTagColorPop(tag, anchorEl, clientX, clientY) {
   const pop = $('#tagColorPop');
   if (!pop) return;
   if (pop.classList.contains('open') && tagColorTarget === tag) { closeTagColorPop(); return; }
@@ -19086,7 +19178,7 @@ function openTagColorPop(tag, anchorEl) {
 
   pop.classList.add('open');
   pop.setAttribute('aria-hidden', 'false');
-  placePopNear(pop, anchorEl);
+  placePopNear(pop, anchorEl, clientX, clientY);
 }
 
 function setTagColor(tag, color) {
@@ -19151,7 +19243,7 @@ function closeTagPop() {
   $('#sTags')?.classList.remove('on');
 }
 
-function openTagPop(anchorEl) {
+function openTagPop(anchorEl, clientX, clientY) {
   if (!tagPopEl) return;
   if (tagPopEl.classList.contains('open')) { closeTagPop(); return; }
   if (!selectedTaggableItems().length) { toast('Select an image or a note to tag'); return; }
@@ -19161,7 +19253,7 @@ function openTagPop(anchorEl) {
   tagPopEl.classList.add('open');
   tagPopEl.setAttribute('aria-hidden', 'false');
   $('#sTags')?.classList.add('on');
-  placePopNear(tagPopEl, anchorEl);
+  placePopNear(tagPopEl, anchorEl, clientX, clientY);
   tagPopInputEl.value = '';
   tagPopInputEl.focus();
 }
