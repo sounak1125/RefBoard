@@ -166,9 +166,30 @@ const smokeExpression = `(async()=>{
   const dockHeight=Math.round(document.querySelector('#focusDock').getBoundingClientRect().height);
   leave();
 
+  // --- a handful of boards must still look like a dock ---
+  // With chips free to fill the row, three boards becomes three slabs with the
+  // current one lit, which is the segmented progress bar the dock replaced.
+  const manyWidest=Math.round(Math.max(...chips().map(c=>c.getBoundingClientRect().width))*10)/10;
+  await frame();
+  for(const entry of await window.RefBoardAPI.getRecentWorks()){
+    try{ await window.RefBoardAPI.removeRecentWork(entry.path); }catch(e){}
+  }
+  for(let i=2;i>=0;i--){
+    await window.RefBoardAPI.addRecentWork({
+      path:'C:/DockSmoke/few-'+i+'.refboard', title:'Few board '+i,
+      itemCount:3+i, generateThumbnail:false,
+      lastOpened:Date.now()-i*3600000, lastEdited:Date.now()-i*3600000,
+    });
+  }
+  await window.RefBoard.renderRecentWorksForTest();
+  await wait(450); await frame();
+  const fewCount=chips().length;
+  const fewWidest=Math.round(Math.max(...chips().map(c=>c.getBoundingClientRect().width))*10)/10;
+
   return {chipCount,cardCount,initialRaised,initialActive,restRaised,restActive,restTransforms,hoverNear,peak,reached,
           monotoneLeft,monotoneRight,glowMoved,afterClickActive,afterClickRaised,
-          wheelSteps,backActive,backRaised,peakNear,headroom,dockHeight,hintVisible};
+          wheelSteps,backActive,backRaised,peakNear,headroom,dockHeight,hintVisible,
+          manyWidest,fewCount,fewWidest};
 })()`;
 
 try {
@@ -211,6 +232,12 @@ try {
   assert.ok(r.headroom >= 2,
     `a chip at full lift must keep clear air under the counter and hint, but the gap is ${r.headroom}px `+
     `(dock reserves ${r.dockHeight}px, hint shown: ${r.hintVisible})`);
+
+  // A chip must stay a chip whatever the board count.
+  assert.equal(r.fewCount, 3, `expected three chips after reseeding (got ${r.fewCount})`);
+  assert.ok(r.fewWidest <= 26,
+    `with three boards a chip must stay chip-sized rather than fill the row: widest ${r.fewWidest}px `
+    + `(at ${BOARDS} boards it was ${r.manyWidest}px)`);
 
   console.log('focus dock Electron smoke passed');
 } finally {
