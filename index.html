@@ -13099,6 +13099,9 @@ function renderFocusDock() {
     chip.classList.toggle('is-past', i < focusFlowIndex);
     chip.title = focusFlowEntries[i]?.title || '';
   }
+  /* The classes say which chip is current; the lift is an inline transform,
+     and without this the board you stepped away from stays standing up. */
+  scheduleFocusDockPaint();
 }
 
 /* How far the cursor's influence reaches, and how much it lifts a chip. Tuned
@@ -13122,28 +13125,33 @@ function paintFocusDock() {
   const dock = $('#focusDock');
   if (!row || !dock) return;
   const chips = row.children;
-  const dockRect = dock.getBoundingClientRect();
+
+  /* Every rect is read before any style is written. Interleaving them would
+     force a layout flush per chip, since a rect read after a transform write
+     cannot be answered from the last frame. scaleY and translateY leave the
+     horizontal centre alone, so measuring mid-hover is still correct. */
+  const near = new Array(chips.length);
+  if (focusDockCursor !== null) {
+    const dockRect = dock.getBoundingClientRect();
+    for (let i = 0; i < chips.length; i++) {
+      const rect = chips[i].getBoundingClientRect();
+      const centre = rect.left + rect.width / 2 - dockRect.left;
+      const d = (centre - focusDockCursor) / FF_DOCK_REACH;
+      // A gaussian falloff: the chip under the cursor rises fully, its
+      // neighbours follow smoothly, and the rest of the row stays still.
+      near[i] = Math.exp(-d * d);
+    }
+  } else {
+    near.fill(0);
+  }
 
   for (let i = 0; i < chips.length; i++) {
     const chip = chips[i];
-    if (focusDockCursor === null) {
-      const isActive = i === focusFlowIndex;
-      chip.style.transform = isActive
-        ? 'translate3d(0,' + (-FF_ACTIVE_LIFT) + 'px,0) scaleY(' + (1 + FF_ACTIVE_GROW) + ')'
-        : 'translate3d(0,0,0) scaleY(1)';
-      chip.style.setProperty('--near', '0');
-      continue;
-    }
-    const rect = chip.getBoundingClientRect();
-    const centre = rect.left + rect.width / 2 - dockRect.left;
-    const d = (centre - focusDockCursor) / FF_DOCK_REACH;
-    // A gaussian falloff: the chip under the cursor rises fully, its
-    // neighbours follow smoothly, and the rest of the row stays still.
-    const near = Math.exp(-d * d);
-    const lift = FF_DOCK_LIFT * near + FF_ACTIVE_LIFT * (i === focusFlowIndex ? 1 : 0);
-    const grow = 1 + (FF_DOCK_GROW - 1) * near + (i === focusFlowIndex ? FF_ACTIVE_GROW : 0);
+    const isActive = i === focusFlowIndex;
+    const lift = FF_DOCK_LIFT * near[i] + FF_ACTIVE_LIFT * (isActive ? 1 : 0);
+    const grow = 1 + (FF_DOCK_GROW - 1) * near[i] + (isActive ? FF_ACTIVE_GROW : 0);
     chip.style.transform = 'translate3d(0,' + (-lift) + 'px,0) scaleY(' + grow + ')';
-    chip.style.setProperty('--near', near.toFixed(3));
+    chip.style.setProperty('--near', near[i].toFixed(3));
   }
 
   if (glow && focusDockCursor !== null) {
