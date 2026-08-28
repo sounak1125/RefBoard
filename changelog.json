@@ -617,5 +617,24 @@
         }
       ]
     }
+  },
+  "2.0.10": {
+    "headline": "Every board on a dock, lit under your cursor",
+    "summary": "The carousel's progress bar is now a dock with one chip per board — the row lights up under the pointer, and a click on any chip goes straight to that board. On a short window, a card no longer prints across the counter beneath it.",
+    "sections": {
+      "new": [
+        {
+          "title": "Jump to any board from the dock",
+          "description": "Under the carousel there is now one chip per board instead of a progress bar. Move the pointer along the row and the chips rise to meet it — the one beneath the cursor fully, its neighbours less, the rest of the row still — with a pool of light following underneath. Clicking a chip goes straight to that board, which previously meant stepping through everything in between. The board you are on stands proud of the row whether or not the pointer is anywhere near it, so a glance tells you where you are."
+        }
+      ],
+      "improved": [],
+      "fixed": [
+        {
+          "title": "A card no longer prints over the counter on a short window",
+          "description": "On a window around 700 pixels tall or less, the centred card kept the height its width implied and overflowed the space it was given, printing across the position counter and the hint below it — a 46 pixel overlap on a 560 pixel tall window. The card is now capped by the room actually available and the thumbnail gives up the difference, so the board title, the counter and the hint stay readable however short the window gets. A normal sized window is unchanged."
+        }
+      ]
+    }
   }
 }
