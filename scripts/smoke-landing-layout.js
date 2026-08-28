@@ -147,6 +147,43 @@ async function run() {
   await win.webContents.executeJavaScript("Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 }); window.dispatchEvent(new Event('resize'))");
   await delay(80);
 
+  // A real resize, not a faked innerWidth: only an actual window tells the
+  // height media queries and the flex column the truth. The card used to keep
+  // its width-derived height on a short window and print over the counter.
+  smokeStep = 'short window';
+  const shortWindow = {};
+  for (const height of [700, 620, 560]) {
+    win.setContentSize(1440, height);
+    await delay(320);
+    shortWindow[height] = await win.webContents.executeJavaScript(`(() => {
+      const card = document.querySelector('#focusTrack .ff-card.is-active');
+      const footer = document.querySelector('.ff-footer');
+      const stage = document.querySelector('#focusStage');
+      const meta = card.querySelector('.rw-meta');
+      const round = n => Math.round(n * 10) / 10;
+      return {
+        cardVsFooter: round(footer.getBoundingClientRect().top - card.getBoundingClientRect().bottom),
+        cardVsStage: round(stage.getBoundingClientRect().bottom - card.getBoundingClientRect().bottom),
+        metaHeight: round(meta.getBoundingClientRect().height),
+        titleVisible: card.querySelector('.rw-title').getBoundingClientRect().height > 0,
+      };
+    })()`);
+  }
+  win.setContentSize(1440, 900);
+  await delay(320);
+  for (const [height, state] of Object.entries(shortWindow)) {
+    // Flush is a pass; overlapping is not. The card gives up thumbnail height
+    // rather than the counter giving up its row.
+    if (state.cardVsFooter < 0 || state.cardVsStage < 0) {
+      throw new Error(`Card overflows its stage at ${height}px tall: ${JSON.stringify(state)}`);
+    }
+    // The title block must survive the squeeze - it is the part that says which
+    // board you are looking at.
+    if (!state.titleVisible || state.metaHeight < 30) {
+      throw new Error(`Card meta collapsed at ${height}px tall: ${JSON.stringify(state)}`);
+    }
+  }
+
   smokeStep = 'custom Settings dropdown';
   await win.webContents.executeJavaScript(`
     (() => {

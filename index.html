@@ -1366,6 +1366,11 @@ body.board-active #recentWorks{ display:none; }
   --ff-offset:0; --ff-scale:1; --ff-brightness:1; --ff-saturation:1;
   position:absolute; left:50%; top:50%;
   width:clamp(272px, 27vw, 428px);
+  /* Width sets the size until height runs out. On a short window the card used
+     to keep its width-derived height and simply overflow the stage, printing
+     over the counter below it; capped here, the thumbnail gives up the
+     difference. */
+  display:flex; flex-direction:column; max-height:100%;
   padding:8px; border-radius:18px;
   color:var(--txt); text-align:left; cursor:pointer;
   background:color-mix(in srgb, var(--card) 97%, #fff 3%);
@@ -1400,7 +1405,12 @@ body.board-active #recentWorks{ display:none; }
   border-color:rgba(255,255,255,.055);
   background:var(--surface-2);
   box-shadow:0 1px 0 rgba(255,255,255,.035) inset;
+  /* Shrink but never grow: 4/3 still decides the size whenever there is room,
+     so nothing moves at a normal window. The image is object-fit:contain, so
+     a squeezed box letterboxes rather than distorting. */
+  flex:0 1 auto; min-height:0;
 }
+.ff-card .rw-meta{ flex:0 0 auto; }
 .ff-card .rw-thumb img{ object-fit:contain; }
 .ff-card .rw-meta{
   display:flex; align-items:center; justify-content:space-between; gap:18px;
@@ -1448,7 +1458,10 @@ body.board-active #recentWorks{ display:none; }
 .ff-arrow:disabled{ opacity:.18; cursor:default; }
 .ff-footer{
   position:relative; z-index:80; flex:0 0 auto;
-  align-self:center; margin-bottom:4px;
+  /* The top margin is the card's breathing room: the stage takes what is left,
+     so on a short window the card shrinks by this much rather than sitting
+     flush against the counter. */
+  align-self:center; margin:8px 0 4px;
   width:min(520px, calc(100vw - 64px));
   display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px 18px;
 }
