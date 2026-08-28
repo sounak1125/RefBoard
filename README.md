@@ -30,7 +30,15 @@ Do not create releases by pushing a `v*` tag — that Actions path is unreliable
 ### Shipping a new version
 
 1. Edit the app (`index.html`, etc.).
-2. Bump `"version"` in `package.json` (e.g. `1.0.0` → `1.1.0`).
+2. Bump `"version"` to the same number in **both** `package.json` and
+   `bootstrapper/package.json`.
+
+   The bootstrapper names its output from its *own* version
+   (`artifactName: RefBoard-Installer-${version}.exe`), while `release:ship` reads the
+   root version and looks for `RefBoard-Installer-<root version>.exe`. Leave the two
+   apart and step 5 builds the installer under the old name, `release:ship` cannot find
+   it, and the release ships with no installer at all. That is a **warning, not an
+   error** — the upload succeeds and the missing installer is easy to miss.
 3. Replace the contents of `release-highlights.json` with the release headline, summary, and categorized changes. Use this format every time:
 
 ```json
@@ -88,13 +96,14 @@ npm run dist
 ```powershell
 Get-Content dist\latest.yml -TotalCount 1
 ```
-5. Refresh the bootstrapper payload and build it. `release:ship` uploads
-   `RefBoard-Installer-<ver>.exe` alongside the setup, and the payload does not
-   update itself — a stale one ships the previous version inside a correctly
-   named installer:
+5. Refresh the bootstrapper payload and build it. This needs
+   `bootstrapper/package.json` already bumped in step 2, or the output carries the
+   previous version's name. `release:ship` uploads `RefBoard-Installer-<ver>.exe`
+   alongside the setup, and the payload does not update itself — a stale one ships
+   the previous version inside a correctly named installer:
 
 ```powershell
-Copy-Item dist\RefBoard-Setup-1.0.3.exe bootstrapper\payload\RefBoard-Setup.exe -Force
+Copy-Item dist\RefBoard-Setup-2.0.9.exe bootstrapper\payload\RefBoard-Setup.exe -Force
 Push-Location bootstrapper; npm run dist; Pop-Location
 ```
 
@@ -102,7 +111,7 @@ Push-Location bootstrapper; npm run dist; Pop-Location
    Confirm the payload matches the setup you just built:
 
 ```powershell
-(Get-FileHash dist\RefBoard-Setup-1.0.3.exe).Hash -eq (Get-FileHash bootstrapper\payload\RefBoard-Setup.exe).Hash
+(Get-FileHash dist\RefBoard-Setup-2.0.9.exe).Hash -eq (Get-FileHash bootstrapper\payload\RefBoard-Setup.exe).Hash
 ```
 6. Create a **draft** GitHub release and upload auto-update assets (`latest.yml`, setup `.exe`, `.blockmap`):
 
