@@ -1465,51 +1465,63 @@ body.board-active #recentWorks{ display:none; }
   overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
 }
 
-/* A hairline rail with a lit capsule travelling along it. The capsule moves on
-   transform, which the compositor can carry on its own — the previous strip
-   animated flex-grow, so every step relaid out the whole row and never felt
-   smooth however the easing was tuned. The rail stays almost invisible until
-   the pointer is near it, then the per-board marks fade up underneath. */
-.ff-rail{
+/* One chip per board, magnifying under the cursor like a dock, with a light
+   that follows the pointer along the row. Everything that moves is transform
+   and opacity, so the whole effect stays on the compositor. */
+.ff-dock{
   grid-column:1 / -1; position:relative;
-  height:18px; cursor:pointer; isolation:isolate;
+  height:46px; display:flex; align-items:flex-end; justify-content:center;
+  isolation:isolate;
 }
-.ff-rail-line{
-  position:absolute; left:0; right:0; top:50%; height:1px; margin-top:-.5px;
-  border-radius:999px; background:rgba(255,255,255,.075);
-  transition:height .34s cubic-bezier(.16,1,.3,1), background .34s ease, margin-top .34s cubic-bezier(.16,1,.3,1);
+/* The light itself: a soft pool that tracks the cursor and fades out when the
+   pointer leaves, so the row is dark and quiet at rest. */
+.ff-dock-glow{
+  position:absolute; bottom:-14px; left:0; width:190px; height:64px;
+  border-radius:50%; pointer-events:none; opacity:0;
+  background:radial-gradient(closest-side,
+    color-mix(in srgb, var(--acc) 58%, transparent), transparent 74%);
+  filter:blur(13px);
+  transform:translate3d(0,0,0);
+  transition:opacity .42s ease;
+  will-change:transform, opacity;
 }
-.ff-rail:hover .ff-rail-line{ height:2px; margin-top:-1px; background:rgba(255,255,255,.12); }
+.ff-dock:hover .ff-dock-glow{ opacity:1; }
 
-.ff-rail-marks{ position:absolute; inset:0; }
-.ff-rail-mark{
-  position:absolute; top:50%; width:1px; height:6px; margin-top:-3px;
-  border-radius:1px; background:rgba(255,255,255,.28);
-  opacity:0; transform:scaleY(.4);
-  transition:opacity .38s ease, transform .38s cubic-bezier(.16,1,.3,1);
+.ff-dock-row{
+  position:relative; display:flex; align-items:flex-end;
+  gap:clamp(3px, .8%, 7px); width:100%; height:20px;
 }
-.ff-rail:hover .ff-rail-mark{ opacity:1; transform:scaleY(1); }
-
-.ff-rail-thumb{
-  position:absolute; top:50%; left:0; height:3px; margin-top:-1.5px;
-  border-radius:999px; pointer-events:none;
-  background:linear-gradient(90deg,
-    color-mix(in srgb, var(--acc) 30%, transparent),
-    var(--acc) 62%,
-    color-mix(in srgb, #fff 34%, var(--acc)));
-  box-shadow:
-    0 0 22px color-mix(in srgb, var(--acc) 46%, transparent),
-    0 0 6px color-mix(in srgb, var(--acc) 72%, transparent);
-  /* A long, heavily-eased glide is what reads as premium here; the overshoot-free
-     curve keeps it calm rather than springy. */
-  transition:
-    transform .62s cubic-bezier(.16,1,.3,1),
-    width .46s cubic-bezier(.16,1,.3,1),
-    height .3s ease, margin-top .3s ease;
+.ff-chip{
+  flex:1 1 0; min-width:0; height:100%; padding:0; border:0;
+  border-radius:3px; cursor:pointer;
+  /* A top-lit face rather than a flat fill: it reads as an object catching
+     light, which is what makes the row respond rather than just change colour. */
+  background:linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
+  transform-origin:50% 100%;
+  transform:translate3d(0,0,0) scaleY(1);
+  box-shadow:0 0 0 0 transparent;
+  transition:background .3s ease, box-shadow .3s ease;
   will-change:transform;
 }
-.ff-rail:hover .ff-rail-thumb{ height:5px; margin-top:-2.5px; }
-.ff-stage.dragging ~ .ff-footer .ff-rail-thumb{ transition-duration:.1s, .1s, .2s, .2s; }
+.ff-chip.is-past{ background:linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.13)); }
+/* The lit one. The bloom rides a custom property so the pointer can push it
+   brighter without touching any other declaration. */
+.ff-chip.is-active{
+  background:linear-gradient(180deg,
+    color-mix(in srgb, #fff 62%, var(--acc)), var(--acc) 62%,
+    color-mix(in srgb, var(--acc) 80%, #000));
+  box-shadow:
+    0 0 calc(26px + var(--near, 0) * 22px) color-mix(in srgb, var(--acc) 70%, transparent),
+    0 0 calc(9px + var(--near, 0) * 10px) color-mix(in srgb, var(--acc) 92%, transparent),
+    0 0 2px color-mix(in srgb, #fff 70%, transparent);
+}
+.ff-chip:not(.is-active){
+  filter:brightness(calc(1 + var(--near, 0) * 1.35));
+}
+.ff-chip:focus-visible{ outline:2px solid var(--acc); outline-offset:3px; }
+/* Leaving the row settles every chip back together rather than one by one. */
+.ff-dock:not(:hover) .ff-chip{ transition:transform .5s cubic-bezier(.16,1,.3,1), background .3s ease, box-shadow .3s ease, filter .3s ease; }
+
 
 @media (max-width:720px){
   #recentWorks.layout-focus .rw-inner{ padding-top:22px; }
@@ -1534,7 +1546,7 @@ body.board-active #recentWorks{ display:none; }
   .ff-stage{ min-height:320px; }
 }
 @media (prefers-reduced-motion:reduce){
-  .ff-card, .ff-rail-thumb, .ff-rail-mark, .ff-rail-line{ transition-duration:.01ms !important; }
+  .ff-card, .ff-chip, .ff-dock-glow{ transition-duration:.01ms !important; }
 }
 
 /* ---------- what's new (landing) ---------- */
@@ -2706,10 +2718,9 @@ body.board-active #whatsNewNotice{ display:none; }
       <div class="ff-footer">
         <div class="ff-position" id="focusPosition" aria-live="polite"></div>
         <div class="ff-hint">Scroll, drag, or use arrow keys</div>
-        <div class="ff-rail" id="focusRail" aria-hidden="true">
-          <span class="ff-rail-line"></span>
-          <span class="ff-rail-marks" id="focusRailMarks"></span>
-          <span class="ff-rail-thumb" id="focusRailThumb"></span>
+        <div class="ff-dock" id="focusDock" aria-hidden="true">
+          <span class="ff-dock-glow" id="focusDockGlow"></span>
+          <div class="ff-dock-row" id="focusDockRow"></div>
         </div>
       </div>
     </section>
@@ -13031,7 +13042,7 @@ function syncFocusFlowUi(opts = {}) {
   $('#focusPrev').disabled = focusFlowIndex === 0;
   $('#focusNext').disabled = focusFlowIndex === focusFlowEntries.length - 1;
   renderFocusPosition(active);
-  renderFocusRail();
+  renderFocusDock();
   if (opts.focusCard) activeCard?.focus({ preventScroll: true });
 }
 
@@ -13063,55 +13074,98 @@ function renderFocusPosition(active) {
   el.append(index, totalEl, title, spoken);
 }
 
-/* The capsule is placed in pixels rather than percentages so its travel and the
-   marks underneath share one set of numbers and always line up. Measured once
-   per move, not per frame — the glide itself is the compositor's job. */
-const FF_THUMB_MIN = 34;
-
-function renderFocusRail() {
-  const rail = $('#focusRail');
-  const thumb = $('#focusRailThumb');
-  const marks = $('#focusRailMarks');
-  if (!rail || !thumb || !marks) return;
+/* Chips are rebuilt only when the number of boards changes; stepping between
+   them moves two classes. The magnification is separate and never touches the
+   DOM structure at all. */
+function renderFocusDock() {
+  const row = $('#focusDockRow');
+  if (!row) return;
   const total = focusFlowEntries.length;
-  if (!total) { thumb.style.width = '0'; marks.textContent = ''; return; }
-
-  const railWidth = rail.clientWidth;
-  if (!railWidth) return;                       // laid out but not measured yet
-  const width = total > 1
-    ? Math.max(FF_THUMB_MIN, railWidth / total)
-    : railWidth;
-  const travel = Math.max(0, railWidth - width);
-  const step = total > 1 ? travel / (total - 1) : 0;
-
-  thumb.style.width = width + 'px';
-  thumb.style.transform = 'translate3d(' + (focusFlowIndex * step) + 'px,0,0)';
-
-  // Marks sit where the capsule's centre comes to rest, so hovering the rail
-  // shows exactly where each board is rather than an evenly-spaced guess.
-  if (marks.children.length !== total) {
-    marks.textContent = '';
+  if (row.children.length !== total) {
+    row.textContent = '';
     for (let i = 0; i < total; i++) {
-      const mark = document.createElement('span');
-      mark.className = 'ff-rail-mark';
-      marks.appendChild(mark);
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'ff-chip';
+      chip.tabIndex = -1;                     // the stage owns keyboard travel
+      chip.addEventListener('click', e => { e.stopPropagation(); setFocusFlowIndex(i); });
+      row.appendChild(chip);
     }
   }
   for (let i = 0; i < total; i++) {
-    const mark = marks.children[i];
-    if (mark) mark.style.left = (width / 2 + i * step) + 'px';
+    const chip = row.children[i];
+    if (!chip) continue;
+    chip.classList.toggle('is-active', i === focusFlowIndex);
+    chip.classList.toggle('is-past', i < focusFlowIndex);
+    chip.title = focusFlowEntries[i]?.title || '';
   }
 }
 
-function bindFocusRail() {
-  const rail = $('#focusRail');
-  if (!rail) return;
-  rail.addEventListener('click', e => {
-    const total = focusFlowEntries.length;
-    if (total < 2) return;
-    const rect = rail.getBoundingClientRect();
-    const ratio = clamp((e.clientX - rect.left) / Math.max(1, rect.width), 0, 1);
-    setFocusFlowIndex(Math.round(ratio * (total - 1)));
+/* How far the cursor's influence reaches, and how much it lifts a chip. Tuned
+   so three or four chips respond rather than the whole row heaving. */
+const FF_DOCK_REACH = 78;
+const FF_DOCK_LIFT = 13;
+const FF_DOCK_GROW = 1.9;
+/* The board you are on stands proud of the row whether or not a pointer is
+   anywhere near it — otherwise the row reads as flat until you touch it. */
+const FF_ACTIVE_LIFT = 5;
+const FF_ACTIVE_GROW = 0.55;
+let focusDockFrame = 0;
+let focusDockCursor = null;
+
+/* Runs on an animation frame while the pointer is over the row. Only transform,
+   opacity and a custom property are touched, so nothing here causes layout. */
+function paintFocusDock() {
+  focusDockFrame = 0;
+  const row = $('#focusDockRow');
+  const glow = $('#focusDockGlow');
+  const dock = $('#focusDock');
+  if (!row || !dock) return;
+  const chips = row.children;
+  const dockRect = dock.getBoundingClientRect();
+
+  for (let i = 0; i < chips.length; i++) {
+    const chip = chips[i];
+    if (focusDockCursor === null) {
+      const isActive = i === focusFlowIndex;
+      chip.style.transform = isActive
+        ? 'translate3d(0,' + (-FF_ACTIVE_LIFT) + 'px,0) scaleY(' + (1 + FF_ACTIVE_GROW) + ')'
+        : 'translate3d(0,0,0) scaleY(1)';
+      chip.style.setProperty('--near', '0');
+      continue;
+    }
+    const rect = chip.getBoundingClientRect();
+    const centre = rect.left + rect.width / 2 - dockRect.left;
+    const d = (centre - focusDockCursor) / FF_DOCK_REACH;
+    // A gaussian falloff: the chip under the cursor rises fully, its
+    // neighbours follow smoothly, and the rest of the row stays still.
+    const near = Math.exp(-d * d);
+    const lift = FF_DOCK_LIFT * near + FF_ACTIVE_LIFT * (i === focusFlowIndex ? 1 : 0);
+    const grow = 1 + (FF_DOCK_GROW - 1) * near + (i === focusFlowIndex ? FF_ACTIVE_GROW : 0);
+    chip.style.transform = 'translate3d(0,' + (-lift) + 'px,0) scaleY(' + grow + ')';
+    chip.style.setProperty('--near', near.toFixed(3));
+  }
+
+  if (glow && focusDockCursor !== null) {
+    glow.style.transform = 'translate3d(' + (focusDockCursor - 95) + 'px,0,0)';
+  }
+}
+
+function scheduleFocusDockPaint() {
+  if (focusDockFrame) return;
+  focusDockFrame = requestAnimationFrame(paintFocusDock);
+}
+
+function bindFocusDock() {
+  const dock = $('#focusDock');
+  if (!dock) return;
+  dock.addEventListener('pointermove', e => {
+    focusDockCursor = e.clientX - dock.getBoundingClientRect().left;
+    scheduleFocusDockPaint();
+  });
+  dock.addEventListener('pointerleave', () => {
+    focusDockCursor = null;
+    scheduleFocusDockPaint();
   });
 }
 
@@ -13228,7 +13282,7 @@ function wireFocusFlowControls() {
   const recentWorks = $('#recentWorks');
   if (!stage || !recentWorks) return;
 
-  bindFocusRail();
+  bindFocusDock();
   $('#focusPrev').addEventListener('click', e => {
     e.stopPropagation();
     setFocusFlowIndex(focusFlowIndex - 1);
