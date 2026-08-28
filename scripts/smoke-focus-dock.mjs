@@ -180,6 +180,18 @@ const smokeExpression = `(async()=>{
   const rules=[...document.styleSheets].flatMap(sheet=>{
     try{ return [...sheet.cssRules]; }catch(e){ return []; }
   }).filter(rule=>rule.selectorText);
+
+  // A card's resting background is a gradient. Every rule that repaints it on
+  // hover has to be one too: a flat colour sets background-image to none, and
+  // a gradient cannot interpolate to none, so it snaps. Scrolling moves hover
+  // from card to card, so one flat rule makes the whole row pop per step.
+  const cardBackgrounds=rules
+    .filter(rule=>/\.ff-card[^,{]*:hover/.test(rule.selectorText) || rule.selectorText.trim()==='.ff-card')
+    .map(rule=>({ selector:rule.selectorText, background:rule.style.background||rule.style.backgroundImage||'' }))
+    .filter(entry=>entry.background);
+  const flatCardBackgrounds=cardBackgrounds
+    .filter(entry=>!entry.background.includes('gradient'))
+    .map(entry=>entry.selector);
   const guardIndex=rules.findIndex(rule=>rule.selectorText.includes('.ff-stage.is-stepping')
     && rule.selectorText.includes('.rw-card-clear'));
   const hoverIndex=rules.findIndex(rule=>rule.selectorText.includes('.ff-card:hover')
@@ -215,7 +227,8 @@ const smokeExpression = `(async()=>{
           monotoneLeft,monotoneRight,glowMoved,afterClickActive,afterClickRaised,
           wheelSteps,backActive,backRaised,peakNear,headroom,dockHeight,hintVisible,
           manyWidest,fewCount,fewWidest,
-          marksWhileStepping,clearsWhenSettled,guardSelector,guardOutranksHover};
+          marksWhileStepping,clearsWhenSettled,guardSelector,guardOutranksHover,
+          cardBackgrounds,flatCardBackgrounds};
 })()`;
 
 try {
@@ -265,6 +278,12 @@ try {
   assert.ok(r.guardSelector, 'the stepping guard rule must exist in the sheet');
   assert.equal(r.guardOutranksHover, true,
     `the stepping guard must outrank the hover reveal that follows it: ${r.guardSelector}`);
+
+  assert.ok(r.cardBackgrounds.length >= 2,
+    `expected the card background rules to be found (got ${JSON.stringify(r.cardBackgrounds)})`);
+  assert.deepEqual(r.flatCardBackgrounds, [],
+    'a card background that changes on hover must stay a gradient; a flat colour sets '
+    + 'background-image to none, which cannot interpolate and snaps on every scroll step');
 
   // A chip must stay a chip whatever the board count.
   assert.equal(r.fewCount, 3, `expected three chips after reseeding (got ${r.fewCount})`);

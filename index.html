@@ -1570,7 +1570,9 @@ body.board-active #recentWorks{ display:none; }
   opacity:0; transition:none;
 }
 .ff-stage.is-stepping .ff-card.is-active:hover{
-  background:color-mix(in srgb, var(--card) 97%, #fff 3%);
+  /* Exactly the resting gradient, so a card the cursor happens to be over
+     while the row moves looks like every other card and nothing pops. */
+  background:linear-gradient(155deg, color-mix(in srgb, var(--card) 93%, #fff 7%), color-mix(in srgb, var(--card) 96%, #000 4%));
 }
 .ff-stage.dragging .ff-card{
   transition:transform .08s linear, opacity .16s ease, filter .16s ease, visibility .16s,
@@ -1585,8 +1587,14 @@ body.board-active #recentWorks{ display:none; }
     0 26px 72px color-mix(in srgb, var(--acc) 13%, transparent);
 }
 .ff-card.is-active::before{ opacity:.75; }
+/* A gradient, matching the base stop for stop, because the card's resting
+   background is one. A flat colour here sets background-image to none, and no
+   browser can interpolate a gradient to none - it snaps. Scrolling with the
+   pointer over the row moves hover from card to card, so that snap fired on
+   every step and read as the row glitching. Same stops, same angle, only the
+   colours differ, so this one actually animates. */
 .ff-card.is-active:hover{
-  background:color-mix(in srgb, var(--card) 94%, #fff 6%);
+  background:linear-gradient(155deg, color-mix(in srgb, var(--card) 88%, #fff 12%), color-mix(in srgb, var(--card) 97%, #000 3%));
 }
 .ff-card:focus-visible{ outline:2px solid var(--acc); outline-offset:4px; }
 .ff-card .rw-thumb{
