@@ -13,6 +13,7 @@ const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-for
 const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 const zorder = require('./scripts/win32-zorder');
 const { refreshShellIcons } = require('./scripts/win32-shell-notify');
+const { capRecentWorks, pinsRemaining, sortRecentWorks } = require('./scripts/recent-works');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -159,8 +160,6 @@ function listPinWindows(win) {
   if (ours) skip.push(ours);
   return zorder.listWindows(skip);
 }
-
-const MAX_RECENT = 24;
 
 function recentWorksPath() {
   return path.join(app.getPath('userData'), 'recent-works.json');
@@ -703,7 +702,9 @@ function setupIpc() {
     for (const work of list) {
       if (work?.path) await recoverBoardFileIfMissing(work.path).catch(() => {});
     }
-    return list;
+    // Sorted on the way out rather than on disk: the file stays a plain history,
+    // and every reader gets pins first without having to know to ask.
+    return sortRecentWorks(list);
   });
 
   ipcMain.handle('add-recent-work', async (_, entry) => {
@@ -744,14 +745,19 @@ function setupIpc() {
       itemCount: entry.itemCount || 0,
       lastOpened: now,
       lastEdited,
+      // Carried over deliberately: the entry is rebuilt from scratch on every
+      // open, so anything not restored here is lost by simply using the board.
+      pinned: entry.pinned != null ? !!entry.pinned : !!existing?.pinned,
     });
-    const kept = new Set(list.slice(0, MAX_RECENT).map(w => w.thumbnail).filter(Boolean));
-    for (const w of list.slice(MAX_RECENT)) {
-      if (w.thumbnail && !kept.has(w.thumbnail)) {
+    const capped = capRecentWorks(list);
+    // A thumbnail is shared by id, so only unlink one nothing kept still points at.
+    const keptThumbs = new Set(capped.kept.map(w => w.thumbnail).filter(Boolean));
+    for (const w of capped.dropped) {
+      if (w.thumbnail && !keptThumbs.has(w.thumbnail)) {
         await fs.unlink(path.join(thumbnailsDir(), w.thumbnail)).catch(() => {});
       }
     }
-    list = list.slice(0, MAX_RECENT);
+    list = capped.kept;
     await saveRecentWorks(list);
     return list;
   });
@@ -768,6 +774,23 @@ function setupIpc() {
     }
     await saveRecentWorks(list);
     return list;
+  });
+
+  ipcMain.handle('set-recent-work-pinned', async (_, { filePath, pinned } = {}) => {
+    if (!filePath) return loadRecentWorks();
+    const resolved = path.resolve(String(filePath));
+    const id = recentIdForPath(resolved);
+    const list = await loadRecentWorks();
+    const index = list.findIndex(w => w.id === id || path.resolve(w.path) === resolved);
+    if (index === -1) return list;
+    const want = !!pinned;
+    // A backstop, not the message: the landing checks the limit first so it can
+    // say why. Refusing here keeps two windows from pinning past it at once.
+    if (want && !list[index].pinned && pinsRemaining(list) === 0) return list;
+    list[index] = { ...list[index], pinned: want };
+    const capped = capRecentWorks(list);
+    await saveRecentWorks(capped.kept);
+    return capped.kept;
   });
 
   ipcMain.handle('rename-recent-work', async (_, { filePath, name } = {}) => {
@@ -849,7 +872,7 @@ function setupIpc() {
     } else {
       list[idx] = { ...list[idx], lastEdited: now };
     }
-    list = list.slice(0, MAX_RECENT);
+    list = capRecentWorks(list).kept;
     await saveRecentWorks(list);
     return list;
   });

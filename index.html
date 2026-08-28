@@ -1053,6 +1053,37 @@ body.board-active #recentWorks{ display:none; }
   backdrop-filter:blur(8px);
   border:1px solid rgba(255,255,255,.06);
 }
+/* Sits beside rename and remove, but behaves differently: the other two are
+   actions you reach for, this one is also a state. An unpinned card hides it
+   like its siblings; a pinned one keeps it lit, because a pin the card does
+   not advertise is a promise nobody can see. */
+.rw-card-pin{
+  position:absolute; top:14px; right:78px; z-index:2;
+  width:26px; height:26px; border-radius:7px;
+  background:var(--panel); color:var(--dim);
+  cursor:pointer;
+  opacity:0; transition:opacity .18s ease, background .18s ease, color .18s ease, border-color .18s ease;
+  display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.06);
+}
+.rw-card-pin svg{ width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+.rw-card:hover .rw-card-pin,
+.ff-card:hover .rw-card-pin,
+.rw-card-pin:focus-visible,
+.rw-card-pin.is-on{ opacity:1; }
+.rw-card-pin:hover,
+.rw-card-pin:focus-visible{ background:var(--surface-2); color:var(--txt); border-color:rgba(255,255,255,.14); }
+.rw-card-pin.is-on{
+  color:var(--acc);
+  border-color:color-mix(in srgb, var(--acc) 42%, transparent);
+  background:color-mix(in srgb, var(--acc) 14%, var(--panel));
+}
+.rw-card-pin.is-on svg{ fill:color-mix(in srgb, var(--acc) 28%, transparent); }
+.ff-card .rw-card-pin{ top:17px; right:85px; }
+/* A pinned board is the one you keep coming back to - the card says so even
+   when the pointer is nowhere near it. */
+.rw-card.is-pinned, .ff-card.is-pinned{ border-color:color-mix(in srgb, var(--acc) 26%, rgba(255,255,255,.085)); }
 .rw-card-rename{
   position:absolute; top:14px; right:46px; z-index:2;
   width:26px; height:26px; border-radius:7px;
@@ -12601,6 +12632,57 @@ function setRwTitleText(el, text, query) {
   }
 }
 
+/* Pins survive the recents cull, so this is the one control on a card that
+   changes whether the board is still here next month. */
+const PIN_LIMIT = 12;
+
+function pinnedCount(list) {
+  return (list || []).filter(work => work?.pinned).length;
+}
+
+async function toggleRecentWorkPin(work) {
+  if (!work?.path || !window.RefBoardAPI?.setRecentWorkPinned) return;
+  const next = !work.pinned;
+  // Read the list rather than trusting the card: another window may have
+  // pinned something since this one rendered.
+  if (next && pinnedCount(await getRecentWorksList()) >= PIN_LIMIT) {
+    toast(`Pinned boards are limited to ${PIN_LIMIT}. Unpin one first.`);
+    return;
+  }
+  try {
+    await window.RefBoardAPI.setRecentWorkPinned(work.path, next);
+  } catch {
+    toast('Could not change the pin');
+    return;
+  }
+  await renderRecentWorks();
+  toast(next ? 'Pinned — kept in Recent Works' : 'Unpinned');
+}
+
+/* Null when there is no main process to ask - a pin that cannot persist is
+   worse than no pin, and the localStorage fallback has nowhere to keep it. */
+function rwPinButton(work, title) {
+  if (!window.RefBoardAPI?.setRecentWorkPinned) return null;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'rw-card-pin';
+  const on = !!work?.pinned;
+  btn.classList.toggle('is-on', on);
+  btn.title = on ? 'Unpin this board' : 'Pin this board so it is always here';
+  btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  btn.setAttribute('aria-label', `${on ? 'Unpin' : 'Pin'} ${title}`);
+  btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true">'
+    + '<path d="M15.5 3.5 20.5 8.5"/>'
+    + '<path d="M14 4 9.6 8.4a4 4 0 0 1-1.9 1L5.2 10a1 1 0 0 0-.5 1.7l7.6 7.6a1 1 0 0 0 1.7-.5l.6-2.5a4 4 0 0 1 1-1.9L20 10z"/>'
+    + '<path d="m9 15-5 5"/></svg>';
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    e.preventDefault();
+    void toggleRecentWorkPin(work);
+  });
+  return btn;
+}
+
 function rwRenameButton(work, title) {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -12934,7 +13016,10 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
     date.className = 'rw-date';
     date.textContent = formatWorkMeta(work);
     meta.append(title, date);
+    card.classList.toggle('is-pinned', !!work.pinned);
+    const pinBtn = rwPinButton(work, cardTitle);
     card.append(rwRenameButton(work, cardTitle), clearBtn, thumb, meta);
+    if (pinBtn) card.appendChild(pinBtn);
     card.addEventListener('click', (e) => {
       if (card.classList.contains('is-renaming') || clickClosedARename()) return;
       openBoardFromPath(work.path);
@@ -13247,6 +13332,9 @@ async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
     } else {
       card.appendChild(rwRenameButton(entry.work || entry, entry.title));
       card.appendChild(focusRemoveButton(entry));
+      const focusPin = rwPinButton(entry.work || entry, entry.title);
+      if (focusPin) card.appendChild(focusPin);
+      card.classList.toggle('is-pinned', !!(entry.work || entry)?.pinned);
       thumbJobs.push(thumbSrcForWork(entry.work, { preferBoardPreview: true }).then(src => {
         if (src && renderSeq === recentWorksRenderSeq && thumb.isConnected) setRwThumbImage(thumb, src);
       }));
