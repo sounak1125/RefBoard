@@ -68,6 +68,11 @@ async function run() {
 
   try {
   smokeStep = 'initial load';
+  /* BrowserWindow's width/height are the outer frame, so the content box comes
+     out smaller - and the short-window step later calls setContentSize, which
+     makes it bigger. Anything compared across those two points is measured at
+     two different sizes. Pin the content box once, up front. */
+  win.setContentSize(1440, 900);
   await win.loadFile(path.join(__dirname, '..', 'index.html'));
   await waitFor(win, "document.querySelector('#recentWorks')", 'initial renderer');
   smokeStep = 'seed local storage';
@@ -98,6 +103,18 @@ async function run() {
        is the thing worth asserting. This used to be a hardcoded count of four
        and went red the day 2.0.8 added the decoded-image-memory setting — a
        tripwire on unrelated work rather than a test of anything. */
+    landingBackdrop: (() => {
+      const el = document.querySelector('#recentWorks');
+      const grid = getComputedStyle(el, '::after');
+      const grain = getComputedStyle(el, '::before');
+      return {
+        isolation: getComputedStyle(el).isolation,
+        gridW: grid.width, gridH: grid.height,
+        gridSize: grid.backgroundSize,
+        gridPos: grid.position,
+        grainZ: grain.zIndex, grainBlend: grain.mixBlendMode,
+      };
+    })(),
     settingsSelects: document.querySelectorAll('.settings2-content select').length,
     settingsUpgraded: document.querySelectorAll('.settings2-content .ui-select').length,
     exportSelects: document.querySelectorAll('#exportImagesModal select').length,
@@ -200,10 +217,29 @@ async function run() {
   fs.writeFileSync(settingsScreenshotPath, settingsPng.toPNG());
   await win.webContents.executeJavaScript("document.querySelector('#uiSelectMenu-setLandingLayout [data-value=\"classic\"]').click()");
   await waitFor(win, "document.querySelectorAll('#recentGrid .rw-card').length === 9", 'Classic Grid cards');
+  /* The section was hidden a few lines up so the Settings screenshot had a
+     clean backdrop, and it was never put back - so every classic-layout
+     assertion below was being made against a section that was not rendered.
+     Anything needing a used value, like a pseudo-element's width, came back
+     'auto'. */
+  await win.webContents.executeJavaScript("document.querySelector('#recentWorks').style.display = ''");
+  await delay(220);
   const classicState = await win.webContents.executeJavaScript(`({
     focusClass: document.querySelector('#recentWorks').classList.contains('layout-focus'),
     flowHidden: getComputedStyle(document.querySelector('#focusFlow')).display === 'none',
     gridHidden: document.querySelector('#recentGrid').hidden,
+    landingBackdrop: (() => {
+      const el = document.querySelector('#recentWorks');
+      const grid = getComputedStyle(el, '::after');
+      const grain = getComputedStyle(el, '::before');
+      return {
+        isolation: getComputedStyle(el).isolation,
+        gridW: grid.width, gridH: grid.height,
+        gridSize: grid.backgroundSize,
+        gridPos: grid.position,
+        grainZ: grain.zIndex, grainBlend: grain.mixBlendMode,
+      };
+    })(),
     savedLayout: JSON.parse(localStorage.getItem('refboard.settings')).landingLayout,
     buttonLabel: document.querySelector('#setLandingLayout').closest('.ui-select').querySelector('.ui-select-button-label').textContent,
     selectedOption: document.querySelector('#uiSelectMenu-setLandingLayout [aria-selected="true"]')?.dataset.value
@@ -212,6 +248,26 @@ async function run() {
       || classicState.savedLayout !== 'classic' || classicState.buttonLabel !== 'Classic Grid'
       || classicState.selectedOption !== 'classic') {
     throw new Error(`Unexpected Classic Grid state: ${JSON.stringify(classicState)}`);
+  }
+
+  /* The landing's backdrop is page furniture: it must not change between
+     layouts. Classic scrolls and carries a scrollbar, which narrowed an
+     absolutely-positioned layer by the scrollbar's width and let it scroll
+     away with the content; and only Focus Flow isolated, so the grain's
+     overlay blend mixed with a different backdrop in each. */
+  smokeStep = 'landing backdrop parity';
+  {
+    const a = focusState.landingBackdrop;
+    const b = classicState.landingBackdrop;
+    for (const key of Object.keys(a)) {
+      if (a[key] !== b[key]) {
+        throw new Error(`Landing backdrop differs between layouts on ${key}: `
+          + `focus=${a[key]} classic=${b[key]}`);
+      }
+    }
+    if (a.gridPos !== 'fixed') {
+      throw new Error(`The landing backdrop must not scroll with the grid (position: ${a.gridPos})`);
+    }
   }
 
   smokeStep = 'Settings label clipping';
