@@ -16,11 +16,32 @@ function extractLocalSpecifiers(source) {
     /\b(?:import|export)\s+[^;]*?\s+from\s*(['"])(\.\.?\/[^'"]+)\1/g,
     /\bimport\s*(['"])(\.\.?\/[^'"]+)\1/g,
     /\bimport\s*\(\s*(['"])(\.\.?\/[^'"]+)\1\s*\)/g,
+    // main.js and preload.js are CommonJS. Without this the guard reads the
+    // renderer's ESM graph and nothing else, which is how 2.0.11 shipped an
+    // asar with no scripts/recent-works.js in it and every test still green.
+    /\brequire\s*\(\s*(['"])(\.\.?\/[^'"]+)\1\s*\)/g,
   ];
   for (const pattern of patterns) {
     for (const match of source.matchAll(pattern)) found.add(match[2]);
   }
   return [...found];
+}
+
+// CommonJS lets you require './scripts/recent-works' with no extension. Resolve
+// it the way Node would; falling back to .js rather than giving up keeps a
+// genuinely absent module visible as MISSING instead of being skipped silently.
+function resolveModuleFile(absolutePath) {
+  if (/\.(?:mjs|cjs|js)$/i.test(absolutePath)) return absolutePath;
+  const candidates = [
+    `${absolutePath}.js`,
+    `${absolutePath}.mjs`,
+    `${absolutePath}.cjs`,
+    path.join(absolutePath, 'index.js'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return `${absolutePath}.js`;
 }
 
 function relativeRuntimePath(absolutePath) {
@@ -46,43 +67,51 @@ function matchesBuildFiles(relativePath, patterns) {
 }
 
 async function main() {
-  const [indexHtml, packageText] = await Promise.all([
-    fsp.readFile(path.join(rootDir, 'index.html'), 'utf8'),
+  // All three entry points, not just the renderer: the main and preload
+  // processes pull their own modules in and they land in the same asar.
+  const entryFiles = ['index.html', 'main.js', 'preload.js'];
+  const [packageText, ...entrySources] = await Promise.all([
     fsp.readFile(path.join(rootDir, 'package.json'), 'utf8'),
+    ...entryFiles.map(name => fsp.readFile(path.join(rootDir, name), 'utf8')),
   ]);
   const packageJson = JSON.parse(packageText);
   const patterns = buildFilePatterns(packageJson?.build?.files);
   if (!patterns.length) throw new Error('package.json > build.files has no usable string patterns');
 
-  const entrySpecifiers = extractLocalSpecifiers(indexHtml)
-    .filter(specifier => normalizePath(specifier).startsWith('scripts/'));
-  const queue = entrySpecifiers.map(specifier => ({
-    absolutePath: path.resolve(rootDir, specifier),
-    importedBy: 'index.html',
-  }));
+  const queue = [];
+  for (const [index, entryFile] of entryFiles.entries()) {
+    for (const specifier of extractLocalSpecifiers(entrySources[index])) {
+      if (!normalizePath(specifier).startsWith('scripts/')) continue;
+      queue.push({
+        absolutePath: path.resolve(rootDir, specifier),
+        importedBy: entryFile,
+      });
+    }
+  }
   const resolvedModules = new Map();
   const unresolved = [];
 
   while (queue.length) {
     const current = queue.shift();
-    const relativePath = relativeRuntimePath(current.absolutePath);
+    const absolutePath = resolveModuleFile(current.absolutePath);
+    const relativePath = relativeRuntimePath(absolutePath);
     if (!relativePath || resolvedModules.has(relativePath)) continue;
-    if (!/\.(?:mjs|js)$/i.test(relativePath)) continue;
+    if (!/\.(?:mjs|cjs|js)$/i.test(relativePath)) continue;
     resolvedModules.set(relativePath, {
-      absolutePath: current.absolutePath,
+      absolutePath,
       importedBy: current.importedBy,
     });
-    if (!fs.existsSync(current.absolutePath)) continue;
+    if (!fs.existsSync(absolutePath)) continue;
     let source;
     try {
-      source = await fsp.readFile(current.absolutePath, 'utf8');
+      source = await fsp.readFile(absolutePath, 'utf8');
     } catch (error) {
       unresolved.push({ relativePath, importedBy: current.importedBy, error });
       continue;
     }
     for (const specifier of extractLocalSpecifiers(source)) {
       queue.push({
-        absolutePath: path.resolve(path.dirname(current.absolutePath), specifier),
+        absolutePath: path.resolve(path.dirname(absolutePath), specifier),
         importedBy: relativePath,
       });
     }

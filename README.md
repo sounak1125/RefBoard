@@ -96,7 +96,9 @@ npm run dist
 ```powershell
 Get-Content dist\latest.yml -TotalCount 1
 ```
-5. Refresh the bootstrapper payload and build it. This needs
+5. Refresh the bootstrapper payload and build it. **Do not skip this on a new
+   version** — step 6 will not do it for you, and says so only in a warning
+   (see the trap below). This needs
    `bootstrapper/package.json` already bumped in step 2, or the output carries the
    previous version's name. `release:ship` uploads `RefBoard-Installer-<ver>.exe`
    alongside the setup, and the payload does not update itself — a stale one ships
@@ -120,20 +122,60 @@ npm run release:ship
 ```
 
    `release:ship` checks that the bootstrapper wraps the setup in `dist/`, and
-   refreshes the payload and rebuilds it when it does not — so step 5 is only
-   needed when you want the installer built before this point. It re-checks the
+   refreshes the payload and rebuilds it when it does not. It re-checks the
    hash after rebuilding and uploads nothing if it still disagrees. Pass
    `-NoBootstrapperRebuild` to make a stale payload an error instead of a
    rebuild, or `-SkipPayloadCheck` to skip the whole thing when re-uploading
    assets for a release whose installer you deliberately are not touching.
 
-   Requires `gh auth login` (repo scope). Review the draft on GitHub, then publish it so installed apps can auto-update:
+   **The trap: that rebuild only fires when `RefBoard-Installer-<ver>.exe`
+   already exists.** The artifact name is version-stamped, so on a version you
+   have not built the bootstrapper for, it never does. `Sync-BootstrapperPayload`
+   warns and returns instead:
+
+```
+WARNING: No RefBoard-Installer-2.0.11.exe built - the bootstrapper will be skipped.
+```
+
+   The other three assets upload, the script prints `Draft release is ready`, and
+   it **exits 0**. Nothing fails. The release just quietly carries no installer —
+   which is what happened cutting 2.0.11 in one pass, with both versions
+   correctly bumped. Step 5 is not optional; a re-run of `release:ship` after
+   building the bootstrapper fixes it, because assets upload with `--clobber`.
+
+   Requires `gh auth login` (repo scope).
+7. Check the draft before you publish it. Confirm it carries **four** assets:
+
+```powershell
+gh release view v2.0.11 --json assets -q '[.assets[].name]'
+```
+
+   Expect `latest.yml`, `RefBoard-Setup-<ver>.exe`, `RefBoard-Setup-<ver>.exe.blockmap`
+   and `RefBoard-Installer-<ver>.exe`. Three means the bootstrapper was skipped.
+
+   Then **install it and launch it.** The suite and CI run against the repo, where
+   every file is present; only the packaged asar can be missing one. RefBoard
+   2.0.11 shipped with `scripts/recent-works.js` left out of `build.files` and
+   died on startup with `Cannot find module './scripts/recent-works'` — 50 green
+   checks, green CI, verified asset hashes, and an app that could not open.
+   `npm test` now walks `main.js` and `preload.js` as well as `index.html`, and
+   matches `require()` as well as `import`, so that particular hole is closed.
+   Launching the build is still the only thing that proves it runs.
+8. Publish, so installed apps can auto-update:
 
 ```powershell
 gh release edit v1.0.3 --draft=false
 ```
 
    (Use your new version tag, e.g. `v1.1.0`.) Do **not** ship by pushing a `v*` tag — the Actions release workflow is unreliable and can break auto-update.
+
+   If you publish something broken, pull `latest.yml` off the release first — that
+   stops auto-update resolving it at all, and clients stay where they are while
+   you build the fix. It is reversible; the file is still in your `dist\`:
+
+```powershell
+gh release delete-asset v2.0.11 latest.yml --yes
+```
 
 ## For you (Sounak)
 
