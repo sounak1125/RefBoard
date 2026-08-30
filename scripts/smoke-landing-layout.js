@@ -210,8 +210,10 @@ async function run() {
       document.querySelector('#setLandingLayout').closest('.ui-select').querySelector('.ui-select-button').click();
     })();
   `);
-  const dropdownOpen = await win.webContents.executeJavaScript("document.querySelector('#uiSelectMenu-setLandingLayout').classList.contains('show')");
-  if (!dropdownOpen) throw new Error('Custom Home layout dropdown did not open');
+  // Read in the same tick as the click, this caught the menu before the class
+  // was on it and failed as "dropdown did not open" on a loaded runner. The
+  // dropdown is the thing under test, so wait for it rather than assume a tick.
+  await waitFor(win, "document.querySelector('#uiSelectMenu-setLandingLayout').classList.contains('show')", 'Custom Home layout dropdown');
   await delay(150);
   const settingsPng = await win.webContents.capturePage();
   fs.writeFileSync(settingsScreenshotPath, settingsPng.toPNG());

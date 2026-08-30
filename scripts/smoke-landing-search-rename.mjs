@@ -74,6 +74,29 @@ const smokeExpression = `(async()=>{
   const input=document.querySelector('#rwSearchInput');
   const type=async v=>{input.value=v;input.dispatchEvent(new Event('input',{bubbles:true}));await wait(220);};
 
+  // A fixed sleep after a rename click is a race: on a loaded runner the field
+  // is not in the DOM yet and the next line dereferences null, which is how
+  // this smoke failed on main with "Cannot set properties of null". Polling is
+  // faster when the field is ready and names what it waited for when it is not.
+  const waitFor=async get=>{
+    for(let attempt=0;attempt<150;attempt++){if(get())return true;await wait(20);}
+    return false;
+  };
+  const waitGone=get=>waitFor(()=>!get());
+  const waitUntil=async(get,label)=>{
+    let value=null;
+    if(!await waitFor(()=>{value=get();return value;}))throw new Error('timed out waiting for '+label);
+    return value;
+  };
+  // A rename moves the file and re-renders, and a flat 700ms was not always
+  // enough on a loaded runner - that is the "rename must take effect" failure.
+  // Returns a boolean so the existing assertions still report what went wrong.
+  const renameLanded=name=>waitFor(()=>[...document.querySelectorAll('#recentGrid .rw-title,#focusTrack .rw-title')].some(el=>el.textContent===name));
+  const openRename=async(cardEl,label)=>{
+    cardEl.querySelector('.rw-card-rename').click();
+    return waitUntil(()=>cardEl.querySelector('.rw-rename-input'),'rename field on '+label);
+  };
+
   const seeded=titles();
   const searchVisible=!document.querySelector('#rwToolrow').hidden;
 
@@ -100,10 +123,8 @@ const smokeExpression = `(async()=>{
 
   // --- rename through the pencil ---
   const card=cardFor('Trip moodboard');
-  card.querySelector('.rw-card-rename').click();
-  await wait(120);
-  const renameField=card.querySelector('.rw-rename-input');
-  const renameOpened=!!renameField&&document.activeElement===renameField;
+  const renameField=await openRename(card,'Trip moodboard');
+  const renameOpened=document.activeElement===renameField;
   const prefilled=renameField?renameField.value:null;
   const pencilHidden=getComputedStyle(card.querySelector('.rw-card-rename')).display==='none';
   const clearHidden=getComputedStyle(card.querySelector('.rw-card-clear')).display==='none';
@@ -111,14 +132,12 @@ const smokeExpression = `(async()=>{
   const cancelVisible=!!card.querySelector('.rw-rename-cancel');
   renameField.value='Iceland trip';
   card.querySelector('.rw-rename-confirm').click();
-  await wait(700);
+  await renameLanded('Iceland trip');
   const afterRename=titles();
 
   // --- a name that collides is refused, and the card keeps its old name ---
   const kitchenCard=cardFor('Kitchen refs');
-  kitchenCard.querySelector('.rw-card-rename').click();
-  await wait(120);
-  const collide=kitchenCard.querySelector('.rw-rename-input');
+  const collide=await openRename(kitchenCard,'Kitchen refs (collision)');
   collide.value='Iceland trip';
   collide.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
   await wait(600);
@@ -127,9 +146,7 @@ const smokeExpression = `(async()=>{
 
   // --- an illegal name is refused too ---
   const badCard=cardFor('Kitchen refs');
-  badCard.querySelector('.rw-card-rename').click();
-  await wait(120);
-  const bad=badCard.querySelector('.rw-rename-input');
+  const bad=await openRename(badCard,'Kitchen refs (illegal name)');
   bad.value='bad/name';
   bad.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
   await wait(600);
@@ -137,37 +154,32 @@ const smokeExpression = `(async()=>{
 
   // --- cancel abandons a rename without touching the file ---
   const cancelCard=cardFor('Lighting study');
-  cancelCard.querySelector('.rw-card-rename').click();
-  await wait(120);
-  const cancelField=cancelCard.querySelector('.rw-rename-input');
+  const cancelField=await openRename(cancelCard,'Lighting study');
   cancelField.value='Should not save';
   cancelCard.querySelector('.rw-rename-cancel').click();
+  const cancelClosedField=await waitGone(()=>cancelCard.querySelector('.rw-rename-input'));
   await wait(300);
   const afterCancel=titles();
-  const cancelClosedField=!cancelCard.querySelector('.rw-rename-input');
   const pencilBack=!!cancelCard.querySelector('.rw-card-rename');
 
   // --- Escape abandons a rename without touching the file ---
   const escCard=cardFor('Character sheet');
-  escCard.querySelector('.rw-card-rename').click();
-  await wait(120);
-  const esc=escCard.querySelector('.rw-rename-input');
+  const esc=await openRename(escCard,'Character sheet');
   esc.value='Should not stick';
   esc.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  const escapeClosedField=await waitGone(()=>escCard.querySelector('.rw-rename-input'));
   await wait(300);
   const afterEscape=titles();
-  const escapeClosedField=!escCard.querySelector('.rw-rename-input');
 
   // --- the click that dismisses a rename must not open the board ---
   const clickCard=cardFor('Character sheet');
-  clickCard.querySelector('.rw-card-rename').click();
-  await wait(120);
+  const dismissField=await openRename(clickCard,'Character sheet (dismiss)');
   // Chromium fires blur only while the document itself has focus, so this leg
   // is meaningless without focus emulation - it would report a rename that
   // never closed when in truth the blur never happened. Recorded so a future
   // failure says which of the two it was.
   const dismissHadFocus=document.hasFocus();
-  clickCard.querySelector('.rw-rename-input').blur();
+  dismissField.blur();
   clickCard.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
   await wait(400);
   const stayedOnHome=!document.body.classList.contains('board-active');
@@ -183,7 +195,7 @@ const smokeExpression = `(async()=>{
   if(keyField){
     keyField.value='Colour script';
     keyField.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
-    await wait(700);
+    await renameLanded('Colour script');
   }
   const afterF2=titles();
 
@@ -206,7 +218,7 @@ const smokeExpression = `(async()=>{
   if(ffField){
     ffField.value='Key light study';
     ffField.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
-    await wait(700);
+    await renameLanded('Key light study');
   }
   await type('key light');
   const ffAfterRename=ffTitle();
