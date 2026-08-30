@@ -1,19 +1,52 @@
 {
- "headline": "Every board on a dock, lit under your cursor",
- "summary": "The carousel's progress bar is now a dock with one chip per board — the row lights up under the pointer, and a click on any chip goes straight to that board. On a short window, a card no longer prints across the counter beneath it.",
- "sections": {
-  "new": [
-   {
-    "title": "Jump to any board from the dock",
-    "description": "Under the carousel there is now one chip per board instead of a progress bar. Move the pointer along the row and the chips rise to meet it — the one beneath the cursor fully, its neighbours less, the rest of the row still — with a pool of light following underneath. Clicking a chip goes straight to that board, which previously meant stepping through everything in between. The board you are on stands proud of the row whether or not the pointer is anywhere near it, so a glance tells you where you are."
-   }
-  ],
-  "improved": [],
-  "fixed": [
-   {
-    "title": "A card no longer prints over the counter on a short window",
-    "description": "On a window around 700 pixels tall or less, the centred card kept the height its width implied and overflowed the space it was given, printing across the position counter and the hint below it — a 46 pixel overlap on a 560 pixel tall window. The card is now capped by the room actually available and the thumbnail gives up the difference, so the board title, the counter and the hint stay readable however short the window gets. A normal sized window is unchanged."
-   }
-  ]
- }
+  "headline": "Pin the boards you live in, on a landing that sits flat",
+  "summary": "A pinned board is exempt from the recent history's 24-slot cap, so the two or three boards you actually work in stop scrolling away. The landing is redrawn on the board canvas's own grid — flat, with the banding, the popping and the seam across the middle gone.",
+  "sections": {
+    "new": [
+      {
+        "title": "Pin a board so the history stops evicting it",
+        "description": "Recents are a history capped at 24 — opening a board puts it at the front and the tail falls off. That is right for a history and wrong for the two or three boards you live in, which scroll off after a busy week with nothing you can do about it. A pinned board is exempt, and pins are kept in addition to the recent slots rather than competing for them, so pinning something never costs you a slot in your history. Pins lead the landing in both layouts and the card stays marked whether or not a pointer is near it. Twelve pins maximum — past that the landing says so rather than silently dropping the oldest, and an entry that loses its pin is demoted to an ordinary recent rather than discarded."
+      }
+    ],
+    "improved": [
+      {
+        "title": "The landing is drawn on the board canvas's own grid",
+        "description": "The landing now carries the same surface the work happens on: one line per 48 pixels at a tenth of the accent's strength, so it reads as structure rather than decoration, with the light and the lines falling off together from the top. The two drifting aurora fields it replaces left a visible seam across the middle of the page where their falloffs crossed — a single masked layer has nothing to cross. A hairline closes the header in Focus Flow, and the card row dissolves into the background at both edges instead of being cut off by the window."
+      },
+      {
+        "title": "The restore prompt is a pill instead of a banner",
+        "description": "The prompt offering to reopen your last board was a 1120 by 71 pixel banner asking a single question, wide enough to crowd the card beneath it. It is a 577 by 50 pixel pill now, centred and on one line, and the flush-left accent bar — which stood proud of the rounded edge and read as a rendering fault — is an inline dot."
+      },
+      {
+        "title": "Dock chips stay chip-sized however few boards you have",
+        "description": "The chips under the carousel split whatever width the row gave them, with no upper limit. At the 24 board cap that lands around 18 pixels and looks right; at three boards it was 170 pixels each, and at one board a single 520 pixel slab lit bright blue — a segmented progress bar, the exact thing the dock replaced. A 22 pixel cap and a centred row keep every count inside one narrow band, so the dock reads the same whether you have two boards or two dozen."
+      }
+    ],
+    "fixed": [
+      {
+        "title": "The carousel no longer paints over the classic grid",
+        "description": "Switching to Classic Grid hid the carousel by attribute, but a display rule added with the footer work outranked what that attribute asks for, so the renderer ignored it and the whole carousel — fourteen cards, both arrows, the hint and the dock — kept painting on top of the grid. Each layout now shows only its own content."
+      },
+      {
+        "title": "Cards no longer pop as the pointer moves along the row",
+        "description": "A card's resting background is a gradient, and the hover rule replaced it with a flat colour — which no browser can interpolate, so the quarter-second transition sitting right there in the rule was ignored and the card snapped instead. Scrolling with the pointer over the row hands hover from card to card on every step, firing that snap over and over. Hover is now a gradient of the same shape, so only the colours differ and the fade actually runs."
+      },
+      {
+        "title": "Card buttons no longer flash while the carousel moves",
+        "description": "Cards slide under a stationary cursor, so each one passing briefly counted as hovered and faded its three buttons in while the previous card's faded out — sampled mid-scroll, the number of buttons on screen flipped between three and six. The buttons are held back until the row settles now, and return on the card under the cursor once it stops."
+      },
+      {
+        "title": "The banding across the carousel is gone",
+        "description": "Two things printed hard horizontal edges onto the flattened page, and neither was a gradient. The receding cards were dimmed but barely faded — the furthest still sat at 84 percent opacity — so they met the page as solid slabs; the depth ramp now comes out of the opacity as well, and a card two back is a suggestion rather than a shape. And 96 pixels of shadow blur at low alpha over a near-black page steps visibly, showing as arcs around each card: the widest glow is gone, the drops are shorter, and the film grain sits above the cards now, where it can dither them."
+      },
+      {
+        "title": "The landing backdrop is identical in both layouts",
+        "description": "The grain blends with whatever is behind it and only Focus Flow isolated it, so in Classic Grid it came out a different texture. The grid and the grain were also positioned inside the scrolling container, so in Classic they slid away with the content, and the scrollbar narrowed their box by its own width and moved every line about five pixels. Both layers are fixed to the viewport now — same geometry in both layouts, and they stay put while the grid scrolls under them."
+      },
+      {
+        "title": "A search that finds nothing clears the dock and the counter",
+        "description": "The no-result path emptied the cards, but the dock and the position counter live outside the track and were left describing boards that were no longer on screen — nine chips for a carousel with nothing in it, and a counter still reading 1 of 9. It sat hidden behind the empty state, so nothing showed it, and it healed itself on the next search that matched. Both are cleared properly now."
+      }
+    ]
+  }
 }
