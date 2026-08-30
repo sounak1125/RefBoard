@@ -688,5 +688,19 @@
         }
       ]
     }
+  },
+  "2.0.12": {
+    "headline": "The startup crash in 2.0.11 is fixed",
+    "summary": "RefBoard 2.0.11 was packaged without one of the files the app loads at startup, so it closed with an error before a window ever appeared. That file ships now. Everything 2.0.11 added is here and working.",
+    "sections": {
+      "new": [],
+      "improved": [],
+      "fixed": [
+        {
+          "title": "RefBoard starts again",
+          "description": "2.0.11 went out without scripts/recent-works.js — the module the pinned-boards work keeps its retention rules in. The app loads it in the first moments of startup, so 2.0.11 died with \"Cannot find module './scripts/recent-works'\" before any window opened, on every launch, with no way to get past it. The file is in the package now. The check that exists to catch exactly this was reading the page's imports and nothing else, so it never saw what the app itself loads and reported everything as fine on a build that could not open; it now reads all three entry points and understands both ways of loading a file."
+        }
+      ]
+    }
   }
 }
