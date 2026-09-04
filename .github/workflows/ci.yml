@@ -78,3 +78,6 @@ jobs:
 
       - name: Pinned boards smoke
         run: npm run test:pinned-smoke
+
+      - name: Multi-window history smoke
+        run: npm run test:multi-window-history-smoke

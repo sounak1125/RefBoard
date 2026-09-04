@@ -19049,7 +19049,10 @@ async function init() {
   setupGroupColorPicker();
   populateFontSelect();
   db = await openDB();
-  if (db) await dbClear('historyBlobs');
+  // Pixel-edit undo keeps its "before" bitmaps here. Clear leftovers from a
+  // previous run, but never while another window is open: its live undo
+  // stack still points at them.
+  if (db && !(await isMultiBoardWindow())) await dbClear('historyBlobs');
   if (!db) toast('Autosave unavailable in this browser — use Save board (Ctrl+S) to keep your work');
   if (db) {
     try {
