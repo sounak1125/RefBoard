@@ -18,15 +18,18 @@ const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const main = await readFile(new URL('../main.js', import.meta.url), 'utf8');
 const preload = await readFile(new URL('../preload.js', import.meta.url), 'utf8');
 
+// The preview is captured before the streamed save begins and written into the
+// header. Backfilling it afterwards rewrote the whole file a second time on
+// every save, silent autosaves included.
 assert.match(
   html,
-  /beginBoardSave\([\s\S]*?snapshot\.core, null, saveAs/,
-  'streamed saves must still pass null preview up front (non-blocking)',
+  /let preview = null;[\s\S]*?captureBoardFilePreviewBase64\(720\)[\s\S]*?beginBoardSave\([\s\S]*?snapshot\.core, preview, saveAs/,
+  'streamed saves must embed the preview in the header up front',
 );
-assert.match(
+assert.doesNotMatch(
   html,
   /scheduleBoardPreviewBackfill\(result\.filePath\)/,
-  'after a streamed save the renderer must schedule an async preview backfill',
+  'a streamed save must not rewrite the file it just wrote to splice in a preview',
 );
 assert.match(
   html,

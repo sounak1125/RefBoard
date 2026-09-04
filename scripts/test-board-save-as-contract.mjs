@@ -8,7 +8,7 @@ const preload = fs.readFileSync(new URL('../preload.js', import.meta.url), 'utf8
 assert.match(html, /saveBoardFile\(\{ saveAs: e\.shiftKey \}\)/, 'Ctrl+Shift+S must request Save As while Ctrl+S remains a normal save');
 assert.match(html, /Save board as…[\s\S]*?Ctrl\+Shift\+S/, 'the board context menu must expose Save As');
 assert.match(html, /label:'Save board as', keys:\['Ctrl','Shift','S'\]/, 'shortcut help must document Save As');
-assert.match(html, /beginBoardSave\([\s\S]*?snapshot\.core, null, saveAs/, 'streamed board saving must forward the Save As request without a blocking preview');
+assert.match(html, /beginBoardSave\([\s\S]*?snapshot\.core, preview, saveAs/, 'streamed board saving must forward the Save As request with the preview in the header');
 assert.match(html, /const targetPath = opts\.filePath \|\| currentBoardPath \|\| undefined/, 'streamed and legacy saves must honor an explicit path or the current board path');
 assert.match(html, /saveBoardFile\(defaultName, json, targetPath, saveAs\)/, 'legacy board saving must forward the Save As request');
 

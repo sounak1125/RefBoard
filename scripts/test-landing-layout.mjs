@@ -70,8 +70,8 @@ assert.match(
 );
 assert.match(
   source,
-  /window\.RefBoardAPI\.beginBoardSave\([\s\S]*?snapshot\.core, null, saveAs,/,
-  'streamed saves should not wait for or embed a blocking preview',
+  /window\.RefBoardAPI\.beginBoardSave\([\s\S]*?snapshot\.core, preview, saveAs,/,
+  'streamed saves embed the preview in the header instead of rewriting the file for it',
 );
 assert.match(
   source,
