@@ -3897,6 +3897,8 @@ import {
   normalizeBoardQuery,
 } from './scripts/landing-search.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
+import { drawGridDots } from './scripts/grid-dots.mjs';
+import { createItemIndex } from './scripts/item-index.mjs';
 import {
   IMAGE_FLOOR_TIER,
   IMAGE_FULL_TIER,
@@ -4073,8 +4075,8 @@ async function memoryDiagnostics() {
 }
 
 function imageRenderDiagnostics(itemId) {
-  const it = state.items.find(item => item.id === itemId && isImageItem(item));
-  if (!it) return null;
+  const it = byId(itemId);
+  if (!it || !isImageItem(it)) return null;
   const displayTarget = imageTargetForItem(it);
   const desiredTarget = imageDesiredTargets.get(it.id) || null;
   return {
@@ -4189,15 +4191,19 @@ let noteEditRedoStack = [];
 
 const $ = s => document.querySelector(s);
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now());
-const byId = id => state.items.find(i => i.id === id);
+// O(1). See scripts/item-index.mjs for why it is not Array.find and how it
+// stays correct across every way state.items is replaced or grown.
+const byId = createItemIndex(() => state.items);
 const selectedItems = () => state.items.filter(i => state.sel.has(i.id));
 const invalidate = () => { dirty = true; };
 function invalidateWorkspaceBBox() { workspaceBBoxCache = null; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const isImageItem = it => (it.kind || 'image') === 'image';
-const isNoteItem = it => it.kind === 'note';
-const isArrowItem = it => it.kind === 'arrow';
-const isGroupItem = it => it.kind === 'group';
+// Null-safe: callers hand these whatever byId returned, and a stale selection
+// id or an empty selection is not an error, just not that kind of item.
+const isImageItem = it => !!it && (it.kind || 'image') === 'image';
+const isNoteItem = it => it?.kind === 'note';
+const isArrowItem = it => it?.kind === 'arrow';
+const isGroupItem = it => it?.kind === 'group';
 const isGroupableItem = it => isImageItem(it) || isNoteItem(it);
 const GROUP_MIN_PADDING = 40;
 const GROUP_DEFAULT_PADDING = GROUP_MIN_PADDING;
@@ -4339,14 +4345,26 @@ function syncGroupFrame(group) {
 }
 
 function reconcileGroupOrder() {
-  const groups = state.items.filter(isGroupItem);
-  const rest = state.items.filter(i => !isGroupItem(i));
+  // Runs on every undo/redo and at the start of every drag. Children are
+  // bucketed by group in one pass rather than one filter per group.
+  const groups = [];
+  const rest = [];
+  const childrenByGroup = new Map();
+  for (const it of state.items) {
+    if (isGroupItem(it)) { groups.push(it); continue; }
+    rest.push(it);
+    if (it.groupId) {
+      let list = childrenByGroup.get(it.groupId);
+      if (!list) childrenByGroup.set(it.groupId, list = []);
+      list.push(it);
+    }
+  }
   const ordered = [];
   const placed = new Set();
   for (const g of groups) {
     ordered.push(g);
     placed.add(g.id);
-    for (const c of rest.filter(i => i.groupId === g.id)) {
+    for (const c of childrenByGroup.get(g.id) || []) {
       ordered.push(c);
       placed.add(c.id);
     }
@@ -5112,6 +5130,10 @@ const BOARD_WINDOW_ID = (() => {
   }
 })();
 const SESSION_META_KEY = `board:${BOARD_WINDOW_ID}`;
+// The camera is persisted on its own so a zoom or pan pause does not rewrite
+// the whole board record. See scheduleViewSave().
+const SESSION_VIEW_KEY = `${SESSION_META_KEY}:view`;
+const VIEW_SAVE_DEBOUNCE_MS = 1500;
 
 async function boardWindowCount() {
   if (!window.RefBoardAPI?.getBoardWindowCount) return 1;
@@ -5125,6 +5147,18 @@ async function boardWindowCount() {
 
 async function isMultiBoardWindow() {
   return (await boardWindowCount()) > 1;
+}
+
+/**
+ * The view record and the board record each carry the camera. The board
+ * record is written on every edit and the view record on every navigation
+ * pause, so whichever was written last has the camera the user left.
+ */
+async function newestSessionView(meta) {
+  const viewRecord = await dbGet('meta', SESSION_VIEW_KEY).catch(() => null);
+  const boardAt = Number(meta?.savedAt) || 0;
+  const viewAt = Number(viewRecord?.savedAt) || 0;
+  return viewAt > boardAt && viewRecord?.view ? viewRecord.view : meta?.view;
 }
 
 async function loadSessionMeta() {
@@ -5209,6 +5243,7 @@ async function pruneDiskImageBlobs(keepIds) {
 }
 
 let saveTimer = 0;
+let viewSaveTimer = 0;
 let recentEditedTimer = 0;
 let autosaveTimer = null;
 const WHEEL_NAV_SETTLE_MS = 220;
@@ -5822,7 +5857,7 @@ function collectReferencedImgIds(items = state.items) {
 
 function imageDecodeItemDist2(itemId) {
   if (!itemId) return Number.POSITIVE_INFINITY;
-  const it = state.items.find(x => x.id === itemId);
+  const it = byId(itemId);
   if (!it || !isImageItem(it)) return Number.POSITIVE_INFINITY;
   const { w, h } = boardSize();
   const sx = (it.x + it.w / 2) * state.view.s + state.view.tx;
@@ -5834,8 +5869,8 @@ function imageDecodeItemDist2(itemId) {
 
 function findImageDecodeItem(im, itemId) {
   if (itemId) {
-    const it = state.items.find(x => x.id === itemId && isImageItem(x) && images.get(x.imgId) === im);
-    if (it) return it;
+    const it = byId(itemId);
+    if (it && isImageItem(it) && images.get(it.imgId) === im) return it;
   }
   return state.items.find(x => isImageItem(x) && images.get(x.imgId) === im) || null;
 }
@@ -6102,8 +6137,9 @@ function isImageLodJobStillNeeded(job) {
   if (!job?.im?.lod || job.im.lod.pending.get(job.bucket) !== job) return false;
   if (imagePixelUpdateInProgress(job.im)) return false;
   if (ensureImageVersion(job.im) !== job.version) return false;
-  const it = state.items.find(x => x.id === job.itemId && isImageItem(x) && images.get(x.imgId) === job.im);
-  if (!it || !isItemVisible(it, currentLodViewport())) return false;
+  const it = byId(job.itemId);
+  if (!it || !isImageItem(it) || images.get(it.imgId) !== job.im) return false;
+  if (!isItemVisible(it, currentLodViewport())) return false;
   const key = imageLodDemandKey(it.imgId, job.bucket);
   return (imageTargetForItem(it) === job.bucket
       || imagePrewarmTargets.get(it.id) === job.bucket
@@ -6708,7 +6744,7 @@ async function restoreSession() {
     nextItems = reconcileGroupOrderInItems(nextItems);
     reconcileNoteBoxesInItems(nextItems);
 
-    const savedView = normalizeSessionView(meta.view);
+    const savedView = normalizeSessionView(await newestSessionView(meta));
     closeImageRecordBitmaps(images);
     images.clear();
     for (const [imgId, im] of nextImages) images.set(imgId, im);
@@ -6864,6 +6900,23 @@ function scheduleSave(markDirty = true) {
     }, error => reportSessionPersistFailure(error));
     touchRecentWorkEdited();
   }, 400);
+}
+
+/* Zoom and pan used to go through scheduleSave(false), which skips the dirty
+   flag but still copies every item and every image record into the session
+   store, and rewrites the recent-works file, 400 ms after each wheel or drag
+   pause. The camera is a few numbers; it gets its own record and a longer
+   debounce. Restore takes whichever of the two records is newer. */
+async function persistViewNow() {
+  return dbPutChecked('meta', SESSION_VIEW_KEY, { view: { ...state.view }, savedAt: Date.now() });
+}
+
+function scheduleViewSave() {
+  clearTimeout(viewSaveTimer);
+  viewSaveTimer = setTimeout(() => {
+    viewSaveTimer = 0;
+    void persistViewNow();
+  }, VIEW_SAVE_DEBOUNCE_MS);
 }
 
 /* ================= undo / redo ================= */
@@ -7059,9 +7112,17 @@ function pruneSel() {
   updateSelBar();
 }
 const boardHistoryQueue = createAsyncQueue();
+/* History is refused while a pointer gesture is live. restoreSnap replaces
+   every item object, but the gesture holds references to the old ones: a
+   mid-drag Ctrl+Z made the snap solver measure orphans while the move wrote
+   to the new objects, and an in-flight resize or crop wrote to a detached
+   object and vanished. Checked before queueing, so a held key does not pile
+   up work, and again after waiting, in case a gesture began meanwhile. */
 function undo() {
+  if (mode) return Promise.resolve();
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
+    if (mode) return;
     if (!undoStack.length) {
       // A freshly opened board can enter crop mode before any history exists.
       // Ctrl+Z should still return to normal selection in that case.
@@ -7080,8 +7141,10 @@ function undo() {
   });
 }
 function redo() {
+  if (mode) return Promise.resolve();
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
+    if (mode) return;
     if (!redoStack.length) return;
     const entry = redoStack.pop();
     undoStack.push(await captureUndoState(entry));
@@ -9076,17 +9139,22 @@ function deleteItemsByIds(idIterable) {
     if (it?.groupId) affectedGroups.add(it.groupId);
   }
   state.items = state.items.filter(i => !toDelete.has(i.id));
+  const removedGroups = new Set();
   for (const gid of affectedGroups) {
     const g = byId(gid);
     if (!g) continue;
-    if (!childrenOfGroup(gid).length) state.items = state.items.filter(i => i.id !== gid);
-    else syncGroupFrame(g);
+    if (!childrenOfGroup(gid).length) {
+      state.items = state.items.filter(i => i.id !== gid);
+      removedGroups.add(gid);
+    } else syncGroupFrame(g);
   }
   invalidateWorkspaceBBox();
   syncTagFilterToBoard();
-  // Drop only deleted ids from the live selection; keep unrelated newly selected items.
+  // Drop only deleted ids from the live selection; keep unrelated newly selected
+  // items. A group that emptied is gone from the board, so it leaves too.
   for (const id of toDelete) state.sel.delete(id);
-  if (state.anchorId && toDelete.has(state.anchorId)) state.anchorId = null;
+  for (const id of removedGroups) state.sel.delete(id);
+  if (state.anchorId && (toDelete.has(state.anchorId) || removedGroups.has(state.anchorId))) state.anchorId = null;
   demoteUnreferencedImages();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
   return true;
@@ -11893,7 +11961,7 @@ function animateViewTo(tx, ty, s, durationMs = 320) {
       if (t < 1) viewAnimRaf = requestAnimationFrame(step);
       else {
         viewAnimRaf = 0;
-        scheduleSave(false);
+        scheduleViewSave();
         resolve();
       }
     };
@@ -11999,7 +12067,7 @@ function fitTo(items, opts = {}) {
   state.view.tx = v.tx;
   state.view.ty = v.ty;
   state.view.s = v.s;
-  scheduleSave(false);
+  scheduleViewSave();
   invalidate();
   return Promise.resolve();
 }
@@ -12011,7 +12079,7 @@ function zoomAt(cx, cy, ns) {
   state.view.tx = cx - (cx - tx) * (ns / s);
   state.view.ty = cy - (cy - ty) * (ns / s);
   state.view.s = ns;
-  scheduleSave(false); invalidate();
+  scheduleViewSave(); invalidate();
 }
 
 async function clearBoard() {
@@ -14429,35 +14497,20 @@ function workspaceScreenRect() {
 function drawGridDotsScreen() {
   if (state.gridAppearance !== 'dots') return;
   const { tx, ty } = state.view;
-  const step = GRID_DOT_SCREEN;
   const sr = workspaceScreenRect();
-
+  const { w: bw, h: bh } = boardSize();
   const visL = Math.max(0, sr.x);
   const visT = Math.max(0, sr.y);
-  const visR = Math.min(boardSize().w, sr.x + sr.w);
-  const visB = Math.min(boardSize().h, sr.y + sr.h);
+  const visR = Math.min(bw, sr.x + sr.w);
+  const visB = Math.min(bh, sr.y + sr.h);
   if (visL >= visR || visT >= visB) return;
-
-  const ix0 = Math.floor((visL - tx) / step);
-  const ix1 = Math.ceil((visR - tx) / step);
-  const iy0 = Math.floor((visT - ty) / step);
-  const iy1 = Math.ceil((visB - ty) / step);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(visL, visT, visR - visL, visB - visT);
-  ctx.clip();
-  ctx.fillStyle = GRID_DOT_COLOR;
-  for (let ix = ix0; ix <= ix1; ix++) {
-    const px = Math.round(ix * step + tx) + 0.5;
-    if (px < visL - 1 || px > visR + 1) continue;
-    for (let iy = iy0; iy <= iy1; iy++) {
-      const py = Math.round(iy * step + ty) + 0.5;
-      if (py < visT - 1 || py > visB + 1) continue;
-      ctx.fillRect(px, py, 1, 1);
-    }
-  }
-  ctx.restore();
+  // One pattern fill instead of one fillRect per dot. A 1080p viewport is
+  // about 20,000 dots, redrawn every frame, pan and zoom included. The tile
+  // reproduces the loop's rasterisation exactly; see scripts/grid-dots.mjs.
+  drawGridDots(ctx, {
+    x: visL, y: visT, w: visR - visL, h: visB - visT,
+    tx, ty, step: GRID_DOT_SCREEN, color: GRID_DOT_COLOR, dpr: devicePixelRatio || 1,
+  });
 }
 
 // The dot grid is decoration only. It used to snap on a 10-screen-px pitch while
@@ -16793,7 +16846,8 @@ window.addEventListener('pointermove', e => {
     }
     invalidateWorkspaceBBox();
     syncMovedGroupFrames(mode.orig);
-    const movingIds = new Set(mode.orig.map(o => o.id));
+    // The moving set is fixed for the gesture; build it once, not per move event.
+    const movingIds = mode.movingIds || (mode.movingIds = new Set(mode.orig.map(o => o.id)));
     const target = findDropTargetGroup(movingIds);
     const newTargetId = target?.id || null;
     if (newTargetId !== dropTargetGroupId) {
@@ -16939,7 +16993,7 @@ window.addEventListener('pointerup', e => {
   if (!mode) return;
   if (mode.type === 'pan') {
     if (mode.right) lastRightDrag = mode.dist;
-    scheduleSave(false);
+    scheduleViewSave();
   } else if (mode.type === 'move' && mode.pushed) {
     const movingIds = new Set(mode.orig.map(o => o.id));
     if (dropTargetGroupId) {
@@ -17025,7 +17079,7 @@ window.addEventListener('blur', () => {
 function panView(dx, dy) {
   state.view.tx += dx;
   state.view.ty += dy;
-  scheduleSave(false);
+  scheduleViewSave();
   invalidate();
 }
 
@@ -18007,7 +18061,7 @@ window.addEventListener('keydown', e => {
   else if (!mod) {
     if (k === 'enter') {
       const it = state.sel.size === 1 ? byId([...state.sel][0]) : null;
-      if (isNoteItem(it)) {
+      if (it && isNoteItem(it)) {
         e.preventDefault();
         editNote(it);
       }
@@ -19076,7 +19130,10 @@ async function init() {
   setupGroupColorPicker();
   populateFontSelect();
   db = await openDB();
-  if (db) await dbClear('historyBlobs');
+  // Pixel-edit undo keeps its "before" bitmaps here. Clear leftovers from a
+  // previous run, but never while another window is open: its live undo
+  // stack still points at them.
+  if (db && !(await isMultiBoardWindow())) await dbClear('historyBlobs');
   if (!db) toast('Autosave unavailable in this browser — use Save board (Ctrl+S) to keep your work');
   if (db) {
     try {
@@ -19342,7 +19399,7 @@ function minimapPanTo(clientX, clientY) {
   const { w: vw, h: vh } = boardSize();
   state.view.tx = vw / 2 - bx * state.view.s;
   state.view.ty = vh / 2 - by * state.view.s;
-  scheduleSave(false);
+  scheduleViewSave();
   invalidate();
   drawMinimap(true);
 }
