@@ -55,7 +55,8 @@
     "test:tags-smoke": "node scripts/smoke-tags.mjs",
     "test:tags-menu-smoke": "node scripts/smoke-tags-menu.mjs",
     "test:focus-dock-smoke": "node scripts/smoke-focus-dock.mjs",
-    "test:pinned-smoke": "node scripts/smoke-pinned-boards.mjs"
+    "test:pinned-smoke": "node scripts/smoke-pinned-boards.mjs",
+    "test:steady-flicker-smoke": "electron scripts/smoke-steady-view-flicker.js"
   },
   "dependencies": {
     "electron-updater": "^6.6.2",

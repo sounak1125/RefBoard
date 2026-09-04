@@ -78,3 +78,6 @@ jobs:
 
       - name: Pinned boards smoke
         run: npm run test:pinned-smoke
+
+      - name: Steady-view flicker smoke
+        run: npm run test:steady-flicker-smoke
