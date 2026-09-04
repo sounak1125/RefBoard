@@ -70,6 +70,10 @@ const smokeExpression = `(async()=>{
   if(imgs.length<2)throw new Error('two images expected');
 
   const errors=[];
+  // The app ends any gesture on window blur. On a desktop where focus moves
+  // (another window closing, a terminal in front), the drag below can be cut
+  // short by that rather than by the code under test, so record it.
+  let blurred=false;window.addEventListener('blur',()=>{blurred=true;});
   window.addEventListener('error',e=>errors.push(String(e.message||e.error||e)));
   window.addEventListener('unhandledrejection',e=>errors.push('rejection: '+String(e.reason&&e.reason.message||e.reason)));
   document.activeElement?.blur?.();
@@ -115,7 +119,7 @@ const smokeExpression = `(async()=>{
   key('z',{ctrlKey:true});
   await wait(300);
   const afterUndoX=live().x, afterUndoY=live().y; const countAfterUndo=itemCount();
-  const modeAfter=RB.mode?.type||null;
+  const modeAfter=RB.mode?.type||null; const blurredDuringDrag=blurred;
   fire('pointermove',startX+50,startY+40,{drag:true});
   fire('pointerup',startX+50,startY+40,{drag:true,button:0,buttons:0});
   await wait(100);
@@ -124,7 +128,7 @@ const smokeExpression = `(async()=>{
   key('z',{ctrlKey:true});
   await wait(400);
   const undoneX=live().x, undoneY=live().y;
-  return {enterEmptyErrors,enterMultiErrors,errors,countMidDrag,countAfterUndo,midDrag:[midDragX,midDragY],afterUndo:[afterUndoX,afterUndoY],modeBefore,modeAfter,dropped:[droppedX,droppedY],undone:[undoneX,undoneY]};
+  return {enterEmptyErrors,enterMultiErrors,errors,blurredDuringDrag,countMidDrag,countAfterUndo,midDrag:[midDragX,midDragY],afterUndo:[afterUndoX,afterUndoY],modeBefore,modeAfter,dropped:[droppedX,droppedY],undone:[undoneX,undoneY]};
 })()`;
 
 try {
@@ -137,8 +141,12 @@ try {
   assert.equal(r.modeBefore, 'move', 'a move gesture was live when Ctrl+Z was pressed');
   assert.equal(r.countAfterUndo, r.countMidDrag, `Ctrl+Z during a drag must not change the board (${r.countMidDrag} -> ${r.countAfterUndo} items)`);
   assert.deepEqual(r.afterUndo, r.midDrag, `Ctrl+Z during a drag must not move the item (${r.afterUndo} vs ${r.midDrag})`);
-  assert.equal(r.modeAfter, 'move', 'the gesture is still live after the refused undo');
-  assert.deepEqual(r.dropped, [250, 240], `the drag completed where the pointer was released (${r.dropped})`);
+  if (r.blurredDuringDrag) {
+    console.log('keyboard guards: window lost focus during the drag; the app ends gestures on blur, so gesture-continuity checks are skipped');
+  } else {
+    assert.equal(r.modeAfter, 'move', 'the gesture is still live after the refused undo');
+    assert.deepEqual(r.dropped, [250, 240], `the drag completed where the pointer was released (${r.dropped})`);
+  }
   assert.deepEqual(r.undone, [200, 200], `Ctrl+Z after the drag restores the pre-drag position (${r.undone})`);
   assert.deepEqual(r.errors, [], `no page errors during the run: ${r.errors.join(' | ')}`);
   console.log('keyboard guards Electron smoke passed');
