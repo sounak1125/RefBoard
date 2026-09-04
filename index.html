@@ -3897,6 +3897,7 @@ import {
   normalizeBoardQuery,
 } from './scripts/landing-search.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
+import { drawGridDots } from './scripts/grid-dots.mjs';
 import { createItemIndex } from './scripts/item-index.mjs';
 import {
   IMAGE_FLOOR_TIER,
@@ -5122,6 +5123,10 @@ const BOARD_WINDOW_ID = (() => {
   }
 })();
 const SESSION_META_KEY = `board:${BOARD_WINDOW_ID}`;
+// The camera is persisted on its own so a zoom or pan pause does not rewrite
+// the whole board record. See scheduleViewSave().
+const SESSION_VIEW_KEY = `${SESSION_META_KEY}:view`;
+const VIEW_SAVE_DEBOUNCE_MS = 1500;
 
 async function boardWindowCount() {
   if (!window.RefBoardAPI?.getBoardWindowCount) return 1;
@@ -5135,6 +5140,18 @@ async function boardWindowCount() {
 
 async function isMultiBoardWindow() {
   return (await boardWindowCount()) > 1;
+}
+
+/**
+ * The view record and the board record each carry the camera. The board
+ * record is written on every edit and the view record on every navigation
+ * pause, so whichever was written last has the camera the user left.
+ */
+async function newestSessionView(meta) {
+  const viewRecord = await dbGet('meta', SESSION_VIEW_KEY).catch(() => null);
+  const boardAt = Number(meta?.savedAt) || 0;
+  const viewAt = Number(viewRecord?.savedAt) || 0;
+  return viewAt > boardAt && viewRecord?.view ? viewRecord.view : meta?.view;
 }
 
 async function loadSessionMeta() {
@@ -5219,6 +5236,7 @@ async function pruneDiskImageBlobs(keepIds) {
 }
 
 let saveTimer = 0;
+let viewSaveTimer = 0;
 let recentEditedTimer = 0;
 let autosaveTimer = null;
 const WHEEL_NAV_SETTLE_MS = 220;
@@ -6701,7 +6719,7 @@ async function restoreSession() {
     nextItems = reconcileGroupOrderInItems(nextItems);
     reconcileNoteBoxesInItems(nextItems);
 
-    const savedView = normalizeSessionView(meta.view);
+    const savedView = normalizeSessionView(await newestSessionView(meta));
     closeImageRecordBitmaps(images);
     images.clear();
     for (const [imgId, im] of nextImages) images.set(imgId, im);
@@ -6857,6 +6875,23 @@ function scheduleSave(markDirty = true) {
     }, error => reportSessionPersistFailure(error));
     touchRecentWorkEdited();
   }, 400);
+}
+
+/* Zoom and pan used to go through scheduleSave(false), which skips the dirty
+   flag but still copies every item and every image record into the session
+   store, and rewrites the recent-works file, 400 ms after each wheel or drag
+   pause. The camera is a few numbers; it gets its own record and a longer
+   debounce. Restore takes whichever of the two records is newer. */
+async function persistViewNow() {
+  return dbPutChecked('meta', SESSION_VIEW_KEY, { view: { ...state.view }, savedAt: Date.now() });
+}
+
+function scheduleViewSave() {
+  clearTimeout(viewSaveTimer);
+  viewSaveTimer = setTimeout(() => {
+    viewSaveTimer = 0;
+    void persistViewNow();
+  }, VIEW_SAVE_DEBOUNCE_MS);
 }
 
 /* ================= undo / redo ================= */
@@ -11902,7 +11937,7 @@ function animateViewTo(tx, ty, s, durationMs = 320) {
       if (t < 1) viewAnimRaf = requestAnimationFrame(step);
       else {
         viewAnimRaf = 0;
-        scheduleSave(false);
+        scheduleViewSave();
         resolve();
       }
     };
@@ -12008,7 +12043,7 @@ function fitTo(items, opts = {}) {
   state.view.tx = v.tx;
   state.view.ty = v.ty;
   state.view.s = v.s;
-  scheduleSave(false);
+  scheduleViewSave();
   invalidate();
   return Promise.resolve();
 }
@@ -12020,7 +12055,7 @@ function zoomAt(cx, cy, ns) {
   state.view.tx = cx - (cx - tx) * (ns / s);
   state.view.ty = cy - (cy - ty) * (ns / s);
   state.view.s = ns;
-  scheduleSave(false); invalidate();
+  scheduleViewSave(); invalidate();
 }
 
 async function clearBoard() {
@@ -14438,35 +14473,20 @@ function workspaceScreenRect() {
 function drawGridDotsScreen() {
   if (state.gridAppearance !== 'dots') return;
   const { tx, ty } = state.view;
-  const step = GRID_DOT_SCREEN;
   const sr = workspaceScreenRect();
-
+  const { w: bw, h: bh } = boardSize();
   const visL = Math.max(0, sr.x);
   const visT = Math.max(0, sr.y);
-  const visR = Math.min(boardSize().w, sr.x + sr.w);
-  const visB = Math.min(boardSize().h, sr.y + sr.h);
+  const visR = Math.min(bw, sr.x + sr.w);
+  const visB = Math.min(bh, sr.y + sr.h);
   if (visL >= visR || visT >= visB) return;
-
-  const ix0 = Math.floor((visL - tx) / step);
-  const ix1 = Math.ceil((visR - tx) / step);
-  const iy0 = Math.floor((visT - ty) / step);
-  const iy1 = Math.ceil((visB - ty) / step);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(visL, visT, visR - visL, visB - visT);
-  ctx.clip();
-  ctx.fillStyle = GRID_DOT_COLOR;
-  for (let ix = ix0; ix <= ix1; ix++) {
-    const px = Math.round(ix * step + tx) + 0.5;
-    if (px < visL - 1 || px > visR + 1) continue;
-    for (let iy = iy0; iy <= iy1; iy++) {
-      const py = Math.round(iy * step + ty) + 0.5;
-      if (py < visT - 1 || py > visB + 1) continue;
-      ctx.fillRect(px, py, 1, 1);
-    }
-  }
-  ctx.restore();
+  // One pattern fill instead of one fillRect per dot. A 1080p viewport is
+  // about 20,000 dots, redrawn every frame, pan and zoom included. The tile
+  // reproduces the loop's rasterisation exactly; see scripts/grid-dots.mjs.
+  drawGridDots(ctx, {
+    x: visL, y: visT, w: visR - visL, h: visB - visT,
+    tx, ty, step: GRID_DOT_SCREEN, color: GRID_DOT_COLOR, dpr: devicePixelRatio || 1,
+  });
 }
 
 // The dot grid is decoration only. It used to snap on a 10-screen-px pitch while
@@ -16946,7 +16966,7 @@ window.addEventListener('pointerup', e => {
   if (!mode) return;
   if (mode.type === 'pan') {
     if (mode.right) lastRightDrag = mode.dist;
-    scheduleSave(false);
+    scheduleViewSave();
   } else if (mode.type === 'move' && mode.pushed) {
     const movingIds = new Set(mode.orig.map(o => o.id));
     if (dropTargetGroupId) {
@@ -17032,7 +17052,7 @@ window.addEventListener('blur', () => {
 function panView(dx, dy) {
   state.view.tx += dx;
   state.view.ty += dy;
-  scheduleSave(false);
+  scheduleViewSave();
   invalidate();
 }
 
@@ -19352,7 +19372,7 @@ function minimapPanTo(clientX, clientY) {
   const { w: vw, h: vh } = boardSize();
   state.view.tx = vw / 2 - bx * state.view.s;
   state.view.ty = vh / 2 - by * state.view.s;
-  scheduleSave(false);
+  scheduleViewSave();
   invalidate();
   drawMinimap(true);
 }

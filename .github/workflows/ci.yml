@@ -87,3 +87,9 @@ jobs:
 
       - name: Keyboard guards smoke
         run: npm run test:keyboard-guards-smoke
+
+      - name: Grid pattern smoke
+        run: npm run test:grid-smoke
+
+      - name: View persist smoke
+        run: npm run test:view-persist-smoke
