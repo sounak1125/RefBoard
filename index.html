@@ -8741,6 +8741,32 @@ async function directClipboardImage(items) {
 // the landing thumbnail surface instead of exposing a separate black block.
 const THUMBNAIL_CANVAS_BACKGROUND = '#1b1d24';
 
+/* A composite is at most 720px across, so on a board of hundreds each image
+   is a few dozen pixels and the resident 256px proxy already covers it.
+   Decoding every original at full resolution for it was most of the cost of
+   a save. Take the smallest resident surface that covers the image's size on
+   the composite; decode only when nothing resident comes close. */
+const PREVIEW_SURFACE_ENOUGH = 0.75;
+async function previewSurfaceFor(im, neededPx) {
+  if (!im.proxy && !im.bitmap) await ensureStableImageProxy(im);
+  const candidates = [];
+  if (im.proxy) {
+    candidates.push({ bitmap: im.proxy, w: im.proxyW || im.proxy.width, h: im.proxyH || im.proxy.height });
+  }
+  for (const entry of im.lod?.entries?.values?.() || []) {
+    candidates.push({ bitmap: entry.bitmap, w: entry.w, h: entry.h });
+  }
+  if (im.bitmap) candidates.push({ bitmap: im.bitmap, w: im.w, h: im.h });
+  candidates.sort((a, b) => Math.max(a.w, a.h) - Math.max(b.w, b.h));
+  const pick = candidates.find(c => Math.max(c.w, c.h) >= neededPx) || candidates[candidates.length - 1] || null;
+  if (!pick) return null;
+  // A source that is simply small is as sharp as it gets; only a reduced copy
+  // of something bigger can fall short.
+  const sourceEdge = Math.max(im.w, im.h);
+  if (Math.max(pick.w, pick.h) >= Math.min(neededPx * PREVIEW_SURFACE_ENOUGH, sourceEdge)) return pick;
+  return null;
+}
+
 async function boundedCompositeCanvas(items, {
   maxWidth, maxHeight, fit = 'inside', background = null,
 } = {}) {
@@ -8771,7 +8797,10 @@ async function boundedCompositeCanvas(items, {
     if (isNoteItem(it) || isArrowItem(it)) continue;
     if (isImageItem(it)) {
       const im = images.get(it.imgId);
-      if (im) await withFullBitmap(im, () => drawBoardItem(g, it, { noLod: true }));
+      if (!im) continue;
+      const pick = await previewSurfaceFor(im, Math.ceil(Math.max(it.w, it.h) * scale));
+      if (pick) drawBoardItem(g, it, { noLod: true, pickSurface: () => pick });
+      else await withFullBitmap(im, () => drawBoardItem(g, it, { noLod: true }));
     } else drawBoardItem(g, it, { noLod: true });
   }
   for (const it of items) {
@@ -12559,9 +12588,18 @@ async function performBoardSave(opts = {}) {
     let token = null;
     // Invalidate any in-flight preview backfill before rewriting the board file.
     boardPreviewBackfillSeq++;
+    // The preview goes into the header up front. Backfilling it afterwards
+    // meant every save, silent autosaves included, wrote the whole file twice:
+    // once without it, then a full read-and-rewrite to splice in a 50 KB JPEG.
+    // Capturing it here is cheap now that the composite draws from resident
+    // proxies instead of decoding every original (see previewSurfaceFor).
+    let preview = null;
+    if (snapshot.core.items.length) {
+      try { preview = await captureBoardFilePreviewBase64(720); } catch { /* save without one */ }
+    }
     try {
       const begin = await window.RefBoardAPI.beginBoardSave(
-        defaultName, targetPath, snapshot.core, null, saveAs,
+        defaultName, targetPath, snapshot.core, preview, saveAs,
       );
       if (!begin?.started) return false;
       token = begin.token;
@@ -12605,8 +12643,7 @@ async function performBoardSave(opts = {}) {
       if (!result?.saved) return false;
       currentBoardPath = result.filePath;
       currentBoardTitle = boardTitleFromPath(result.filePath);
-      // Keep the streamed save non-blocking: embed Explorer preview asynchronously.
-      scheduleBoardPreviewBackfill(result.filePath);
+      if (preview) cachedCurrentBoardThumb = preview;
     } catch (err) {
       if (token) await window.RefBoardAPI.abortBoardSave(token).catch(() => {});
       console.error('[save] streamed board save failed:', err);
@@ -15122,6 +15159,21 @@ function drawBoardItem(g, it, opts = {}) {
       extent: Math.max(im.w, im.h),
       im,
     };
+  } else if (opts.pickSurface) {
+    // Composites choose their own surface (previewSurfaceFor). They must not
+    // go through the display pipeline, which would queue decodes for the view.
+    const pick = opts.pickSurface(im, it);
+    if (pick?.bitmap) {
+      surface = {
+        key: `pick:${it.imgId}`,
+        kind: 'pick',
+        bitmap: pick.bitmap,
+        sourceScaleX: pick.w / im.w,
+        sourceScaleY: pick.h / im.h,
+        extent: Math.max(pick.w, pick.h),
+        im,
+      };
+    }
   } else if (!opts.noLod) {
     const lod = getImageLodForDraw(im, it, cr);
     if (lod) {

@@ -96,3 +96,6 @@ jobs:
 
       - name: Steady-view flicker smoke
         run: npm run test:steady-flicker-smoke
+
+      - name: Save preview smoke
+        run: npm run test:save-preview-smoke
