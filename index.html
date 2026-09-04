@@ -4187,10 +4187,12 @@ const selectedItems = () => state.items.filter(i => state.sel.has(i.id));
 const invalidate = () => { dirty = true; };
 function invalidateWorkspaceBBox() { workspaceBBoxCache = null; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const isImageItem = it => (it.kind || 'image') === 'image';
-const isNoteItem = it => it.kind === 'note';
-const isArrowItem = it => it.kind === 'arrow';
-const isGroupItem = it => it.kind === 'group';
+// Null-safe: callers hand these whatever byId returned, and a stale selection
+// id or an empty selection is not an error, just not that kind of item.
+const isImageItem = it => !!it && (it.kind || 'image') === 'image';
+const isNoteItem = it => it?.kind === 'note';
+const isArrowItem = it => it?.kind === 'arrow';
+const isGroupItem = it => it?.kind === 'group';
 const isGroupableItem = it => isImageItem(it) || isNoteItem(it);
 const GROUP_MIN_PADDING = 40;
 const GROUP_DEFAULT_PADDING = GROUP_MIN_PADDING;
@@ -7034,9 +7036,17 @@ function pruneSel() {
   updateSelBar();
 }
 const boardHistoryQueue = createAsyncQueue();
+/* History is refused while a pointer gesture is live. restoreSnap replaces
+   every item object, but the gesture holds references to the old ones: a
+   mid-drag Ctrl+Z made the snap solver measure orphans while the move wrote
+   to the new objects, and an in-flight resize or crop wrote to a detached
+   object and vanished. Checked before queueing, so a held key does not pile
+   up work, and again after waiting, in case a gesture began meanwhile. */
 function undo() {
+  if (mode) return Promise.resolve();
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
+    if (mode) return;
     if (!undoStack.length) {
       // A freshly opened board can enter crop mode before any history exists.
       // Ctrl+Z should still return to normal selection in that case.
@@ -7055,8 +7065,10 @@ function undo() {
   });
 }
 function redo() {
+  if (mode) return Promise.resolve();
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
+    if (mode) return;
     if (!redoStack.length) return;
     const entry = redoStack.pop();
     undoStack.push(await captureUndoState(entry));
@@ -9052,17 +9064,22 @@ function deleteItemsByIds(idIterable) {
     if (it?.groupId) affectedGroups.add(it.groupId);
   }
   state.items = state.items.filter(i => !toDelete.has(i.id));
+  const removedGroups = new Set();
   for (const gid of affectedGroups) {
     const g = byId(gid);
     if (!g) continue;
-    if (!childrenOfGroup(gid).length) state.items = state.items.filter(i => i.id !== gid);
-    else syncGroupFrame(g);
+    if (!childrenOfGroup(gid).length) {
+      state.items = state.items.filter(i => i.id !== gid);
+      removedGroups.add(gid);
+    } else syncGroupFrame(g);
   }
   invalidateWorkspaceBBox();
   syncTagFilterToBoard();
-  // Drop only deleted ids from the live selection; keep unrelated newly selected items.
+  // Drop only deleted ids from the live selection; keep unrelated newly selected
+  // items. A group that emptied is gone from the board, so it leaves too.
   for (const id of toDelete) state.sel.delete(id);
-  if (state.anchorId && toDelete.has(state.anchorId)) state.anchorId = null;
+  for (const id of removedGroups) state.sel.delete(id);
+  if (state.anchorId && (toDelete.has(state.anchorId) || removedGroups.has(state.anchorId))) state.anchorId = null;
   demoteUnreferencedImages();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
   return true;
@@ -17980,7 +17997,7 @@ window.addEventListener('keydown', e => {
   else if (!mod) {
     if (k === 'enter') {
       const it = state.sel.size === 1 ? byId([...state.sel][0]) : null;
-      if (isNoteItem(it)) {
+      if (it && isNoteItem(it)) {
         e.preventDefault();
         editNote(it);
       }

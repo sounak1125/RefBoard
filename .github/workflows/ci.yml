@@ -84,3 +84,6 @@ jobs:
 
       - name: Multi-window history smoke
         run: npm run test:multi-window-history-smoke
+
+      - name: Keyboard guards smoke
+        run: npm run test:keyboard-guards-smoke
