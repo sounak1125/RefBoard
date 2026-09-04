@@ -78,3 +78,9 @@ jobs:
 
       - name: Pinned boards smoke
         run: npm run test:pinned-smoke
+
+      - name: Grid pattern smoke
+        run: npm run test:grid-smoke
+
+      - name: View persist smoke
+        run: npm run test:view-persist-smoke
