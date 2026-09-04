@@ -47,6 +47,7 @@ const context = {
     item.y = cy - height / 2;
   },
   syncGroupFramesForItems: () => calls.sync++,
+  invalidateWorkspaceBBox: () => {},
   scheduleSave: () => calls.save++,
   invalidate: () => calls.invalidate++,
   toast: message => calls.toasts.push(message),

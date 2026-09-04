@@ -3899,6 +3899,7 @@ import {
 import { createImageResidencyController } from './scripts/image-residency.mjs';
 import { drawGridDots } from './scripts/grid-dots.mjs';
 import { createItemIndex } from './scripts/item-index.mjs';
+import { createSpatialIndex } from './scripts/spatial-index.mjs';
 import {
   IMAGE_FLOOR_TIER,
   IMAGE_FULL_TIER,
@@ -4212,9 +4213,30 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random
 // O(1). See scripts/item-index.mjs for why it is not Array.find and how it
 // stays correct across every way state.items is replaced or grown.
 const byId = createItemIndex(() => state.items);
+
+/* Board-space box of an item: its UI rect turned by its rotation. This is what
+   visibility, marquee and the workspace bounds all used to recompute per item
+   per pass; the spatial index caches it and rebuilds on the same signal that
+   invalidates the workspace bounds. See scripts/spatial-index.mjs. */
+function itemBoardAABB(it) {
+  const r = itemUiRect(it);
+  const a = rotRad(it);
+  if (!a) return { x: r.x, y: r.y, w: r.w, h: r.h };
+  const ca = Math.abs(Math.cos(a)), sa = Math.abs(Math.sin(a));
+  const hw = r.w / 2, hh = r.h / 2;
+  const ax = ca * hw + sa * hh, ay = sa * hw + ca * hh;
+  const cx = r.x + hw, cy = r.y + hh;
+  return { x: cx - ax, y: cy - ay, w: ax * 2, h: ay * 2 };
+}
+const layout = createSpatialIndex({
+  items: () => state.items,
+  bounds: itemBoardAABB,
+  isGroup: it => isGroupItem(it),
+  groupIdOf: it => it?.groupId || null,
+});
 const selectedItems = () => state.items.filter(i => state.sel.has(i.id));
 const invalidate = () => { dirty = true; };
-function invalidateWorkspaceBBox() { workspaceBBoxCache = null; }
+function invalidateWorkspaceBBox() { workspaceBBoxCache = null; layout.invalidate(); }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // Null-safe: callers hand these whatever byId returned, and a stale selection
 // id or an empty selection is not an error, just not that kind of item.
@@ -4245,7 +4267,7 @@ const GROUP_COLOR_PRESETS = [
 let dropTargetGroupId = null;
 
 function childrenOfGroup(gid) {
-  return state.items.filter(i => i.groupId === gid);
+  return layout.children(gid);
 }
 
 function groupOfItem(it) {
@@ -4279,6 +4301,8 @@ function groupChromeZoomDivisor() {
 }
 
 function groupUiRect(group) {
+  // Membership comes from the index; the geometry is read live, because a
+  // gesture asks for the frame between moving the children and announcing it.
   const kids = childrenOfGroup(group.id);
   if (!kids.length) return { x: group.x, y: group.y, w: group.w, h: group.h };
   const bb = bboxOf(kids);
@@ -4304,11 +4328,9 @@ function marqueeSelectionIds(bx1, by1, bx2, by2, keep = new Set()) {
     if (isGroupItem(byId(id))) promotedGroups.add(id);
   }
 
-  for (const it of state.items) {
-    if (isGroupItem(it)) continue;
+  for (const it of layout.queryRect(bx1, by1, bx2 - bx1, by2 - by1)) {
     if (!itemPassesTagFilter(it)) continue;
-    const b = boundsOf(it);
-    if (b.x < bx2 && b.x + b.w > bx1 && b.y < by2 && b.y + b.h > by1) {
+    {
       const group = groupOfItem(it);
       if (group) {
         promotedGroups.add(group.id);
@@ -4550,9 +4572,9 @@ function pointInBoardRect(bx, by, r) {
 
 function groupAt(sx, sy) {
   const [bx, by] = toBoard(sx, sy);
-  for (let i = state.items.length - 1; i >= 0; i--) {
-    const it = state.items[i];
-    if (!isGroupItem(it)) continue;
+  const groups = layout.groups();
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const it = groups[i];
     const r = itemUiRect(it);
     if (pointInBoardRect(bx, by, r)) return it;
     const lr = groupLabelBoardRect(it);
@@ -4565,9 +4587,9 @@ function groupAt(sx, sy) {
 // only a few screen pixels at low zoom. The generous target extends outward;
 // its inward portion stays narrow so child images remain directly clickable.
 function groupFrameAt(sx, sy) {
-  for (let i = state.items.length - 1; i >= 0; i--) {
-    const it = state.items[i];
-    if (!isGroupItem(it)) continue;
+  const groups = layout.groups();
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const it = groups[i];
     if (!itemPassesTagFilter(it)) continue;
     const r = itemUiRect(it);
     const [x1, y1] = toScreen(r.x, r.y);
@@ -5074,8 +5096,9 @@ function bboxOf(items) {
 
 function workspaceContentBBox() {
   if (!workspaceBBoxCache) {
-    const content = state.items.filter(it => !isGroupItem(it));
-    workspaceBBoxCache = bboxOf(content.length ? content : state.items);
+    // Union of the cached item boxes; a board of only empty groups falls
+    // back to the groups' own rectangles.
+    workspaceBBoxCache = layout.contentBounds() || bboxOf(state.items);
   }
   return workspaceBBoxCache;
 }
@@ -5092,37 +5115,33 @@ function expandedViewportRect(w, h) {
 }
 
 function isItemVisible(it, viewport) {
-  const r = itemUiRect(it);
+  // A group frame depends on the zoom, so it is computed live; everything
+  // else is the cached board-space box.
+  const b = isGroupItem(it) ? itemUiRect(it) : (layout.boundsOf(it) || itemBoardAABB(it));
   const { tx, ty, s } = state.view;
-  const a = rotRad(it);
-  let l, t, rr, bb;
-  if (a) {
-    const cx = (r.x + r.w / 2) * s + tx;
-    const cy = (r.y + r.h / 2) * s + ty;
-    const hw = Math.abs(r.w * s) / 2;
-    const hh = Math.abs(r.h * s) / 2;
-    const ca = Math.abs(Math.cos(a));
-    const sa = Math.abs(Math.sin(a));
-    const ax = ca * hw + sa * hh;
-    const ay = sa * hw + ca * hh;
-    l = cx - ax; rr = cx + ax; t = cy - ay; bb = cy + ay;
-  } else {
-    l = r.x * s + tx;
-    t = r.y * s + ty;
-    rr = l + r.w * s;
-    bb = t + r.h * s;
-  }
-  return l <= viewport.r && rr >= viewport.l && t <= viewport.b && bb >= viewport.t;
+  const l = b.x * s + tx, t = b.y * s + ty;
+  return l <= viewport.r && l + b.w * s >= viewport.l && t <= viewport.b && t + b.h * s >= viewport.t;
 }
 
 function collectVisibleItems(viewport) {
   drawVisibleItems.length = 0;
   drawVisibleItemIds.clear();
-  for (const it of state.items) {
-    if (!isItemVisible(it, viewport)) continue;
-    drawVisibleItems.push(it);
-    drawVisibleItemIds.add(it.id);
+  const { tx, ty, s } = state.view;
+  // Grid query in board space, then the few groups by hand (their frames
+  // depend on the zoom), merged back into z order for drawing.
+  const hits = layout.queryRect(
+    (viewport.l - tx) / s, (viewport.t - ty) / s,
+    (viewport.r - viewport.l) / s, (viewport.b - viewport.t) / s);
+  const groups = [];
+  for (const g of layout.groups()) if (isItemVisible(g, viewport)) groups.push(g);
+  const push = it => { drawVisibleItems.push(it); drawVisibleItemIds.add(it.id); };
+  let gi = 0;
+  for (const it of hits) {
+    const z = layout.zOf(it);
+    while (gi < groups.length && layout.zOf(groups[gi]) < z) push(groups[gi++]);
+    push(it);
   }
+  while (gi < groups.length) push(groups[gi++]);
 }
 
 function collectDrawSelection() {
@@ -5590,7 +5609,7 @@ function imageTargetForItem(it) {
 function updateImageRenderDemandPlan(items) {
   recomputeImageMemoryBudgets();
   const visibleImageIds = new Set((items || []).filter(isImageItem).map(it => it.id));
-  const liveImageIds = new Set(state.items.filter(isImageItem).map(it => it.id));
+  const liveImageIds = layout.memo('imageItemIds', arr => new Set(arr.filter(isImageItem).map(it => it.id)));
   for (const itemId of imagePrewarmTargets.keys()) {
     if (!visibleImageIds.has(itemId)) imagePrewarmTargets.delete(itemId);
   }
@@ -11802,6 +11821,7 @@ function normalizeImagesBy(dimension) {
     resizeImagePreserveCenter(it, it.w * k, it.h * k);
   }
   syncGroupFramesForItems(items);
+  invalidateWorkspaceBBox();
   scheduleSave();
   invalidate();
   toast(`Normalized ${items.length} images by ${dimension}`);
@@ -11977,6 +11997,7 @@ function arrangeAll() {
   pushUndo();
   packItems(packable);
   for (const g of groupItems()) syncGroupFrame(g);
+  invalidateWorkspaceBBox();
   scheduleSave();
   fitTo(packable);
   toast('Packed');
@@ -15686,9 +15707,13 @@ function itemAt(sx, sy) {
   const frame = groupFrameAt(sx, sy);
   if (frame) return frame;
   const [bx, by] = toBoard(sx, sy);
-  for (let i = state.items.length - 1; i >= 0; i--) {
-    const it = state.items[i];
-    if (isGroupItem(it)) continue;
+  // Candidates from the grid, topmost first. An arrow is hit within a
+  // tolerance that can exceed its box at low zoom, so the query is a small
+  // rect around the point rather than the point itself.
+  const tol = 6 / state.view.s;
+  const candidates = layout.queryRect(bx - tol, by - tol, tol * 2, tol * 2);
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const it = candidates[i];
     if (!itemPassesTagFilter(it)) continue;
     if (isArrowItem(it)) {
       if (arrowHitTolerance(it) >= pointSegmentDistance(bx, by, it.x1, it.y1, it.x2, it.y2))
@@ -15706,8 +15731,7 @@ function itemAt(sx, sy) {
 function imageItemAt(sx, sy) {
   ensureTagFilterPass();
   const [bx, by] = toBoard(sx, sy);
-  for (let i = state.items.length - 1; i >= 0; i--) {
-    const it = state.items[i];
+  for (const it of layout.queryPoint(bx, by)) {
     if (!isImageItem(it)) continue;
     if (!itemPassesTagFilter(it)) continue;
     const r = itemUiRect(it);
@@ -16623,6 +16647,9 @@ function updateCropDrag(e) {
 canvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
 
 canvas.addEventListener('pointerdown', async e => {
+  // Hit-test against current geometry: a rebuild is one pass, a click is rare,
+  // and no mutation path can then be trusted wrongly.
+  invalidateWorkspaceBBox();
   if (noteEditId && !e.target.closest('#noteOverlay')) finishNoteEdit();
   closeMenu();
   hideNoteLinkPop();
@@ -16968,6 +16995,7 @@ window.addEventListener('pointermove', e => {
       applyEdgeResize(it, r, mode.edge, lx, ly);
       // After the raw resize, so the perpendicular gate sees the live extent.
       snapItemResize(it, r, { edge: mode.edge }, e.ctrlKey || e.metaKey);
+      invalidateWorkspaceBBox();
       scheduleSave(); invalidate();
       return;
     }
@@ -16981,6 +17009,7 @@ window.addEventListener('pointermove', e => {
     if (!Number.isFinite(k)) k = 1;
     applyProportionalResize(it, r, k, A[0], A[1]);
     snapItemResize(it, r, { corner: mode.corner }, e.ctrlKey || e.metaKey);
+    invalidateWorkspaceBBox();
     scheduleSave(); invalidate();
   } else if (mode.type === 'rotate') {
     if (!mode.pushed) {
@@ -16998,6 +17027,7 @@ window.addEventListener('pointermove', e => {
     const live = mode.orig.length === 1 ? byId(mode.orig[0].id) : null;
     const cursorRot = mode.group ? selectionFrameRot() : (live?.rot || 0);
     canvas.style.cursor = rotateCursorForHandle({ corner: mode.corner }, cursorRot);
+    invalidateWorkspaceBBox();
     scheduleSave(); invalidate();
   } else if (mode.type === 'groupResize') {
     if (!mode.pushed) {
@@ -17035,6 +17065,7 @@ window.addEventListener('pointermove', e => {
     // multi-selection that contains groups, which previously synced nothing and
     // left the frame stale after its children scaled.
     syncMovedGroupFrames(mode.orig);
+    invalidateWorkspaceBBox();
     scheduleSave(); invalidate();
   } else if (mode.type === 'crop') {
     if (!mode.pushed && Math.hypot(dx, dy) < 2) return;
@@ -17157,6 +17188,8 @@ window.addEventListener('pointerup', e => {
     commitDrawSessionAndSave();
   }
   const restoreIdleSelectionUi = mode.type === 'rotate';
+  // Whatever the gesture changed, the index and workspace bounds catch up now.
+  invalidateWorkspaceBBox();
   mode = null;
   releaseSnapSession();
   updateCursor(...clientToCanvas(e.clientX, e.clientY));
@@ -20310,6 +20343,9 @@ window.RefBoard = {
   openBoardFromPath,
   memoryStats: memoryDiagnostics,
   get lastBoardSaveStats() { return lastBoardSaveStats; },
+  itemAt,
+  get spatialIndexStats() { return layout.stats(); },
+  invalidateLayout: invalidateWorkspaceBBox,
   imageRenderState: imageRenderDiagnostics,
   get mode() { return mode; },
   invalidate,

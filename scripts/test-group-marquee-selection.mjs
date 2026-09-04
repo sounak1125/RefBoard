@@ -36,6 +36,12 @@ const context = {
   childrenOfGroup: gid => items.filter(item => item.groupId === gid),
   groupOfItem: item => item?.groupId ? byId(item.groupId) : null,
   boundsOf: item => ({ x: item.x, y: item.y, w: item.w, h: item.h }),
+  // The spatial index the marquee queries: non-group items whose box meets the
+  // rect, in array (z) order, as scripts/spatial-index.mjs returns them.
+  layout: {
+    queryRect: (x, y, w, h) => items.filter(item => item.kind !== 'group'
+      && item.x < x + w && item.x + item.w > x && item.y < y + h && item.y + item.h > y),
+  },
   effectiveHitItem: item => item,
   // No tag filter: everything on the board is selectable.
   itemPassesTagFilter: () => true,
