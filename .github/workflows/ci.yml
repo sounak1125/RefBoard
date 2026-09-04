@@ -99,3 +99,6 @@ jobs:
 
       - name: Save preview smoke
         run: npm run test:save-preview-smoke
+
+      - name: Incremental save smoke
+        run: npm run test:incremental-save-smoke

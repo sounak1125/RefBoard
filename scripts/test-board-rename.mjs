@@ -70,6 +70,7 @@ try {
   const from = path.join(tempDir, 'Old board.refboard');
   await writeFile(from, 'board-bytes');
   await writeFile(`${from}.bak`, 'previous-generation');
+  await writeFile(`${from}.images`, 'the image store');
 
   const renamed = await renameBoardFile(from, 'New board');
   assert.equal(renamed.ok, true);
@@ -83,6 +84,8 @@ try {
     'the recovery copy must follow the board instead of being orphaned',
   );
   assert.equal(existsSync(`${from}.bak`), false);
+  assert.equal(await readFile(`${renamed.to}.images`, 'utf8'), 'the image store', 'the image store is renamed with the index');
+  assert.equal(existsSync(`${from}.images`), false, 'no store is left under the old name');
 
   const noop = await renameBoardFile(renamed.to, 'New board');
   assert.equal(noop.ok, true);

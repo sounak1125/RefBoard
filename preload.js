@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   stageDragOut: (files) => ipcRenderer.invoke('stage-drag-out', { files }),
   startDragOut: (paths, icon) => ipcRenderer.invoke('start-drag-out', { paths, icon }),
   saveBoardFile: (defaultName, data, filePath, forceDialog = false) => ipcRenderer.invoke('save-board-file', { defaultName, data, filePath, forceDialog }),
-  beginBoardSave: (defaultName, filePath, core, preview, forceDialog = false) => ipcRenderer.invoke('begin-board-save', { defaultName, filePath, forceDialog, core, preview }),
+  beginBoardSave: (defaultName, filePath, core, preview, forceDialog = false, imageRefs = []) => ipcRenderer.invoke('begin-board-save', { defaultName, filePath, forceDialog, core, preview, imageRefs }),
   appendBoardSaveImage: (token, image, data) => ipcRenderer.invoke('append-board-save-image', { token, image, data }),
   appendBoardSaveImages: (token, images) => ipcRenderer.invoke('append-board-save-images', { token, images }),
   finishBoardSave: (token) => ipcRenderer.invoke('finish-board-save', token),

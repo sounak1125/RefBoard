@@ -10,7 +10,7 @@ import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 import { evaluate } from './smoke-cdp.mjs';
 
 const require = createRequire(import.meta.url);
-const { scanBoardFile } = require('./board-open-stream.js');
+const { readSidecarIndex, sidecarStorePath, scanSidecarStore } = require('./board-sidecar.js');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
@@ -126,8 +126,12 @@ try {
   const result = await evaluate(port, smokeExpression);
   const fileStat = await stat(boardPath);
   assert.ok(fileStat.size > 0, 'saved board file should exist');
-  const scanned = await scanBoardFile(boardPath);
-  assert.equal(scanned.images.length, 6, `saved board should embed 6 images (found ${scanned.images.length})`);
+  const index = await readSidecarIndex(boardPath);
+  assert.ok(index, 'the saved board is a sidecar index');
+  assert.equal(index.images.length, 6, `the index should list 6 images (found ${index.images.length})`);
+  const store = await scanSidecarStore(sidecarStorePath(boardPath));
+  assert.equal(store.records.length, 6, `the store should hold 6 records (found ${store.records.length})`);
+  assert.equal(store.torn, false, 'the store has no torn tail');
   assert.equal(result.afterOpenCount, 6, `open should restore 6 images (found ${result.afterOpenCount})`);
   assert.equal(result.imageMap, 6, 'open should register 6 image records');
   assert.equal(result.overlayHidden, true, 'opening overlay should hide once items are on screen');

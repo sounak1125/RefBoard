@@ -4113,6 +4113,24 @@ async function getImageBlob(im) {
   return promise;
 }
 
+/* Which images a save has to send. A sidecar board's store already holds
+   every image the last save wrote, so a save appends only images the store
+   lacks or whose pixels changed since. `pixelGen` counts the times this
+   record's bytes were replaced under the same id (a paint commit, a history
+   restore); `storedAs` is the path and generation the store last received.
+   Both persist with the session so a restored session does not resend the
+   whole board on its first save. */
+function markImagePixelsChanged(im) {
+  if (im) im.pixelGen = (im.pixelGen || 0) + 1;
+}
+
+function imageNeedsStoreAppend(im, targetPath, storedIds) {
+  if (!im?.id || !storedIds.has(im.id)) return true;
+  const gen = im.pixelGen || 0;
+  const known = im.storedAs && sameFilePath(im.storedAs.path, targetPath);
+  return known ? im.storedAs.gen !== gen : gen > 0;
+}
+
 async function persistImageBlob(im, blob) {
   if (!im?.id || !(blob instanceof Blob) || !blob.size) return false;
   im.blobSize = blob.size;
@@ -6609,6 +6627,10 @@ async function restoreSessionImages(imgIds, imageNames, savedImageMeta = []) {
           diskStored: true,
           type: saved?.type || blob.type || 'image/png',
           name: saved?.name || imageNames.get(imgId) || '',
+          pixelGen: Number(saved?.pixelGen) || 0,
+          storedAs: typeof saved?.storedPath === 'string' && saved.storedPath
+            ? { path: saved.storedPath, gen: Number(saved.storedGen) || 0 }
+            : null,
         }, imgId);
         await ensureStableImageProxy(image, blob);
         return { imgId, image };
@@ -6820,6 +6842,8 @@ async function persistBoardNow() {
     gridAppearance: state.gridAppearance,
     imageMeta: [...images.entries()].map(([id, im]) => ({
       id, w: im.w, h: im.h, type: im.type, name: im.name || '', blobSize: im.blobSize || 0,
+      pixelGen: im.pixelGen || 0,
+      storedPath: im.storedAs?.path || null, storedGen: im.storedAs ? (im.storedAs.gen || 0) : null,
     })),
     savedAt: Date.now(),
   });
@@ -7073,6 +7097,7 @@ async function restoreBitmapSnap(bitmapSnap) {
     // Render the restored full bitmap on the next frame. Proxy regeneration and
     // IndexedDB persistence may take longer for large sources.
     invalidate();
+    markImagePixelsChanged(im);
     await replaceStableImageProxy(im, blob);
     await persistImageBlob(im, blob);
   } finally {
@@ -7553,6 +7578,7 @@ function commitDrawSession() {
       im.type = blob.type || im.type || 'image/png';
       im.diskStored = false;
       invalidateImageLods(im, { bumpVersion: true });
+      markImagePixelsChanged(im);
       await replaceStableImageProxy(im, blob);
       await persistImageBlob(im, blob);
     } catch (err) {
@@ -12568,6 +12594,8 @@ async function buildBoardPayload(snapshot = boardSaveSnapshot()) {
 }
 
 let activeBoardSave = null;
+/* What the last streamed save actually wrote; read by smokes and diagnostics. */
+let lastBoardSaveStats = null;
 let manualSaveToastActive = 0;
 let boardPreviewBackfillSeq = 0;
 let boardOpenPersistSeq = 0;
@@ -12599,10 +12627,14 @@ async function performBoardSave(opts = {}) {
     }
     try {
       const begin = await window.RefBoardAPI.beginBoardSave(
-        defaultName, targetPath, snapshot.core, preview, saveAs,
+        defaultName, targetPath, snapshot.core, preview, saveAs, snapshot.imageRefs,
       );
       if (!begin?.started) return false;
       token = begin.token;
+      // The store reports what it already holds. Only the rest is sent; the
+      // index the save finishes with points at both.
+      const storedIds = new Set(Array.isArray(begin.stored) ? begin.stored : []);
+      const savePath = begin.filePath || targetPath || null;
       const appendBatch = window.RefBoardAPI.appendBoardSaveImages
         ? (entries) => window.RefBoardAPI.appendBoardSaveImages(token, entries)
         : async (entries) => {
@@ -12629,6 +12661,7 @@ async function performBoardSave(opts = {}) {
       };
       for (const ref of snapshot.imageRefs) {
         const im = images.get(ref.id);
+        if (!imageNeedsStoreAppend(im, savePath, storedIds)) continue;
         const blob = await ensureImageBlobForSave(im);
         if (!blob) throw new Error(`Missing image data: ${ref.id}`);
         const data = await blob.arrayBuffer();
@@ -12644,6 +12677,14 @@ async function performBoardSave(opts = {}) {
       currentBoardPath = result.filePath;
       currentBoardTitle = boardTitleFromPath(result.filePath);
       if (preview) cachedCurrentBoardThumb = preview;
+      for (const ref of snapshot.imageRefs) {
+        const im = images.get(ref.id);
+        if (im) im.storedAs = { path: result.filePath, gen: im.pixelGen || 0 };
+      }
+      lastBoardSaveStats = {
+        appended: result.appended ?? null, appendedBytes: result.appendedBytes ?? null,
+        reused: result.reused ?? null, compacted: !!result.compacted, garbageBytes: result.garbageBytes ?? null,
+      };
     } catch (err) {
       if (token) await window.RefBoardAPI.abortBoardSave(token).catch(() => {});
       console.error('[save] streamed board save failed:', err);
@@ -14250,6 +14291,10 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
         blobSize: blob.size,
         type: blob.type || 'image/png',
         name: rec.name || '',
+        pixelGen: 0,
+        // A sidecar index lists exactly what its store holds; a legacy board
+        // has no store yet, so its first save starts one.
+        storedAs: j.version === 4 && meta.path ? { path: meta.path, gen: 0 } : null,
       }, imgId);
       void ensureStableImageProxy(im, blob);
       nextImages.set(imgId, im);
@@ -14421,7 +14466,8 @@ async function openBoardFromPathImpl(filePath) {
     } catch (err) {
       lastBoardOpenError = err?.stack || err?.message || String(err);
       console.error('[openBoard] desktop open failed:', err);
-      toast('Could not open that board');
+      const message = String(err?.message || '');
+      toast(/image store/i.test(message) ? message.replace(/^Error invoking remote method '[^']+': Error: /, '') : 'Could not open that board');
     }
     return;
   }
@@ -20263,6 +20309,7 @@ window.RefBoard = {
   saveBoardFile,
   openBoardFromPath,
   memoryStats: memoryDiagnostics,
+  get lastBoardSaveStats() { return lastBoardSaveStats; },
   imageRenderState: imageRenderDiagnostics,
   get mode() { return mode; },
   invalidate,
