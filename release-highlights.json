@@ -1,13 +1,51 @@
 {
-  "headline": "The startup crash in 2.0.11 is fixed",
-  "summary": "RefBoard 2.0.11 was packaged without one of the files the app loads at startup, so it closed with an error before a window ever appeared. That file ships now. Everything 2.0.11 added is here and working.",
+  "headline": "Faster on big boards, and saves that only write what changed",
+  "summary": "Boards with hundreds of images stay sharp and feel lighter, saving is quick even for large boards, and undo is instant. Boards saved by 2.1.0 open only in 2.1.0 or later.",
   "sections": {
-    "new": [],
-    "improved": [],
+    "new": [
+      {
+        "title": "Boards are now two files",
+        "description": "Next to your board file sits Name.refboard.images, which holds your original images. Saving writes only what you added or changed, so a save on a large board takes a moment instead of rewriting everything. Keep the two files together when you move or back up a board. Older boards open as before and switch over the next time you save."
+      }
+    ],
+    "improved": [
+      {
+        "title": "Smoother with hundreds of images",
+        "description": "Hovering, selecting, dragging a marquee, panning and zooming do far less work per frame on large boards."
+      },
+      {
+        "title": "Instant undo",
+        "description": "Undo and redo now touch only what the step changed, so they are instant on any board and use almost no memory."
+      },
+      {
+        "title": "Lighter autosaves",
+        "description": "An autosave writes the file once, and moving around the board no longer triggers a full save."
+      },
+      {
+        "title": "Quicker Explorer previews",
+        "description": "The preview stored with the board comes from images already on screen, so a save no longer re-reads every original."
+      }
+    ],
     "fixed": [
       {
-        "title": "RefBoard starts again",
-        "description": "2.0.11 went out without scripts/recent-works.js — the module the pinned-boards work keeps its retention rules in. The app loads it in the first moments of startup, so 2.0.11 died with \"Cannot find module './scripts/recent-works'\" before any window opened, on every launch, with no way to get past it. The file is in the package now. The check that exists to catch exactly this was reading the page's imports and nothing else, so it never saw what the app itself loads and reported everything as fine on a build that could not open; it now reads all three entry points and understands both ways of loading a file."
+        "title": "Images no longer flicker between sharp and blurry",
+        "description": "On boards with many images, some images popped soft and sharp while you were not moving. Fixed at the source."
+      },
+      {
+        "title": "Failed saves no longer leave junk",
+        "description": "A save that fails (disk full, a locked file) now keeps your previous file intact and leaves no temporary file behind."
+      },
+      {
+        "title": "Closing one window no longer skips the unsaved prompt in others",
+        "description": "Every window asks about unsaved work, including when you restart to update."
+      },
+      {
+        "title": "Opening a second window kept its undo history",
+        "description": "Opening another board window no longer clears the first window's undo for paint and crop edits."
+      },
+      {
+        "title": "Small crashes and slips",
+        "description": "Pressing Enter with nothing selected, undoing in the middle of a drag, and a rare case where a crash could empty your recent boards list."
       }
     ]
   }
