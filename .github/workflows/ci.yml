@@ -79,5 +79,8 @@ jobs:
       - name: Pinned boards smoke
         run: npm run test:pinned-smoke
 
+      - name: Board save abort smoke
+        run: npm run test:save-abort-smoke
+
       - name: Multi-window history smoke
         run: npm run test:multi-window-history-smoke
