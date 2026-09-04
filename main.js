@@ -10,6 +10,10 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-format');
+const {
+  sidecarStorePath, readSidecarIndex, writeSidecarIndex, openSidecarStore, appendSidecarImage,
+  readSidecarImage, sidecarGarbageBytes, shouldCompactSidecar, compactSidecarStore,
+} = require('./scripts/board-sidecar');
 const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 const zorder = require('./scripts/win32-zorder');
 const { refreshShellIcons } = require('./scripts/win32-shell-notify');
@@ -414,6 +418,22 @@ function setupIpc() {
   const boardSaveSessions = new Map();
   const boardOpenSessions = new Map();
 
+  /* An open session expires if the renderer stops reading; every read re-arms
+     it, so a slow open of a large board is never cut off mid-way. */
+  function armBoardOpenTimer(session) {
+    clearTimeout(session.timer);
+    session.timer = setTimeout(() => {
+      boardOpenSessions.delete(session.token);
+      void closeBoardOpenSession(session);
+    }, 5 * 60 * 1000);
+  }
+
+  async function readBoardOpenSessionImage(session, image) {
+    if (session.sidecar) return readSidecarImage(session.handle, image, session.storeSize);
+    if (session.handle) return readBoardImageBytesFromHandle(session.handle, image);
+    return readBoardImageBytes(session.filePath, image);
+  }
+
   async function closeBoardOpenSession(session) {
     if (!session) return;
     clearTimeout(session.timer);
@@ -428,17 +448,41 @@ function setupIpc() {
      ReferenceError and hid the real error. */
   async function discardBoardSaveSession(session) {
     if (!session) return;
+    const store = session.store;
+    session.store = null;
+    if (store?.handle) {
+      // Bytes appended by the abandoned save reference nothing. Give them
+      // back rather than leaving them for a compaction to find.
+      try { if (Number.isSafeInteger(session.startSize)) await store.handle.truncate(session.startSize); } catch { /* keep as garbage */ }
+      try { await store.handle.close(); } catch { /* already closed */ }
+    }
     try { await session.handle?.close(); } catch { /* already closed */ }
     session.handle = null;
     if (session.tempPath) await fs.unlink(session.tempPath).catch(() => {});
   }
 
+  function boardSaveSessionForTarget(target) {
+    for (const session of boardSaveSessions.values()) {
+      if (path.resolve(session.target) === target) return session;
+    }
+    return null;
+  }
+
+  /* Sidecar boards (see scripts/board-sidecar.js): the store grows by the
+     images it does not already hold, and the index is rewritten whole. The
+     threshold for copying the store to drop dead bytes can be lowered for
+     tests, which cannot afford 64 MB of fixture. */
+  const compactMinBytes = Number(process.env.REFBOARD_SIDECAR_COMPACT_MIN_BYTES) > 0
+    ? Number(process.env.REFBOARD_SIDECAR_COMPACT_MIN_BYTES)
+    : undefined;
+
   async function appendBoardSaveImageParts(session, image, data) {
-    const parts = boardImageParts(image, data);
-    await session.handle.write((session.firstImage ? '' : ',') + parts.prefix);
-    await session.handle.write(parts.base64);
-    await session.handle.write(parts.suffix);
-    session.firstImage = false;
+    if (!session.store) throw new Error('Board save session has no store');
+    const id = String(image?.id || '');
+    if (!id) throw new Error('Image without an id');
+    const entry = await appendSidecarImage(session.store, image, data);
+    session.appended.set(id, { ...entry, type: image?.type, name: image?.name, w: image?.w, h: image?.h, size: entry.length });
+    return entry;
   }
 
   ipcMain.handle('choose-folder', async event => {
@@ -564,7 +608,7 @@ function setupIpc() {
     return { saved: true, filePath: target };
   });
 
-  ipcMain.handle('begin-board-save', async (event, { defaultName, filePath, forceDialog = false, core, preview }) => {
+  ipcMain.handle('begin-board-save', async (event, { defaultName, filePath, forceDialog = false, core, preview, imageRefs }) => {
     let target = forceDialog ? null : filePath;
     if (!target) {
       const r = await dialog.showSaveDialog(windowForEvent(event), {
@@ -576,16 +620,28 @@ function setupIpc() {
       target = r.filePath;
     }
 
+    target = path.resolve(target);
+    if (boardSaveSessionForTarget(target)) throw new Error('Board save in progress');
     const token = crypto.randomUUID();
-    const tempPath = `${target}.saving-${process.pid}-${token}`;
     const session = {
-      token, target, tempPath, ownerId: event.sender.id, handle: null, firstImage: true,
+      token, target, storePath: sidecarStorePath(target), ownerId: event.sender.id,
+      core, preview, imageRefs: Array.isArray(imageRefs) ? imageRefs : [],
+      store: null, startSize: null, existing: new Map(), appended: new Map(),
     };
     try {
-      session.handle = await fs.open(tempPath, 'wx');
-      await session.handle.write(boardHeaderPrefix(core, preview));
+      // Saving over a sidecar board keeps its store and reuses every record
+      // the index still points at. Anything else (a new file, a legacy
+      // embedded board being converted) starts a fresh store: nothing can
+      // reference bytes in a store whose index is not a sidecar index.
+      let index = null;
+      try { index = await readSidecarIndex(target); } catch { index = null; }
+      session.store = await openSidecarStore(session.storePath, { create: true, truncate: !index });
+      session.startSize = session.store.size;
+      for (const image of index?.images || []) {
+        if (image.offset + image.length <= session.store.size) session.existing.set(image.id, image);
+      }
       boardSaveSessions.set(token, session);
-      return { started: true, token, filePath: target };
+      return { started: true, token, filePath: target, stored: [...session.existing.keys()] };
     } catch (err) {
       await discardBoardSaveSession(session);
       throw err;
@@ -595,18 +651,19 @@ function setupIpc() {
   ipcMain.handle('append-board-save-image', async (event, { token, image, data }) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
-    await appendBoardSaveImageParts(session, image, data);
-    return { appended: true };
+    const entry = await appendBoardSaveImageParts(session, image, data);
+    return { appended: true, entry };
   });
 
   ipcMain.handle('append-board-save-images', async (event, { token, images }) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
     const list = Array.isArray(images) ? images : [];
+    const entries = [];
     for (const entry of list) {
-      await appendBoardSaveImageParts(session, entry?.image, entry?.data);
+      entries.push(await appendBoardSaveImageParts(session, entry?.image, entry?.data));
     }
-    return { appended: true, count: list.length };
+    return { appended: true, count: list.length, entries };
   });
 
   ipcMain.handle('finish-board-save', async (event, token) => {
@@ -614,14 +671,37 @@ function setupIpc() {
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
     boardSaveSessions.delete(token);
     try {
-      await session.handle.write(']}');
-      await session.handle.sync();
-      await session.handle.close();
-      session.handle = null;
+      let images = session.imageRefs.map(ref => {
+        const id = String(ref?.id || '');
+        const placed = session.appended.get(id) || session.existing.get(id);
+        if (!placed) throw new Error(`Missing image data: ${id}`);
+        return {
+          id, type: ref.type || placed.type, name: ref.name ?? placed.name ?? '',
+          w: ref.w ?? placed.w, h: ref.h ?? placed.h, size: placed.length,
+          offset: placed.offset, length: placed.length,
+        };
+      });
+      await session.store.handle.sync();
+      await session.store.handle.close();
+      const storeSize = session.store.size;
+      session.store = null;
 
-      await replaceBoardFile(session.target, session.tempPath);
+      let compacted = false;
+      const garbage = sidecarGarbageBytes(storeSize, images);
+      if (shouldCompactSidecar(storeSize, garbage, compactMinBytes ? { minBytes: compactMinBytes } : {})) {
+        // The old index still describes the old store until the new index
+        // lands, and the new store is complete before it replaces the old,
+        // so a crash anywhere in here leaves a readable pair.
+        images = (await compactSidecarStore(session.storePath, images)).images;
+        compacted = true;
+      }
+      await writeSidecarIndex(session.target, session.core, session.preview, images);
       refreshShellIcons(session.target);
-      return { saved: true, filePath: session.target };
+      return {
+        saved: true, filePath: session.target,
+        appended: session.appended.size, appendedBytes: Math.max(0, storeSize - session.startSize),
+        reused: images.length - session.appended.size, compacted, garbageBytes: compacted ? 0 : garbage,
+      };
     } catch (err) {
       await discardBoardSaveSession(session);
       throw err;
@@ -661,6 +741,29 @@ function setupIpc() {
   ipcMain.handle('begin-board-open', async (event, filePath) => {
     const resolved = path.resolve(String(filePath || ''));
     await recoverBoardFileIfMissing(resolved);
+    const index = await readSidecarIndex(resolved);
+    if (index) {
+      const storePath = sidecarStorePath(resolved);
+      let store;
+      try {
+        store = await openSidecarStore(storePath);
+      } catch (err) {
+        const missing = err?.code === 'ENOENT';
+        throw new Error(missing
+          ? `The image store for this board is missing: ${path.basename(storePath)} must sit beside the .refboard file`
+          : `Could not open the image store for this board: ${err?.message || err}`);
+      }
+      const { images: entries, format: _format, ...core } = index;
+      const images = entries.map((image, i) => ({ ...image, index: i }));
+      const token = crypto.randomUUID();
+      const session = {
+        token, ownerId: event.sender.id, filePath: resolved, sidecar: true, storeSize: store.size,
+        images, handle: store.handle, timer: null,
+      };
+      armBoardOpenTimer(session);
+      boardOpenSessions.set(token, session);
+      return { token, core, images: images.map(({ offset, length, ...meta }) => meta) };
+    }
     const handle = await fs.open(resolved, 'r');
     try {
       const stat = await handle.stat();
@@ -669,10 +772,7 @@ function setupIpc() {
       const session = {
         token, ownerId: event.sender.id, filePath: resolved, images: scanned.images, handle, timer: null,
       };
-      session.timer = setTimeout(() => {
-        boardOpenSessions.delete(token);
-        void closeBoardOpenSession(session);
-      }, 5 * 60 * 1000);
+      armBoardOpenTimer(session);
       boardOpenSessions.set(token, session);
       return { token, core: scanned.core, images: scanned.images.map(({ dataStart, dataLength, ...meta }) => meta) };
     } catch (err) {
@@ -686,19 +786,19 @@ function setupIpc() {
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board open session');
     const image = session.images[index];
     if (!image) throw new Error('Unknown board image');
-    if (session.handle) return await readBoardImageBytesFromHandle(session.handle, image);
-    return await readBoardImageBytes(session.filePath, image);
+    armBoardOpenTimer(session);
+    return await readBoardOpenSessionImage(session, image);
   });
 
   ipcMain.handle('read-board-open-images', async (event, { token, indexes }) => {
     const session = boardOpenSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board open session');
     const list = Array.isArray(indexes) ? indexes : [];
+    armBoardOpenTimer(session);
     return await Promise.all(list.map(async (index) => {
       const image = session.images[index];
       if (!image) throw new Error('Unknown board image');
-      if (session.handle) return readBoardImageBytesFromHandle(session.handle, image);
-      return readBoardImageBytes(session.filePath, image);
+      return readBoardOpenSessionImage(session, image);
     }));
   });
 
@@ -916,6 +1016,13 @@ function setupIpc() {
       if (path.resolve(session.target) === target) {
         throw new Error('Board save in progress');
       }
+    }
+    const index = await readSidecarIndex(target).catch(() => null);
+    if (index) {
+      const { images, format: _format, preview: _old, ...core } = index;
+      await writeSidecarIndex(target, core, preview, images);
+      refreshShellIcons(target);
+      return { written: true, filePath: target };
     }
     const result = await rewriteBoardFilePreview(target, preview);
     refreshShellIcons(target);

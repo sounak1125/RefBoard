@@ -16,7 +16,11 @@ const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const main = await readFile(new URL('../main.js', import.meta.url), 'utf8');
 const preload = await readFile(new URL('../preload.js', import.meta.url), 'utf8');
 
-assert.match(main, /replaceBoardFile\(session\.target, session\.tempPath\)/, 'streamed saves must keep a stable .bak instead of deleting a UUID backup');
+// The index is written through the sidecar module, which swaps it in with the
+// same stable-.bak helper the whole-file save used.
+const sidecar = await readFile(new URL('./board-sidecar.js', import.meta.url), 'utf8');
+assert.match(main, /writeSidecarIndex\(session\.target, session\.core, session\.preview, images\)/, 'streamed saves must write the index through the sidecar module');
+assert.match(sidecar, /await replaceBoardFile\(target, tempPath\);/, 'the sidecar index swap must keep a stable .bak instead of deleting a UUID backup');
 assert.doesNotMatch(main, /unlink\(backupPath\)/, 'finish-board-save must not delete the previous board copy');
 assert.match(main, /recoverBoardFileIfMissing\(work\.path\)/, 'recent works must recover a missing board from .bak before listing it');
 assert.match(main, /ipcMain\.handle\('read-board-file'[\s\S]*?recoverBoardFileIfMissing\(resolved\)/, 'opening a board file must recover .bak first');

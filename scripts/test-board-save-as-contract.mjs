@@ -12,7 +12,7 @@ assert.match(html, /beginBoardSave\([\s\S]*?snapshot\.core, preview, saveAs/, 's
 assert.match(html, /const targetPath = opts\.filePath \|\| currentBoardPath \|\| undefined/, 'streamed and legacy saves must honor an explicit path or the current board path');
 assert.match(html, /saveBoardFile\(defaultName, json, targetPath, saveAs\)/, 'legacy board saving must forward the Save As request');
 
-assert.match(preload, /beginBoardSave: \(defaultName, filePath, core, preview, forceDialog = false\)/, 'the preload bridge must carry streamed Save As intent');
+assert.match(preload, /beginBoardSave: \(defaultName, filePath, core, preview, forceDialog = false, imageRefs = \[\]\)/, 'the preload bridge must carry streamed Save As intent and the image references');
 assert.match(preload, /saveBoardFile: \(defaultName, data, filePath, forceDialog = false\)/, 'the preload bridge must carry legacy Save As intent');
 
 assert.equal((main.match(/let target = forceDialog \? null : filePath;/g) || []).length, 2, 'both board save handlers must force a dialog for Save As');

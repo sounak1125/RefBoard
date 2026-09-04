@@ -14,6 +14,7 @@ const fsSync = require('fs');
 const path = require('path');
 
 const BOARD_EXT = '.refboard';
+const { STORE_SUFFIX } = require('./board-sidecar');
 const MAX_BOARD_NAME_LENGTH = 120;
 // Windows rejects these outright. Applying the same rule everywhere means a
 // board renamed on one machine still opens on another.
@@ -92,7 +93,19 @@ async function renameBoardFile(currentPath, rawName) {
   }
   if (!fsSync.existsSync(from)) return { ok: false, reason: 'missing', from, to };
 
-  await fs.rename(from, to);
+  // A sidecar board is two files. The image store moves first so a failure
+  // leaves the pair intact under the old name; if the index then fails to
+  // move, the store goes back.
+  const fromStore = `${from}${STORE_SUFFIX}`;
+  const toStore = `${to}${STORE_SUFFIX}`;
+  const hasStore = fsSync.existsSync(fromStore);
+  if (hasStore) await fs.rename(fromStore, toStore);
+  try {
+    await fs.rename(from, to);
+  } catch (err) {
+    if (hasStore) await fs.rename(toStore, fromStore).catch(() => {});
+    throw err;
+  }
   // The .bak sidecar is this board's recovery copy. Leaving it behind would
   // both orphan it and strip the renamed board of its backup.
   const fromBak = `${from}.bak`;

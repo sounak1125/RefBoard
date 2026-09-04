@@ -21,7 +21,8 @@ import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 import { evaluate } from './smoke-cdp.mjs';
 
 const require = createRequire(import.meta.url);
-const { readBoardPreview, scanBoardFile } = require('./board-open-stream.js');
+const { readBoardPreview } = require('./board-open-stream.js');
+const { readSidecarIndex } = require('./board-sidecar.js');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
@@ -95,8 +96,8 @@ try {
   assert.equal(r.saved, true, 'the silent save must succeed');
   const preview = await readBoardPreview(boardPath);
   assert.ok(typeof preview === 'string' && preview.length > 1000, 'the file must carry a preview the moment the save resolves');
-  const scanned = await scanBoardFile(boardPath);
-  assert.equal(scanned.images.length, 12, 'all twelve images are embedded');
+  const index = await readSidecarIndex(boardPath);
+  assert.equal(index?.images.length, 12, 'all twelve images are indexed');
   const statAfterSave = await stat(boardPath);
   await delay(2500);
   const statLater = await stat(boardPath);
