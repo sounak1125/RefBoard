@@ -60,7 +60,8 @@
     "test:multi-window-history-smoke": "node scripts/smoke-multi-window-history.mjs",
     "test:keyboard-guards-smoke": "node scripts/smoke-keyboard-guards.mjs",
     "test:grid-smoke": "node scripts/smoke-grid-pattern.mjs",
-    "test:view-persist-smoke": "node scripts/smoke-view-persist.mjs"
+    "test:view-persist-smoke": "node scripts/smoke-view-persist.mjs",
+    "test:steady-flicker-smoke": "electron scripts/smoke-steady-view-flicker.js"
   },
   "dependencies": {
     "electron-updater": "^6.6.2",

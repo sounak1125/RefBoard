@@ -3995,6 +3995,11 @@ const imageResidency = createImageResidencyController({
   maxFullPixels: () => imageFullBitmapBudgetPixels(),
   records: () => images.values(),
   closeBitmap: bitmap => bitmap?.close?.(),
+  // Being drawn only bumped the LRU clock. A decode finishing for one image
+  // could close another that was still on screen, which re-requested its own
+  // decode and closed a third: a sharp/soft cycle at a fixed view. Drawn and
+  // admitted full bitmaps now get the same grace window as LOD tiers.
+  isProtected: im => imageFullSurfaceProtected(im?.id),
 });
 let fullBitmapEvictTimer = 0;
 let lastBoardOpenError = null;
@@ -4042,6 +4047,7 @@ function imageMemoryStats() {
     imageRecords: images.size,
     decodedFullCount: full.decodedCount,
     pinnedFullCount: full.pinnedCount,
+    protectedFullCount: full.protectedCount,
     decodedFullMiB: Math.round(full.fullPixels * 4 / 104857.6) / 10,
     decodedFullBudgetMiB: Math.round(full.maxFullPixels * 4 / 104857.6) / 10,
     stableProxyCount: proxyCount,
@@ -4083,6 +4089,7 @@ function imageRenderDiagnostics(itemId) {
     lodAllowed: displayTarget !== IMAGE_FULL_TIER
       && allowedImageLodDemand.has(imageLodDemandKey(it.imgId, displayTarget)),
     fullAllowed: allowedImageFullDemand.has(imageFullDemandKey(it.imgId)),
+    fullProtected: imageFullSurfaceProtected(it.imgId),
     floorTier: imageFloorTierFor(images.get(it.imgId)),
     floorResident: !!images.get(it.imgId)?.lod?.entries?.has(IMAGE_FLOOR_TIER),
   };
@@ -5427,16 +5434,18 @@ function imageDemandBudgetPixels() {
 
 /* Each evictor is capped by what the other pool currently holds, so the two
    together stay inside the working budget without either needing a fixed share
-   of it. Both floor at IMAGE_DECODE_MIN_POOL_PIXELS to rule out a spiral where
-   the pools evict each other to zero. */
+   of it. Neither pool has a private floor: the floor is on the working budget
+   itself. A pool holding only what recent frames drew simply stays over cap
+   until those surfaces age out of the protection window, instead of squeezing
+   the other pool into closing something that is on screen. The old per-pool
+   8 Mpx floors let the two pools hold twice the working budget together, and
+   still evicted visible bitmaps whenever admitted demand exceeded the floor. */
 function imageFullBitmapBudgetPixels() {
-  return Math.max(IMAGE_DECODE_MIN_POOL_PIXELS,
-    imageWorkingBudgetPixels() - imageLodTotalPixels);
+  return Math.max(0, imageWorkingBudgetPixels() - imageLodTotalPixels);
 }
 
 function imageLodBudgetPixels() {
-  return Math.max(IMAGE_DECODE_MIN_POOL_PIXELS,
-    imageWorkingBudgetPixels() - imageResidency.stats().fullPixels);
+  return Math.max(0, imageWorkingBudgetPixels() - imageResidency.stats().fullPixels);
 }
 
 let imageLodTotalPixels = 0;
@@ -5478,6 +5487,21 @@ const imageFullDemandKey = imgId => `full:${imgId}`;
 function imageLodSurfaceProtected(imgId, bucket) {
   const key = imageLodDemandKey(imgId, bucket);
   if (activeImageLodDemand.has(key) || imageFloorDemand.has(key)) return true;
+  for (const frame of recentImageLodDemand) {
+    if (frame.has(key)) return true;
+  }
+  return false;
+}
+
+/**
+ * True while a full bitmap was drawn by a recent frame or is admitted for one.
+ * Shares the LOD protection ring: the keys differ by prefix, and one window
+ * rotated once per frame is the point.
+ */
+function imageFullSurfaceProtected(imgId) {
+  if (!imgId) return false;
+  const key = imageFullDemandKey(imgId);
+  if (activeImageLodDemand.has(key) || allowedImageFullDemand.has(key)) return true;
   for (const frame of recentImageLodDemand) {
     if (frame.has(key)) return true;
   }
@@ -6031,7 +6055,8 @@ async function ensureFullBitmap(im, opts = {}) {
       touchFullBitmap(im);
       im.decodeFailed = false;
       im.decodeWasSkipped = false;
-      imageResidency.evict({ protect: im });
+      // Reclaimed at the end of the frame this invalidate() draws, once that
+      // frame has declared what it used; the timer covers decodes no frame follows.
       scheduleFullBitmapEviction();
       invalidate();
       return im.bitmap;
@@ -7177,7 +7202,6 @@ async function registerBlob(blob, name) {
   touchFullBitmap(im);
   await ensureStableImageProxy(im, blob);
   await persistImageBlob(im, blob);
-  imageResidency.evict({ protect: im });
   scheduleFullBitmapEviction();
   return imgId;
 }
@@ -15003,6 +15027,7 @@ function protectImageSurface(surface, it) {
     activeImageLodDemand.add(imageLodDemandKey(it.imgId, surface.bucket));
   } else if (surface.kind === 'full') {
     touchFullBitmap(surface.im);
+    activeImageLodDemand.add(imageFullDemandKey(it.imgId));
   }
 }
 
@@ -15447,8 +15472,10 @@ function draw() {
 
 
   // Replacement surfaces are installed atomically during drawing. Once the
-  // frame has declared what it actually used, stale tiers can be reclaimed.
+  // frame has declared what it actually used, stale tiers and stale full
+  // bitmaps can be reclaimed; nothing drawn in the last few frames is either.
   evictImageLods();
+  imageResidency.evict();
 
   const bits = [`${state.items.length} item${state.items.length === 1 ? '' : 's'}`, `${Math.round(s * 100)}%`];
   if (state.boardGray) bits.push('grayscale');

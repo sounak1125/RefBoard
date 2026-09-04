@@ -93,3 +93,6 @@ jobs:
 
       - name: View persist smoke
         run: npm run test:view-persist-smoke
+
+      - name: Steady-view flicker smoke
+        run: npm run test:steady-flicker-smoke
