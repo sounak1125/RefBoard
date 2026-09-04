@@ -78,3 +78,6 @@ jobs:
 
       - name: Pinned boards smoke
         run: npm run test:pinned-smoke
+
+      - name: Keyboard guards smoke
+        run: npm run test:keyboard-guards-smoke

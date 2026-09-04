@@ -14,6 +14,7 @@ const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 const zorder = require('./scripts/win32-zorder');
 const { refreshShellIcons } = require('./scripts/win32-shell-notify');
 const { capRecentWorks, pinsRemaining, sortRecentWorks } = require('./scripts/recent-works');
+const { writeJsonAtomic } = require('./scripts/atomic-json');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -192,8 +193,7 @@ async function loadRecentWorks() {
 }
 
 async function saveRecentWorks(list) {
-  await fs.mkdir(path.dirname(recentWorksPath()), { recursive: true });
-  await fs.writeFile(recentWorksPath(), JSON.stringify(list, null, 2), 'utf8');
+  await writeJsonAtomic(recentWorksPath(), list);
 }
 
 function whatsNewStorePath() {
@@ -231,8 +231,7 @@ async function loadWhatsNewStore() {
 }
 
 async function saveWhatsNewStore(data) {
-  await fs.mkdir(path.dirname(whatsNewStorePath()), { recursive: true });
-  await fs.writeFile(whatsNewStorePath(), JSON.stringify(data, null, 2), 'utf8');
+  await writeJsonAtomic(whatsNewStorePath(), data);
 }
 
 let changelogCache = null;
