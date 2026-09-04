@@ -266,7 +266,11 @@ assert(html.includes('[...floorCandidates, ...lodCandidates, ...fullCandidates]'
 assert(html.includes("if (key.startsWith('full:')) allowedImageFullDemand.add(key);"),
   'the combined admission set still splits per pool for its callers');
 assert(html.includes('const IMAGE_DECODE_MIN_POOL_PIXELS = 8_000_000;'),
-  'the old fixed budget survives only as a per-pool floor');
+  'the old fixed budget survives only as the floor of the working budget');
+assert(html.includes('return Math.max(0, imageWorkingBudgetPixels() - imageLodTotalPixels);'),
+  'the full pool has no private floor: two floors let the pools hold twice the budget and still evict what is on screen');
+assert(html.includes('return Math.max(0, imageWorkingBudgetPixels() - imageResidency.stats().fullPixels);'),
+  'the LOD pool has no private floor either');
 assert(html.includes('function imageMemoryBudgetPixels()'), 'the decoded-image budget follows a setting');
 assert(html.includes("imageMemoryMB: 'auto',"), 'decoded-image memory is a user setting');
 assert(html.includes("set('imageMemoryMB', normalizeImageMemory(e.target.value))"),
@@ -310,6 +314,14 @@ assert(!html.includes("navigatingFrame\n    ? 'low'"), 'wheel frames never force
 assert(!html.includes('imageSurfaceTransitions'), 'resolution swaps stay instant; the flickering focus-blur transition must not return');
 assert(!html.includes('blurPx'), 'board image draws never animate through a canvas blur filter');
 assert(html.includes('protectImageSurface(surface, it);'), 'the drawn surface is still protected from same-frame eviction');
+// Full bitmaps get the same grace window as LOD tiers. Without it a decode finishing
+// for one image closed another that was still on screen, which re-requested its
+// decode and closed a third: 900<->512 pops at a fixed view on a dense board.
+assert(html.includes('function imageFullSurfaceProtected(imgId)'), 'full bitmaps have a protection window');
+assert(html.includes('isProtected: im => imageFullSurfaceProtected(im?.id),'), 'the residency LRU consults that window before closing a bitmap');
+assert(html.includes('activeImageLodDemand.add(imageFullDemandKey(it.imgId));'), 'drawing a full bitmap protects it rather than merely touching its clock');
+assert(!html.includes('imageResidency.evict({ protect: im });'), 'a finished decode must not evict on the spot, where only itself is safe');
+assert(/evictImageLods\(\);\s*imageResidency\.evict\(\);/.test(html), 'both pools are reclaimed once per frame, after the frame declared what it drew');
 assert(html.includes('if (!visibleImageIds.has(itemId)) imagePrewarmTargets.delete(itemId);'), 'offscreen prewarm targets are released');
 assert(html.includes('if (!liveImageIds.has(itemId)) map.delete(itemId);'), 'deleted images cannot retain render state');
 assert(html.includes('activeImageLodDemand.add'), 'the currently drawn surface is protected during atomic replacement');

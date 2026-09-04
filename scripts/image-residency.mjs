@@ -5,11 +5,19 @@
  * `maxFullPixels` accepts a function so the ceiling can follow a user setting
  * and the live size of the other decoded pools instead of being frozen at
  * construction time.
+ *
+ * `isProtected` lets the owner exempt records from eviction for a reason the
+ * LRU clock cannot see: the frame that just drew them, or the admission plan
+ * that is about to. Without it, being drawn only bumped the clock, and a decode
+ * finishing for one image could close the bitmap of another that was still on
+ * screen -- which then re-requested its decode and closed a third. On a dense
+ * board that loop is a visible sharp/soft cycle at a fixed view.
  */
 export function createImageResidencyController({
   maxFullPixels = 24_000_000,
   records,
   closeBitmap = bitmap => bitmap?.close?.(),
+  isProtected = null,
 } = {}) {
   if (typeof records !== 'function') throw new TypeError('records() is required');
   let clock = 0;
@@ -17,7 +25,7 @@ export function createImageResidencyController({
   function budget() {
     const raw = typeof maxFullPixels === 'function' ? maxFullPixels() : maxFullPixels;
     const value = Number(raw);
-    return Number.isFinite(value) && value > 0 ? value : 0;
+    return Number.isFinite(value) && value >= 0 ? value : 0;
   }
 
   function prepare(record) {
@@ -55,17 +63,23 @@ export function createImageResidencyController({
     return true;
   }
 
+  function protectedByOwner(record) {
+    if (typeof isProtected !== 'function') return false;
+    try { return !!isProtected(record); } catch { return false; }
+  }
+
   function stats() {
-    let fullPixels = 0, decodedCount = 0, pinnedCount = 0;
+    let fullPixels = 0, decodedCount = 0, pinnedCount = 0, protectedCount = 0;
     for (const raw of records()) {
       const record = prepare(raw);
       if (record?.bitmap) {
         decodedCount++;
         fullPixels += pixels(record);
+        if (protectedByOwner(record)) protectedCount++;
       }
       if (record?.fullPinCount > 0) pinnedCount++;
     }
-    return { fullPixels, decodedCount, pinnedCount, maxFullPixels: budget() };
+    return { fullPixels, decodedCount, pinnedCount, protectedCount, maxFullPixels: budget() };
   }
 
   function evict({ protect = null } = {}) {
@@ -74,7 +88,8 @@ export function createImageResidencyController({
     if (fullPixels <= cap) return 0;
     const candidates = [...records()]
       .map(prepare)
-      .filter(record => record?.bitmap && record !== protect && !record.decodePromise && record.fullPinCount === 0)
+      .filter(record => record?.bitmap && record !== protect && !record.decodePromise
+        && record.fullPinCount === 0 && !protectedByOwner(record))
       .sort((a, b) => a.fullLastUsed - b.fullLastUsed);
     let count = 0;
     for (const record of candidates) {

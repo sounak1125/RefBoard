@@ -14,12 +14,16 @@ const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 const zorder = require('./scripts/win32-zorder');
 const { refreshShellIcons } = require('./scripts/win32-shell-notify');
 const { capRecentWorks, pinsRemaining, sortRecentWorks } = require('./scripts/recent-works');
+const { writeJsonAtomic } = require('./scripts/atomic-json');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
 const windows = new Set();
 const MAX_BOARD_WINDOWS = 4;
-let closing = false;
+/* Per-window. One process-wide flag let a single confirmed close (or a "Restart
+   to update") skip the unsaved-changes handshake in every other window. */
+const closingWindows = new WeakSet();
+let installUpdateWhenAllClosed = false;
 let pendingOpenPath = null;
 let appDownloadStatus = { phase: 'idle', percent: 0 };
 
@@ -192,8 +196,7 @@ async function loadRecentWorks() {
 }
 
 async function saveRecentWorks(list) {
-  await fs.mkdir(path.dirname(recentWorksPath()), { recursive: true });
-  await fs.writeFile(recentWorksPath(), JSON.stringify(list, null, 2), 'utf8');
+  await writeJsonAtomic(recentWorksPath(), list);
 }
 
 function whatsNewStorePath() {
@@ -231,8 +234,7 @@ async function loadWhatsNewStore() {
 }
 
 async function saveWhatsNewStore(data) {
-  await fs.mkdir(path.dirname(whatsNewStorePath()), { recursive: true });
-  await fs.writeFile(whatsNewStorePath(), JSON.stringify(data, null, 2), 'utf8');
+  await writeJsonAtomic(whatsNewStorePath(), data);
 }
 
 let changelogCache = null;
@@ -418,6 +420,17 @@ function setupIpc() {
     session.timer = null;
     try { await session.handle?.close(); } catch { /* already closed */ }
     session.handle = null;
+  }
+
+  /* A save that fails or is abandoned must not leave its temp file beside the
+     board or keep its file handle open (which locks the file on Windows).
+     Removed by mistake in ff90c34; every failure branch then threw
+     ReferenceError and hid the real error. */
+  async function discardBoardSaveSession(session) {
+    if (!session) return;
+    try { await session.handle?.close(); } catch { /* already closed */ }
+    session.handle = null;
+    if (session.tempPath) await fs.unlink(session.tempPath).catch(() => {});
   }
 
   async function appendBoardSaveImageParts(session, image, data) {
@@ -974,9 +987,10 @@ function setupIpc() {
     [...windows].filter(candidate => candidate && !candidate.isDestroyed()).length);
 
   ipcMain.on('close-confirmed', event => {
-    closing = true;
     const target = windowForEvent(event);
-    if (target && !target.isDestroyed()) target.close();
+    if (!target || target.isDestroyed()) return;
+    closingWindows.add(target);
+    target.close();
   });
 
   ipcMain.on('window-minimize', event => {
@@ -1009,8 +1023,13 @@ function setupIpc() {
 
   ipcMain.handle('install-update', () => {
     if (!app.isPackaged) return { ok: false };
-    closing = true;
-    autoUpdater.quitAndInstall();
+    // quitAndInstall spawns the installer *before* it quits, so nothing may veto
+    // the quit once it starts. Ask every window to close through the normal
+    // unsaved-changes handshake first; the install runs when the last one is gone.
+    installUpdateWhenAllClosed = true;
+    for (const candidate of windows) {
+      if (candidate && !candidate.isDestroyed()) candidate.webContents.send('close-request');
+    }
     return { ok: true };
   });
 
@@ -1236,7 +1255,7 @@ async function createWindow(startupFilePath = null) {
   win.webContents.on('render-process-gone', (_event, details) => {
     const reason = details?.reason || 'unknown';
     console.error('[window] renderer gone:', reason, details?.exitCode);
-    if (closing || win.isDestroyed()) return;
+    if (closingWindows.has(win) || win.isDestroyed()) return;
     if (rendererCrashReloads >= 2) return;
     rendererCrashReloads++;
     win.loadFile('index.html', { query: { wid: windowId, recovered: '1' } }).catch(err => {
@@ -1245,7 +1264,7 @@ async function createWindow(startupFilePath = null) {
   });
 
   win.on('close', (e) => {
-    if (closing) return;
+    if (closingWindows.has(win)) return;
     if (win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
     e.preventDefault();
     win.webContents.send('close-request');
@@ -1284,4 +1303,11 @@ app.whenReady().then(async () => {
   registerFileTypeIntegration();
   setupAutoUpdate();
 });
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+  if (installUpdateWhenAllClosed && app.isPackaged) {
+    installUpdateWhenAllClosed = false;
+    try { autoUpdater.quitAndInstall(); return; }
+    catch (err) { console.warn('RefBoard update install failed; quitting normally:', err?.message || err); }
+  }
+  app.quit();
+});
