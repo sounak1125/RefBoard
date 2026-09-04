@@ -56,7 +56,8 @@
     "test:tags-menu-smoke": "node scripts/smoke-tags-menu.mjs",
     "test:focus-dock-smoke": "node scripts/smoke-focus-dock.mjs",
     "test:pinned-smoke": "node scripts/smoke-pinned-boards.mjs",
-    "test:save-abort-smoke": "node scripts/smoke-board-save-abort.mjs"
+    "test:save-abort-smoke": "node scripts/smoke-board-save-abort.mjs",
+    "test:multi-window-history-smoke": "node scripts/smoke-multi-window-history.mjs"
   },
   "dependencies": {
     "electron-updater": "^6.6.2",
