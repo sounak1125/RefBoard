@@ -420,6 +420,17 @@ function setupIpc() {
     session.handle = null;
   }
 
+  /* A save that fails or is abandoned must not leave its temp file beside the
+     board or keep its file handle open (which locks the file on Windows).
+     Removed by mistake in ff90c34; every failure branch then threw
+     ReferenceError and hid the real error. */
+  async function discardBoardSaveSession(session) {
+    if (!session) return;
+    try { await session.handle?.close(); } catch { /* already closed */ }
+    session.handle = null;
+    if (session.tempPath) await fs.unlink(session.tempPath).catch(() => {});
+  }
+
   async function appendBoardSaveImageParts(session, image, data) {
     const parts = boardImageParts(image, data);
     await session.handle.write((session.firstImage ? '' : ',') + parts.prefix);
