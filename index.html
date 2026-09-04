@@ -3898,6 +3898,7 @@ import {
 } from './scripts/landing-search.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
 import { drawGridDots } from './scripts/grid-dots.mjs';
+import { createItemIndex } from './scripts/item-index.mjs';
 import {
   IMAGE_FLOOR_TIER,
   IMAGE_FULL_TIER,
@@ -4068,8 +4069,8 @@ async function memoryDiagnostics() {
 }
 
 function imageRenderDiagnostics(itemId) {
-  const it = state.items.find(item => item.id === itemId && isImageItem(item));
-  if (!it) return null;
+  const it = byId(itemId);
+  if (!it || !isImageItem(it)) return null;
   const displayTarget = imageTargetForItem(it);
   const desiredTarget = imageDesiredTargets.get(it.id) || null;
   return {
@@ -4183,15 +4184,19 @@ let noteEditRedoStack = [];
 
 const $ = s => document.querySelector(s);
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now());
-const byId = id => state.items.find(i => i.id === id);
+// O(1). See scripts/item-index.mjs for why it is not Array.find and how it
+// stays correct across every way state.items is replaced or grown.
+const byId = createItemIndex(() => state.items);
 const selectedItems = () => state.items.filter(i => state.sel.has(i.id));
 const invalidate = () => { dirty = true; };
 function invalidateWorkspaceBBox() { workspaceBBoxCache = null; }
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const isImageItem = it => (it.kind || 'image') === 'image';
-const isNoteItem = it => it.kind === 'note';
-const isArrowItem = it => it.kind === 'arrow';
-const isGroupItem = it => it.kind === 'group';
+// Null-safe: callers hand these whatever byId returned, and a stale selection
+// id or an empty selection is not an error, just not that kind of item.
+const isImageItem = it => !!it && (it.kind || 'image') === 'image';
+const isNoteItem = it => it?.kind === 'note';
+const isArrowItem = it => it?.kind === 'arrow';
+const isGroupItem = it => it?.kind === 'group';
 const isGroupableItem = it => isImageItem(it) || isNoteItem(it);
 const GROUP_MIN_PADDING = 40;
 const GROUP_DEFAULT_PADDING = GROUP_MIN_PADDING;
@@ -4333,14 +4338,26 @@ function syncGroupFrame(group) {
 }
 
 function reconcileGroupOrder() {
-  const groups = state.items.filter(isGroupItem);
-  const rest = state.items.filter(i => !isGroupItem(i));
+  // Runs on every undo/redo and at the start of every drag. Children are
+  // bucketed by group in one pass rather than one filter per group.
+  const groups = [];
+  const rest = [];
+  const childrenByGroup = new Map();
+  for (const it of state.items) {
+    if (isGroupItem(it)) { groups.push(it); continue; }
+    rest.push(it);
+    if (it.groupId) {
+      let list = childrenByGroup.get(it.groupId);
+      if (!list) childrenByGroup.set(it.groupId, list = []);
+      list.push(it);
+    }
+  }
   const ordered = [];
   const placed = new Set();
   for (const g of groups) {
     ordered.push(g);
     placed.add(g.id);
-    for (const c of rest.filter(i => i.groupId === g.id)) {
+    for (const c of childrenByGroup.get(g.id) || []) {
       ordered.push(c);
       placed.add(c.id);
     }
@@ -5816,7 +5833,7 @@ function collectReferencedImgIds(items = state.items) {
 
 function imageDecodeItemDist2(itemId) {
   if (!itemId) return Number.POSITIVE_INFINITY;
-  const it = state.items.find(x => x.id === itemId);
+  const it = byId(itemId);
   if (!it || !isImageItem(it)) return Number.POSITIVE_INFINITY;
   const { w, h } = boardSize();
   const sx = (it.x + it.w / 2) * state.view.s + state.view.tx;
@@ -5828,8 +5845,8 @@ function imageDecodeItemDist2(itemId) {
 
 function findImageDecodeItem(im, itemId) {
   if (itemId) {
-    const it = state.items.find(x => x.id === itemId && isImageItem(x) && images.get(x.imgId) === im);
-    if (it) return it;
+    const it = byId(itemId);
+    if (it && isImageItem(it) && images.get(it.imgId) === im) return it;
   }
   return state.items.find(x => isImageItem(x) && images.get(x.imgId) === im) || null;
 }
@@ -6095,8 +6112,9 @@ function isImageLodJobStillNeeded(job) {
   if (!job?.im?.lod || job.im.lod.pending.get(job.bucket) !== job) return false;
   if (imagePixelUpdateInProgress(job.im)) return false;
   if (ensureImageVersion(job.im) !== job.version) return false;
-  const it = state.items.find(x => x.id === job.itemId && isImageItem(x) && images.get(x.imgId) === job.im);
-  if (!it || !isItemVisible(it, currentLodViewport())) return false;
+  const it = byId(job.itemId);
+  if (!it || !isImageItem(it) || images.get(it.imgId) !== job.im) return false;
+  if (!isItemVisible(it, currentLodViewport())) return false;
   const key = imageLodDemandKey(it.imgId, job.bucket);
   return (imageTargetForItem(it) === job.bucket
       || imagePrewarmTargets.get(it.id) === job.bucket
@@ -7069,9 +7087,17 @@ function pruneSel() {
   updateSelBar();
 }
 const boardHistoryQueue = createAsyncQueue();
+/* History is refused while a pointer gesture is live. restoreSnap replaces
+   every item object, but the gesture holds references to the old ones: a
+   mid-drag Ctrl+Z made the snap solver measure orphans while the move wrote
+   to the new objects, and an in-flight resize or crop wrote to a detached
+   object and vanished. Checked before queueing, so a held key does not pile
+   up work, and again after waiting, in case a gesture began meanwhile. */
 function undo() {
+  if (mode) return Promise.resolve();
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
+    if (mode) return;
     if (!undoStack.length) {
       // A freshly opened board can enter crop mode before any history exists.
       // Ctrl+Z should still return to normal selection in that case.
@@ -7090,8 +7116,10 @@ function undo() {
   });
 }
 function redo() {
+  if (mode) return Promise.resolve();
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
+    if (mode) return;
     if (!redoStack.length) return;
     const entry = redoStack.pop();
     undoStack.push(await captureUndoState(entry));
@@ -9087,17 +9115,22 @@ function deleteItemsByIds(idIterable) {
     if (it?.groupId) affectedGroups.add(it.groupId);
   }
   state.items = state.items.filter(i => !toDelete.has(i.id));
+  const removedGroups = new Set();
   for (const gid of affectedGroups) {
     const g = byId(gid);
     if (!g) continue;
-    if (!childrenOfGroup(gid).length) state.items = state.items.filter(i => i.id !== gid);
-    else syncGroupFrame(g);
+    if (!childrenOfGroup(gid).length) {
+      state.items = state.items.filter(i => i.id !== gid);
+      removedGroups.add(gid);
+    } else syncGroupFrame(g);
   }
   invalidateWorkspaceBBox();
   syncTagFilterToBoard();
-  // Drop only deleted ids from the live selection; keep unrelated newly selected items.
+  // Drop only deleted ids from the live selection; keep unrelated newly selected
+  // items. A group that emptied is gone from the board, so it leaves too.
   for (const id of toDelete) state.sel.delete(id);
-  if (state.anchorId && toDelete.has(state.anchorId)) state.anchorId = null;
+  for (const id of removedGroups) state.sel.delete(id);
+  if (state.anchorId && (toDelete.has(state.anchorId) || removedGroups.has(state.anchorId))) state.anchorId = null;
   demoteUnreferencedImages();
   updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
   return true;
@@ -16786,7 +16819,8 @@ window.addEventListener('pointermove', e => {
     }
     invalidateWorkspaceBBox();
     syncMovedGroupFrames(mode.orig);
-    const movingIds = new Set(mode.orig.map(o => o.id));
+    // The moving set is fixed for the gesture; build it once, not per move event.
+    const movingIds = mode.movingIds || (mode.movingIds = new Set(mode.orig.map(o => o.id)));
     const target = findDropTargetGroup(movingIds);
     const newTargetId = target?.id || null;
     if (newTargetId !== dropTargetGroupId) {
@@ -18000,7 +18034,7 @@ window.addEventListener('keydown', e => {
   else if (!mod) {
     if (k === 'enter') {
       const it = state.sel.size === 1 ? byId([...state.sel][0]) : null;
-      if (isNoteItem(it)) {
+      if (it && isNoteItem(it)) {
         e.preventDefault();
         editNote(it);
       }
@@ -19069,7 +19103,10 @@ async function init() {
   setupGroupColorPicker();
   populateFontSelect();
   db = await openDB();
-  if (db) await dbClear('historyBlobs');
+  // Pixel-edit undo keeps its "before" bitmaps here. Clear leftovers from a
+  // previous run, but never while another window is open: its live undo
+  // stack still points at them.
+  if (db && !(await isMultiBoardWindow())) await dbClear('historyBlobs');
   if (!db) toast('Autosave unavailable in this browser — use Save board (Ctrl+S) to keep your work');
   if (db) {
     try {

@@ -28,7 +28,16 @@ assert.doesNotMatch(main, /dialog\.show(?:Save|Open)Dialog\((win|null),/, 'no di
 
 // Per-window titlebar + close plumbing.
 assert.match(main, /ipcMain\.on\('window-close', event => \{[\s\S]*?windowForEvent\(event\)[\s\S]*?send\('close-request'\)/, 'window close must target the requesting window');
-assert.match(main, /ipcMain\.on\('close-confirmed', event => \{[\s\S]*?closing = true;[\s\S]*?windowForEvent\(event\)/, 'confirmed close must set the quit flag and close only its own window');
+assert.match(main, /ipcMain\.on\('close-confirmed', event => \{[\s\S]*?windowForEvent\(event\)[\s\S]*?closingWindows\.add\(target\);[\s\S]*?target\.close\(\);/, 'confirmed close must mark and close only its own window');
+
+// The close flag is per window. A process-wide one let a single confirmed close
+// (or Restart to update) skip the unsaved-changes prompt in every other window.
+assert.doesNotMatch(main, /^let closing = false;/m, 'the process-wide closing flag must not return');
+assert.match(main, /const closingWindows = new WeakSet\(\);/, 'closing state must be tracked per window');
+assert.match(main, /win\.on\('close', \(e\) => \{\s*if \(closingWindows\.has\(win\)\) return;/, 'a window may only skip the close handshake when it confirmed its own close');
+assert.match(main, /ipcMain\.handle\('install-update', \(\) => \{[\s\S]*?installUpdateWhenAllClosed = true;[\s\S]*?for \(const candidate of windows\)[\s\S]*?send\('close-request'\)/, 'Restart to update must ask every window to close through the handshake');
+assert.doesNotMatch(main, /ipcMain\.handle\('install-update'[\s\S]{0,600}?autoUpdater\.quitAndInstall\(/, 'the installer must not be spawned while a window can still veto the quit');
+assert.match(main, /app\.on\('window-all-closed', \(\) => \{[\s\S]*?installUpdateWhenAllClosed[\s\S]*?quitAndInstall\(\)[\s\S]*?app\.quit\(\);/, 'the update installs once the last window has closed');
 assert.match(main, /ipcMain\.on\('window-minimize', event => \{[\s\S]*?windowForEvent\(event\)/, 'minimize must target its own window');
 assert.match(main, /ipcMain\.on\('window-maximize', event => \{[\s\S]*?windowForEvent\(event\)/, 'maximize must target its own window');
 assert.match(main, /ipcMain\.handle\('window-is-maximized', event => \{[\s\S]*?windowForEvent\(event\)/, 'maximized state must be read per window');
@@ -39,7 +48,7 @@ assert.match(main, /ipcMain\.handle\('open-board-window', async \(_, payload = \
 // Shared notices reach every window; double-click focuses one window (no auto-spawn).
 assert.match(main, /function notifyRenderer\(msg\) \{[\s\S]*?for \(const candidate of windows\)/, 'update/pin notices must broadcast to every board window');
 assert.match(main, /app\.on\('second-instance',[\s\S]*?const win = focusedWindow\(\);[\s\S]*?win\.focus\(\);/, 'double-clicking a .refboard file must focus the existing window');
-assert.match(main, /app\.on\('window-all-closed', \(\) => app\.quit\(\)\);/, 'the app must still quit once the last board window closes');
+assert.match(main, /app\.on\('window-all-closed', \(\) => \{[\s\S]*?app\.quit\(\);\s*\}\);/, 'the app must still quit once the last board window closes');
 
 // Bridge + landing UI.
 assert.match(preload, /openBoardInNewWindow: \(filePath = null\) => ipcRenderer\.invoke\('open-board-window', \{ filePath \}\)/, 'the isolated renderer bridge must expose new-window opening');
@@ -63,6 +72,7 @@ assert.match(main, /ipcMain\.handle\('get-board-window-count'/, 'renderer must b
 assert.match(preload, /getBoardWindowCount:/, 'bridge must expose the window count');
 assert.match(html, /async function isMultiBoardWindow\(\)/, 'renderer must detect multi-window mode');
 assert.match(html, /if \(await isMultiBoardWindow\(\)\) return;/, 'blob pruning must no-op while multiple windows share IndexedDB');
+assert.match(html, /if \(db && !\(await isMultiBoardWindow\(\)\)\) await dbClear\('historyBlobs'\);/, 'a new window must not wipe the pixel-edit undo history another window still uses');
 assert.match(html, /SESSION_META_KEY/, 'each window must keep its own session meta key');
 assert.match(html, /async function ensureImageBlobForSave\(im\)/, 'saves must rebuild missing blobs from resident bitmaps');
 assert.match(html, /const blob = await ensureImageBlobForSave\(im\);/, 'streamed board saves must use the recovery path');
