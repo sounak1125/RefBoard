@@ -120,13 +120,13 @@ assert.match(
 );
 assert.match(
   html,
-  /function undo\(\)[\s\S]*?await settleDrawCommitForHistory\(\);[\s\S]*?captureUndoState\(entry\)/,
-  'undo should settle drawing before capturing redo state',
+  /function undo\(\)[\s\S]*?await settleDrawCommitForHistory\(\);[\s\S]*?captureBitmapAfterState\(entry\)/,
+  'undo should settle drawing before capturing the post-edit bitmap for redo',
 );
 assert.match(
   html,
-  /function redo\(\)[\s\S]*?await settleDrawCommitForHistory\(\);[\s\S]*?captureUndoState\(entry\)/,
-  'redo should settle drawing before capturing undo state',
+  /function redo\(\)[\s\S]*?await settleDrawCommitForHistory\(\);[\s\S]*?applyUndoEntry\(entry, 'after'\)/,
+  'redo should settle drawing before applying the entry forward',
 );
 assert.match(
   html,

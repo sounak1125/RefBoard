@@ -3900,6 +3900,7 @@ import { createImageResidencyController } from './scripts/image-residency.mjs';
 import { drawGridDots } from './scripts/grid-dots.mjs';
 import { createItemIndex } from './scripts/item-index.mjs';
 import { createSpatialIndex } from './scripts/spatial-index.mjs';
+import { createBoardHistory, snapshotBoard, applyDelta } from './scripts/board-history.mjs';
 import {
   IMAGE_FLOOR_TIER,
   IMAGE_FULL_TIER,
@@ -6963,16 +6964,26 @@ function scheduleViewSave() {
 }
 
 /* ================= undo / redo ================= */
-const undoStack = [], redoStack = [];
-const snap = () => JSON.stringify({
-  items: state.items,
-  boardGray: state.boardGray,
-  gridAppearance: state.gridAppearance,
-  tagColors: state.tagColors,
+/* Delta history: see scripts/board-history.mjs. The module owns the stacks
+   and every entry. This file supplies the snapshot, applies an entry to the
+   live board, and carries a pixel edit's bitmaps alongside the item delta. */
+let undoByteBudget = 64 * 1024 * 1024;
+/* Always keep a few steps so undo still does something on a board whose one
+   entry already exceeds the budget. */
+const UNDO_MIN_ENTRIES = 3;
+const boardHistory = createBoardHistory({
+  snapshot: () => snapshotBoard(state.items, {
+    boardGray: state.boardGray,
+    gridAppearance: state.gridAppearance,
+    tagColors: state.tagColors,
+  }),
+  limit: () => undoLimit,
+  byteBudget: () => undoByteBudget,
+  minEntries: UNDO_MIN_ENTRIES,
+  release: entry => releaseUndoEntry(entry),
 });
-function normalizeUndoEntry(entry) {
-  return typeof entry === 'string' ? { snap: entry } : entry;
-}
+const { undoStack, redoStack } = boardHistory;
+
 function createBitmapHistoryRef(imgId, blob) {
   if (!(blob instanceof Blob) || !blob.size) return null;
   if (!db) return { imgId, blob };
@@ -6990,103 +7001,58 @@ async function bitmapHistoryBlob(ref) {
   if (ref.ready) await ref.ready;
   return ref.blobKey ? await dbGet('historyBlobs', ref.blobKey) : null;
 }
-function releaseUndoEntry(entry) {
-  const ref = normalizeUndoEntry(entry)?.bitmap;
+function releaseBitmapRef(ref) {
   if (ref?.blobKey) Promise.resolve(ref.ready).finally(() => dbDel('historyBlobs', ref.blobKey));
   if (ref) ref.blob = null;
 }
-function clearRedoHistory() {
-  for (const entry of redoStack) releaseUndoEntry(entry);
-  redoStack.length = 0;
+/* An entry leaving history drops the bitmaps it kept, in both directions. */
+function releaseUndoEntry(entry) {
+  const bitmap = entry?.bitmap;
+  if (!bitmap) return;
+  releaseBitmapRef(bitmap.before);
+  releaseBitmapRef(bitmap.after);
 }
-/* Every undo entry is a full JSON snapshot of the board, so on a large board
-   each one runs to megabytes. Capping the entry count alone let the default 200
-   steps retain hundreds of MB of strings. Cap the retained bytes as well, but
-   always keep a few steps so undo still does something on a board whose single
-   snapshot already exceeds the budget. */
-let undoByteBudget = 64 * 1024 * 1024;
-const UNDO_MIN_ENTRIES = 3;
+function undoHistoryBytes() { return boardHistory.bytes(); }
+function trimUndoHistory() { boardHistory.trim(); }
 
-/* JS strings are UTF-16, so a code unit is two bytes. */
-const undoEntryBytes = entry => (normalizeUndoEntry(entry)?.snap?.length || 0) * 2;
-
-function undoHistoryBytes() {
-  let total = 0;
-  for (const entry of undoStack) total += undoEntryBytes(entry);
-  for (const entry of redoStack) total += undoEntryBytes(entry);
-  return total;
-}
-
-function trimUndoHistory() {
-  while (undoStack.length > undoLimit) releaseUndoEntry(undoStack.shift());
-  let bytes = undoHistoryBytes();
-  while (bytes > undoByteBudget && undoStack.length > UNDO_MIN_ENTRIES) {
-    bytes -= undoEntryBytes(undoStack[0]);
-    releaseUndoEntry(undoStack.shift());
-  }
-}
-async function captureUndoState(bitmapEntry) {
-  const entry = { snap: snap() };
-  if (bitmapEntry && bitmapEntry.bitmap) {
-    const im = images.get(bitmapEntry.bitmap.imgId);
-    const blob = im ? await getImageBlob(im) : null;
-    if (blob) entry.bitmap = createBitmapHistoryRef(bitmapEntry.bitmap.imgId, blob);
-  }
-  return entry;
-}
+/**
+ * Start an undoable operation. The entry is finalised at the next operation
+ * or at undo, by diffing the board against the baseline taken here; an
+ * operation that changes nothing leaves no entry. opts.imgId + opts.blob
+ * attach an image's pre-edit bytes for a pixel edit.
+ */
 function pushUndo(opts) {
-  const entry = { snap: snap() };
-  if (opts && opts.imgId) {
-    const blob = opts.blob;
-    if (blob instanceof Blob) entry.bitmap = createBitmapHistoryRef(opts.imgId, blob);
+  let extra = null;
+  if (opts && opts.imgId && opts.blob instanceof Blob) {
+    extra = { bitmap: { imgId: opts.imgId, before: createBitmapHistoryRef(opts.imgId, opts.blob), after: null } };
   }
-  undoStack.push(entry);
-  trimUndoHistory();
-  clearRedoHistory();
-}
-function pushUndoSnapshot(snapshot) {
-  if (!snapshot) return false;
-  const top = undoStack.length ? normalizeUndoEntry(undoStack[undoStack.length - 1]) : null;
-  // A bitmap entry may share the same board JSON but represents a separate
-  // image edit, so only deduplicate an identical plain board snapshot.
-  if (top && !top.bitmap && top.snap === snapshot) {
-    clearRedoHistory();
-    return false;
-  }
-  undoStack.push({ snap: snapshot });
-  trimUndoHistory();
-  clearRedoHistory();
-  return true;
+  boardHistory.begin(extra);
 }
 function clearUndoHistory() {
-  for (const entry of undoStack) releaseUndoEntry(entry);
-  for (const entry of redoStack) releaseUndoEntry(entry);
-  undoStack.length = 0;
-  redoStack.length = 0;
+  boardHistory.clear();
 }
-function restoreSnap(raw) {
-  const s = JSON.parse(raw);
-  if (Array.isArray(s)) {
-    state.items = s.map(normalizeItem);
-    for (const it of state.items) {
-      if (it.groupId && !byId(it.groupId)) it.groupId = null;
-    }
-    for (const g of state.items.filter(isGroupItem)) syncGroupFrame(g);
-    reconcileGroupOrder();
-    invalidateWorkspaceBBox();
-    return;
+
+/* Apply one side of an entry to the live board. Items are mutated in place,
+   so identity, selection and the indexes survive; the array is replaced
+   only when membership or order changed. */
+function applyBoardDelta(entry, direction) {
+  if (!entry?.delta) return;
+  const result = applyDelta({
+    items: state.items,
+    props: { boardGray: state.boardGray, gridAppearance: state.gridAppearance, tagColors: state.tagColors },
+  }, entry.delta, direction);
+  if (result.items) state.items = result.items;
+  if (result.props) {
+    state.boardGray = !!result.props.boardGray;
+    state.tagColors = normalizeTagColors(result.props.tagColors);
+    const ga = normalizeGridAppearance(result.props.gridAppearance);
+    if (ga) state.gridAppearance = ga;
   }
-  state.items = (s.items || []).map(normalizeItem);
-  invalidateWorkspaceBBox();
-  state.boardGray = !!s.boardGray;
-  state.tagColors = normalizeTagColors(s.tagColors);
-  const ga = normalizeGridAppearance(s.gridAppearance);
-  if (ga) state.gridAppearance = ga;
   for (const it of state.items) {
     if (it.groupId && !byId(it.groupId)) it.groupId = null;
   }
-  for (const g of state.items.filter(isGroupItem)) syncGroupFrame(g);
-  reconcileGroupOrder();
+  for (const g of groupItems()) syncGroupFrame(g);
+  if (result.items) reconcileGroupOrder();
   invalidateWorkspaceBBox();
 }
 async function restoreBitmapSnap(bitmapSnap) {
@@ -7126,14 +7092,23 @@ async function restoreBitmapSnap(bitmapSnap) {
     invalidate();
   }
 }
-async function applyUndoEntry(entry) {
+/* A pixel-edit entry needs the post-edit bytes for redo. They are taken the
+   first time the entry is undone, while they are still the current bytes. */
+async function captureBitmapAfterState(entry) {
+  const bitmap = entry?.bitmap;
+  if (!bitmap || bitmap.after) return;
+  const im = images.get(bitmap.imgId);
+  const blob = im ? await getImageBlob(im) : null;
+  if (blob) bitmap.after = createBitmapHistoryRef(bitmap.imgId, blob);
+}
+async function applyUndoEntry(entry, direction) {
   const gen = ++historyApplySeq;
   discardNoteEditForBoardHistory();
   cancelDrawSession();
-  const e = normalizeUndoEntry(entry);
-  restoreSnap(e.snap);
-  if (e.bitmap) {
-    await restoreBitmapSnap(e.bitmap);
+  applyBoardDelta(entry, direction);
+  const ref = entry.bitmap ? entry.bitmap[direction] : null;
+  if (ref) {
+    await restoreBitmapSnap(ref);
     if (gen !== historyApplySeq) {
       demoteUnreferencedImages();
       return;
@@ -7156,18 +7131,17 @@ function pruneSel() {
   updateSelBar();
 }
 const boardHistoryQueue = createAsyncQueue();
-/* History is refused while a pointer gesture is live. restoreSnap replaces
-   every item object, but the gesture holds references to the old ones: a
-   mid-drag Ctrl+Z made the snap solver measure orphans while the move wrote
-   to the new objects, and an in-flight resize or crop wrote to a detached
-   object and vanished. Checked before queueing, so a held key does not pile
-   up work, and again after waiting, in case a gesture began meanwhile. */
+/* History is refused while a pointer gesture is live. A gesture holds the
+   items it is moving and the baseline it started from; applying an entry
+   underneath it would leave both wrong. Checked before queueing, so a held
+   key does not pile up work, and again after waiting, in case a gesture
+   began meanwhile. */
 function undo() {
   if (mode) return Promise.resolve();
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
     if (mode) return;
-    if (!undoStack.length) {
+    if (!undoStack.length && !boardHistory.hasPending()) {
       // A freshly opened board can enter crop mode before any history exists.
       // Ctrl+Z should still return to normal selection in that case.
       if (cropItemId) exitCropMode();
@@ -7176,10 +7150,10 @@ function undo() {
     // Crop is an editing mode, not persistent image state. Leaving it here makes
     // Ctrl+Z both restore the previous frame and return to normal selection.
     exitCropMode();
-    const entry = undoStack.pop();
-    redoStack.push(await captureUndoState(entry));
-    try { await applyUndoEntry(entry); }
-    finally { releaseUndoEntry(entry); }
+    const entry = boardHistory.undo();
+    if (!entry) return;
+    await captureBitmapAfterState(entry);
+    await applyUndoEntry(entry, 'before');
     resetSelectionFrameRot();
     pruneSel(); scheduleSave(); invalidate(); updateEmpty();
   });
@@ -7189,17 +7163,13 @@ function redo() {
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
     if (mode) return;
-    if (!redoStack.length) return;
-    const entry = redoStack.pop();
-    undoStack.push(await captureUndoState(entry));
-    trimUndoHistory();
-    try { await applyUndoEntry(entry); }
-    finally { releaseUndoEntry(entry); }
+    const entry = boardHistory.redo();
+    if (!entry) return;
+    await applyUndoEntry(entry, 'after');
     resetSelectionFrameRot();
     pruneSel(); scheduleSave(); invalidate(); updateEmpty();
   });
 }
-
 /* ================= image intake ================= */
 async function decodeToBitmap(blob) {
   try { return await createImageBitmap(blob); }
@@ -11626,7 +11596,9 @@ function startNoteEdit(it, clientX, clientY, { textLive = true } = {}) {
   noteEditId = it.id;
   noteTextLive = textLive;
   noteEditStartSnapshot = editStartSnapshot;
-  if (!continuingSameNote || !noteEditStartBoardSnapshot) noteEditStartBoardSnapshot = snap();
+  // The edit is one history entry: a baseline opens here and is finalised
+  // when the edit ends, so only what actually changed is recorded.
+  if (!continuingSameNote || !noteEditStartBoardSnapshot) { pushUndo(); noteEditStartBoardSnapshot = true; }
   if (!continuingSameNote) clearNoteEditHistory();
   noteEditorStyleKey = '';
   state.sel = new Set([it.id]);
@@ -11670,7 +11642,7 @@ function finishNoteEdit() {
     fitNoteToTextEditAnchored(it);
     noteChanged = !editStartSnapshot || JSON.stringify(it) !== editStartSnapshot;
   }
-  if (noteChanged) pushUndoSnapshot(editStartBoardSnapshot);
+  if (editStartBoardSnapshot) boardHistory.finalize();
   noteEditId = null;
   noteTextLive = false;
   noteEditStartSnapshot = null;
@@ -20421,6 +20393,18 @@ window.RefBoard = {
     budget: undoByteBudget,
   }),
   setUndoByteBudgetForTest(bytes) { undoByteBudget = Math.max(1, Number(bytes) || 1); trimUndoHistory(); },
+  /* Test hook: the cost of opening an undoable operation, which every
+     gesture pays at its first pointermove. Each begin finalises the one
+     before it, so this measures baseline plus diff on the current board. */
+  historyBeginForTest(times = 20) {
+    const t0 = performance.now();
+    for (let i = 0; i < times; i++) pushUndo();
+    boardHistory.finalize();
+    return (performance.now() - t0) / Math.max(1, times);
+  },
+  redoForTest: redo,
+  pushUndoForTest: () => pushUndo(),
+  historyStats: () => boardHistory.stats(),
   /* Test hook: closing the connection makes every later transaction throw,
      which is the closest a harness can get to a real storage failure. */
   closeDbForTest() { try { db?.close(); } catch (e) { /* already closed */ } },

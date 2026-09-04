@@ -105,3 +105,6 @@ jobs:
 
       - name: Spatial index smoke
         run: npm run test:spatial-smoke
+
+      - name: Board history smoke
+        run: npm run test:history-smoke
