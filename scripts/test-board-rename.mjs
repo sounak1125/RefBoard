@@ -166,7 +166,7 @@ assert.match(
 );
 assert.match(
   html,
-  /e\.target\.closest\('[^']*\.rw-card-rename[^']*\.rw-rename-input[^']*'\)/,
+  /stage\.addEventListener\('pointerdown'[\s\S]*?e\.target\.closest\('button, input, textarea'\)/,
   'the Focus Flow drag gesture must ignore the rename controls',
 );
 assert.match(html, /else if \(e\.key === 'F2'\) \{ e\.preventDefault\(\); renameFocusedLandingCard\(\); \}/, 'F2 must start a rename on Home');

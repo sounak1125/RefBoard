@@ -59,7 +59,7 @@ async function run() {
     height: 900,
     show: false,
     backgroundColor: '#101116',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true },
   });
   win.webContents.on('console-message', details => {
     const text = details?.message || '';
@@ -131,6 +131,7 @@ async function run() {
 
   smokeStep = 'adaptive card hierarchy';
   await win.webContents.executeJavaScript("(() => { for (let i = 0; i < 4; i++) document.querySelector('#focusNext').click(); })()");
+  await waitFor(win, "!document.querySelector('#focusStage').classList.contains('is-stepping')", 'carousel settling');
   const desktopHierarchy = await win.webContents.executeJavaScript(`({
     activeTitle: document.querySelector('.ff-card.is-active .rw-title')?.textContent,
     visible: [...document.querySelectorAll('.ff-card')].filter(card => card.style.visibility !== 'hidden').length,
@@ -169,7 +170,7 @@ async function run() {
   // its width-derived height on a short window and print over the counter.
   smokeStep = 'short window';
   const shortWindow = {};
-  for (const height of [700, 620, 560]) {
+  for (const height of [700, 620, 560, 480]) {
     win.setContentSize(1440, height);
     await delay(320);
     shortWindow[height] = await win.webContents.executeJavaScript(`(() => {
@@ -252,23 +253,13 @@ async function run() {
     throw new Error(`Unexpected Classic Grid state: ${JSON.stringify(classicState)}`);
   }
 
-  /* The landing's backdrop is page furniture: it must not change between
-     layouts. Classic scrolls and carries a scrollbar, which narrowed an
-     absolutely-positioned layer by the scrollbar's width and let it scroll
-     away with the content; and only Focus Flow isolated, so the grain's
-     overlay blend mixed with a different backdrop in each. */
-  smokeStep = 'landing backdrop parity';
+  // Focus has a plain surface; Classic retains its fixed grid and grain.
+  smokeStep = 'Classic backdrop preserved';
   {
-    const a = focusState.landingBackdrop;
     const b = classicState.landingBackdrop;
-    for (const key of Object.keys(a)) {
-      if (a[key] !== b[key]) {
-        throw new Error(`Landing backdrop differs between layouts on ${key}: `
-          + `focus=${a[key]} classic=${b[key]}`);
-      }
-    }
-    if (a.gridPos !== 'fixed') {
-      throw new Error(`The landing backdrop must not scroll with the grid (position: ${a.gridPos})`);
+    if (b.gridPos !== 'fixed' || b.gridW !== '1440px' || b.gridSize !== '48px 48px, 48px 48px'
+        || b.isolation !== 'isolate' || b.grainBlend !== 'overlay') {
+      throw new Error(`Classic backdrop changed: ${JSON.stringify(b)}`);
     }
   }
 

@@ -53,8 +53,8 @@ assert.match(
 );
 assert.match(
   source,
-  /const visible = distance <= visibleRadius[\s\S]*?card\.style\.visibility = visible \? 'visible' : 'hidden'/,
-  'cards outside the responsive visual window should be completely hidden',
+  /const visible = distance < visibleRadius \+ 1[\s\S]*?card\.style\.visibility = visible \? 'visible' : 'hidden'/,
+  'cards outside the responsive visual window and its outgoing transition should be completely hidden',
 );
 assert.doesNotMatch(source, /--ff-blur|filter:\s*blur\(var\(--ff/, 'card hierarchy should never blur thumbnails or metadata');
 assert.doesNotMatch(source, /ff-orb|ffAmbient|ff-parallax/, 'the landing background should not use moving colored blobs or parallax');

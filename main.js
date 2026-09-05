@@ -906,6 +906,21 @@ function setupIpc() {
     return capped.kept;
   });
 
+  ipcMain.handle('reveal-board-file', async (_, filePath) => {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath)
+        || filePath.includes('\0') || path.extname(filePath).toLowerCase() !== '.refboard') {
+      return { ok: false, reason: 'invalid-path' };
+    }
+    const target = path.normalize(filePath);
+    try {
+      if (!(await fs.stat(target)).isFile()) return { ok: false, reason: 'missing' };
+      shell.showItemInFolder(target);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, reason: ['ENOENT', 'ENOTDIR'].includes(error.code) ? 'missing' : 'unavailable' };
+    }
+  });
+
   ipcMain.handle('rename-recent-work', async (_, { filePath, name } = {}) => {
     if (!filePath) return { ok: false, reason: 'invalid-path', message: boardRenameFailureText('invalid-path') };
     const from = path.resolve(String(filePath));
