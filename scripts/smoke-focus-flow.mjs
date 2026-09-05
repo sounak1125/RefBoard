@@ -91,6 +91,12 @@ try {
     }))));`);
   win.webContents.reloadIgnoringCache();
   await waitFor('window.RefBoard?.startupComplete && document.querySelectorAll(".ff-chip img").length === 24', 'preview strip');
+  // Windows CI can disable animations at the OS level. Test animated browsing
+  // explicitly here; the reduced-motion behavior is checked separately below.
+  win.webContents.debugger.attach('1.3');
+  await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+    features:[{name:'prefers-reduced-motion',value:'no-preference'}],
+  });
   await delay(400);
   assert.equal(await active(), 0);
 
@@ -150,7 +156,6 @@ try {
   assert.equal(await active(), 5, 'dragging strip should advance two boards');
   assert.equal(await run('document.body.classList.contains("board-active")'), false);
 
-  win.webContents.debugger.attach('1.3');
   await win.webContents.debugger.sendCommand('Input.dispatchMouseEvent', {type:'mouseWheel',x:Math.round(hoverBox.x),y:Math.round(hoverBox.y+hoverBox.height/2),deltaY:120,deltaX:0});
   await delay(250);
   assert.equal(await active(), 6, 'wheel over strip browses the collection');
