@@ -880,57 +880,16 @@ body.board-instant-open #titlebarPeek{
   scrollbar-color:rgba(122,136,168,.46) rgba(9,11,15,.42);
   scroll-behavior:smooth;
   background:var(--bg);
-  /* Both layouts, not just Focus Flow. The grain blends in overlay, so without
-     a stacking context here it mixes with whatever sits behind the landing and
-     the texture comes out different in each layout. */
+  /* Keep Home's surfaces separate from the board underneath. */
   isolation:isolate;
   opacity:1;
   visibility:visible;
   pointer-events:auto;
   transition:opacity .28s cubic-bezier(.22,1,.36,1), visibility .28s cubic-bezier(.22,1,.36,1);
 }
-/* Film grain over the whole landing, straight from the installer's look: it
-   breaks up the aurora gradients so they read as light in air rather than
-   color bands on glass. */
-/* Above the cards, not behind them. A 96px shadow ramp over a near-black
-   page steps visibly - each 1/255 of alpha becomes a contour, and they read as
-   arcs around every card. Noise over the top dithers those steps away, which
-   it cannot do from underneath: the content sits at z-index 2, so the grain
-   was covering the background and nothing else. */
-#recentWorks::before{
-  content:""; position:fixed; inset:var(--titlebar-h) 0 0 0; z-index:4; pointer-events:none;
-  opacity:.07; mix-blend-mode:overlay;
-  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.34'/%3E%3C/svg%3E");
-  background-size:180px 180px;
-}
-/* The board canvas is a grid, so the landing is drawn on the same surface the
-   work happens on - faded almost to nothing, present mostly as structure.
-
-   One layer does both the grid and the light: the mask is what fades it, so
-   the brightness falls off from the top exactly where the lines do. That is
-   deliberate. The version this replaces used two drifting radial fields, and
-   where their falloffs crossed they left a visible seam across the middle of
-   the page. A single masked layer has nothing to meet. */
-#recentWorks::after{
-  content:""; position:fixed; inset:var(--titlebar-h) 0 0 0; z-index:0; pointer-events:none;
-  background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--acc) 14%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--acc) 14%, transparent) 1px, transparent 1px);
-  background-size:48px 48px;
-  background-position:50% 0;
-  -webkit-mask-image:radial-gradient(116% 64% at 50% -8%, #000 0%, rgba(0,0,0,.5) 40%, transparent 74%);
-  mask-image:radial-gradient(116% 64% at 50% -8%, #000 0%, rgba(0,0,0,.5) 40%, transparent 74%);
-}
-/* A hairline where the header ends and the work begins. Fades out at both ends
-   so it never reads as a box edge. */
-#recentWorks.layout-focus .rw-header::after{
-  content:""; display:block; height:1px; margin:14px 0 0;
-  background:linear-gradient(90deg,
-    transparent,
-    color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.13)) 22%,
-    color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.13)) 78%,
-    transparent);
-}
+/* Reference previews provide the color and detail; nothing is composited over them. */
+#recentWorks::before,
+#recentWorks::after{ content:none; }
 #recentWorks::-webkit-scrollbar{ width:10px; height:10px; }
 #recentWorks::-webkit-scrollbar-track{ background:rgba(9,11,15,.42); }
 #recentWorks::-webkit-scrollbar-thumb{
@@ -1514,6 +1473,128 @@ body.board-active #recentWorks{ display:none; }
 @media (max-width:520px){
   .rw-restore{ flex-direction:column; align-items:stretch; }
   .rw-restore-actions{ align-self:flex-end; }
+}
+
+/* ---------- classic reference library ---------- */
+#recentWorks:not(.layout-focus) .rw-inner{
+  width:min(1280px, calc(100% - 80px)); padding:32px 0 48px;
+}
+#recentWorks:not(.layout-focus) .rw-header{
+  display:grid; grid-template-columns:minmax(0, 1fr) auto;
+  align-items:center; gap:32px 24px; margin:0 0 28px; padding-bottom:24px;
+  border-bottom:1px solid var(--line);
+}
+#recentWorks:not(.layout-focus) .rw-brand{ grid-area:1 / 1; gap:10px; margin:0; }
+#recentWorks:not(.layout-focus) .rw-brand-icon{ width:32px; height:32px; border-radius:9px; box-shadow:none; }
+#recentWorks:not(.layout-focus) .rw-brand-name{ font-size:17px; letter-spacing:-.025em; }
+#recentWorks:not(.layout-focus) .rw-brand-kicker,
+#recentWorks:not(.layout-focus) .rw-kicker,
+#recentWorks:not(.layout-focus) .rw-sub{ display:none; }
+#recentWorks:not(.layout-focus) .rw-heading-row{ display:contents; }
+#recentWorks:not(.layout-focus) .rw-heading-copy{ grid-area:2 / 1; display:flex; align-items:center; gap:12px; }
+#recentWorks:not(.layout-focus) .rw-header h1{
+  margin:0; font-size:32px; font-weight:600; line-height:1.2; letter-spacing:-.035em;
+  background:none; -webkit-text-fill-color:currentColor;
+}
+#recentWorks:not(.layout-focus) .ff-library-count{
+  display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px;
+  padding:0 7px; border:1px solid var(--line); border-radius:8px;
+  color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums;
+}
+#recentWorks:not(.layout-focus) .rw-actions{ grid-area:1 / 2; }
+#recentWorks:not(.layout-focus) .rw-btn{ border-radius:9px; box-shadow:none; backdrop-filter:none; transform:none; }
+#recentWorks:not(.layout-focus) .rw-header .rw-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  min-height:38px; padding:9px 14px; font-size:12px;
+}
+#recentWorks:not(.layout-focus) .rw-btn.primary{ background:var(--acc); }
+#recentWorks:not(.layout-focus) .rw-btn.primary:hover{ background:var(--acc-hover); }
+#recentWorks:not(.layout-focus) .rw-action-icon{
+  display:block; width:16px; height:16px; fill:none; stroke:currentColor;
+  stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;
+}
+#recentWorks:not(.layout-focus) #rwNewWindow{ background:none; border-color:transparent; color:var(--dim); }
+#recentWorks:not(.layout-focus) #rwNewWindow:hover{ background:var(--surface-1); color:var(--txt); }
+#recentWorks:not(.layout-focus) .rw-toolrow{ position:relative; grid-area:2 / 2; margin:0; gap:12px; }
+#recentWorks:not(.layout-focus) .rw-toolrow[hidden]{ display:none; }
+#recentWorks:not(.layout-focus) .rw-search{ flex:0 1 auto; width:300px; }
+#recentWorks:not(.layout-focus) .rw-search-input{
+  padding:11px 68px 11px 35px; border-radius:9px; font-size:12px;
+  background:color-mix(in srgb, var(--surface-1) 58%, var(--bg)); backdrop-filter:none; box-shadow:none;
+}
+#recentWorks:not(.layout-focus) .rw-search-input:focus{ box-shadow:0 0 0 2px color-mix(in srgb, var(--acc) 15%, transparent); }
+#recentWorks:not(.layout-focus) .ff-search-key{ display:block; position:absolute; right:12px; color:var(--dim); font:10px var(--font-display); pointer-events:none; }
+#recentWorks:not(.layout-focus) .rw-search:focus-within .ff-search-key,
+#recentWorks:not(.layout-focus) .rw-search:has(.rw-search-clear:not([hidden])) .ff-search-key{ display:none; }
+#recentWorks:not(.layout-focus) .rw-search-count{ display:none; }
+#recentWorks:not(.layout-focus) .rw-toolrow.is-searching .rw-search-count{
+  display:block; position:absolute; right:0; top:calc(100% + 6px); font-size:10px;
+}
+#recentWorks:not(.layout-focus) .rw-header *{ animation:none; }
+#recentWorks:not(.layout-focus) .rw-grid{ grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:22px; }
+#recentWorks:not(.layout-focus) .rw-card{
+  gap:0; padding:10px; border-radius:14px;
+  background:color-mix(in srgb, var(--surface-1) 76%, var(--bg));
+  box-shadow:0 2px 6px rgba(0,0,0,.10); backdrop-filter:none;
+  animation:none; transform:none; will-change:auto;
+  transition:border-color .16s ease, background-color .16s ease;
+}
+#recentWorks:not(.layout-focus) .rw-card:hover,
+#recentWorks:not(.layout-focus) .rw-card:focus-within{
+  background:var(--surface-1); border-color:var(--line-strong);
+  box-shadow:0 2px 6px rgba(0,0,0,.10); transform:none;
+}
+#recentWorks:not(.layout-focus) .rw-card:focus-visible{ outline:2px solid var(--acc); outline-offset:3px; }
+#recentWorks:not(.layout-focus) .rw-card.is-pinned,
+#recentWorks:not(.layout-focus) .rw-card-current{ border-color:color-mix(in srgb, var(--acc) 40%, var(--line)); }
+#recentWorks:not(.layout-focus) .rw-card .rw-thumb{
+  aspect-ratio:16/10; border-radius:8px; border-color:var(--line);
+  background:color-mix(in srgb, var(--bg) 70%, var(--surface-1)); box-shadow:none;
+}
+#recentWorks:not(.layout-focus) .rw-thumb img{ object-fit:contain; }
+#recentWorks:not(.layout-focus) .rw-meta{ min-height:64px; padding:13px 4px 5px; }
+#recentWorks:not(.layout-focus) .rw-title{ font-size:15px; font-weight:550; line-height:1.4; letter-spacing:-.015em; }
+#recentWorks:not(.layout-focus) .rw-date{ margin-top:4px; font-size:11px; }
+#recentWorks:not(.layout-focus) .rw-card:focus-within :is(.rw-card-pin, .rw-card-rename, .rw-card-reveal, .rw-card-clear){ opacity:1; }
+#recentWorks:not(.layout-focus) .rw-restore{
+  width:100%; max-width:none; margin:0 0 24px; padding:10px 12px 10px 16px;
+  border-radius:10px; background:var(--surface-1); box-shadow:none; backdrop-filter:none;
+}
+#recentWorks:not(.layout-focus) .rw-restore::before{ display:none; }
+#recentWorks:not(.layout-focus) :is(.rw-empty, .rw-noresults){
+  min-height:270px; padding:36px 24px; gap:14px; border:0; background:none; box-shadow:none; backdrop-filter:none;
+}
+#recentWorks:not(.layout-focus) :is(.rw-empty, .rw-noresults) .frame{ background:var(--surface-1); border-color:var(--line); box-shadow:none; }
+#recentWorks:not(.layout-focus) :is(.rw-empty, .rw-noresults) .frame::before{ content:none; }
+#recentWorks:not(.layout-focus) :is(.rw-empty, .rw-noresults) .frame svg{ stroke:var(--dim); }
+#recentWorks:not(.layout-focus) .rw-noresults h2{ max-width:100%; overflow-wrap:anywhere; }
+#recentWorks:not(.layout-focus) .rw-noresults p{ display:none; }
+/* A direct choice between the app's existing views, shared by both layouts. */
+.rw-layout-switch{ flex:0 0 auto; display:flex; gap:2px; padding:3px; border:1px solid var(--line); border-radius:9px; background:var(--bg); }
+.rw-layout-button{ width:30px; height:30px; display:flex; align-items:center; justify-content:center; border:0; border-radius:6px; background:none; color:var(--dim); cursor:pointer; }
+.rw-layout-button svg{ width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.rw-layout-button:hover{ color:var(--txt); background:var(--surface-1); }
+.rw-layout-button[aria-pressed="true"]{ color:var(--txt); background:var(--surface-2); box-shadow:0 1px 3px rgba(0,0,0,.16); }
+.rw-layout-button:focus-visible{ outline:2px solid var(--acc); outline-offset:2px; }
+@media (max-width:1000px){
+  #recentWorks:not(.layout-focus) .rw-inner{ width:calc(100% - 40px); }
+  #recentWorks:not(.layout-focus) .rw-header{ column-gap:16px; }
+  #recentWorks:not(.layout-focus) .rw-search{ width:250px; }
+  #recentWorks:not(.layout-focus) .rw-header h1{ font-size:28px; }
+  #recentWorks:not(.layout-focus) .rw-grid{ gap:18px; }
+}
+@media (max-height:600px){
+  #recentWorks:not(.layout-focus) .rw-inner{ padding:18px 0 32px; }
+  #recentWorks:not(.layout-focus) .rw-header{ row-gap:18px; padding-bottom:20px; margin-bottom:20px; }
+}
+@media (max-width:560px){
+  #recentWorks:not(.layout-focus) .rw-header{ grid-template-columns:1fr; gap:16px; }
+  #recentWorks:not(.layout-focus) .rw-brand{ display:none; }
+  #recentWorks:not(.layout-focus) .rw-actions{ grid-area:1 / 1; justify-content:flex-start; }
+  #recentWorks:not(.layout-focus) .rw-heading-copy{ grid-area:2 / 1; }
+  #recentWorks:not(.layout-focus) .rw-toolrow{ grid-area:3 / 1; flex-direction:row; }
+  #recentWorks:not(.layout-focus) .rw-search{ flex:1; width:auto; }
+  #recentWorks:not(.layout-focus) .rw-grid{ grid-template-columns:1fr; }
 }
 
 /* ---------- focus flow landing ---------- */
@@ -2900,10 +2981,18 @@ body.board-active #whatsNewNotice{ display:none; }
         </div>
       </div>
       <div class="rw-toolrow" id="rwToolrow" hidden>
+        <div class="rw-layout-switch" role="group" aria-label="Board layout">
+          <button type="button" class="rw-layout-button" id="rwLayoutGrid" title="Classic Grid" aria-label="Classic Grid layout" aria-pressed="true" aria-controls="recentGrid">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          </button>
+          <button type="button" class="rw-layout-button" id="rwLayoutFlow" title="Focus Flow" aria-label="Focus Flow layout" aria-pressed="false" aria-controls="focusFlow">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2"/><path d="M3 7v10M21 7v10"/></svg>
+          </button>
+        </div>
         <div class="rw-search" id="rwSearch">
           <svg class="rw-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
           <input type="search" id="rwSearchInput" class="rw-search-input" spellcheck="false" autocomplete="off"
-                 placeholder="Search boards by name or folder…" aria-label="Search your boards">
+                 placeholder="Search boards…" aria-label="Search your boards by name or folder">
           <kbd class="ff-search-key" aria-hidden="true">Ctrl F</kbd>
           <button type="button" class="rw-search-clear" id="rwSearchClear" title="Clear search" aria-label="Clear search" hidden>&times;</button>
         </div>
@@ -2955,7 +3044,7 @@ body.board-active #whatsNewNotice{ display:none; }
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M3.5 17.5 9 12l4 4 3-3 4.5 4.5"/></svg>
       </div>
       <h2>Create your first board</h2>
-      <p>Start a new moodboard or open a saved .refboard file from disk.</p>
+      <p>A place to collect images, ideas, and references.</p>
       <button type="button" class="rw-btn primary" id="rwEmptyNewBoard">New board</button>
     </div>
   </div>
@@ -13297,6 +13386,15 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
   // renderRecentWorks decides whether the in-memory board survives the current
   // search; without a caller it falls back to the old unconditional rule.
   const hasCurrent = opts.showCurrent ?? state.items.length > 0;
+  // Revisiting Home or refreshing unchanged recents must not replace decoded
+  // previews or the focused card. A changed file/search still gets a fresh card.
+  const signature = JSON.stringify([recentSearchQuery,
+    hasCurrent ? [currentBoardPath, currentBoardTitle, boardFileDirty, state.items.length, cachedCurrentBoardThumb] : null,
+    list.map(work => [work.path, work.title, formatWorkMeta(work), work.lastEdited, work.lastOpened, work.thumbnail, work.thumbnailData, !!work.pinned]),
+  ]);
+  if (grid.dataset.signature === signature && grid.dataset.previewReady === 'true' && grid.children.length) return;
+  grid.dataset.signature = signature;
+  grid.dataset.previewReady = 'false';
   grid.innerHTML = '';
 
   if (!list.length && !hasCurrent) {
@@ -13401,6 +13499,7 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
     i++;
   }
   await Promise.all(thumbJobs);
+  if (!renderSeq || renderSeq === recentWorksRenderSeq) grid.dataset.previewReady = 'true';
 }
 
 let recentWorksRenderSeq = 0;
@@ -13939,11 +14038,12 @@ async function renderRecentWorks() {
   const hasAnyBoards = all.length > 0 || hasCurrent;
   const hasVisibleBoards = list.length > 0 || showCurrent;
   const focusLayout = appSettings.landingLayout === 'focus';
+  $('#rwLayoutGrid').setAttribute('aria-pressed', String(!focusLayout));
+  $('#rwLayoutFlow').setAttribute('aria-pressed', String(focusLayout));
 
   syncLandingSearchUi({ total: all.length + (hasCurrent ? 1 : 0), shown: list.length + (showCurrent ? 1 : 0), searching, hasAnyBoards });
 
   $('#recentWorks').classList.toggle('layout-focus', focusLayout);
-  $('#rwSearchInput').placeholder = focusLayout ? 'Search boards…' : 'Search boards by name or folder…';
   grid.hidden = focusLayout || !hasVisibleBoards;
   grid.classList.toggle('hide', focusLayout || !hasVisibleBoards);
   flow.hidden = !focusLayout || !hasVisibleBoards;
@@ -14087,6 +14187,21 @@ function wireFocusFlowControls() {
       syncFocusFlowUi();
     }
   });
+}
+
+function setLandingLayout(value) {
+  const next = normalizeLandingLayout(value);
+  if (next === appSettings.landingLayout) return;
+  cancelCardRename();
+  appSettings.landingLayout = next;
+  saveAppSettings();
+  applyAppSettings();
+  stopFocusFlowMotion();
+  focusFlowEntries = [];
+  focusFlowIndex = 0;
+  $('#recentWorks').scrollTop = 0;
+  syncSettingsUi();
+  if (onLanding) void renderRecentWorks();
 }
 
 let whatsNewPayload = null;
@@ -18149,15 +18264,7 @@ function wireSettingsControls() {
   const gridStyleSel = document.getElementById('setGridStyle');
   if (gridStyleSel) gridStyleSel.addEventListener('change', e => setGridAppearance(e.target.value));
   const landingLayoutSel = document.getElementById('setLandingLayout');
-  if (landingLayoutSel) landingLayoutSel.addEventListener('change', e => {
-    appSettings.landingLayout = normalizeLandingLayout(e.target.value);
-    saveAppSettings();
-    applyAppSettings();
-    focusFlowEntries = [];
-    focusFlowIndex = 0;
-    syncSettingsUi();
-    if (onLanding) void renderRecentWorks();
-  });
+  if (landingLayoutSel) landingLayoutSel.addEventListener('change', e => setLandingLayout(e.target.value));
   const toolbarModeSel = document.getElementById('setToolbarMode');
   if (toolbarModeSel) toolbarModeSel.addEventListener('change', e => {
     appSettings.toolbarMode = normalizeToolbarMode(e.target.value);
@@ -19109,6 +19216,8 @@ boardPick.addEventListener('change', async () => {
 });
 
 $('#rwNewBoard').addEventListener('click', () => openNewBoard());
+$('#rwLayoutGrid').addEventListener('click', () => setLandingLayout('classic'));
+$('#rwLayoutFlow').addEventListener('click', () => setLandingLayout('focus'));
 $('#rwEmptyNewBoard').addEventListener('click', () => openNewBoard());
 $('#rwOpenFile').addEventListener('click', () => openBoardFromDialog());
 $('#rwNewWindow').addEventListener('click', async () => {

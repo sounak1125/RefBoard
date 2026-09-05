@@ -113,6 +113,7 @@ async function run() {
         gridSize: grid.backgroundSize,
         gridPos: grid.position,
         grainZ: grain.zIndex, grainBlend: grain.mixBlendMode,
+        gridContent: grid.content, grainContent: grain.content,
       };
     })(),
     settingsSelects: document.querySelectorAll('.settings2-content select').length,
@@ -241,6 +242,7 @@ async function run() {
         gridSize: grid.backgroundSize,
         gridPos: grid.position,
         grainZ: grain.zIndex, grainBlend: grain.mixBlendMode,
+        gridContent: grid.content, grainContent: grain.content,
       };
     })(),
     savedLayout: JSON.parse(localStorage.getItem('refboard.settings')).landingLayout,
@@ -253,13 +255,12 @@ async function run() {
     throw new Error(`Unexpected Classic Grid state: ${JSON.stringify(classicState)}`);
   }
 
-  // Focus has a plain surface; Classic retains its fixed grid and grain.
-  smokeStep = 'Classic backdrop preserved';
+  // Both layouts keep visual references clear of decorative grid/grain layers.
+  smokeStep = 'Classic plain backdrop';
   {
     const b = classicState.landingBackdrop;
-    if (b.gridPos !== 'fixed' || b.gridW !== '1440px' || b.gridSize !== '48px 48px, 48px 48px'
-        || b.isolation !== 'isolate' || b.grainBlend !== 'overlay') {
-      throw new Error(`Classic backdrop changed: ${JSON.stringify(b)}`);
+    if (b.gridContent !== 'none' || b.grainContent !== 'none' || b.isolation !== 'isolate') {
+      throw new Error(`Classic backdrop should stay plain: ${JSON.stringify(b)}`);
     }
   }
 
