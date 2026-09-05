@@ -64,7 +64,7 @@
     "test:save-abort-smoke": "node scripts/smoke-board-save-abort.mjs",
     "test:multi-window-history-smoke": "node scripts/smoke-multi-window-history.mjs",
     "test:keyboard-guards-smoke": "node scripts/smoke-keyboard-guards.mjs",
-    "test:grid-smoke": "node scripts/smoke-grid-pattern.mjs",
+    "test:grid-smoke": "node scripts/smoke-grid-pattern.mjs && node scripts/smoke-grid-pattern.mjs --software",
     "test:view-persist-smoke": "node scripts/smoke-view-persist.mjs",
     "test:steady-flicker-smoke": "electron scripts/smoke-steady-view-flicker.js",
     "test:save-preview-smoke": "node scripts/smoke-save-preview.mjs"
