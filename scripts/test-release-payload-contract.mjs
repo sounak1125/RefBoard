@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 const ship = await readFile(new URL('../scripts/ship-release.ps1', import.meta.url), 'utf8');
 const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+const maintainerGuide = await readFile(new URL('../docs/MAINTAINING.md', import.meta.url), 'utf8');
 
 // Slice a function by matching braces, so reordering the file's functions
 // cannot silently turn these assertions into no-ops.
@@ -82,22 +83,23 @@ assert.ok(syncCall < uploadAssets, 'the sync must run before any asset is upload
 assert.ok(at('if ($DryRun)') < syncCall, '-DryRun must return before the payload sync');
 
 // Both failure modes stay reachable by the person running a release.
-assert.match(readme, /-SkipPayloadCheck/, 'README must document the skip switch');
-assert.match(readme, /-NoBootstrapperRebuild/, 'README must document the no-rebuild switch');
+assert.match(readme, /\]\(docs\/MAINTAINING\.md\)/, 'README must link to the maintainer guide');
+assert.match(maintainerGuide, /-SkipPayloadCheck/, 'maintainer guide must document the skip switch');
+assert.match(maintainerGuide, /-NoBootstrapperRebuild/, 'maintainer guide must document the no-rebuild switch');
 
 /* The bootstrapper names its artifact from its own package.json version while
    this script looks for the root version's name, so a release where only the
    root was bumped ships with no installer — and only warns about it. That trap
-   is invisible from the scripts alone, so the README has to call it out. */
+   is invisible from the scripts alone, so the maintainer guide has to call it out. */
 assert.match(
-  readme,
+  maintainerGuide,
   /bootstrapper\/package\.json/,
-  'README must tell the releaser to bump bootstrapper/package.json too',
+  'maintainer guide must tell the releaser to bump bootstrapper/package.json too',
 );
 assert.match(
   ship,
   /Write-Warning "No \$installerName built/,
-  'a missing installer must stay a warning, which is exactly why the README has to flag the version bump',
+  'a missing installer must stay a warning, which is exactly why the maintainer guide has to flag the version bump',
 );
 
 console.log('release payload contract ok - sync is default-on, ordered before upload, and re-verified after rebuild');
