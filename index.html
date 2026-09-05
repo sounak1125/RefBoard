@@ -880,57 +880,16 @@ body.board-instant-open #titlebarPeek{
   scrollbar-color:rgba(122,136,168,.46) rgba(9,11,15,.42);
   scroll-behavior:smooth;
   background:var(--bg);
-  /* Both layouts, not just Focus Flow. The grain blends in overlay, so without
-     a stacking context here it mixes with whatever sits behind the landing and
-     the texture comes out different in each layout. */
+  /* Keep Home's surfaces separate from the board underneath. */
   isolation:isolate;
   opacity:1;
   visibility:visible;
   pointer-events:auto;
   transition:opacity .28s cubic-bezier(.22,1,.36,1), visibility .28s cubic-bezier(.22,1,.36,1);
 }
-/* Film grain over the whole landing, straight from the installer's look: it
-   breaks up the aurora gradients so they read as light in air rather than
-   color bands on glass. */
-/* Above the cards, not behind them. A 96px shadow ramp over a near-black
-   page steps visibly - each 1/255 of alpha becomes a contour, and they read as
-   arcs around every card. Noise over the top dithers those steps away, which
-   it cannot do from underneath: the content sits at z-index 2, so the grain
-   was covering the background and nothing else. */
-#recentWorks::before{
-  content:""; position:fixed; inset:var(--titlebar-h) 0 0 0; z-index:4; pointer-events:none;
-  opacity:.07; mix-blend-mode:overlay;
-  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.34'/%3E%3C/svg%3E");
-  background-size:180px 180px;
-}
-/* The board canvas is a grid, so the landing is drawn on the same surface the
-   work happens on - faded almost to nothing, present mostly as structure.
-
-   One layer does both the grid and the light: the mask is what fades it, so
-   the brightness falls off from the top exactly where the lines do. That is
-   deliberate. The version this replaces used two drifting radial fields, and
-   where their falloffs crossed they left a visible seam across the middle of
-   the page. A single masked layer has nothing to meet. */
-#recentWorks::after{
-  content:""; position:fixed; inset:var(--titlebar-h) 0 0 0; z-index:0; pointer-events:none;
-  background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--acc) 14%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--acc) 14%, transparent) 1px, transparent 1px);
-  background-size:48px 48px;
-  background-position:50% 0;
-  -webkit-mask-image:radial-gradient(116% 64% at 50% -8%, #000 0%, rgba(0,0,0,.5) 40%, transparent 74%);
-  mask-image:radial-gradient(116% 64% at 50% -8%, #000 0%, rgba(0,0,0,.5) 40%, transparent 74%);
-}
-/* A hairline where the header ends and the work begins. Fades out at both ends
-   so it never reads as a box edge. */
-#recentWorks.layout-focus .rw-header::after{
-  content:""; display:block; height:1px; margin:14px 0 0;
-  background:linear-gradient(90deg,
-    transparent,
-    color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.13)) 22%,
-    color-mix(in srgb, var(--acc) 20%, rgba(255,255,255,.13)) 78%,
-    transparent);
-}
+/* Reference previews provide the color and detail; nothing is composited over them. */
+#recentWorks::before,
+#recentWorks::after{ content:none; }
 #recentWorks::-webkit-scrollbar{ width:10px; height:10px; }
 #recentWorks::-webkit-scrollbar-track{ background:rgba(9,11,15,.42); }
 #recentWorks::-webkit-scrollbar-thumb{
@@ -1211,6 +1170,23 @@ body.board-active #recentWorks{ display:none; }
   background:color-mix(in srgb, var(--acc) 80%, transparent); color:var(--acc-contrast);
   border-color:color-mix(in srgb, var(--acc) 45%, transparent);
 }
+.rw-card-reveal{
+  position:absolute; top:14px; right:110px; z-index:2;
+  width:26px; height:26px; border-radius:7px;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--panel); color:var(--dim); cursor:pointer;
+  border:1px solid rgba(255,255,255,.06); backdrop-filter:blur(8px);
+  opacity:0; transition:opacity .18s ease, background .18s ease, color .18s ease, border-color .18s ease;
+}
+.rw-card-reveal svg{ width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.rw-card:hover .rw-card-reveal,
+.rw-card-reveal:focus-visible{ opacity:1; }
+.rw-card-reveal:hover,
+.rw-card-reveal:focus-visible{ background:var(--surface-2); color:var(--txt); border-color:rgba(255,255,255,.14); }
+.rw-card-reveal:disabled{ cursor:wait; }
+.rw-card-current .rw-card-reveal{ right:14px; }
+.rw-card.is-renaming .rw-card-reveal,
+.ff-card.is-renaming .rw-card-reveal{ display:none; }
 .rw-card:hover .rw-card-clear,
 .rw-card-clear:focus-visible{ opacity:1; }
 .rw-card-clear:hover,
@@ -1499,351 +1475,373 @@ body.board-active #recentWorks{ display:none; }
   .rw-restore-actions{ align-self:flex-end; }
 }
 
-/* ---------- focus flow landing ---------- */
-/* Flat. The carousel and the dock carry their own light; a wash behind them
-   only added a visible seam where the two gradients met. */
-#recentWorks.layout-focus{
-  overflow:hidden;
-  background:var(--bg);
+/* ---------- classic reference library ---------- */
+#recentWorks:not(.layout-focus) .rw-inner{
+  width:min(1280px, calc(100% - 80px)); padding:32px 0 48px;
 }
-/* A pool of accent light on the floor beneath the active card, so the carousel
-   reads as an object under a spotlight rather than cards floating in the dark. */
+#recentWorks:not(.layout-focus) .rw-header{
+  display:grid; grid-template-columns:minmax(0, 1fr) auto;
+  align-items:center; gap:32px 24px; margin:0 0 28px; padding-bottom:24px;
+  border-bottom:1px solid var(--line);
+}
+#recentWorks:not(.layout-focus) .rw-brand{ grid-area:1 / 1; gap:10px; margin:0; }
+#recentWorks:not(.layout-focus) .rw-brand-icon{ width:32px; height:32px; border-radius:9px; box-shadow:none; }
+#recentWorks:not(.layout-focus) .rw-brand-name{ font-size:17px; letter-spacing:-.025em; }
+#recentWorks:not(.layout-focus) .rw-brand-kicker,
+#recentWorks:not(.layout-focus) .rw-kicker,
+#recentWorks:not(.layout-focus) .rw-sub{ display:none; }
+#recentWorks:not(.layout-focus) .rw-heading-row{ display:contents; }
+#recentWorks:not(.layout-focus) .rw-heading-copy{ grid-area:2 / 1; display:flex; align-items:center; gap:12px; }
+#recentWorks:not(.layout-focus) .rw-header h1{
+  margin:0; font-size:32px; font-weight:600; line-height:1.2; letter-spacing:-.035em;
+  background:none; -webkit-text-fill-color:currentColor;
+}
+#recentWorks:not(.layout-focus) .ff-library-count{
+  display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:28px;
+  padding:0 7px; border:1px solid var(--line); border-radius:8px;
+  color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums;
+}
+#recentWorks:not(.layout-focus) .rw-actions{ grid-area:1 / 2; }
+#recentWorks:not(.layout-focus) .rw-btn{ border-radius:9px; box-shadow:none; backdrop-filter:none; transform:none; }
+#recentWorks:not(.layout-focus) .rw-header .rw-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  min-height:38px; padding:9px 14px; font-size:12px;
+}
+#recentWorks:not(.layout-focus) .rw-btn.primary{ background:var(--acc); }
+#recentWorks:not(.layout-focus) .rw-btn.primary:hover{ background:var(--acc-hover); }
+#recentWorks:not(.layout-focus) .rw-action-icon{
+  display:block; width:16px; height:16px; fill:none; stroke:currentColor;
+  stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;
+}
+#recentWorks:not(.layout-focus) #rwNewWindow{ background:none; border-color:transparent; color:var(--dim); }
+#recentWorks:not(.layout-focus) #rwNewWindow:hover{ background:var(--surface-1); color:var(--txt); }
+#recentWorks:not(.layout-focus) .rw-toolrow{ position:relative; grid-area:2 / 2; margin:0; gap:12px; }
+#recentWorks:not(.layout-focus) .rw-toolrow[hidden]{ display:none; }
+#recentWorks:not(.layout-focus) .rw-search{ flex:0 1 auto; width:300px; }
+#recentWorks:not(.layout-focus) .rw-search-input{
+  padding:11px 68px 11px 35px; border-radius:9px; font-size:12px;
+  background:color-mix(in srgb, var(--surface-1) 58%, var(--bg)); backdrop-filter:none; box-shadow:none;
+}
+#recentWorks:not(.layout-focus) .rw-search-input:focus{ box-shadow:0 0 0 2px color-mix(in srgb, var(--acc) 15%, transparent); }
+#recentWorks:not(.layout-focus) .ff-search-key{ display:block; position:absolute; right:12px; color:var(--dim); font:10px var(--font-display); pointer-events:none; }
+#recentWorks:not(.layout-focus) .rw-search:focus-within .ff-search-key,
+#recentWorks:not(.layout-focus) .rw-search:has(.rw-search-clear:not([hidden])) .ff-search-key{ display:none; }
+#recentWorks:not(.layout-focus) .rw-search-count{ display:none; }
+#recentWorks:not(.layout-focus) .rw-toolrow.is-searching .rw-search-count{
+  display:block; position:absolute; right:0; top:calc(100% + 6px); font-size:10px;
+}
+#recentWorks:not(.layout-focus) .rw-header *{ animation:none; }
+#recentWorks:not(.layout-focus) .rw-grid{ grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:22px; }
+#recentWorks:not(.layout-focus) .rw-card{
+  gap:0; padding:10px; border-radius:14px;
+  background:color-mix(in srgb, var(--surface-1) 76%, var(--bg));
+  box-shadow:0 2px 6px rgba(0,0,0,.10); backdrop-filter:none;
+  animation:none; transform:none; will-change:auto;
+  transition:border-color .16s ease, background-color .16s ease;
+}
+#recentWorks:not(.layout-focus) .rw-card:hover,
+#recentWorks:not(.layout-focus) .rw-card:focus-within{
+  background:var(--surface-1); border-color:var(--line-strong);
+  box-shadow:0 2px 6px rgba(0,0,0,.10); transform:none;
+}
+#recentWorks:not(.layout-focus) .rw-card:focus-visible{ outline:2px solid var(--acc); outline-offset:3px; }
+#recentWorks:not(.layout-focus) .rw-card.is-pinned,
+#recentWorks:not(.layout-focus) .rw-card-current{ border-color:color-mix(in srgb, var(--acc) 40%, var(--line)); }
+#recentWorks:not(.layout-focus) .rw-card .rw-thumb{
+  aspect-ratio:16/10; border-radius:8px; border-color:var(--line);
+  background:color-mix(in srgb, var(--bg) 70%, var(--surface-1)); box-shadow:none;
+}
+#recentWorks:not(.layout-focus) .rw-thumb img{ object-fit:contain; }
+#recentWorks:not(.layout-focus) .rw-meta{ min-height:64px; padding:13px 4px 5px; }
+#recentWorks:not(.layout-focus) .rw-title{ font-size:15px; font-weight:550; line-height:1.4; letter-spacing:-.015em; }
+#recentWorks:not(.layout-focus) .rw-date{ margin-top:4px; font-size:11px; }
+#recentWorks:not(.layout-focus) .rw-card:focus-within :is(.rw-card-pin, .rw-card-rename, .rw-card-reveal, .rw-card-clear){ opacity:1; }
+#recentWorks:not(.layout-focus) .rw-restore{
+  width:100%; max-width:none; margin:0 0 24px; padding:10px 12px 10px 16px;
+  border-radius:10px; background:var(--surface-1); box-shadow:none; backdrop-filter:none;
+}
+#recentWorks:not(.layout-focus) .rw-restore::before{ display:none; }
+#recentWorks:not(.layout-focus) :is(.rw-empty, .rw-noresults){
+  min-height:270px; padding:36px 24px; gap:14px; border:0; background:none; box-shadow:none; backdrop-filter:none;
+}
+#recentWorks:not(.layout-focus) :is(.rw-empty, .rw-noresults) .frame{ background:var(--surface-1); border-color:var(--line); box-shadow:none; }
+#recentWorks:not(.layout-focus) :is(.rw-empty, .rw-noresults) .frame::before{ content:none; }
+#recentWorks:not(.layout-focus) :is(.rw-empty, .rw-noresults) .frame svg{ stroke:var(--dim); }
+#recentWorks:not(.layout-focus) .rw-noresults h2{ max-width:100%; overflow-wrap:anywhere; }
+#recentWorks:not(.layout-focus) .rw-noresults p{ display:none; }
+/* A direct choice between the app's existing views, shared by both layouts. */
+.rw-layout-switch{ flex:0 0 auto; display:flex; gap:2px; padding:3px; border:1px solid var(--line); border-radius:9px; background:var(--bg); }
+.rw-layout-button{ width:30px; height:30px; display:flex; align-items:center; justify-content:center; border:0; border-radius:6px; background:none; color:var(--dim); cursor:pointer; }
+.rw-layout-button svg{ width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+.rw-layout-button:hover{ color:var(--txt); background:var(--surface-1); }
+.rw-layout-button[aria-pressed="true"]{ color:var(--txt); background:var(--surface-2); box-shadow:0 1px 3px rgba(0,0,0,.16); }
+.rw-layout-button:focus-visible{ outline:2px solid var(--acc); outline-offset:2px; }
+@media (max-width:1000px){
+  #recentWorks:not(.layout-focus) .rw-inner{ width:calc(100% - 40px); }
+  #recentWorks:not(.layout-focus) .rw-header{ column-gap:16px; }
+  #recentWorks:not(.layout-focus) .rw-search{ width:250px; }
+  #recentWorks:not(.layout-focus) .rw-header h1{ font-size:28px; }
+  #recentWorks:not(.layout-focus) .rw-grid{ gap:18px; }
+}
+@media (max-height:600px){
+  #recentWorks:not(.layout-focus) .rw-inner{ padding:18px 0 32px; }
+  #recentWorks:not(.layout-focus) .rw-header{ row-gap:18px; padding-bottom:20px; margin-bottom:20px; }
+}
+@media (max-width:560px){
+  #recentWorks:not(.layout-focus) .rw-header{ grid-template-columns:1fr; gap:16px; }
+  #recentWorks:not(.layout-focus) .rw-brand{ display:none; }
+  #recentWorks:not(.layout-focus) .rw-actions{ grid-area:1 / 1; justify-content:flex-start; }
+  #recentWorks:not(.layout-focus) .rw-heading-copy{ grid-area:2 / 1; }
+  #recentWorks:not(.layout-focus) .rw-toolrow{ grid-area:3 / 1; flex-direction:row; }
+  #recentWorks:not(.layout-focus) .rw-search{ flex:1; width:auto; }
+  #recentWorks:not(.layout-focus) .rw-grid{ grid-template-columns:1fr; }
+}
+
+/* ---------- focus flow landing ---------- */
+.rw-action-icon, .ff-library-count, .ff-search-key{ display:none; }
+#recentWorks.layout-focus{ overflow:auto; background:var(--bg); }
+#recentWorks.layout-focus::before,
+#recentWorks.layout-focus::after,
+#recentWorks.layout-focus .rw-header::after{ content:none; }
 #recentWorks.layout-focus .rw-inner{
-  position:relative; z-index:2;
-  width:100%; height:100%; min-height:0;
-  padding:22px 0 18px;
+  width:100%; height:100%; min-height:420px; padding:28px 0 20px;
   display:flex; flex-direction:column;
 }
 #recentWorks.layout-focus .rw-header{
-  width:min(1120px, calc(100vw - 56px));
-  margin:0 auto 2px;
+  width:min(1280px, calc(100% - 80px)); margin:0 auto;
+  display:grid; grid-template-columns:minmax(0, 1fr) auto;
+  align-items:center; gap:36px 24px; padding-bottom:12px;
   flex:0 0 auto;
 }
-#recentWorks.layout-focus .rw-restore{ flex:0 0 auto; }
-#recentWorks.layout-focus .rw-brand{ margin-bottom:12px; }
-#recentWorks.layout-focus .rw-brand-icon{ width:40px; height:40px; border-radius:11px; }
-#recentWorks.layout-focus .rw-heading-row{ padding-bottom:10px; border-bottom:none; align-items:center; }
-#recentWorks.layout-focus .rw-header h1{ font-size:32px; }
+#recentWorks.layout-focus .rw-brand{ grid-area:1 / 1; margin:0; gap:10px; }
+#recentWorks.layout-focus .rw-brand-icon{ width:32px; height:32px; border-radius:9px; box-shadow:none; }
+#recentWorks.layout-focus .rw-brand-name{ font-size:17px; letter-spacing:-.025em; }
+#recentWorks.layout-focus .rw-brand-kicker,
+#recentWorks.layout-focus .rw-kicker,
 #recentWorks.layout-focus .rw-sub{ display:none; }
-#recentWorks.layout-focus .rw-empty{
-  width:min(720px, calc(100vw - 56px)); margin:40px auto 0;
-  border-radius:22px; padding:56px 40px;
-  background:
-    linear-gradient(160deg, color-mix(in srgb, var(--acc) 5%, transparent), transparent 48%),
-    color-mix(in srgb, var(--panel) 68%, transparent);
-  backdrop-filter:blur(26px) saturate(1.08);
-  box-shadow:0 24px 70px rgba(0,0,0,.4), 0 1px 0 rgba(255,255,255,.05) inset;
+#recentWorks.layout-focus .rw-heading-row{ display:contents; }
+#recentWorks.layout-focus .rw-heading-copy{ grid-area:2 / 1; display:flex; align-items:center; gap:14px; }
+#recentWorks.layout-focus .rw-header h1{
+  margin:0; font-size:34px; font-weight:600; line-height:1.2; letter-spacing:-.04em;
+  background:none; -webkit-text-fill-color:currentColor;
 }
+#recentWorks.layout-focus .ff-library-count{
+  display:inline-flex; min-width:28px; height:28px; padding:0 7px; align-items:center; justify-content:center;
+  border:1px solid var(--line); border-radius:8px; color:var(--dim); font-size:11px; font-variant-numeric:tabular-nums;
+}
+#recentWorks.layout-focus .rw-actions{ grid-area:1 / 2; gap:10px; }
+#recentWorks.layout-focus .rw-header .rw-btn{
+  min-height:38px; padding:9px 14px; border-radius:9px;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  font-size:12px; box-shadow:none; transform:none;
+}
+#recentWorks.layout-focus .rw-action-icon{ display:block; width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+#recentWorks.layout-focus #rwNewWindow{ border-color:transparent; background:none; color:var(--dim); }
+#recentWorks.layout-focus #rwNewWindow:hover{ color:var(--txt); background:var(--surface-1); }
+#recentWorks.layout-focus .rw-btn{ box-shadow:none; backdrop-filter:none; transform:none; }
+#recentWorks.layout-focus .rw-btn.primary{ background:var(--acc); }
+#recentWorks.layout-focus .rw-btn.primary:hover{ background:var(--acc-hover); }
+#recentWorks.layout-focus .rw-toolrow{ position:relative; grid-area:2 / 2; margin:0; gap:14px; justify-content:flex-end; }
+#recentWorks.layout-focus .rw-toolrow[hidden]{ display:none; }
+#recentWorks.layout-focus .rw-search{ width:320px; flex:0 1 auto; }
+#recentWorks.layout-focus .rw-search-input{
+  padding:11px 68px 11px 35px; border-radius:9px; background:color-mix(in srgb, var(--surface-1) 58%, var(--bg));
+  backdrop-filter:none; box-shadow:none; font-size:12px;
+}
+#recentWorks.layout-focus .rw-search-input:focus{ box-shadow:0 0 0 2px color-mix(in srgb, var(--acc) 15%, transparent); }
+#recentWorks.layout-focus .rw-search-count{ display:none; }
+#recentWorks.layout-focus .rw-toolrow.is-searching .rw-search-count{ display:block; position:absolute; right:0; top:calc(100% + 5px); font-size:10px; }
+#recentWorks.layout-focus .ff-search-key{ display:block; position:absolute; right:12px; color:var(--dim); font:10px var(--font-display); pointer-events:none; }
+#recentWorks.layout-focus .rw-search:focus-within .ff-search-key,
+#recentWorks.layout-focus .rw-search:has(.rw-search-clear:not([hidden])) .ff-search-key{ display:none; }
+#recentWorks.layout-focus .rw-header *{ animation:none; }
+#recentWorks.layout-focus .rw-restore{
+  flex:0 0 auto; width:min(1240px, calc(100% - 80px)); margin:12px auto 0;
+  border-radius:10px; box-shadow:none; backdrop-filter:none;
+}
+#recentWorks.layout-focus .rw-restore::before{ display:none; }
+#recentWorks.layout-focus .rw-restore .rw-btn{ border-radius:7px; }
+#recentWorks.layout-focus .rw-empty,
+#recentWorks.layout-focus .rw-noresults{
+  flex:1 0 210px; width:calc(100% - 48px); margin:16px auto 0;
+  padding:24px; gap:14px; border:0; background:none; box-shadow:none; backdrop-filter:none;
+}
+#recentWorks.layout-focus .rw-empty .frame::before,
+#recentWorks.layout-focus .rw-noresults .frame::before{ content:none; }
+#recentWorks.layout-focus .rw-empty p,
+#recentWorks.layout-focus .rw-noresults p{ display:none; }
+#recentWorks.layout-focus .rw-noresults h2{ max-width:100%; overflow-wrap:anywhere; }
 
-/* Stage above, footer below, both in flow. The footer used to be absolutely
-   positioned and the stage reserved a flat 54px for it - a number that never
-   matched what the footer actually measured, so on a short window the cards
-   sat on top of the counter. Letting flex do the reserving means the two can
-   never disagree again, whatever the dock ends up costing. */
-.ff-flow{
-  position:relative; z-index:1; flex:1 1 auto; min-height:0;
-  width:100%; overflow:hidden;
-  display:flex; flex-direction:column;
-}
-/* display:flex above outranks what the hidden attribute asks for, so without
-   this the whole carousel - cards, arrows, hint, dock - keeps painting over the
-   classic grid while claiming to be hidden. Same reason .rw-restore needs it. */
+.ff-flow{ position:relative; flex:1 1 auto; min-height:260px; width:100%; display:flex; flex-direction:column; }
 .ff-flow[hidden]{ display:none !important; }
 .ff-stage{
-  position:relative; flex:1 1 auto; min-height:240px;
-  width:100%; outline:none; perspective:1500px;
-  touch-action:pan-y; user-select:none; cursor:grab;
+  position:relative; flex:1 1 auto; min-height:176px; width:100%;
+  container-type:size; outline:none; touch-action:pan-y; user-select:none; cursor:grab;
 }
 .ff-stage.dragging{ cursor:grabbing; }
 .ff-stage:focus-visible::after{
-  content:""; position:absolute; inset:10px 26px; border-radius:22px;
-  border:1px solid color-mix(in srgb, var(--acc) 48%, transparent); pointer-events:none;
+  content:''; position:absolute; inset:12px 24px; border-radius:14px;
+  border:1px solid color-mix(in srgb, var(--acc) 45%, transparent); pointer-events:none;
 }
-/* The receding cards are only dimmed, not faded - at 84% opacity the far ones
-   met the window edge as hard-edged slabs running off both sides. The old
-   vignette hid that; with the page flat there is nothing to hide behind, so
-   the row dissolves into the background instead of being cut off by it. */
 .ff-track{
-  position:absolute; inset:0; transform-style:preserve-3d;
-  /* Eased rather than linear. A straight ramp still leaves roughly a quarter
-     of the alpha out at the window edge, which was enough for a far card's
-     rectangular edge to register as a step. */
-  -webkit-mask-image:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.12) 7%, rgba(0,0,0,.55) 15%,
-    #000 24%, #000 76%, rgba(0,0,0,.55) 85%, rgba(0,0,0,.12) 93%, transparent 100%);
-  mask-image:linear-gradient(90deg, transparent 0%, rgba(0,0,0,.12) 7%, rgba(0,0,0,.55) 15%,
-    #000 24%, #000 76%, rgba(0,0,0,.55) 85%, rgba(0,0,0,.12) 93%, transparent 100%);
+  position:absolute; inset:0; overflow:hidden;
+  --ff-card-width:min(54vw, 720px, max(260px, calc((100cqh - 110px) * 1.6)));
+  -webkit-mask-image:linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+  mask-image:linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
 }
 .ff-card{
-  --ff-offset:0; --ff-scale:1; --ff-brightness:1; --ff-saturation:1;
-  position:absolute; left:50%; top:50%;
-  width:clamp(272px, 27vw, 428px);
-  /* Width sets the size until height runs out. On a short window the card used
-     to keep its width-derived height and simply overflow the stage, printing
-     over the counter below it; capped here, the thumbnail gives up the
-     difference. */
-  display:flex; flex-direction:column; max-height:100%;
-  padding:8px; border-radius:18px;
-  color:var(--txt); text-align:left; cursor:pointer;
-  background:linear-gradient(155deg, color-mix(in srgb, var(--card) 93%, #fff 7%), color-mix(in srgb, var(--card) 96%, #000 4%));
-  border:1px solid rgba(255,255,255,.1);
-  box-shadow:
-    0 1px 0 rgba(255,255,255,.06) inset,
-    0 14px 34px rgba(0,0,0,.5),
-    0 4px 12px rgba(0,0,0,.3);
-  transform:
-    translate3d(calc(-50% + var(--ff-offset) * clamp(212px, 21.5vw, 336px) + var(--ff-drag-x, 0px)), -50%, 0)
-    rotateY(calc(var(--ff-offset) * -5deg)) scale(var(--ff-scale));
-  filter:brightness(var(--ff-brightness)) saturate(var(--ff-saturation));
-  transform-origin:center center;
-  transition:transform .46s cubic-bezier(.2,.85,.2,1), opacity .34s ease, filter .34s ease, visibility .34s,
-    border-color .25s ease, box-shadow .25s ease, background .25s ease;
-  will-change:transform, opacity, filter;
-}
-/* A light seam across the top edge, as if the card's top lip caught the room
-   lighting. Kept faint on the side cards; the active one turns it up. */
-.ff-card::before{
-  content:""; position:absolute; z-index:1; left:9%; right:9%; top:0; height:1px;
-  background:linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) 30%, #fff 70%), transparent);
-  opacity:.4; pointer-events:none;
-}
-/* Cards slide under a stationary cursor while the row steps, so every card
-   that passes briefly matches :hover and flashes its three action buttons in
-   and out. Measured mid-scroll the count flips between 3 and 6 as one card's
-   buttons fade in over another's fading out. Nothing is revealed until the row
-   has settled; a pin already on stays lit, because that is state, not hover. */
-/* The .ff-card in the middle is load-bearing: the hover reveal below is also
-   three classes, and sits later in the file, so without it that rule wins the
-   tie and nothing here applies. */
-.ff-stage.is-stepping .ff-card .rw-card-clear,
-.ff-stage.is-stepping .ff-card .rw-card-rename,
-.ff-stage.is-stepping .ff-card .rw-card-pin:not(.is-on){
-  /* No transition on the way out. Fading them costs .18s during which two
-     cards' buttons are both partly visible, which is the crossfade this is
-     meant to remove. They fade back in normally once the row settles. */
-  opacity:0; transition:none;
-}
-.ff-stage.is-stepping .ff-card.is-active:hover{
-  /* Exactly the resting gradient, so a card the cursor happens to be over
-     while the row moves looks like every other card and nothing pops. */
-  background:linear-gradient(155deg, color-mix(in srgb, var(--card) 93%, #fff 7%), color-mix(in srgb, var(--card) 96%, #000 4%));
-}
-.ff-stage.dragging .ff-card{
-  transition:transform .08s linear, opacity .16s ease, filter .16s ease, visibility .16s,
-    border-color .16s ease, box-shadow .16s ease, background .16s ease;
-}
-/* The accent bloom is gone and the drop is shorter. A wide, very soft, very
-   low-alpha shadow is the worst case for banding: the longer the ramp, the more
-   contours it has room to show. The 1px accent ring stays - it is a hard edge,
-   so it cannot band, and it is what actually marks the card as current. */
-.ff-card.is-active{
-  border-color:color-mix(in srgb, var(--acc) 32%, rgba(255,255,255,.14));
-  box-shadow:
-    0 1px 0 rgba(255,255,255,.09) inset,
-    0 18px 44px rgba(0,0,0,.55),
-    0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent);
-}
-.ff-card.is-active::before{ opacity:.75; }
-/* A gradient, matching the base stop for stop, because the card's resting
-   background is one. A flat colour here sets background-image to none, and no
-   browser can interpolate a gradient to none - it snaps. Scrolling with the
-   pointer over the row moves hover from card to card, so that snap fired on
-   every step and read as the row glitching. Same stops, same angle, only the
-   colours differ, so this one actually animates. */
-.ff-card.is-active:hover{
-  background:linear-gradient(155deg, color-mix(in srgb, var(--card) 88%, #fff 12%), color-mix(in srgb, var(--card) 97%, #000 3%));
-}
-.ff-card:focus-visible{ outline:2px solid var(--acc); outline-offset:4px; }
-.ff-card .rw-thumb{
-  position:relative; aspect-ratio:4/3; border-radius:12px;
-  border-color:rgba(255,255,255,.055);
-  background:var(--surface-2);
-  box-shadow:0 1px 0 rgba(255,255,255,.035) inset;
-  /* Shrink but never grow: 4/3 still decides the size whenever there is room,
-     so nothing moves at a normal window. The image is object-fit:contain, so
-     a squeezed box letterboxes rather than distorting. */
-  flex:0 1 auto; min-height:0;
-}
-.ff-card .rw-meta{ flex:0 0 auto; }
-.ff-card .rw-thumb img{ object-fit:contain; }
-.ff-card .rw-meta{
-  display:flex; align-items:center; justify-content:space-between; gap:18px;
-  padding:14px 8px 5px;
-  transition:opacity .18s ease;
-}
-.ff-card:not(.is-active) .rw-meta{ opacity:0; }
-.ff-card-copy{ min-width:0; }
-.ff-card .rw-title{ font-size:18px; font-weight:650; letter-spacing:-.02em; }
-.ff-card .rw-date{ margin-top:5px; font-size:12px; }
-.ff-card .rw-card-clear{ top:17px; right:17px; }
-.ff-card .rw-card-rename{ top:17px; right:51px; }
-.ff-card .rw-rename-confirm{ top:17px; right:51px; }
-.ff-card .rw-rename-cancel{ top:17px; right:17px; }
-.ff-card:hover .rw-card-clear,
-.ff-card:hover .rw-card-rename,
-.ff-card.is-active .rw-card-clear:focus-visible,
-.ff-card.is-active .rw-card-rename:focus-visible{ opacity:1; }
-/* Meta is faded out on inactive cards; a rename in progress must stay legible. */
-.ff-card.is-renaming .rw-meta{ opacity:1; }
-.ff-card .rw-rename-input{ font-size:17px; letter-spacing:-.015em; }
-.ff-card-badge{
-  position:absolute; left:22px; top:22px; z-index:3;
-  padding:5px 9px; border-radius:8px;
-  background:color-mix(in srgb, var(--acc) 88%, #fff 12%); color:var(--acc-contrast);
-  box-shadow:0 5px 18px rgba(0,0,0,.25); font-size:10px; font-weight:700; letter-spacing:.04em;
-  text-transform:uppercase;
-}
-.ff-arrow{
-  position:absolute; z-index:70; top:50%; width:44px; height:44px;
-  display:flex; align-items:center; justify-content:center;
-  border-radius:50%; border:1px solid rgba(255,255,255,.09);
-  background:color-mix(in srgb, var(--panel) 56%, transparent); color:var(--dim);
-  backdrop-filter:blur(20px) saturate(1.1); cursor:pointer;
-  box-shadow:0 8px 22px rgba(0,0,0,.22), 0 1px 0 rgba(255,255,255,.08) inset;
-  transform:translateY(-50%); transition:opacity .2s ease, color .2s ease, background .2s ease, transform .2s ease, box-shadow .2s ease;
-}
-.ff-arrow svg{ width:19px; height:19px; fill:none; stroke:currentColor; stroke-width:1.8; }
-.ff-arrow.prev{ left:max(18px, calc(50% - clamp(340px, 32vw, 460px))); }
-.ff-arrow.next{ right:max(18px, calc(50% - clamp(340px, 32vw, 460px))); }
-.ff-arrow:hover:not(:disabled),
-.ff-arrow:focus-visible:not(:disabled){
-  color:var(--txt);
-  background:color-mix(in srgb, var(--panel) 72%, var(--acc) 28%);
-  box-shadow:
-    0 8px 26px rgba(0,0,0,.26),
-    0 0 0 1px color-mix(in srgb, var(--acc) 28%, transparent),
-    0 0 24px color-mix(in srgb, var(--acc) 15%, transparent);
-  outline:none;
-}
-.ff-arrow.prev:hover:not(:disabled){ transform:translate(-2px,-50%); }
-.ff-arrow.next:hover:not(:disabled){ transform:translate(2px,-50%); }
-.ff-arrow:disabled{ opacity:.18; cursor:default; }
-.ff-footer{
-  position:relative; z-index:80; flex:0 0 auto;
-  /* The top margin is the card's breathing room: the stage takes what is left,
-     so on a short window the card shrinks by this much rather than sitting
-     flush against the counter. */
-  align-self:center; margin:8px 0 4px;
-  width:min(520px, calc(100vw - 64px));
-  display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px 18px;
-}
-/* The index carries the weight, the total sits under it, the title trails. */
-.ff-position{
-  display:flex; align-items:baseline; gap:8px; min-width:0;
-  white-space:nowrap; overflow:hidden;
-}
-.ff-index{
-  font-family:var(--font-display);
-  font-size:16px; font-weight:650; line-height:1; color:var(--txt);
-  font-variant-numeric:tabular-nums; letter-spacing:.005em;
-}
-.ff-total{ font-size:10.5px; color:var(--dim); font-variant-numeric:tabular-nums; }
-.ff-title{
-  font-size:11.5px; color:var(--mut);
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
-}
-.ff-hint{ color:var(--dim); font-size:10px; letter-spacing:.02em; white-space:nowrap; opacity:.72; }
-.sr-only{
-  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
-  overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
-}
-
-/* One chip per board, magnifying under the cursor like a dock, with a light
-   that follows the pointer along the row. Everything that moves is transform
-   and opacity, so the whole effect stays on the compositor. */
-/* Tall enough for a chip at full excursion. The row is 20px and a chip that is
-   both current and under the cursor reaches 20 x (FF_DOCK_GROW + FF_ACTIVE_GROW)
-   + FF_DOCK_LIFT + FF_ACTIVE_LIFT above its baseline; the counter and the hint
-   sit one grid gap higher, and at 46px a chip climbed into them. Pinned by the
-   headroom check in smoke-focus-dock, which measures the real boxes rather than
-   trusting this sum to stay in step with the constants. */
-.ff-dock{
-  grid-column:1 / -1; position:relative;
-  height:60px; display:flex; align-items:flex-end; justify-content:center;
-  isolation:isolate;
-}
-/* The light itself: a soft pool that tracks the cursor and fades out when the
-   pointer leaves, so the row is dark and quiet at rest. */
-.ff-dock-glow{
-  position:absolute; bottom:-14px; left:0; width:190px; height:64px;
-  border-radius:50%; pointer-events:none; opacity:0;
-  background:radial-gradient(closest-side,
-    color-mix(in srgb, var(--acc) 58%, transparent), transparent 74%);
-  filter:blur(13px);
-  transform:translate3d(0,0,0);
-  transition:opacity .42s ease;
+  position:absolute; left:50%; top:50%; width:var(--ff-card-width); max-height:calc(100% - 32px);
+  display:flex; flex-direction:column; padding:0; border-radius:14px;
+  background:transparent; border:0; color:var(--txt); cursor:pointer;
+  transform:translate3d(-50%, -50%, 0);
+  transform-origin:center;
+  transition:border-color .18s ease;
   will-change:transform, opacity;
 }
-.ff-dock:hover .ff-dock-glow{ opacity:1; }
-
+.ff-card.is-active .rw-thumb{ border-color:color-mix(in srgb, var(--txt) 25%, var(--line)); }
+.ff-card.is-active:hover .rw-thumb{ border-color:color-mix(in srgb, var(--txt) 45%, var(--line)); }
+.ff-card:focus-visible{ outline:2px solid var(--acc); outline-offset:3px; }
+.ff-stage.dragging .ff-card{ transition:none; }
+.ff-stage.dragging .ff-card .rw-card-clear,
+.ff-stage.dragging .ff-card .rw-card-rename,
+.ff-stage.dragging .ff-card .rw-card-reveal,
+.ff-stage.dragging .ff-card .rw-card-pin{ opacity:0; pointer-events:none; transition:none; }
+.ff-card .rw-thumb{
+  flex:0 1 auto; min-height:0; aspect-ratio:16/10; border-radius:14px;
+  border:1px solid var(--line); background:color-mix(in srgb, var(--surface-1) 60%, var(--bg));
+  box-shadow:0 6px 22px rgba(0,0,0,.14);
+}
+.ff-card .rw-thumb img{ object-fit:contain; }
+.ff-card .rw-meta{ flex:0 0 auto; display:flex; align-items:center; padding:18px 2px 5px; min-height:80px; }
+.ff-card-copy{ min-width:0; width:100%; }
+.ff-card .rw-title{ font-size:22px; font-weight:550; line-height:1.3; letter-spacing:-.025em; }
+.ff-card .rw-date{ margin-top:6px; font-size:11.5px; line-height:1.5; }
+.ff-card .rw-card-clear{ top:15px; right:15px; }
+.ff-card .rw-card-rename,
+.ff-card .rw-rename-confirm{ top:15px; right:49px; }
+.ff-card .rw-rename-cancel{ top:15px; right:15px; }
+.ff-card .rw-card-pin{ top:15px; right:83px; }
+.ff-card .rw-card-reveal{ top:15px; right:117px; }
+.ff-card-current .rw-card-reveal{ right:15px; }
+.ff-card.is-active .rw-card-clear,
+.ff-card.is-active .rw-card-rename,
+.ff-card.is-active .rw-card-reveal,
+.ff-card.is-active .rw-card-pin{ opacity:1; }
+.ff-card:not(.is-active) .rw-card-clear,
+.ff-card:not(.is-active) .rw-card-rename,
+.ff-card:not(.is-active) .rw-card-reveal,
+.ff-card:not(.is-active) .rw-card-pin{ opacity:0; pointer-events:none; }
+.ff-card.is-renaming .rw-meta{ opacity:1; }
+.ff-card .rw-rename-input{ font-size:15px; }
+.ff-card-badge{
+  position:absolute; left:17px; top:17px; z-index:3; padding:5px 8px; border-radius:5px;
+  background:var(--panel); color:var(--txt); border:1px solid var(--line);
+  font-size:10px; font-weight:600;
+}
+/* Keep controls attached to the selected board during travel. No hover reveal
+   is triggered as other cards pass underneath a stationary pointer. */
+.ff-stage.is-stepping .ff-card .rw-card-clear,
+.ff-stage.is-stepping .ff-card .rw-card-rename,
+.ff-stage.is-stepping .ff-card .rw-card-reveal,
+.ff-stage.is-stepping .ff-card .rw-card-pin{ opacity:0; pointer-events:none; transition:none; }
+.ff-footer{
+  position:relative; flex:0 0 94px; min-width:0; align-self:center;
+  width:min(960px, calc(100% - 80px)); padding-top:24px;
+  display:flex; align-items:center; justify-content:center; gap:14px;
+}
+.ff-dock-caption{
+  position:absolute; top:0; left:0; max-width:min(300px, 100%); height:24px;
+  display:flex; align-items:center; gap:8px; padding:0 8px; pointer-events:none;
+  color:var(--txt); font-size:11px; line-height:1.3; opacity:0;
+  transform:translateX(var(--ff-caption-x, 0px)); transition:opacity .12s ease;
+}
+.ff-dock-caption.is-visible{ opacity:1; }
+.ff-dock-caption-name{ min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.ff-dock-caption-number{ color:var(--dim); font-size:10px; font-variant-numeric:tabular-nums; flex-shrink:0; }
+.ff-arrow{
+  flex:0 0 34px; width:34px; height:34px; display:flex; align-items:center; justify-content:center;
+  border-radius:8px; border:1px solid var(--line); background:var(--surface-1); color:var(--mut); cursor:pointer;
+  transition:color .15s, background-color .15s, border-color .15s;
+}
+.ff-arrow svg{ width:17px; height:17px; fill:none; stroke:currentColor; stroke-width:1.8; }
+.ff-arrow:hover:not(:disabled){ background:var(--surface-2); color:var(--txt); border-color:var(--dim); }
+.ff-arrow svg{ transition:transform .15s ease; }
+.ff-arrow.prev:hover:not(:disabled) svg{ transform:translateX(-2px); }
+.ff-arrow.next:hover:not(:disabled) svg{ transform:translateX(2px); }
+.ff-arrow:active:not(:disabled) svg{ transform:scale(.88); }
+.ff-arrow:focus-visible{ outline:2px solid var(--acc); outline-offset:3px; }
+.ff-arrow:disabled{ opacity:.3; cursor:default; }
+.ff-position{ display:flex; align-items:baseline; gap:5px; flex:0 0 auto; min-width:55px; padding-left:12px; border-left:1px solid var(--line); white-space:nowrap; }
+.ff-index{ font-size:12px; font-weight:600; color:var(--txt); font-variant-numeric:tabular-nums; }
+.ff-total{ font-size:11px; color:var(--dim); font-variant-numeric:tabular-nums; }
+.sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+.ff-dock{ min-width:0; flex:0 1 auto; position:relative; }
 .ff-dock-row{
-  position:relative; display:flex; align-items:flex-end; justify-content:center;
-  gap:clamp(3px, .8%, 7px); width:100%; height:20px;
+  position:relative; display:flex; gap:5px; align-items:center; max-width:100%;
+  overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:none; padding:9px 6px 3px;
+  touch-action:pan-y; cursor:grab;
 }
+.ff-dock-row::-webkit-scrollbar{ display:none; }
 .ff-chip{
-  /* Capped so a chip stays a chip. Without it three boards share the row
-     between them and the dock becomes three slabs with the current one lit -
-     a segmented progress bar, which is the thing it replaced. At the 24-board
-     cap chips settle around 18px, so this keeps every count in one band. */
-  flex:1 1 0; min-width:0; max-width:22px; height:100%; padding:0; border:0;
-  border-radius:3px; cursor:pointer;
-  /* A top-lit face rather than a flat fill: it reads as an object catching
-     light, which is what makes the row respond rather than just change colour. */
-  background:linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.06));
-  transform-origin:50% 100%;
-  transform:translate3d(0,0,0) scaleY(1);
-  box-shadow:0 0 0 0 transparent;
-  transition:background .3s ease, box-shadow .3s ease;
-  will-change:transform;
+  flex:0 0 58px; width:58px; height:46px; position:relative; padding:2px;
+  border:0; background:none; color:var(--dim); font:500 10px var(--font-display); cursor:pointer;
 }
-.ff-chip.is-past{ background:linear-gradient(180deg, rgba(255,255,255,.3), rgba(255,255,255,.13)); }
-/* The lit one. The bloom rides a custom property so the pointer can push it
-   brighter without touching any other declaration. */
-.ff-chip.is-active{
-  background:linear-gradient(180deg,
-    color-mix(in srgb, #fff 62%, var(--acc)), var(--acc) 62%,
-    color-mix(in srgb, var(--acc) 80%, #000));
-  box-shadow:
-    0 0 calc(26px + var(--near, 0) * 22px) color-mix(in srgb, var(--acc) 70%, transparent),
-    0 0 calc(9px + var(--near, 0) * 10px) color-mix(in srgb, var(--acc) 92%, transparent),
-    0 0 2px color-mix(in srgb, #fff 70%, transparent);
+.ff-chip-face{
+  position:absolute; inset:2px; padding:3px; border:1px solid var(--line); border-radius:7px;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--surface-1); pointer-events:none;
+  transform:translateY(var(--ff-chip-lift, 0px)) scale(var(--ff-chip-scale, 1));
+  transform-origin:center bottom;
+  transition:transform .18s cubic-bezier(.2,.8,.2,1), border-color .15s, background-color .15s;
 }
-.ff-chip:not(.is-active){
-  filter:brightness(calc(1 + var(--near, 0) * 1.35));
+.ff-chip img{ width:100%; height:100%; display:block; object-fit:contain; border-radius:2px; pointer-events:none; }
+.ff-chip:hover .ff-chip-face{ border-color:var(--mut); background:var(--surface-2); }
+.ff-chip.is-active .ff-chip-face{ border-color:var(--acc); box-shadow:0 0 0 1px var(--acc); color:var(--txt); }
+.ff-chip::after{
+  content:''; position:absolute; bottom:-2px; left:calc(50% - 7px); width:14px; height:2px;
+  border-radius:2px; background:var(--acc); opacity:0; transition:opacity .15s;
 }
-.ff-chip:focus-visible{ outline:2px solid var(--acc); outline-offset:3px; }
-/* Leaving the row settles every chip back together rather than one by one. */
-.ff-dock:not(:hover) .ff-chip{ transition:transform .5s cubic-bezier(.16,1,.3,1), background .3s ease, box-shadow .3s ease, filter .3s ease; }
-
-
-@media (max-width:720px){
-  #recentWorks.layout-focus .rw-inner{ padding-top:22px; }
-  #recentWorks.layout-focus .rw-header{ width:calc(100vw - 32px); }
+.ff-chip.is-active::after{ opacity:1; }
+.ff-chip:focus-visible{ outline:none; }
+.ff-chip:focus-visible .ff-chip-face{ outline:2px solid var(--txt); outline-offset:3px; }
+.ff-dock-row.is-scrubbing, .ff-dock-row.is-scrubbing .ff-chip{ cursor:grabbing; }
+.ff-dock-row.is-scrubbing .ff-chip-face{ transition:border-color .15s; }
+@media (max-width:900px){
+  #recentWorks.layout-focus .rw-header{ width:calc(100% - 40px); column-gap:16px; }
+  #recentWorks.layout-focus .rw-search{ width:260px; }
+  #recentWorks.layout-focus .rw-search-count{ display:none; }
+  .ff-track{ --ff-card-width:min(64vw, max(260px, calc((100cqh - 110px) * 1.6))); }
+  .ff-footer{ width:calc(100% - 40px); gap:10px; }
+}
+@media (max-width:560px){
+  #recentWorks.layout-focus .rw-header{ gap:14px; grid-template-columns:1fr; }
   #recentWorks.layout-focus .rw-brand{ display:none; }
-  #recentWorks.layout-focus .rw-heading-row{ align-items:flex-start; }
-  #recentWorks.layout-focus .rw-header h1{ font-size:24px; }
-  #recentWorks.layout-focus .rw-actions .rw-btn{ padding:8px 11px; }
-  .ff-card{ width:min(76vw, 520px); }
-  .ff-arrow{ width:36px; height:36px; }
-  .ff-arrow.prev{ left:10px; }
-  .ff-arrow.next{ right:10px; }
-  .ff-hint{ display:none; }
-  .ff-footer{ grid-template-columns:1fr; }
+  #recentWorks.layout-focus .rw-actions{ grid-area:1 / 1; justify-content:flex-start; }
+  #recentWorks.layout-focus .rw-heading-copy{ grid-area:2 / 1; }
+  #recentWorks.layout-focus .rw-toolrow{ grid-area:3 / 1; }
+  #recentWorks.layout-focus .rw-search{ width:100%; max-width:none; }
+  .ff-track{ --ff-card-width:min(76vw, max(220px, calc((100cqh - 110px) * 1.6))); }
+  .ff-position{ display:none; }
 }
-@media (max-height:700px){
-  #recentWorks.layout-focus .rw-inner{ padding-top:18px; }
-  #recentWorks.layout-focus .rw-brand{ display:none; }
-  #recentWorks.layout-focus .rw-header{ margin-bottom:0; }
-  #recentWorks.layout-focus .rw-heading-row{ padding-bottom:2px; }
-  .ff-card{ width:clamp(300px, 38vw, 500px); }
-  .ff-stage{ min-height:200px; }
+@media (max-height:600px){
+  #recentWorks.layout-focus .rw-inner{ padding:14px 0 10px; }
+  #recentWorks.layout-focus .rw-header{ row-gap:14px; padding-bottom:12px; }
+  #recentWorks.layout-focus .rw-header h1{ font-size:27px; }
+  .ff-footer{ flex-basis:76px; padding-top:18px; }
+  .ff-dock-caption{ height:18px; font-size:10px; }
+  .ff-chip{ flex-basis:50px; width:50px; height:38px; }
+  .ff-flow{ min-height:240px; }
+  .ff-card .rw-meta{ min-height:62px; padding:10px 2px 4px; }
+  .ff-card .rw-title{ font-size:17px; }
+  .ff-card .rw-date{ margin-top:3px; font-size:10.5px; }
 }
 @media (prefers-reduced-motion:reduce){
-  .ff-card, .ff-chip, .ff-dock-glow{ transition-duration:.01ms !important; }
+  .ff-card, .ff-chip-face, .ff-chip::after, .ff-arrow, .ff-arrow svg, .ff-dock-caption{ transition:none !important; }
+  .ff-chip-face{ transform:none !important; }
   .rw-header .rw-kicker, .rw-header h1, .rw-header .rw-sub,
-  .rw-header .rw-actions, .rw-header .rw-toolrow{
-    animation:none !important;
-  }
+  .rw-header .rw-actions, .rw-header .rw-toolrow{ animation:none !important; }
 }
+
 
 /* ---------- what's new (landing) ---------- */
 #whatsNewNotice{
@@ -2973,19 +2971,29 @@ body.board-active #whatsNewNotice{ display:none; }
         <div class="rw-heading-copy">
           <span class="rw-kicker">Welcome back</span>
           <h1>Recent Works</h1>
+          <span class="ff-library-count" id="focusLibraryCount" aria-label="Board count"></span>
           <p class="rw-sub">Pick a board to continue, or start fresh</p>
         </div>
         <div class="rw-actions">
-          <button type="button" class="rw-btn ghost" id="rwNewWindow" title="Open another RefBoard window (up to 4)">New window</button>
-          <button type="button" class="rw-btn ghost" id="rwOpenFile">Open board</button>
-          <button type="button" class="rw-btn primary" id="rwNewBoard">New board</button>
+          <button type="button" class="rw-btn ghost" id="rwNewWindow" title="Open another RefBoard window (up to 4)"><svg class="rw-action-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="14" height="14" rx="2"/><path d="M7 7V3h14v14h-4"/></svg>New window</button>
+          <button type="button" class="rw-btn ghost" id="rwOpenFile"><svg class="rw-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v1M3 8h6l2 3h11l-3 10H4L2 8Z"/></svg>Open board</button>
+          <button type="button" class="rw-btn primary" id="rwNewBoard"><svg class="rw-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>New board</button>
         </div>
       </div>
       <div class="rw-toolrow" id="rwToolrow" hidden>
+        <div class="rw-layout-switch" role="group" aria-label="Board layout">
+          <button type="button" class="rw-layout-button" id="rwLayoutGrid" title="Classic Grid" aria-label="Classic Grid layout" aria-pressed="true" aria-controls="recentGrid">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          </button>
+          <button type="button" class="rw-layout-button" id="rwLayoutFlow" title="Focus Flow" aria-label="Focus Flow layout" aria-pressed="false" aria-controls="focusFlow">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="2"/><path d="M3 7v10M21 7v10"/></svg>
+          </button>
+        </div>
         <div class="rw-search" id="rwSearch">
           <svg class="rw-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
           <input type="search" id="rwSearchInput" class="rw-search-input" spellcheck="false" autocomplete="off"
-                 placeholder="Search boards by name or folder…" aria-label="Search your boards">
+                 placeholder="Search boards…" aria-label="Search your boards by name or folder">
+          <kbd class="ff-search-key" aria-hidden="true">Ctrl F</kbd>
           <button type="button" class="rw-search-clear" id="rwSearchClear" title="Clear search" aria-label="Clear search" hidden>&times;</button>
         </div>
         <div class="rw-search-count" id="rwSearchCount" aria-live="polite"></div>
@@ -3005,20 +3013,22 @@ body.board-active #whatsNewNotice{ display:none; }
     <section class="ff-flow" id="focusFlow" aria-label="Recent boards carousel" hidden>
       <div class="ff-stage" id="focusStage" tabindex="0" role="group" aria-roledescription="carousel" aria-label="Recent boards. Use arrow keys or drag to browse.">
         <div class="ff-track" id="focusTrack"></div>
+      </div>
+      <div class="ff-footer">
+        <div class="ff-dock-caption" id="focusDockCaption" aria-hidden="true">
+          <span class="ff-dock-caption-name" id="focusDockCaptionName"></span>
+          <span class="ff-dock-caption-number" id="focusDockCaptionNumber"></span>
+        </div>
         <button type="button" class="ff-arrow prev" id="focusPrev" aria-label="Previous board">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
         </button>
+        <div class="ff-dock" id="focusDock" role="group" aria-label="Choose a board">
+          <div class="ff-dock-row" id="focusDockRow"></div>
+        </div>
         <button type="button" class="ff-arrow next" id="focusNext" aria-label="Next board">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
         </button>
-      </div>
-      <div class="ff-footer">
         <div class="ff-position" id="focusPosition" aria-live="polite"></div>
-        <div class="ff-hint">Scroll, drag, or use arrow keys</div>
-        <div class="ff-dock" id="focusDock" aria-hidden="true">
-          <span class="ff-dock-glow" id="focusDockGlow"></span>
-          <div class="ff-dock-row" id="focusDockRow"></div>
-        </div>
       </div>
     </section>
     <div class="rw-noresults hide" id="recentNoResults">
@@ -3034,7 +3044,7 @@ body.board-active #whatsNewNotice{ display:none; }
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M3.5 17.5 9 12l4 4 3-3 4.5 4.5"/></svg>
       </div>
       <h2>Create your first board</h2>
-      <p>Start a new moodboard or open a saved .refboard file from disk.</p>
+      <p>A place to collect images, ideas, and references.</p>
       <button type="button" class="rw-btn primary" id="rwEmptyNewBoard">New board</button>
     </div>
   </div>
@@ -13086,6 +13096,31 @@ function rwPinButton(work, title) {
   return btn;
 }
 
+function rwRevealButton(filePath, title) {
+  if (!filePath || !window.RefBoardAPI?.revealBoardFile) return null;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'rw-card-reveal';
+  btn.title = 'Show in folder';
+  btn.setAttribute('aria-label', `Show ${title} in folder`);
+  btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 8V6a2 2 0 0 0-2-2h-6l-2-2H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-1.6L22 10H6l-2 10"/></svg>';
+  btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!onLanding || btn.disabled) return;
+    btn.disabled = true;
+    try {
+      const result = await window.RefBoardAPI.revealBoardFile(filePath);
+      if (!result?.ok) toast(result?.reason === 'missing'
+        ? 'That board file has moved or was deleted'
+        : 'Could not show that board in its folder');
+    } catch {
+      toast('Could not show that board in its folder');
+    } finally { btn.disabled = false; }
+  });
+  return btn;
+}
+
 function rwRenameButton(work, title) {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -13274,6 +13309,8 @@ function syncLandingSearchUi({ total, shown, searching, hasAnyBoards }) {
   // With nothing saved yet there is nothing to search; the field would only be
   // one more empty control above the "Create your first board" panel.
   if (row) row.hidden = !hasAnyBoards && !searching;
+  if (row) row.classList.toggle('is-searching', searching);
+  $('#focusLibraryCount').textContent = String(total);
   if (input && input.value !== recentSearchQuery) input.value = recentSearchQuery;
   if (clear) clear.hidden = !recentSearchQuery;
   if (count) {
@@ -13349,6 +13386,15 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
   // renderRecentWorks decides whether the in-memory board survives the current
   // search; without a caller it falls back to the old unconditional rule.
   const hasCurrent = opts.showCurrent ?? state.items.length > 0;
+  // Revisiting Home or refreshing unchanged recents must not replace decoded
+  // previews or the focused card. A changed file/search still gets a fresh card.
+  const signature = JSON.stringify([recentSearchQuery,
+    hasCurrent ? [currentBoardPath, currentBoardTitle, boardFileDirty, state.items.length, cachedCurrentBoardThumb] : null,
+    list.map(work => [work.path, work.title, formatWorkMeta(work), work.lastEdited, work.lastOpened, work.thumbnail, work.thumbnailData, !!work.pinned]),
+  ]);
+  if (grid.dataset.signature === signature && grid.dataset.previewReady === 'true' && grid.children.length) return;
+  grid.dataset.signature = signature;
+  grid.dataset.previewReady = 'false';
   grid.innerHTML = '';
 
   if (!list.length && !hasCurrent) {
@@ -13360,8 +13406,9 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
   grid.classList.remove('hide');
 
   if (hasCurrent) {
-    const card = document.createElement('button');
-    card.type = 'button';
+    const card = document.createElement('div');
+    card.role = 'button';
+    card.tabIndex = 0;
     card.className = 'rw-card rw-card-current';
     card.title = 'Return to the board you were working on';
     const thumb = rwPlaceholderThumb();
@@ -13382,9 +13429,17 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
     date.textContent = (boardFileDirty ? 'Unsaved' : 'In progress') + ' · ' + state.items.length + ' item' + (state.items.length === 1 ? '' : 's');
     meta.append(title, date);
     card.append(thumb, meta);
+    const revealBtn = rwRevealButton(currentBoardPath, currentBoardTitle || 'Current board');
+    if (revealBtn) card.appendChild(revealBtn);
     // This card returns to the in-memory board, so keep the exact camera the
     // user left instead of treating it like a newly opened board and fitting it.
     card.addEventListener('click', () => { void enterBoard(); });
+    card.addEventListener('keydown', e => {
+      if (e.target === card && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        void enterBoard();
+      }
+    });
     grid.appendChild(card);
   }
 
@@ -13421,13 +13476,16 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
     meta.append(title, date);
     card.classList.toggle('is-pinned', !!work.pinned);
     const pinBtn = rwPinButton(work, cardTitle);
+    const revealBtn = rwRevealButton(work.path, cardTitle);
     card.append(rwRenameButton(work, cardTitle), clearBtn, thumb, meta);
     if (pinBtn) card.appendChild(pinBtn);
+    if (revealBtn) card.appendChild(revealBtn);
     card.addEventListener('click', (e) => {
       if (card.classList.contains('is-renaming') || clickClosedARename()) return;
       openBoardFromPath(work.path);
     });
     card.addEventListener('keydown', (e) => {
+      if (e.target !== card) return;
       if (card.classList.contains('is-renaming')) return;
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
@@ -13441,6 +13499,7 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
     i++;
   }
   await Promise.all(thumbJobs);
+  if (!renderSeq || renderSeq === recentWorksRenderSeq) grid.dataset.previewReady = 'true';
 }
 
 let recentWorksRenderSeq = 0;
@@ -13449,6 +13508,97 @@ let focusFlowIndex = 0;
 let focusFlowSuppressClick = false;
 let focusFlowDrag = null;
 let focusFlowWheelAt = 0;
+let focusFlowCards = [];
+let focusFlowStep = 1;
+let focusFlowVisualIndex = null;
+let focusFlowMotionFrame = 0;
+let focusFlowDragFrame = 0;
+
+function stopFocusFlowMotion() {
+  cancelAnimationFrame(focusFlowMotionFrame);
+  focusFlowMotionFrame = 0;
+}
+
+function measureFocusFlowCards() {
+  focusFlowCards = Array.from($('#focusTrack')?.children || []);
+  // Read geometry only after rendering or resizing, never in the drag frame.
+  focusFlowStep = Math.max(1, (focusFlowCards[0]?.offsetWidth || 1) * 1.02);
+}
+
+function paintFocusFlowPosition(position) {
+  focusFlowVisualIndex = position;
+  const visibleRadius = focusFlowVisibleRadius();
+  const scales = [1, .88, .77, .68];
+  const opacities = [1, .5, .18, .07];
+  for (let i = 0; i < focusFlowCards.length; i++) {
+    const card = focusFlowCards[i];
+    const offset = i - position;
+    const distance = Math.abs(offset);
+    // Keep the outgoing edge card painted until it fades out. Hiding it as
+    // soon as a fractional drag crosses the resting radius causes a flash.
+    const visible = distance < visibleRadius + 1;
+    const visibility = visible ? 'visible' : 'hidden';
+    if (card.style.visibility !== visibility) {
+      card.style.visibility = visible ? 'visible' : 'hidden';
+      card.style.pointerEvents = visible ? 'auto' : 'none';
+      card.setAttribute('aria-hidden', String(!visible));
+    }
+    if (!visible) continue;
+    const depth = Math.min(distance, 3);
+    const lower = Math.floor(depth), upper = Math.min(3, lower + 1), fraction = depth - lower;
+    const scale = scales[lower] + (scales[upper] - scales[lower]) * fraction;
+    const edgeFade = Math.min(1, visibleRadius + 1 - distance);
+    const opacity = (opacities[lower] + (opacities[upper] - opacities[lower]) * fraction) * edgeFade;
+    card.style.transform = `translate3d(calc(-50% + ${offset * focusFlowStep}px), -50%, 0) scale(${scale})`;
+    card.style.opacity = String(opacity);
+    card.style.zIndex = String(60 - Math.round(distance * 10));
+  }
+}
+
+function animateFocusFlowTo(index, focusCard = false) {
+  stopFocusFlowMotion();
+  const stage = $('#focusStage');
+  // A Home/End jump can target a hidden card. Keep keyboard input in the
+  // carousel while it travels, then focus the destination once it is visible.
+  if (focusCard) stage?.focus({ preventScroll: true });
+  const finish = () => {
+    stage?.classList.remove('is-stepping');
+    if (focusCard && document.activeElement === stage) focusFlowCards[index]?.focus({ preventScroll: true });
+  };
+  const from = focusFlowVisualIndex ?? index;
+  if (Math.abs(from - index) < .001 || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    paintFocusFlowPosition(index);
+    finish();
+    return;
+  }
+  const started = performance.now();
+  const duration = Math.min(300, 180 + Math.abs(index - from) * 30);
+  const frame = now => {
+    focusFlowMotionFrame = 0;
+    if (!onLanding || appSettings.landingLayout !== 'focus') return;
+    const progress = Math.min(1, (now - started) / duration);
+    paintFocusFlowPosition(from + (index - from) * (1 - Math.pow(1 - progress, 3)));
+    if (progress < 1) focusFlowMotionFrame = requestAnimationFrame(frame);
+    else finish();
+  };
+  focusFlowMotionFrame = requestAnimationFrame(frame);
+}
+
+function focusFlowDragPosition(drag, x) {
+  const position = drag.startPosition - (x - drag.startX) / drag.step;
+  const last = focusFlowEntries.length - 1;
+  if (position < 0) return position * .18;
+  if (position > last) return last + (position - last) * .18;
+  return position;
+}
+
+function scheduleFocusFlowDragPaint() {
+  if (focusFlowDragFrame) return;
+  focusFlowDragFrame = requestAnimationFrame(() => {
+    focusFlowDragFrame = 0;
+    if (focusFlowDrag?.moved) paintFocusFlowPosition(focusFlowDragPosition(focusFlowDrag, focusFlowDrag.lastX));
+  });
+}
 
 function currentFocusEntry() {
   if (!state.items.length) return null;
@@ -13519,7 +13669,7 @@ function focusFlowVisibleRadius() {
 
 function syncFocusFlowUi(opts = {}) {
   const stage = $('#focusStage');
-  const cards = Array.from($('#focusTrack')?.children || []);
+  const cards = focusFlowCards;
   if (!stage || !focusFlowEntries.length) return;
   focusFlowIndex = clamp(focusFlowIndex, 0, focusFlowEntries.length - 1);
   const visibleRadius = focusFlowVisibleRadius();
@@ -13528,36 +13678,19 @@ function syncFocusFlowUi(opts = {}) {
     const card = cards[i];
     const offset = i - focusFlowIndex;
     const distance = Math.abs(offset);
-    const visible = distance <= visibleRadius;
-    const scales = [1, .895, .79, .7];
-    // Keep every visible card materially opaque so cards behind it cannot
-    // ghost through; depth comes from tonal falloff, not blur or transparency.
-    /* Steep on purpose. These were [1, .97, .92, .84]: dimmed by the filter
-       but barely faded, so a far card stayed a solid rectangle and its edges
-       showed as hard horizontal steps against the page - measured at 4 units
-       of luminance in 4 pixels, out at x=60 where nothing should be visible
-       at all. Depth should read as receding, not as stacked slabs. */
-    const opacities = [1, .94, .34, .14];
-    const brightness = [1, .82, .6, .44];
-    const saturation = [1, .88, .66, .48];
-    card.style.setProperty('--ff-offset', offset);
-    card.style.setProperty('--ff-scale', String(scales[Math.min(distance, 3)]));
-    card.style.setProperty('--ff-brightness', String(brightness[Math.min(distance, 3)]));
-    card.style.setProperty('--ff-saturation', String(saturation[Math.min(distance, 3)]));
-    card.style.opacity = visible ? String(opacities[Math.min(distance, 3)]) : '0';
-    card.style.visibility = visible ? 'visible' : 'hidden';
-    card.style.zIndex = String(60 - distance);
-    card.style.pointerEvents = visible ? 'auto' : 'none';
     card.dataset.depth = String(Math.min(distance, 3));
     card.classList.toggle('is-active', distance === 0);
     card.tabIndex = distance === 0 ? 0 : -1;
-    card.setAttribute('aria-hidden', visible ? 'false' : 'true');
     if (distance === 0) card.setAttribute('aria-current', 'true');
     else card.removeAttribute('aria-current');
     const clearBtn = card.querySelector('.rw-card-clear');
     if (clearBtn) clearBtn.tabIndex = distance === 0 ? 0 : -1;
     const renameBtn = card.querySelector('.rw-card-rename');
     if (renameBtn) renameBtn.tabIndex = distance === 0 ? 0 : -1;
+    const pinBtn = card.querySelector('.rw-card-pin');
+    if (pinBtn) pinBtn.tabIndex = distance === 0 ? 0 : -1;
+    const revealBtn = card.querySelector('.rw-card-reveal');
+    if (revealBtn) revealBtn.tabIndex = distance === 0 ? 0 : -1;
   }
   const active = focusFlowEntries[focusFlowIndex];
   const activeCard = cards[focusFlowIndex];
@@ -13566,7 +13699,12 @@ function syncFocusFlowUi(opts = {}) {
   $('#focusNext').disabled = focusFlowIndex === focusFlowEntries.length - 1;
   renderFocusPosition(active);
   renderFocusDock();
-  if (opts.focusCard) activeCard?.focus({ preventScroll: true });
+  if (opts.animate) animateFocusFlowTo(focusFlowIndex, opts.focusCard);
+  else {
+    stopFocusFlowMotion();
+    paintFocusFlowPosition(focusFlowIndex);
+    if (opts.focusCard) activeCard?.focus({ preventScroll: true });
+  }
 }
 
 /* Built as nodes rather than one string so the index can carry its own weight
@@ -13587,118 +13725,186 @@ function renderFocusPosition(active) {
   totalEl.className = 'ff-total';
   totalEl.setAttribute('aria-hidden', 'true');
   totalEl.textContent = '/ ' + total;
-  const title = document.createElement('span');
-  title.className = 'ff-title';
-  title.setAttribute('aria-hidden', 'true');
-  title.textContent = active?.title || '';
   const spoken = document.createElement('span');
   spoken.className = 'sr-only';
   spoken.textContent = `${focusFlowIndex + 1} of ${total}${active?.title ? ', ' + active.title : ''}`;
-  el.append(index, totalEl, title, spoken);
+  el.append(index, totalEl, spoken);
 }
 
-/* Chips are rebuilt only when the number of boards changes; stepping between
-   them moves two classes. The magnification is separate and never touches the
-   DOM structure at all. */
+let focusDockPointerX = null;
+let focusDockFrame = 0;
+let focusDockDrag = null;
+let focusDockSuppressClick = false;
+
+function scheduleFocusDockFeedback() {
+  if (focusDockFrame) return;
+  focusDockFrame = requestAnimationFrame(paintFocusDockFeedback);
+}
+
+function paintFocusDockFeedback() {
+  focusDockFrame = 0;
+  const row = $('#focusDockRow');
+  const caption = $('#focusDockCaption');
+  if (!row || !caption) return;
+  const chips = Array.from(row.children);
+  const bounds = chips.map(chip => chip.getBoundingClientRect());
+  const rowBounds = row.getBoundingClientRect();
+  const footerBounds = row.closest('.ff-footer').getBoundingClientRect();
+  const pointerInside = focusDockPointerX !== null && focusDockPointerX >= rowBounds.left && focusDockPointerX <= rowBounds.right;
+  const focusedIndex = document.activeElement?.matches('.ff-chip:focus-visible') ? chips.indexOf(document.activeElement) : -1;
+  let previewIndex = focusedIndex;
+  let nearest = Infinity;
+  const proximity = bounds.map((rect, i) => {
+    if (!pointerInside) return i === focusedIndex ? 1 : 0;
+    const distance = Math.abs(rect.left + rect.width / 2 - focusDockPointerX);
+    if (distance < nearest) { nearest = distance; previewIndex = i; }
+    return Math.pow(Math.max(0, 1 - distance / 95), 2);
+  });
+  // Animate faces only. Button geometry stays fixed under the pointer.
+  chips.forEach((chip, i) => {
+    chip.style.setProperty('--ff-chip-lift', `${-6 * proximity[i]}px`);
+    chip.style.setProperty('--ff-chip-scale', String(1 + .1 * proximity[i]));
+  });
+  const entry = focusFlowEntries[previewIndex];
+  const show = !!entry && onLanding && appSettings.landingLayout === 'focus';
+  caption.classList.toggle('is-visible', show);
+  if (!show) return;
+  const name = $('#focusDockCaptionName');
+  if (name.textContent !== entry.title) name.textContent = entry.title;
+  $('#focusDockCaptionNumber').textContent = `${previewIndex + 1} / ${chips.length}`;
+  const center = bounds[previewIndex].left + bounds[previewIndex].width / 2 - footerBounds.left;
+  caption.style.setProperty('--ff-caption-x', `${clamp(center - caption.offsetWidth / 2, 0, Math.max(0, footerBounds.width - caption.offsetWidth))}px`);
+}
+
+/* Reuse the preview buttons so changing selection never resets focus or images. */
 function renderFocusDock() {
   const row = $('#focusDockRow');
   if (!row) return;
   const total = focusFlowEntries.length;
-  if (row.children.length !== total) {
-    row.textContent = '';
-    for (let i = 0; i < total; i++) {
-      const chip = document.createElement('button');
+  while (row.children.length > total) row.lastElementChild.remove();
+  for (let i = 0; i < total; i++) {
+    const entry = focusFlowEntries[i];
+    let chip = row.children[i];
+    if (!chip) {
+      chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'ff-chip';
-      chip.tabIndex = -1;                     // the stage owns keyboard travel
-      chip.addEventListener('click', e => { e.stopPropagation(); setFocusFlowIndex(i); });
+      chip.addEventListener('click', () => {
+        if (!focusDockSuppressClick) setFocusFlowIndex(i);
+      });
       row.appendChild(chip);
     }
-  }
-  for (let i = 0; i < total; i++) {
-    const chip = row.children[i];
-    if (!chip) continue;
-    chip.classList.toggle('is-active', i === focusFlowIndex);
-    chip.classList.toggle('is-past', i < focusFlowIndex);
-    chip.title = focusFlowEntries[i]?.title || '';
-  }
-  /* The classes say which chip is current; the lift is an inline transform,
-     and without this the board you stepped away from stays standing up. */
-  scheduleFocusDockPaint();
-}
-
-/* How far the cursor's influence reaches, and how much it lifts a chip. Tuned
-   so three or four chips respond rather than the whole row heaving. */
-const FF_DOCK_REACH = 78;
-const FF_DOCK_LIFT = 13;
-const FF_DOCK_GROW = 1.9;
-/* The board you are on stands proud of the row whether or not a pointer is
-   anywhere near it — otherwise the row reads as flat until you touch it. */
-const FF_ACTIVE_LIFT = 5;
-const FF_ACTIVE_GROW = 0.55;
-let focusDockFrame = 0;
-let focusDockCursor = null;
-
-/* Runs on an animation frame while the pointer is over the row. Only transform,
-   opacity and a custom property are touched, so nothing here causes layout. */
-function paintFocusDock() {
-  focusDockFrame = 0;
-  const row = $('#focusDockRow');
-  const glow = $('#focusDockGlow');
-  const dock = $('#focusDock');
-  if (!row || !dock) return;
-  const chips = row.children;
-
-  /* Every rect is read before any style is written. Interleaving them would
-     force a layout flush per chip, since a rect read after a transform write
-     cannot be answered from the last frame. scaleY and translateY leave the
-     horizontal centre alone, so measuring mid-hover is still correct. */
-  const near = new Array(chips.length);
-  if (focusDockCursor !== null) {
-    const dockRect = dock.getBoundingClientRect();
-    for (let i = 0; i < chips.length; i++) {
-      const rect = chips[i].getBoundingClientRect();
-      const centre = rect.left + rect.width / 2 - dockRect.left;
-      const d = (centre - focusDockCursor) / FF_DOCK_REACH;
-      // A gaussian falloff: the chip under the cursor rises fully, its
-      // neighbours follow smoothly, and the rest of the row stays still.
-      near[i] = Math.exp(-d * d);
+    const active = i === focusFlowIndex;
+    chip.classList.toggle('is-active', active);
+    chip.tabIndex = active ? 0 : -1;
+    chip.setAttribute('aria-pressed', String(active));
+    chip.setAttribute('aria-label', `${entry.title}, ${i + 1} of ${total}`);
+    chip.dataset.focusIndex = String(i);
+    const src = entry.thumbnailSrc || '';
+    if (chip.dataset.entryKey !== entry.key || chip.dataset.src !== src) {
+      chip.dataset.entryKey = entry.key;
+      chip.dataset.src = src;
+      chip.textContent = '';
+      const face = document.createElement('span');
+      face.className = 'ff-chip-face';
+      chip.appendChild(face);
+      if (src) {
+        const img = document.createElement('img');
+        img.alt = '';
+        img.draggable = false;
+        img.src = src;
+        face.appendChild(img);
+      } else {
+        face.textContent = String(i + 1).padStart(2, '0');
+      }
     }
-  } else {
-    near.fill(0);
   }
-
-  for (let i = 0; i < chips.length; i++) {
-    const chip = chips[i];
-    const isActive = i === focusFlowIndex;
-    const lift = FF_DOCK_LIFT * near[i] + FF_ACTIVE_LIFT * (isActive ? 1 : 0);
-    const grow = 1 + (FF_DOCK_GROW - 1) * near[i] + (isActive ? FF_ACTIVE_GROW : 0);
-    chip.style.transform = 'translate3d(0,' + (-lift) + 'px,0) scaleY(' + grow + ')';
-    chip.style.setProperty('--near', near[i].toFixed(3));
+  // Scroll only the strip; scrollIntoView can also move the entire landing.
+  const chip = row.children[focusFlowIndex];
+  if (chip) {
+    const left = chip.offsetLeft - row.offsetLeft;
+    const right = left + chip.offsetWidth;
+    if (left < row.scrollLeft + 5) row.scrollLeft = Math.max(0, left - 5);
+    else if (right > row.scrollLeft + row.clientWidth - 5) row.scrollLeft = right - row.clientWidth + 5;
   }
-
-  if (glow && focusDockCursor !== null) {
-    glow.style.transform = 'translate3d(' + (focusDockCursor - 95) + 'px,0,0)';
-  }
-}
-
-function scheduleFocusDockPaint() {
-  if (focusDockFrame) return;
-  focusDockFrame = requestAnimationFrame(paintFocusDock);
+  scheduleFocusDockFeedback();
 }
 
 function bindFocusDock() {
-  const dock = $('#focusDock');
-  if (!dock) return;
-  dock.addEventListener('pointermove', e => {
-    focusDockCursor = e.clientX - dock.getBoundingClientRect().left;
-    scheduleFocusDockPaint();
+  const row = $('#focusDockRow');
+  if (!row) return;
+  row.addEventListener('dragstart', e => e.preventDefault());
+  row.addEventListener('pointermove', e => {
+    focusDockPointerX = e.clientX;
+    if (focusDockDrag?.pointerId === e.pointerId) {
+      const dx = e.clientX - focusDockDrag.startX;
+      if (!focusDockDrag.moved && Math.abs(dx) > 8) {
+        focusDockDrag.moved = true;
+        row.classList.add('is-scrubbing');
+        try { row.setPointerCapture(e.pointerId); } catch { /* pointer already released */ }
+      }
+      if (focusDockDrag.moved) {
+        const steps = Math.round(-dx / focusDockDrag.step);
+        const next = clamp(focusDockDrag.startIndex + steps, 0, focusFlowEntries.length - 1);
+        if (next !== focusFlowIndex) setFocusFlowIndex(next);
+      }
+    }
+    scheduleFocusDockFeedback();
   });
-  dock.addEventListener('pointerleave', () => {
-    focusDockCursor = null;
-    scheduleFocusDockPaint();
+  row.addEventListener('pointerleave', () => {
+    focusDockPointerX = null;
+    scheduleFocusDockFeedback();
+  });
+  row.addEventListener('focusin', scheduleFocusDockFeedback);
+  row.addEventListener('focusout', scheduleFocusDockFeedback);
+  row.addEventListener('scroll', scheduleFocusDockFeedback, { passive: true });
+  row.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || focusFlowEntries.length < 2) return;
+    focusDockDrag = { pointerId:e.pointerId, startX:e.clientX, startIndex:focusFlowIndex,
+      step:(row.firstElementChild?.offsetWidth || 58) + 5, moved:false };
+  });
+  const endDockDrag = e => {
+    if (focusDockDrag?.pointerId !== e.pointerId) return;
+    const moved = focusDockDrag.moved;
+    focusDockDrag = null;
+    row.classList.remove('is-scrubbing');
+    if (row.hasPointerCapture(e.pointerId)) row.releasePointerCapture(e.pointerId);
+    if (moved) {
+      focusDockSuppressClick = true;
+      setTimeout(() => { focusDockSuppressClick = false; }, 0);
+    }
+    scheduleFocusDockFeedback();
+  };
+  window.addEventListener('pointerup', endDockDrag);
+  row.addEventListener('pointercancel', endDockDrag);
+  row.addEventListener('lostpointercapture', endDockDrag);
+  let wheelAt = 0;
+  let wheelSum = 0;
+  row.addEventListener('wheel', e => {
+    if (e.ctrlKey || focusDockDrag || focusFlowEntries.length < 2) return;
+    e.preventDefault();
+    const now = performance.now();
+    if (now - wheelAt < 150) return;
+    wheelSum += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(wheelSum) < 18) return;
+    setFocusFlowIndex(focusFlowIndex + Math.sign(wheelSum));
+    wheelSum = 0;
+    wheelAt = now;
+  }, { passive:false });
+  row.addEventListener('keydown', e => {
+    let next = focusFlowIndex;
+    if (e.key === 'ArrowLeft') next--;
+    else if (e.key === 'ArrowRight') next++;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = focusFlowEntries.length - 1;
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFocusFlowIndex(next);
+    row.children[focusFlowIndex]?.focus({ preventScroll: true });
   });
 }
+
 
 /* Held for slightly longer than the card transition, and reset by each step, so
    a continuous scroll stays quiet and the row only offers its controls again
@@ -13709,7 +13915,7 @@ function markFocusStepping() {
   if (!stage) return;
   stage.classList.add('is-stepping');
   clearTimeout(focusSteppingTimer);
-  focusSteppingTimer = setTimeout(() => stage.classList.remove('is-stepping'), 520);
+  focusSteppingTimer = setTimeout(() => stage.classList.remove('is-stepping'), 350);
 }
 
 function setFocusFlowIndex(index, opts = {}) {
@@ -13718,11 +13924,12 @@ function setFocusFlowIndex(index, opts = {}) {
   const next = clamp(Math.round(index), 0, focusFlowEntries.length - 1);
   if (next !== focusFlowIndex) markFocusStepping();
   focusFlowIndex = next;
-  syncFocusFlowUi(opts);
+  syncFocusFlowUi({ ...opts, animate: true });
 }
 
 async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
   const track = $('#focusTrack');
+  const previousCards = new Map(Array.from(track.children, card => [card.dataset.entryKey, card]));
   const previousKey = focusFlowEntries[focusFlowIndex]?.key;
   const current = (opts.showCurrent ?? true) ? currentFocusEntry() : null;
   const recent = current?.path
@@ -13731,13 +13938,25 @@ async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
   focusFlowEntries = [current, ...recent.map(recentFocusEntry)].filter(Boolean);
   const keptIndex = previousKey ? focusFlowEntries.findIndex(entry => entry.key === previousKey) : -1;
   focusFlowIndex = keptIndex >= 0 ? keptIndex : 0;
-  track.innerHTML = '';
-
+  const orderedCards = [];
   const thumbJobs = [];
   for (let i = 0; i < focusFlowEntries.length; i++) {
     const entry = focusFlowEntries[i];
+    const previous = previousCards.get(entry.key);
+    const signature = JSON.stringify([entry.title, entry.detail, !!entry.work?.pinned, recentSearchQuery,
+      entry.work?.lastEdited, entry.work?.thumbnail, entry.current ? entry.thumbnailSrc : null, entry.path]);
+    if (previous?.dataset.signature === signature && previous.dataset.previewReady === 'true') {
+      previous.id = `focusCard${i}`;
+      previous.dataset.focusIndex = String(i);
+      entry.thumbnailSrc = previous.querySelector('.rw-thumb img')?.getAttribute('src') || null;
+      orderedCards.push(previous);
+      continue;
+    }
     const card = document.createElement('div');
     card.className = 'ff-card';
+    card.classList.toggle('ff-card-current', !!entry.current);
+    card.dataset.entryKey = entry.key;
+    card.dataset.signature = signature;
     card.id = `focusCard${i}`;
     card.role = 'button';
     card.setAttribute('aria-roledescription', 'slide');
@@ -13745,7 +13964,13 @@ async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
     card.dataset.focusIndex = String(i);
     card.title = entry.current ? 'Return to your current board' : (entry.path || entry.title);
     const thumb = rwPlaceholderThumb();
+    const previousSrc = previous?.querySelector('.rw-thumb img')?.getAttribute('src');
+    if (previousSrc && !entry.current) {
+      entry.thumbnailSrc = previousSrc;
+      setRwThumbImage(thumb, previousSrc);
+    }
     if (entry.current) {
+      card.dataset.previewReady = 'true';
       const badge = document.createElement('span');
       badge.className = 'ff-card-badge';
       badge.textContent = 'Current';
@@ -13758,17 +13983,28 @@ async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
       if (focusPin) card.appendChild(focusPin);
       card.classList.toggle('is-pinned', !!(entry.work || entry)?.pinned);
       thumbJobs.push(thumbSrcForWork(entry.work, { preferBoardPreview: true }).then(src => {
-        if (src && renderSeq === recentWorksRenderSeq && thumb.isConnected) setRwThumbImage(thumb, src);
+        if (renderSeq === recentWorksRenderSeq && thumb.isConnected) card.dataset.previewReady = 'true';
+        if (src && renderSeq === recentWorksRenderSeq && thumb.isConnected) {
+          entry.thumbnailSrc = src;
+          setRwThumbImage(thumb, src);
+          renderFocusDock();
+        }
       }));
     }
+    const revealBtn = rwRevealButton(entry.path, entry.title);
+    if (revealBtn) card.appendChild(revealBtn);
     card.append(thumb, focusCardMeta(entry));
     card.addEventListener('click', () => {
       if (focusFlowSuppressClick) return;
       if (card.classList.contains('is-renaming') || clickClosedARename()) return;
       openFocusEntry(entry);
     });
-    track.appendChild(card);
+    orderedCards.push(card);
   }
+  if (orderedCards.length !== track.children.length || orderedCards.some((card, i) => card !== track.children[i])) {
+    track.replaceChildren(...orderedCards);
+  }
+  measureFocusFlowCards();
   syncFocusFlowUi();
   await Promise.all(thumbJobs);
 }
@@ -13802,6 +14038,8 @@ async function renderRecentWorks() {
   const hasAnyBoards = all.length > 0 || hasCurrent;
   const hasVisibleBoards = list.length > 0 || showCurrent;
   const focusLayout = appSettings.landingLayout === 'focus';
+  $('#rwLayoutGrid').setAttribute('aria-pressed', String(!focusLayout));
+  $('#rwLayoutFlow').setAttribute('aria-pressed', String(focusLayout));
 
   syncLandingSearchUi({ total: all.length + (hasCurrent ? 1 : 0), shown: list.length + (showCurrent ? 1 : 0), searching, hasAnyBoards });
 
@@ -13816,6 +14054,9 @@ async function renderRecentWorks() {
     ? 'Your latest board, centered and ready to continue'
     : 'Pick a board to continue, or start fresh';
   if (!hasVisibleBoards) {
+    stopFocusFlowMotion();
+    focusFlowCards = [];
+    focusFlowVisualIndex = null;
     grid.innerHTML = '';
     $('#focusTrack').innerHTML = '';
     focusFlowEntries = [];
@@ -13839,6 +14080,9 @@ function wireFocusFlowControls() {
   if (!stage || !recentWorks) return;
 
   bindFocusDock();
+  // Browser image dragging competes with the carousel's pointer capture.
+  // Keep a drag over a loaded preview inside the browsing gesture.
+  stage.addEventListener('dragstart', e => e.preventDefault());
   $('#focusPrev').addEventListener('click', e => {
     e.stopPropagation();
     setFocusFlowIndex(focusFlowIndex - 1);
@@ -13849,6 +14093,7 @@ function wireFocusFlowControls() {
   });
   stage.addEventListener('keydown', e => {
     if (appSettings.landingLayout !== 'focus' || !focusFlowEntries.length) return;
+    if (e.target.closest('input, textarea, button, [contenteditable="true"]')) return;
     let next = focusFlowIndex;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') next--;
     else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown') next++;
@@ -13860,10 +14105,11 @@ function wireFocusFlowControls() {
       return;
     } else return;
     e.preventDefault();
-    setFocusFlowIndex(next);
+    setFocusFlowIndex(next, { focusCard: !!e.target.closest('.ff-card') });
   });
   stage.addEventListener('wheel', e => {
     if (appSettings.landingLayout !== 'focus' || !focusFlowEntries.length) return;
+    if (e.ctrlKey || focusFlowDrag || e.target.closest('input, textarea')) return;
     const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
     if (Math.abs(delta) < 4) return;
     e.preventDefault();
@@ -13874,9 +14120,13 @@ function wireFocusFlowControls() {
   }, { passive: false });
 
   stage.addEventListener('pointerdown', e => {
-    if (e.button !== 0 || appSettings.landingLayout !== 'focus') return;
-    if (e.target.closest('.rw-card-clear, .rw-card-rename, .rw-rename-confirm, .rw-rename-cancel, .rw-rename-input, .ff-arrow')) return;
-    focusFlowDrag = { pointerId: e.pointerId, startX: e.clientX, startIndex: focusFlowIndex, moved: false };
+    if (e.button !== 0 || appSettings.landingLayout !== 'focus' || !focusFlowEntries.length) return;
+    if (e.target.closest('button, input, textarea')) return;
+    stopFocusFlowMotion();
+    focusFlowDrag = {
+      pointerId:e.pointerId, startX:e.clientX, lastX:e.clientX, lastAt:performance.now(), velocity:0,
+      startIndex:focusFlowIndex, startPosition:focusFlowVisualIndex ?? focusFlowIndex, step:focusFlowStep, moved:false,
+    };
   });
   stage.addEventListener('pointermove', e => {
     if (!focusFlowDrag || focusFlowDrag.pointerId !== e.pointerId) return;
@@ -13885,40 +14135,73 @@ function wireFocusFlowControls() {
       if (Math.abs(dx) <= 10) return;
       focusFlowDrag.moved = true;
       stage.classList.add('dragging');
+      stage.classList.remove('is-stepping');
       // Capturing on pointerdown retargets a normal mouse click from the card
       // to the stage. Capture only after the gesture is unquestionably a drag.
       try { stage.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     }
-    stage.style.setProperty('--ff-drag-x', `${dx * .72}px`);
+    const now = performance.now();
+    focusFlowDrag.velocity = (e.clientX - focusFlowDrag.lastX) / Math.max(16, now - focusFlowDrag.lastAt);
+    focusFlowDrag.lastX = e.clientX;
+    focusFlowDrag.lastAt = now;
+    scheduleFocusFlowDragPaint();
   });
   const finishDrag = e => {
     if (!focusFlowDrag || focusFlowDrag.pointerId !== e.pointerId) return;
     const drag = focusFlowDrag;
     focusFlowDrag = null;
+    cancelAnimationFrame(focusFlowDragFrame);
+    focusFlowDragFrame = 0;
     const dx = e.clientX - drag.startX;
     stage.classList.remove('dragging');
-    stage.style.removeProperty('--ff-drag-x');
     try { stage.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-    if (!drag.moved) return;
+    if (!drag.moved) { animateFocusFlowTo(focusFlowIndex); return; }
     focusFlowSuppressClick = true;
     setTimeout(() => { focusFlowSuppressClick = false; }, 0);
-    const stepWidth = Math.max(110, Math.min(210, stage.clientWidth * .18));
-    let steps = Math.round(-dx / stepWidth);
-    if (!steps && Math.abs(dx) > 38) steps = dx > 0 ? -1 : 1;
-    setFocusFlowIndex(drag.startIndex + steps);
+    const position = focusFlowDragPosition(drag, e.clientX);
+    paintFocusFlowPosition(position);
+    const velocity = performance.now() - drag.lastAt < 80 ? drag.velocity : 0;
+    let next = Math.round(position - clamp(velocity * 110 / drag.step, -.35, .35));
+    if (next === drag.startIndex && Math.abs(dx) > Math.min(96, drag.step * .16)) next += dx < 0 ? 1 : -1;
+    setFocusFlowIndex(next);
   };
-  stage.addEventListener('pointerup', finishDrag);
-  stage.addEventListener('pointercancel', e => {
-    if (!focusFlowDrag || focusFlowDrag.pointerId !== e.pointerId) return;
+  window.addEventListener('pointerup', finishDrag);
+  const cancelDrag = e => {
+    if (!focusFlowDrag || (e.pointerId !== undefined && focusFlowDrag.pointerId !== e.pointerId)) return;
+    const pointerId = focusFlowDrag.pointerId;
     focusFlowDrag = null;
+    cancelAnimationFrame(focusFlowDragFrame);
+    focusFlowDragFrame = 0;
     stage.classList.remove('dragging');
-    stage.style.removeProperty('--ff-drag-x');
-    syncFocusFlowUi();
-  });
+    if (stage.hasPointerCapture(pointerId)) stage.releasePointerCapture(pointerId);
+    syncFocusFlowUi({ animate: true });
+  };
+  stage.addEventListener('pointercancel', cancelDrag);
+  stage.addEventListener('lostpointercapture', cancelDrag);
+  window.addEventListener('blur', cancelDrag);
 
   window.addEventListener('resize', () => {
-    if (onLanding && appSettings.landingLayout === 'focus') syncFocusFlowUi();
+    if (onLanding && appSettings.landingLayout === 'focus') {
+      cancelDrag({});
+      measureFocusFlowCards();
+      syncFocusFlowUi();
+    }
   });
+}
+
+function setLandingLayout(value) {
+  const next = normalizeLandingLayout(value);
+  if (next === appSettings.landingLayout) return;
+  cancelCardRename();
+  appSettings.landingLayout = next;
+  saveAppSettings();
+  applyAppSettings();
+  stopFocusFlowMotion();
+  focusFlowEntries = [];
+  focusFlowIndex = 0;
+  $('#recentWorks').scrollTop = 0;
+  syncSettingsUi();
+  if (onLanding) void renderRecentWorks();
 }
 
 let whatsNewPayload = null;
@@ -16889,6 +17172,8 @@ canvas.addEventListener('pointerdown', async e => {
 });
 
 window.addEventListener('pointermove', e => {
+  // The board is hidden on Home; its hit tests must not run underneath a drag.
+  if (onLanding) return;
   const [sx, sy] = clientToCanvas(e.clientX, e.clientY);
   mouse = { x: sx, y: sy };
   if ($('#drawSizePreview')?.classList.contains('show')) {
@@ -17979,15 +18264,7 @@ function wireSettingsControls() {
   const gridStyleSel = document.getElementById('setGridStyle');
   if (gridStyleSel) gridStyleSel.addEventListener('change', e => setGridAppearance(e.target.value));
   const landingLayoutSel = document.getElementById('setLandingLayout');
-  if (landingLayoutSel) landingLayoutSel.addEventListener('change', e => {
-    appSettings.landingLayout = normalizeLandingLayout(e.target.value);
-    saveAppSettings();
-    applyAppSettings();
-    focusFlowEntries = [];
-    focusFlowIndex = 0;
-    syncSettingsUi();
-    if (onLanding) void renderRecentWorks();
-  });
+  if (landingLayoutSel) landingLayoutSel.addEventListener('change', e => setLandingLayout(e.target.value));
   const toolbarModeSel = document.getElementById('setToolbarMode');
   if (toolbarModeSel) toolbarModeSel.addEventListener('change', e => {
     appSettings.toolbarMode = normalizeToolbarMode(e.target.value);
@@ -18939,6 +19216,8 @@ boardPick.addEventListener('change', async () => {
 });
 
 $('#rwNewBoard').addEventListener('click', () => openNewBoard());
+$('#rwLayoutGrid').addEventListener('click', () => setLandingLayout('classic'));
+$('#rwLayoutFlow').addEventListener('click', () => setLandingLayout('focus'));
 $('#rwEmptyNewBoard').addEventListener('click', () => openNewBoard());
 $('#rwOpenFile').addEventListener('click', () => openBoardFromDialog());
 $('#rwNewWindow').addEventListener('click', async () => {

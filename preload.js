@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   removeRecentWork: (filePath) => ipcRenderer.invoke('remove-recent-work', filePath),
   setRecentWorkPinned: (filePath, pinned) => ipcRenderer.invoke('set-recent-work-pinned', { filePath, pinned }),
   renameRecentWork: (filePath, name) => ipcRenderer.invoke('rename-recent-work', { filePath, name }),
+  revealBoardFile: (filePath) => ipcRenderer.invoke('reveal-board-file', filePath),
   getThumbnailData: (filename) => ipcRenderer.invoke('get-thumbnail-data', filename),
   getBoardPreview: (filePath) => ipcRenderer.invoke('get-board-preview', filePath),
   writeBoardPreview: (filePath, preview) => ipcRenderer.invoke('write-board-preview', { filePath, preview }),
