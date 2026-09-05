@@ -1,51 +1,39 @@
 {
-  "headline": "Faster on big boards, and saves that only write what changed",
-  "summary": "Boards with hundreds of images stay sharp and feel lighter, saving is quick even for large boards, and undo is instant. Boards saved by 2.1.0 open only in 2.1.0 or later.",
+  "headline": "A clearer Home for your references",
+  "summary": "Browse larger previews in a redesigned Classic library, move smoothly through Focus Flow, and jump straight to a saved board's folder.",
   "sections": {
     "new": [
       {
-        "title": "Boards are now two files",
-        "description": "Next to your board file sits Name.refboard.images, which holds your original images. Saving writes only what you added or changed, so a save on a large board takes a moment instead of rewriting everything. Keep the two files together when you move or back up a board. Older boards open as before and switch over the next time you save."
+        "title": "Show a board in its folder",
+        "description": "Use the folder icon beside a saved board's actions on Home to reveal its original file in Explorer. Available in both Classic Grid and Focus Flow."
+      },
+      {
+        "title": "Switch layouts from Home",
+        "description": "Move between Grid and Flow with the layout buttons in the header. Your search stays in place, and RefBoard remembers your choice."
       }
     ],
     "improved": [
       {
-        "title": "Smoother with hundreds of images",
-        "description": "Hovering, selecting, dragging a marquee, panning and zooming do far less work per frame on large boards."
+        "title": "A redesigned Classic library",
+        "description": "Larger, uncropped previews and clearer titles sit on a clean, neutral background. A compact header and simpler cards keep the attention on your boards."
       },
       {
-        "title": "Instant undo",
-        "description": "Undo and redo now touch only what the step changed, so they are instant on any board and use almost no memory."
+        "title": "A lighter Focus Flow",
+        "description": "Bigger landscape previews, titles beneath the cards, and a simpler thumbnail row make browsing easier. The boxed dock, extra scrubber bar, and redundant text are gone."
       },
       {
-        "title": "Lighter autosaves",
-        "description": "An autosave writes the file once, and moving around the board no longer triggers a full save."
-      },
-      {
-        "title": "Quicker Explorer previews",
-        "description": "The preview stored with the board comes from images already on screen, so a save no longer re-reads every original."
+        "title": "Cards follow your drag",
+        "description": "Large Flow cards track the pointer directly and settle smoothly. Wheel and keyboard browsing remain available, with motion reduced when your system requests it."
       }
     ],
     "fixed": [
       {
-        "title": "Images no longer flicker between sharp and blurry",
-        "description": "On boards with many images, some images popped soft and sharp while you were not moving. Fixed at the source."
+        "title": "Steadier previews while browsing",
+        "description": "Cards fade smoothly at the edge of Flow, and unchanged previews stay in place when Home refreshes. Card actions remain stable as you move between boards."
       },
       {
-        "title": "Failed saves no longer leave junk",
-        "description": "A save that fails (disk full, a locked file) now keeps your previous file intact and leaves no temporary file behind."
-      },
-      {
-        "title": "Closing one window no longer skips the unsaved prompt in others",
-        "description": "Every window asks about unsaved work, including when you restart to update."
-      },
-      {
-        "title": "Opening a second window kept its undo history",
-        "description": "Opening another board window no longer clears the first window's undo for paint and crop edits."
-      },
-      {
-        "title": "Small crashes and slips",
-        "description": "Pressing Enter with nothing selected, undoing in the middle of a drag, and a rare case where a crash could empty your recent boards list."
+        "title": "A better fit in smaller windows",
+        "description": "Home's header, card controls, and empty states adapt to compact windows without overlapping. Long board titles stay contained within their cards."
       }
     ]
   }
