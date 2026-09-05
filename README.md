@@ -1,268 +1,154 @@
-# RefBoard
+<p align="center">
+  <img src="build/icon.png" width="96" alt="RefBoard app icon">
+</p>
 
-A clean minimal moodboard & reference app for Windows. **Made by Sounak.**
-Images are kept in original quality, stored only on your own PC.
+<h1 align="center">RefBoard</h1>
 
-## Board files
+<p align="center">
+  <b>A free moodboard and reference workspace for Windows.</b><br>
+  Collect images, explore ideas, and keep your references beside your work.<br>
+  No account. No subscription. Your boards stay on your PC.
+</p>
 
-A board is two files that belong together:
+<p align="center">
+  <a href="https://github.com/sounak1125/RefBoard/releases/latest"><img src="https://img.shields.io/github/v/release/sounak1125/RefBoard?label=download&color=5aa2ff" alt="Latest release"></a>
+  <a href="https://github.com/sounak1125/RefBoard/releases"><img src="https://img.shields.io/github/downloads/sounak1125/RefBoard/total?color=5aa2ff" alt="Total downloads"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20x64-5aa2ff" alt="Windows 64-bit">
+  <a href="build/license.txt"><img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT license"></a>
+</p>
 
-- `Name.refboard` — the board itself: items, view, tags, and the Explorer
-  preview. Small (about a megabyte for a few hundred images) and rewritten
-  whole on every save.
-- `Name.refboard.images` — the original image bytes, appended to as images
-  are added. A save that only moved things writes nothing here; a save after
-  a paint or a new import appends just those images. Deleted images leave
-  their bytes in place until enough have piled up (64 MB and a quarter of
-  the file), when the next save copies the live images into a fresh store.
+<p align="center">
+  <a href="https://github.com/sounak1125/RefBoard/releases/latest"><b>Download for Windows</b></a>
+  &nbsp; · &nbsp; <a href="#features">Features</a>
+  &nbsp; · &nbsp; <a href="#keyboard-shortcuts">Shortcuts</a>
+  &nbsp; · &nbsp; <a href="https://github.com/sounak1125/RefBoard/issues">Report a bug</a>
+</p>
 
-Move, copy, or back up the pair together. Renaming a board from the Home
-screen renames both. Opening a `.refboard` whose `.refboard.images` is
-missing tells you which file to put back. Boards saved by RefBoard 2.0.12
-and earlier are single files with the images embedded; they open as before
-and become a pair on their next save, with the old single file kept as
-`Name.refboard.bak`. Older versions of RefBoard cannot open the pair.
+<p align="center">
+  <img src="assets/readme/board.png" width="1000" alt="RefBoard canvas with a sample landscape moodboard, text notes, color swatches, and the drawing and arrangement toolbar">
+  <br><sub>A place for images, notes, and the details that connect them.</sub>
+</p>
 
-## GitHub & auto-updates
+## Why RefBoard
 
-Installed RefBoard apps **check GitHub Releases on startup** and download updates automatically.
-When you ship a new version, users get a toast: *"Update ready — restart RefBoard to install"*.
+Built for artists, designers, and anyone who works with visual references. Bring a collection together, make sense of it, and keep it close while you create.
 
-### One-time GitHub setup
+- **Collect without friction.** Paste from the clipboard or drag images and files onto the canvas. Imported images retain their original data and quality.
+- **Arrange freely.** Move, resize, rotate, and group references, or pack them into a tidy layout with one key.
+- **Keep your work local.** Boards and images are stored on your PC. Working on a board does not require an internet connection.
+- **Stay in your flow.** Pin RefBoard above other windows, switch between boards, and choose a compact or always-visible toolbar.
 
-1. Create a repo on GitHub named **RefBoard** (or rename `owner` / `repo` in `package.json` → `build.publish`).
-2. In this folder, run:
+## Get started
 
-```bash
-git init
-git add .
-git commit -m "Initial RefBoard release"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/RefBoard.git
-git push -u origin main
-```
+1. Download **`RefBoard-Installer-<version>.exe`** from the [latest release](https://github.com/sounak1125/RefBoard/releases/latest) and run it. The standard **`RefBoard-Setup-<version>.exe`** installer is also available there.
+2. Open RefBoard, choose **New board**, and drop in a few images. You can also paste with **Ctrl+V**.
+3. Press **P** to arrange your references, **F** to fit them in view, and **Ctrl+S** to save your board.
 
-3. Create the first release (builds the installer and uploads it):
+Installed release builds check for updates on startup by default. When an update is ready, RefBoard offers to restart and install it. Update preferences are in **Settings → System**.
 
-Follow **Shipping a new version** below (build into `dist/`, then `npm run release:ship`, then publish the draft).
-Do not create releases by pushing a `v*` tag — that Actions path is unreliable.
+<details>
+<summary>Windows SmartScreen during installation</summary>
 
-### Shipping a new version
+RefBoard is not currently code-signed, so Windows may display “Windows protected your PC.” If you downloaded the installer from this repository's release page and want to proceed, choose **More info → Run anyway**.
 
-1. Edit the app (`index.html`, etc.).
-2. Bump `"version"` to the same number in **both** `package.json` and
-   `bootstrapper/package.json`.
-
-   The bootstrapper names its output from its *own* version
-   (`artifactName: RefBoard-Installer-${version}.exe`), while `release:ship` reads the
-   root version and looks for `RefBoard-Installer-<root version>.exe`. Leave the two
-   apart and step 5 builds the installer under the old name, `release:ship` cannot find
-   it, and the release ships with no installer at all. That is a **warning, not an
-   error** — the upload succeeds and the missing installer is easy to miss.
-3. Replace the contents of `release-highlights.json` with the release headline, summary, and categorized changes. Use this format every time:
-
-```json
-{
-  "headline": "A short release headline",
-  "summary": "One sentence explaining the update.",
-  "sections": {
-    "new": [
-      {
-        "title": "Feature name",
-        "description": "What it lets people do."
-      }
-    ],
-    "improved": [
-      {
-        "title": "Improvement name",
-        "description": "What now feels better."
-      }
-    ],
-    "fixed": [
-      {
-        "title": "Bug that was fixed",
-        "description": "What now works correctly."
-      }
-    ]
-  }
-}
-```
-
-   Keep unused sections as empty arrays (`[]`). Do not add labels such as `"Bug fixes:"` as list items—the modal creates the New, Improved, and Fixed headings automatically. `npm run dist` / `sync-changelog.mjs` copies this release into `changelog.json` for the in-app What's New screen.
-
-   You can also collect a change from a git commit. The text before `|` becomes the title and the text after it becomes the description:
-
-```powershell
-git commit -m "[highlight:new] Feature name | What it lets people do."
-git commit -m "[highlight:improved] Improvement name | What now feels better."
-git commit -m "[highlight:fixed] Bug name | What now works correctly."
-```
-4. Build the installer into `dist/`:
-
-```powershell
-npm run dist
-```
-
-   That runs `predist` first: `npm test`, then `sync-changelog.mjs`, which copies
-   `release-highlights.json` into `changelog.json`. If you call `electron-builder`
-   directly instead, run `node scripts/sync-changelog.mjs` yourself — `predist`
-   will not fire. Do not redirect the output elsewhere: `release:ship` reads
-   `dist`, and the bootstrapper writes to `dist/bootstrapper`, so a different
-   output directory splits the two artifacts apart.
-
-   `dist/` keeps older builds and `latest.yml` is not version-stamped, so check
-   that the feed describes the version you just built:
-
-```powershell
-Get-Content dist\latest.yml -TotalCount 1
-```
-5. Refresh the bootstrapper payload and build it. **Do not skip this on a new
-   version** — step 6 will not do it for you, and says so only in a warning
-   (see the trap below). This needs
-   `bootstrapper/package.json` already bumped in step 2, or the output carries the
-   previous version's name. `release:ship` uploads `RefBoard-Installer-<ver>.exe`
-   alongside the setup, and the payload does not update itself — a stale one ships
-   the previous version inside a correctly named installer:
-
-```powershell
-Copy-Item dist\RefBoard-Setup-2.0.9.exe bootstrapper\payload\RefBoard-Setup.exe -Force
-Push-Location bootstrapper; npm run dist; Pop-Location
-```
-
-   (Use your own version.) Output: `dist\bootstrapper\RefBoard-Installer-<ver>.exe`.
-   Confirm the payload matches the setup you just built:
-
-```powershell
-(Get-FileHash dist\RefBoard-Setup-2.0.9.exe).Hash -eq (Get-FileHash bootstrapper\payload\RefBoard-Setup.exe).Hash
-```
-6. Create a **draft** GitHub release and upload auto-update assets (`latest.yml`, setup `.exe`, `.blockmap`):
-
-```powershell
-npm run release:ship
-```
-
-   `release:ship` checks that the bootstrapper wraps the setup in `dist/`, and
-   refreshes the payload and rebuilds it when it does not. It re-checks the
-   hash after rebuilding and uploads nothing if it still disagrees. Pass
-   `-NoBootstrapperRebuild` to make a stale payload an error instead of a
-   rebuild, or `-SkipPayloadCheck` to skip the whole thing when re-uploading
-   assets for a release whose installer you deliberately are not touching.
-
-   **The trap: that rebuild only fires when `RefBoard-Installer-<ver>.exe`
-   already exists.** The artifact name is version-stamped, so on a version you
-   have not built the bootstrapper for, it never does. `Sync-BootstrapperPayload`
-   warns and returns instead:
-
-```
-WARNING: No RefBoard-Installer-2.0.11.exe built - the bootstrapper will be skipped.
-```
-
-   The other three assets upload, the script prints `Draft release is ready`, and
-   it **exits 0**. Nothing fails. The release just quietly carries no installer —
-   which is what happened cutting 2.0.11 in one pass, with both versions
-   correctly bumped. Step 5 is not optional; a re-run of `release:ship` after
-   building the bootstrapper fixes it, because assets upload with `--clobber`.
-
-   Requires `gh auth login` (repo scope).
-7. Check the draft before you publish it. Confirm it carries **four** assets:
-
-```powershell
-gh release view v2.0.11 --json assets -q '[.assets[].name]'
-```
-
-   Expect `latest.yml`, `RefBoard-Setup-<ver>.exe`, `RefBoard-Setup-<ver>.exe.blockmap`
-   and `RefBoard-Installer-<ver>.exe`. Three means the bootstrapper was skipped.
-
-   Then **install it and launch it.** The suite and CI run against the repo, where
-   every file is present; only the packaged asar can be missing one. RefBoard
-   2.0.11 shipped with `scripts/recent-works.js` left out of `build.files` and
-   died on startup with `Cannot find module './scripts/recent-works'` — 50 green
-   checks, green CI, verified asset hashes, and an app that could not open.
-   `npm test` now walks `main.js` and `preload.js` as well as `index.html`, and
-   matches `require()` as well as `import`, so that particular hole is closed.
-   Launching the build is still the only thing that proves it runs.
-8. Publish, so installed apps can auto-update:
-
-```powershell
-gh release edit v1.0.3 --draft=false
-```
-
-   (Use your new version tag, e.g. `v1.1.0`.) Do **not** ship by pushing a `v*` tag — the Actions release workflow is unreliable and can break auto-update.
-
-   If you publish something broken, pull `latest.yml` off the release first — that
-   stops auto-update resolving it at all, and clients stay where they are while
-   you build the fix. It is reversible; the file is still in your `dist\`:
-
-```powershell
-gh release delete-asset v2.0.11 latest.yml --yes
-```
-
-## For you (Sounak)
-
-- **Share via GitHub Releases** — link users to the latest `RefBoard-Setup-x.x.x.exe` on your repo’s Releases page.
-- **Run without installing:** `dist\win-unpacked\RefBoard.exe` after `npm run dist`
-- **Dev mode:** `npm start` (no auto-update in dev builds)
-
-### Performance overlay (dev only)
-
-Live FPS / frame-time / JS heap / item counts HUD for stress-testing. **Default OFF.** Inert in packaged (installed) builds — it cannot appear in production even if toggled.
-
-**Enable** (unpackaged / `npm start` only):
-
-| Method | How |
-|--------|-----|
-| Keyboard | `Ctrl+Shift+F12` (toggle) |
-| Console | `window.__PERF_OVERLAY__ = true` |
-| URL | `?perf=1` or `#perf` (if the window URL includes them) |
-
-**Disable:** `Ctrl+Shift+F12` again, or `window.__PERF_OVERLAY__ = false`.
-
-When off, no overlay rAF runs. Implementation: `scripts/perf-overlay.mjs`.
-
-### Rebuilding after changing the app
-
-All the app logic lives in `index.html`. After editing it:
-
-```
-npm run dist
-```
-
-That produces a fresh installer in `dist\`. Bump `"version"` in `package.json` before tagging a release.
-
-### Where the branding lives
-
-- Installer welcome & finish pages: `build\installer.nsh`
-- Installer sidebar art (164×314 BMP): `build\installerSidebar.bmp`
-- License/about page shown during install: `build\license.txt`
-- App icon: `build\icon.png`
-- In-app: bottom-left corner credit + the `?` shortcuts panel footer (in `index.html`)
-
-## For people installing it
-
-Download **RefBoard-Setup-x.x.x.exe** from [GitHub Releases](https://github.com/sounak1125/RefBoard/releases) and run it.
-Because the app isn't code-signed (certificates cost money), Windows SmartScreen may show
-"Windows protected your PC" — click **More info → Run anyway**. That's normal
-for free community apps.
-
-Keep the app installed from a **release build** (not a raw zip) so auto-update works.
+</details>
 
 ## Features
 
-- **Paste** images with `Ctrl+V` from anywhere — web, Photoshop, screenshots, Explorer
-- **Drag & drop** files or images straight from web pages (multi-drop packs in a square grid)
-- **Original quality always** — exact original bytes stored, never recompressed
-- **Copy back out** with `Ctrl+C` at full resolution (multi-select = one combined image)
-- **Arrange**: drag, corner-resize (aspect locked), `P` auto-packs a tidy grid
-- **Navigate**: wheel zoom at cursor, middle/right/space/Alt drag to pan, `F` fit
-- **Always on top** with `Ctrl+T` — pin it over your painting app, PureRef style
-- **Settings** (right-click → Settings & tools): rotate, crop, flip, grayscale, notes, snapping, eyedropper
-- **Export** board as PNG (1×/2×/4×, transparent/dark/white) or the exact original files
-- **Save/share** whole boards as a single `.refboard` file with originals embedded
-- Auto-saves continuously; undo/redo; multi-select; right-click menu; press `?` for all shortcuts
-- **Auto-update** from GitHub Releases when a new version is published
+### Your boards, easy to find
 
-## Tech
+Home keeps recent boards within reach, with visual previews, pinned favorites, and search by board name or folder. Rename a board or reveal its file in Explorer directly from its card.
 
-Single-file HTML5/JavaScript app (no frameworks), packaged as a Windows app
-with Electron + electron-builder (NSIS installer). Boards persist in IndexedDB
-under `%AppData%\RefBoard`.
+<p align="center">
+  <img src="assets/readme/library.png" width="1000" alt="RefBoard Home in Classic Grid with six fictional sample boards, visual previews, search, and New board controls">
+  <br><sub>Classic Grid keeps your reference library in view.</sub>
+</p>
+
+Prefer to browse one board at a time? Switch to **Focus Flow** for large previews and a thumbnail strip.
+
+<details>
+<summary>See Focus Flow</summary>
+
+<p align="center">
+  <img src="assets/readme/focus-flow.png" width="1000" alt="RefBoard Focus Flow with a large sample board preview, neighboring board, and thumbnail navigation">
+</p>
+
+</details>
+
+### More than a collection of images
+
+Keep the thinking alongside the references. Add text notes, lists, drawings, and arrows; tag images to find them again; and pull a color palette from a reference.
+
+| Tool | What you can do |
+|---|---|
+| **Arrange & group** | Resize with proportions intact, rotate, snap to nearby items, and organize references in named groups. |
+| **Notes & drawing** | Add formatted notes, checklists, pen marks, and arrows to explain an idea. |
+| **Image tools** | Crop, flip, view in grayscale, and sample colors with the eyedropper. |
+| **Tags & search** | Label references, filter by tag, and search within a board. |
+| **Navigation** | Zoom at the cursor, pan across the canvas, fit the selection or whole board, and jump around with the minimap. |
+| **Appearance** | Choose from six dark themes, toggle the dot grid, and keep tools compact or always visible. |
+
+### Take your references into your work
+
+- **Copy at full resolution.** Copy a reference back to another app; copying several selected items creates a combined image.
+- **Export the board.** Save a PNG at 1×, 2×, or 4× with a transparent, dark, or white background.
+- **Export individual images.** Keep the original format or choose PNG, JPEG, or WebP, with optional cropping and export order controls.
+- **Work beside other apps.** Use the title-bar pin controls to keep references visible, and open up to four RefBoard windows.
+- **Keep making changes.** Undo and redo edits, and use configurable autosave while you work.
+
+## Saving and sharing boards
+
+RefBoard 2.1.0 saves each board as a pair:
+
+```text
+Landscape study.refboard          Board layout, notes, tags, and preview
+Landscape study.refboard.images   Original image data
+```
+
+**Keep both files together when moving, sharing, or backing up a board.** Saving writes new or changed image data without rewriting every original. Renaming from Home renames both files.
+
+Older single-file boards still open. On their next save, RefBoard converts them to the new format and keeps the previous file as a `.refboard.bak` backup. The new format requires **RefBoard 2.1.0 or later**. See [board files and compatibility](docs/BOARD_FILES.md) for details.
+
+## Keyboard shortcuts
+
+| Action | Shortcut |
+|---|---|
+| Paste / copy references | **Ctrl+V** / **Ctrl+C** |
+| Save / save as | **Ctrl+S** / **Ctrl+Shift+S** |
+| Open a board | **Ctrl+O** |
+| Pack references | **P** |
+| Fit selection or board | **F** |
+| Pan / zoom | **Space+drag** / **Mouse wheel** |
+| Add a text note | **Shift+T** |
+| Group / ungroup | **Ctrl+G** / **Ctrl+Shift+G** |
+| Search / tags | **Ctrl+F** / **Ctrl+Shift+T** |
+| Toggle the minimap | **M** |
+| Undo / redo | **Ctrl+Z** / **Ctrl+Shift+Z** |
+| Export board / images | **Ctrl+E** / **Ctrl+Shift+I** |
+
+Press **?** on a board for the full shortcut reference.
+
+## Run from source
+
+On Windows, with Node.js 22 and npm installed:
+
+```bash
+git clone https://github.com/sounak1125/RefBoard.git
+cd RefBoard
+npm ci
+npm start
+```
+
+RefBoard uses vanilla HTML, CSS, and JavaScript, packaged with Electron. Run `npm test` for the unit and contract checks. `npm run dist` runs those checks and builds the Windows installer into `dist/`.
+
+Contributor references: [maintaining and releasing](docs/MAINTAINING.md) · [board storage](docs/BOARD_FILES.md) · [screenshot capture and photo credits](assets/readme/README.md).
+
+## Feedback and contributing
+
+Found a bug or have an idea? [Open an issue](https://github.com/sounak1125/RefBoard/issues). Pull requests are welcome. If RefBoard is useful to you, a star helps others discover it.
+
+## License
+
+[MIT](build/license.txt). Made by [Sounak](https://github.com/sounak1125).
+
+<sub>All screenshots use public sample photographs and fictional board data in an isolated app profile. No personal boards or history are shown. <a href="assets/readme/README.md">Photo credits</a>.</sub>
