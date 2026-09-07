@@ -14,6 +14,10 @@ const {
   sidecarStorePath, readSidecarIndex, writeSidecarIndex, openSidecarStore, appendSidecarImage,
   readSidecarImage, sidecarGarbageBytes, shouldCompactSidecar, compactSidecarStore,
 } = require('./scripts/board-sidecar');
+const {
+  isContainerHead, openContainer, appendContainerImage, readContainerImage, writeContainerIndex,
+  containerGarbageBytes, shouldCompactContainer, rebuildContainer, readContainerPreview,
+} = require('./scripts/board-container');
 const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 const zorder = require('./scripts/win32-zorder');
 const { refreshShellIcons } = require('./scripts/win32-shell-notify');
@@ -429,6 +433,7 @@ function setupIpc() {
   }
 
   async function readBoardOpenSessionImage(session, image) {
+    if (session.container) return readContainerImage(session.handle, image, session.storeSize);
     if (session.sidecar) return readSidecarImage(session.handle, image, session.storeSize);
     if (session.handle) return readBoardImageBytesFromHandle(session.handle, image);
     return readBoardImageBytes(session.filePath, image);
@@ -448,19 +453,37 @@ function setupIpc() {
      ReferenceError and hid the real error. */
   async function discardBoardSaveSession(session) {
     if (!session) return;
-    const store = session.store;
-    session.store = null;
-    if (store?.handle) {
-      // Bytes appended by the abandoned save reference nothing. Give them
-      // back rather than leaving them for a compaction to find.
-      try { if (Number.isSafeInteger(session.startSize)) await store.handle.truncate(session.startSize); } catch { /* keep as garbage */ }
-      try { await store.handle.close(); } catch { /* already closed */ }
+    const box = session.container;
+    session.container = null;
+    if (box?.handle) {
+      // An abandoned append gives its bytes back; an abandoned rebuild is a
+      // temp file nothing references, so it is removed.
+      if (session.mode === 'append') {
+        try { if (Number.isSafeInteger(session.startSize)) await box.handle.truncate(session.startSize); } catch { /* keep as garbage */ }
+      }
+      try { await box.handle.close(); } catch { /* already closed */ }
     }
     try { await session.handle?.close(); } catch { /* already closed */ }
     session.handle = null;
     if (session.tempPath) await fs.unlink(session.tempPath).catch(() => {});
   }
 
+  /* What is at a board path: a single-file container (the current format), a
+     sidecar index from 2.1.0/2.1.1 (its images live in Name.refboard.images),
+     a legacy embedded JSON board, or nothing. Decided from the first bytes. */
+  async function boardFileKind(target) {
+    let handle;
+    try { handle = await fs.open(target, 'r'); } catch (err) { if (err.code === 'ENOENT') return 'missing'; throw err; }
+    try {
+      const head = Buffer.alloc(32);
+      const { bytesRead } = await handle.read(head, 0, head.length, 0);
+      if (bytesRead >= 8 && isContainerHead(head)) return 'container';
+      if (bytesRead > 0 && head[0] === 0x7b) return (await readSidecarIndex(target).catch(() => null)) ? 'sidecar' : 'legacy';
+      return 'legacy';
+    } finally {
+      await handle.close();
+    }
+  }
   function boardSaveSessionForTarget(target) {
     for (const session of boardSaveSessions.values()) {
       if (path.resolve(session.target) === target) return session;
@@ -468,19 +491,19 @@ function setupIpc() {
     return null;
   }
 
-  /* Sidecar boards (see scripts/board-sidecar.js): the store grows by the
-     images it does not already hold, and the index is rewritten whole. The
-     threshold for copying the store to drop dead bytes can be lowered for
-     tests, which cannot afford 64 MB of fixture. */
+  /* Single-file boards (see scripts/board-container.js): the file grows by the
+     images it does not already hold plus a fresh index. The threshold for
+     copying the live records into a new file to drop dead bytes can be
+     lowered for tests, which cannot afford 64 MB of fixture. */
   const compactMinBytes = Number(process.env.REFBOARD_SIDECAR_COMPACT_MIN_BYTES) > 0
     ? Number(process.env.REFBOARD_SIDECAR_COMPACT_MIN_BYTES)
     : undefined;
 
   async function appendBoardSaveImageParts(session, image, data) {
-    if (!session.store) throw new Error('Board save session has no store');
+    if (!session.container) throw new Error('Board save session has no file');
     const id = String(image?.id || '');
     if (!id) throw new Error('Image without an id');
-    const entry = await appendSidecarImage(session.store, image, data);
+    const entry = await appendContainerImage(session.container, image, data);
     session.appended.set(id, { ...entry, type: image?.type, name: image?.name, w: image?.w, h: image?.h, size: entry.length });
     return entry;
   }
@@ -624,21 +647,46 @@ function setupIpc() {
     if (boardSaveSessionForTarget(target)) throw new Error('Board save in progress');
     const token = crypto.randomUUID();
     const session = {
-      token, target, storePath: sidecarStorePath(target), ownerId: event.sender.id,
+      token, target, ownerId: event.sender.id,
       core, preview, imageRefs: Array.isArray(imageRefs) ? imageRefs : [],
-      store: null, startSize: null, existing: new Map(), appended: new Map(),
+      mode: 'fresh', container: null, tempPath: null, startSize: null, sourceStorePath: null,
+      existing: new Map(), appended: new Map(),
     };
     try {
-      // Saving over a sidecar board keeps its store and reuses every record
-      // the index still points at. Anything else (a new file, a legacy
-      // embedded board being converted) starts a fresh store: nothing can
-      // reference bytes in a store whose index is not a sidecar index.
-      let index = null;
-      try { index = await readSidecarIndex(target); } catch { index = null; }
-      session.store = await openSidecarStore(session.storePath, { create: true, truncate: !index });
-      session.startSize = session.store.size;
-      for (const image of index?.images || []) {
-        if (image.offset + image.length <= session.store.size) session.existing.set(image.id, image);
+      const kind = await boardFileKind(target);
+      if (kind === 'container') {
+        // Save in place: append what the file lacks, then a fresh index.
+        session.mode = 'append';
+        session.container = await openContainer(target);
+        session.startSize = session.container.size;
+        for (const image of session.container.index?.images || []) {
+          if (image.offset + image.length <= session.startSize) session.existing.set(image.id, image);
+        }
+      } else {
+        // A new file, a legacy embedded board, or a 2.1.0 sidecar pair: build
+        // a fresh container beside the target and swap it in at finish. A
+        // sidecar pair's images are copied from its store here, so the
+        // renderer sends nothing it already saved.
+        session.mode = kind === 'sidecar' ? 'convert-sidecar' : 'fresh';
+        session.tempPath = `${target}.saving-${process.pid}-${token}`;
+        session.container = await openContainer(session.tempPath, { create: true, truncate: true });
+        session.startSize = session.container.size;
+        if (kind === 'sidecar') {
+          const index = await readSidecarIndex(target);
+          session.sourceStorePath = sidecarStorePath(target);
+          const wanted = new Set(session.imageRefs.map(ref => String(ref?.id || '')));
+          const store = await openSidecarStore(session.sourceStorePath);
+          try {
+            for (const image of index.images) {
+              if (!wanted.has(image.id) || image.offset + image.length > store.size) continue;
+              const bytes = await readSidecarImage(store.handle, image, store.size);
+              const entry = await appendContainerImage(session.container, image, bytes);
+              session.existing.set(image.id, { ...image, offset: entry.offset, length: entry.length });
+            }
+          } finally {
+            await store.handle.close();
+          }
+        }
       }
       boardSaveSessions.set(token, session);
       return { started: true, token, filePath: target, stored: [...session.existing.keys()] };
@@ -647,7 +695,6 @@ function setupIpc() {
       throw err;
     }
   });
-
   ipcMain.handle('append-board-save-image', async (event, { token, image, data }) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
@@ -681,33 +728,54 @@ function setupIpc() {
           offset: placed.offset, length: placed.length,
         };
       });
-      await session.store.handle.sync();
-      await session.store.handle.close();
-      const storeSize = session.store.size;
-      session.store = null;
+      const box = session.container;
+      const appendedBytes = Math.max(0, box.size - session.startSize);
+      const written = await writeContainerIndex(box, session.core, session.preview, images);
+      await box.handle.close();
+      session.container = null;
 
       let compacted = false;
-      const garbage = sidecarGarbageBytes(storeSize, images);
-      if (shouldCompactSidecar(storeSize, garbage, compactMinBytes ? { minBytes: compactMinBytes } : {})) {
-        // The old index still describes the old store until the new index
-        // lands, and the new store is complete before it replaces the old,
-        // so a crash anywhere in here leaves a readable pair.
-        images = (await compactSidecarStore(session.storePath, images)).images;
-        compacted = true;
+      let converted = null;
+      if (session.mode === 'append') {
+        const garbage = containerGarbageBytes(written.size, images, written.indexLength);
+        if (shouldCompactContainer(written.size, garbage, compactMinBytes ? { minBytes: compactMinBytes } : {})) {
+          // The new file is complete before it replaces the old, so a crash
+          // anywhere in here leaves a readable board.
+          images = (await rebuildContainer(session.target, {
+            sourcePath: session.target, core: session.core, preview: session.preview, images,
+          })).images;
+          compacted = true;
+        }
+        refreshShellIcons(session.target);
+        return {
+          saved: true, filePath: session.target,
+          appended: session.appended.size, appendedBytes,
+          reused: images.length - session.appended.size, compacted, garbageBytes: compacted ? 0 : garbage,
+        };
       }
-      await writeSidecarIndex(session.target, session.core, session.preview, images);
+      // A conversion or a brand-new file: swap the temp container in. The
+      // previous board file, when there was one, is kept as .bak once; a
+      // sidecar pair's store is removed, its images now live in the board.
+      const tempPath = session.tempPath;
+      session.tempPath = null;
+      await replaceBoardFile(session.target, tempPath);
+      if (session.mode === 'convert-sidecar' && session.sourceStorePath) {
+        await fs.unlink(session.sourceStorePath).catch(() => {});
+        converted = 'sidecar';
+      } else if (session.mode === 'fresh' && session.existing.size === 0 && session.startSize != null) {
+        converted = null;
+      }
       refreshShellIcons(session.target);
       return {
         saved: true, filePath: session.target,
-        appended: session.appended.size, appendedBytes: Math.max(0, storeSize - session.startSize),
-        reused: images.length - session.appended.size, compacted, garbageBytes: compacted ? 0 : garbage,
+        appended: session.appended.size, appendedBytes,
+        reused: images.length - session.appended.size, compacted, garbageBytes: 0, converted,
       };
     } catch (err) {
       await discardBoardSaveSession(session);
       throw err;
     }
   });
-
   ipcMain.handle('abort-board-save', async (event, token) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) return { aborted: false };
@@ -741,6 +809,23 @@ function setupIpc() {
   ipcMain.handle('begin-board-open', async (event, filePath) => {
     const resolved = path.resolve(String(filePath || ''));
     await recoverBoardFileIfMissing(resolved);
+    if ((await boardFileKind(resolved)) === 'container') {
+      const box = await openContainer(resolved, { write: false });
+      if (!box.index) { await box.handle.close().catch(() => {}); throw new Error('This board file has no readable index'); }
+      const { images: entries, format: _format, ...core } = box.index;
+      // The preview lives in the head stub; the index repeats it only when it did
+      // not fit there. The renderer expects it on the core.
+      if (!core.preview) { const stubPreview = await readContainerPreview(resolved).catch(() => null); if (stubPreview) core.preview = stubPreview; }
+      const images = entries.map((image, i) => ({ ...image, index: i }));
+      const token = crypto.randomUUID();
+      const session = {
+        token, ownerId: event.sender.id, filePath: resolved, container: true, storeSize: box.size,
+        images, handle: box.handle, timer: null,
+      };
+      armBoardOpenTimer(session);
+      boardOpenSessions.set(token, session);
+      return { token, core, images: images.map(({ offset, length, ...meta }) => meta) };
+    }
     const index = await readSidecarIndex(resolved);
     if (index) {
       const storePath = sidecarStorePath(resolved);
@@ -1018,7 +1103,9 @@ function setupIpc() {
   ipcMain.handle('get-board-preview', async (_, filePath) => {
     if (!filePath) return null;
     try {
-      return await readBoardPreview(path.resolve(String(filePath)));
+      const target = path.resolve(String(filePath));
+      if ((await boardFileKind(target)) === 'container') return await readContainerPreview(target);
+      return await readBoardPreview(target);
     } catch {
       return null;
     }
@@ -1031,6 +1118,19 @@ function setupIpc() {
       if (path.resolve(session.target) === target) {
         throw new Error('Board save in progress');
       }
+    }
+    if ((await boardFileKind(target)) === 'container') {
+      // A fresh index at the tail and a new head stub; nothing else moves.
+      const box = await openContainer(target);
+      try {
+        if (!box.index) throw new Error('This board file has no readable index');
+        const { images, format: _format, preview: _old, ...core } = box.index;
+        await writeContainerIndex(box, core, preview, images);
+      } finally {
+        await box.handle.close().catch(() => {});
+      }
+      refreshShellIcons(target);
+      return { written: true, filePath: target };
     }
     const index = await readSidecarIndex(target).catch(() => null);
     if (index) {

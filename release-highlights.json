@@ -1,40 +1,18 @@
 {
-  "headline": "A clearer Home for your references",
-  "summary": "Browse larger previews in a redesigned Classic library, move smoothly through Focus Flow, and jump straight to a saved board's folder.",
+  "headline": "One file per board again",
+  "summary": "A board is a single .refboard file once more, and saving still writes only what changed. Boards saved by 2.1.2 open only in 2.1.2 or later.",
   "sections": {
-    "new": [
-      {
-        "title": "Show a board in its folder",
-        "description": "Use the folder icon beside a saved board's actions on Home to reveal its original file in Explorer. Available in both Classic Grid and Focus Flow."
-      },
-      {
-        "title": "Switch layouts from Home",
-        "description": "Move between Grid and Flow with the layout buttons in the header. Your search stays in place, and RefBoard remembers your choice."
-      }
-    ],
+    "new": [],
     "improved": [
       {
-        "title": "A redesigned Classic library",
-        "description": "Larger, uncropped previews and clearer titles sit on a clean, neutral background. A compact header and simpler cards keep the attention on your boards."
+        "title": "Boards are one file",
+        "description": "Your images live inside the .refboard file again, so a board is one thing to move, share, or back up. Boards from 2.1.0 and 2.1.1 fold their .refboard.images file back in the next time you save them."
       },
       {
-        "title": "A lighter Focus Flow",
-        "description": "Bigger landscape previews, titles beneath the cards, and a simpler thumbnail row make browsing easier. The boxed dock, extra scrubber bar, and redundant text are gone."
-      },
-      {
-        "title": "Cards follow your drag",
-        "description": "Large Flow cards track the pointer directly and settle smoothly. Wheel and keyboard browsing remain available, with motion reduced when your system requests it."
+        "title": "Saves stay quick",
+        "description": "A save adds only new or changed images to the file instead of rewriting everything, and a save interrupted by a crash leaves your previous board intact."
       }
     ],
-    "fixed": [
-      {
-        "title": "Steadier previews while browsing",
-        "description": "Cards fade smoothly at the edge of Flow, and unchanged previews stay in place when Home refreshes. Card actions remain stable as you move between boards."
-      },
-      {
-        "title": "A better fit in smaller windows",
-        "description": "Home's header, card controls, and empty states adapt to compact windows without overlapping. Long board titles stay contained within their cards."
-      }
-    ]
+    "fixed": []
   }
 }

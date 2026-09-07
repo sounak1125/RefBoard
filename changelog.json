@@ -794,5 +794,23 @@
         }
       ]
     }
+  },
+  "2.1.2": {
+    "headline": "One file per board again",
+    "summary": "A board is a single .refboard file once more, and saving still writes only what changed. Boards saved by 2.1.2 open only in 2.1.2 or later.",
+    "sections": {
+      "new": [],
+      "improved": [
+        {
+          "title": "Boards are one file",
+          "description": "Your images live inside the .refboard file again, so a board is one thing to move, share, or back up. Boards from 2.1.0 and 2.1.1 fold their .refboard.images file back in the next time you save them."
+        },
+        {
+          "title": "Saves stay quick",
+          "description": "A save adds only new or changed images to the file instead of rewriting everything, and a save interrupted by a crash leaves your previous board intact."
+        }
+      ],
+      "fixed": []
+    }
   }
 }

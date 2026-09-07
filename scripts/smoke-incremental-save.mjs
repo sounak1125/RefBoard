@@ -1,20 +1,20 @@
 /**
- * Proves a save of a sidecar board costs what changed, not the whole board.
+ * Proves a save of a single-file board costs what changed, not the whole board.
  *
- * Runs the real app and reads the two files the format writes between saves:
+ * Runs the real app and measures the one board file between saves:
  *
- *   1. First save: the store holds every image once; the index is small.
- *   2. Move an item and save: the store's size does not change; only the
- *      index was rewritten.
- *   3. Add one image and save: the store grows by about that one image.
- *   4. Change one image's pixels and save: the store grows by that one
- *      re-encoded image; its old bytes are reported as garbage.
- *   5. Delete most images and save: the store is compacted (the threshold is
+ *   1. First save: the file holds every image once, plus its index.
+ *   2. Move an item and save: the file grows by exactly a fresh index and
+ *      trailer; no image bytes are written.
+ *   3. Add one image and save: the file grows by that image plus an index.
+ *   4. Change one image's pixels and save: the file grows by that one
+ *      re-encoded image plus an index; the old bytes are reported as garbage.
+ *   5. Delete most images and save: the file is compacted (the threshold is
  *      lowered through the environment) and shrinks to what is left.
  *   6. Reopen the board: every surviving image loads with its stored length.
  *
- * Also checks the index still yields its preview to the legacy header reader
- * and the Explorer thumbnail extractor.
+ * Also checks there is never a second file beside the board, and that the
+ * Explorer thumbnail extractor finds the preview at the front of the file.
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -29,15 +29,13 @@ import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 import { evaluate } from './smoke-cdp.mjs';
 
 const require = createRequire(import.meta.url);
-const sidecar = require('./board-sidecar.js');
-const { readBoardPreview } = require('./board-open-stream.js');
+const container = require('./board-container.js');
 const { extractPreviewBase64 } = require('./file-icon-composite.js');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
 const profile = await mkdtemp(path.join(os.tmpdir(), 'refboard-incremental-save-'));
 const boardPath = path.join(profile, 'incremental.refboard');
-const storePath = sidecar.sidecarStorePath(boardPath);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const IMAGE_COUNT = 12;
 
@@ -123,11 +121,15 @@ const reopenExpression = `(async()=>{const {RB,state,wait,filePath,imageItems}=w
   const sizes={};for(const [id,im] of RB.images)sizes[id]=im.blob?im.blob.size:(im.blobSize||null);
   return {items:imageItems().length,images:RB.images.size,sizes};})()`;
 
-const readPair = async () => ({
-  index: await sidecar.readSidecarIndex(boardPath),
-  storeSize: (await stat(storePath)).size,
-  indexSize: (await stat(boardPath)).size,
-});
+const readBoard = async () => {
+  const box = await container.openContainer(boardPath, { write: false });
+  try {
+    return { index: box.index, indexLength: box.indexLength, size: box.size, recovered: box.recovered };
+  } finally {
+    await box.handle.close();
+  }
+};
+const noSecondFile = () => assert.equal(existsSync(`${boardPath}.images`), false, 'there is never a second file beside the board');
 
 try {
   const port = await debuggerPort();
@@ -136,65 +138,67 @@ try {
   // 1. First save.
   const { first, imageBytes } = await run(setupExpression);
   assert.equal(first.ok, true, 'first save succeeds');
-  assert.ok(existsSync(storePath), 'the store sits beside the index');
   assert.equal(first.stats.appended, IMAGE_COUNT, `first save appends every image (${first.stats.appended})`);
-  assert.ok(first.stats.appendedBytes >= imageBytes, 'the store received every image byte');
-  let pair = await readPair();
-  assert.equal(pair.index.images.length, IMAGE_COUNT, 'the index lists every image');
-  assert.ok(pair.indexSize < imageBytes / 2, `the index is small (${pair.indexSize} bytes vs ${imageBytes} of image data)`);
-  const sizeAfterFirst = pair.storeSize;
+  assert.ok(first.stats.appendedBytes >= imageBytes, 'the file received every image byte');
+  let board = await readBoard();
+  assert.equal(board.index.images.length, IMAGE_COUNT, 'the index lists every image');
+  assert.equal(board.recovered, false, 'the trailer is valid');
+  noSecondFile();
+  const sizeAfterFirst = board.size;
 
-  // 2. Move: the store is untouched.
+  // 2. Move: only a fresh index and trailer are appended.
   const moved = await run(moveExpression);
-  assert.equal(moved.stats.appended, 0, 'moving an item appends nothing');
-  assert.equal(moved.stats.reused, IMAGE_COUNT, 'every image is reused from the store');
-  pair = await readPair();
-  assert.equal(pair.storeSize, sizeAfterFirst, 'a save with no image changes leaves the store byte-for-byte the same size');
-  assert.equal(pair.index.items.find(it => (it.kind || 'image') === 'image').x, pair.index.items.find(it => (it.kind || 'image') === 'image').x, 'index rewritten');
+  assert.equal(moved.stats.appended, 0, 'moving an item appends no image');
+  assert.equal(moved.stats.reused, IMAGE_COUNT, 'every image is reused in place');
+  board = await readBoard();
+  assert.equal(board.size - sizeAfterFirst, board.indexLength + container.TRAILER_BYTES, 'a save with no image changes grows the file by exactly one index and trailer');
+  const sizeAfterMove = board.size;
 
-  // 3. Add one image: the store grows by that image.
+  // 3. Add one image: the file grows by that image plus an index.
   const added = await run(addExpression);
   assert.equal(added.stats.appended, 1, 'adding one image appends one');
   assert.equal(added.stats.reused, IMAGE_COUNT, 'the others are reused');
-  pair = await readPair();
-  const sizeAfterAdd = pair.storeSize;
-  assert.equal(sizeAfterAdd - sizeAfterFirst, added.stats.appendedBytes, 'the store grew by exactly the appended bytes');
-  assert.equal(pair.index.images.length, IMAGE_COUNT + 1);
+  board = await readBoard();
+  assert.equal(board.size - sizeAfterMove, added.stats.appendedBytes + board.indexLength + container.TRAILER_BYTES, 'the file grew by the appended image plus an index');
+  assert.equal(board.index.images.length, IMAGE_COUNT + 1);
+  const sizeAfterAdd = board.size;
 
   // 4. Pixel change: exactly that image is resent; its old bytes are garbage.
   const painted = await run(paintExpression);
+  console.log('incremental save probe', JSON.stringify({ first: first.stats, moved: moved.stats, added: added.stats, painted: painted.stats, sizes: { sizeAfterFirst, sizeAfterMove, sizeAfterAdd, now: (await readBoard()).size } }));
   assert.equal(painted.genAfter, painted.genBefore + 1, 'the pixel generation advanced');
   assert.equal(painted.stats.appended, 1, 'a pixel edit resends exactly that image');
   assert.equal(painted.stats.reused, IMAGE_COUNT, 'the rest are reused');
   assert.ok(painted.stats.garbageBytes > 0 && !painted.stats.compacted, 'the superseded bytes are counted as garbage and left for later');
-  pair = await readPair();
-  assert.equal(pair.storeSize - sizeAfterAdd, painted.stats.appendedBytes, 'the store grew by the re-encoded image only');
+  board = await readBoard();
+  assert.equal(board.size - sizeAfterAdd, painted.stats.appendedBytes + board.indexLength + container.TRAILER_BYTES, 'the file grew by the re-encoded image plus an index');
 
-  // 5. Delete most: compaction under the lowered threshold shrinks the store.
+  // 5. Delete most: compaction under the lowered threshold shrinks the file.
   const deleted = await run(deleteExpression);
-  assert.equal(deleted.stats.compacted, true, 'deleting most of the board compacts the store');
-  pair = await readPair();
-  assert.equal(pair.index.images.length, 3, 'the index lists the survivors');
-  assert.ok(pair.storeSize < sizeAfterFirst / 2, `the compacted store is far smaller (${pair.storeSize} vs ${sizeAfterFirst})`);
-  assert.equal(sidecar.sidecarGarbageBytes(pair.storeSize, pair.index.images), 0, 'a compacted store has no dead bytes');
-  for (const image of pair.index.images) assert.ok(deleted.survivorImgIds.includes(image.id), `index entry ${image.id} is a survivor`);
-  const scanned = await sidecar.scanSidecarStore(storePath);
-  assert.deepEqual(scanned.records.map(r => r.id).sort(), pair.index.images.map(i => i.id).sort(), 'the store holds exactly the indexed records');
+  assert.equal(deleted.stats.compacted, true, 'deleting most of the board compacts the file');
+  board = await readBoard();
+  assert.equal(board.index.images.length, 3, 'the index lists the survivors');
+  // Past the fixed head region, three images and an index are a fraction of twelve.
+  const HEAD = container.HEAD_REGION_BYTES;
+  assert.ok(board.size - HEAD < (sizeAfterFirst - HEAD) / 2, `the compacted file is far smaller past the head region (${board.size - HEAD} vs ${sizeAfterFirst - HEAD})`);
+  assert.equal(container.containerGarbageBytes(board.size, board.index.images, board.indexLength), 0, 'a compacted file has no dead bytes');
+  for (const image of board.index.images) assert.ok(deleted.survivorImgIds.includes(image.id), `index entry ${image.id} is a survivor`);
+  noSecondFile();
 
   // 6. Reopen: survivors load with their stored lengths.
   const reopened = await run(reopenExpression);
   assert.equal(reopened.items, 3, 'reopen restores the three surviving items');
   assert.equal(reopened.images, 3, 'reopen registers three image records');
-  for (const image of pair.index.images) {
+  for (const image of board.index.images) {
     assert.equal(reopened.sizes[image.id], image.length, `reopened ${image.id} has its stored byte length`);
   }
 
-  // The preview is still where both readers look.
-  const preview = await readBoardPreview(boardPath);
-  assert.ok(typeof preview === 'string' && preview.length > 1000, 'the legacy header reader finds the preview in the index');
-  assert.equal(extractPreviewBase64(boardPath), preview, 'the Explorer thumbnail extractor finds the same preview');
+  // The preview is at the front for Explorer and in the index for the app.
+  const preview = extractPreviewBase64(boardPath);
+  assert.ok(typeof preview === 'string' && preview.length > 1000, 'the Explorer extractor finds the preview in the first 512 KB');
+  assert.equal(await container.readContainerPreview(boardPath), preview, 'the preview reader agrees');
 
-  console.log(`incremental save smoke: first ${first.ms} ms (${IMAGE_COUNT} images, ${sizeAfterFirst} B), move ${moved.ms} ms (+0 B), add ${added.ms} ms (+${added.stats.appendedBytes} B), paint ${painted.ms} ms (+${painted.stats.appendedBytes} B), delete ${deleted.ms} ms (compacted to ${pair.storeSize} B)`);
+  console.log(`incremental save smoke: first ${first.ms} ms (${IMAGE_COUNT} images, ${sizeAfterFirst} B), move ${moved.ms} ms (+index only), add ${added.ms} ms (+${added.stats.appendedBytes} B), paint ${painted.ms} ms (+${painted.stats.appendedBytes} B), delete ${deleted.ms} ms (compacted to ${board.size} B)`);
   console.log('incremental save Electron smoke passed');
 } finally {
   if (child.exitCode === null) child.kill();
