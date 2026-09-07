@@ -48,8 +48,8 @@ for (const channel of ['begin-board-save', 'finish-board-save', 'abort-board-sav
 // failed finish cannot leave a half-written session that later reports "busy".
 const finish = handlerSource('finish-board-save');
 assert.ok(
-  finish.indexOf('boardSaveSessions.delete(token)') < finish.indexOf('session.store.handle.sync()'),
-  'finish-board-save must remove the session before flushing the store',
+  finish.indexOf('boardSaveSessions.delete(token)') < finish.indexOf('await writeContainerIndex(box'),
+  'finish-board-save must remove the session before writing the index',
 );
 
 /* --- general guard: awaited bare calls resolve to something defined --- */

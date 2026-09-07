@@ -21,8 +21,7 @@ import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 import { evaluate } from './smoke-cdp.mjs';
 
 const require = createRequire(import.meta.url);
-const { readBoardPreview } = require('./board-open-stream.js');
-const { readSidecarIndex } = require('./board-sidecar.js');
+const { openContainer, readContainerPreview } = require('./board-container.js');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
@@ -94,10 +93,10 @@ try {
   const port = await debuggerPort();
   const r = await evaluate(port, smokeExpression, { attempts: 1 });
   assert.equal(r.saved, true, 'the silent save must succeed');
-  const preview = await readBoardPreview(boardPath);
+  const preview = await readContainerPreview(boardPath);
   assert.ok(typeof preview === 'string' && preview.length > 1000, 'the file must carry a preview the moment the save resolves');
-  const index = await readSidecarIndex(boardPath);
-  assert.equal(index?.images.length, 12, 'all twelve images are indexed');
+  const box = await openContainer(boardPath, { write: false });
+  try { assert.equal(box.index?.images.length, 12, 'all twelve images are indexed'); } finally { await box.handle.close(); }
   const statAfterSave = await stat(boardPath);
   await delay(2500);
   const statLater = await stat(boardPath);

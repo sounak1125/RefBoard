@@ -103,6 +103,9 @@ jobs:
       - name: Incremental save smoke
         run: npm run test:incremental-save-smoke
 
+      - name: Board convert smoke
+        run: npm run test:convert-smoke
+
       - name: Spatial index smoke
         run: npm run test:spatial-smoke
 

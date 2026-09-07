@@ -2,20 +2,26 @@
 
 [Back to RefBoard](../README.md)
 
-A board is two files that belong together:
+A board is one file: `Name.refboard`. It holds the layout, notes, tags, the
+Explorer preview, and every original image. Move it, share it, or back it up
+like any other document.
 
-- `Name.refboard` — the board itself: items, view, tags, and the Explorer
-  preview. Small (about a megabyte for a few hundred images) and rewritten
-  whole on every save.
-- `Name.refboard.images` — the original image bytes, appended to as images
-  are added. A save that only moved things writes nothing here; a save after
-  a paint or a new import appends just those images. Deleted images leave
-  their bytes in place until enough have piled up (64 MB and a quarter of
-  the file), when the next save copies the live images into a fresh store.
+Inside, the file only ever grows on save. New or changed images are added to
+the end, followed by a fresh copy of the board's index, so saving a large
+board takes a moment rather than rewriting every image. Deleted images and old
+indexes leave dead bytes in place until enough have piled up (4 MB and a
+quarter of the file), when the next save writes a fresh compact file. A save
+interrupted by a crash leaves the previous state intact.
 
-Move, copy, or back up the pair together. Renaming a board from the Home
-screen renames both. Opening a `.refboard` whose `.refboard.images` is
-missing tells you which file to put back. Boards saved by RefBoard 2.0.12
-and earlier are single files with the images embedded; they open as before
-and become a pair on their next save, with the old single file kept as
-`Name.refboard.bak`. The pair requires RefBoard 2.1.0 or later.
+## Older boards
+
+- Boards saved by RefBoard 2.0.x kept every image inside one JSON file. They
+  open as before and become the current format on their next save, with the
+  previous file kept once as `Name.refboard.bak`.
+- Boards saved by RefBoard 2.1.0 and 2.1.1 came as a pair: `Name.refboard`
+  plus `Name.refboard.images`. Keep the pair together until the board has
+  been opened and saved once in RefBoard 2.1.2 or later; that save folds the
+  images into the single file, keeps the previous index as
+  `Name.refboard.bak`, and removes the `.images` file.
+
+Boards saved by RefBoard 2.1.2 or later open only in 2.1.2 or later.

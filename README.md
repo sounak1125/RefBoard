@@ -98,16 +98,15 @@ Keep the thinking alongside the references. Add text notes, lists, drawings, and
 
 ## Saving and sharing boards
 
-RefBoard 2.1.0 saves each board as a pair:
+A board is one file, `Name.refboard`, holding the layout, notes, tags, the
+Explorer preview, and every original image. Move it, share it, or back it up
+like any other document.
 
-```text
-Landscape study.refboard          Board layout, notes, tags, and preview
-Landscape study.refboard.images   Original image data
-```
-
-**Keep both files together when moving, sharing, or backing up a board.** Saving writes new or changed image data without rewriting every original. Renaming from Home renames both files.
-
-Older single-file boards still open. On their next save, RefBoard converts them to the new format and keeps the previous file as a `.refboard.bak` backup. The new format requires **RefBoard 2.1.0 or later**. See [board files and compatibility](docs/BOARD_FILES.md) for details.
+Saving adds only new or changed images to the file, so a save on a large
+board takes a moment instead of rewriting everything. Boards from older
+versions open as before and become the current format on their next save,
+with the previous file kept once as `.refboard.bak`. Boards saved by 2.1.2 or
+later need **RefBoard 2.1.2 or later**. See [board files](docs/BOARD_FILES.md).
 
 ## Keyboard shortcuts
 

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,7 +11,7 @@ import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 import { evaluate } from './smoke-cdp.mjs';
 
 const require = createRequire(import.meta.url);
-const { readSidecarIndex, sidecarStorePath, scanSidecarStore } = require('./board-sidecar.js');
+const { openContainer } = require('./board-container.js');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
@@ -126,12 +127,13 @@ try {
   const result = await evaluate(port, smokeExpression);
   const fileStat = await stat(boardPath);
   assert.ok(fileStat.size > 0, 'saved board file should exist');
-  const index = await readSidecarIndex(boardPath);
-  assert.ok(index, 'the saved board is a sidecar index');
-  assert.equal(index.images.length, 6, `the index should list 6 images (found ${index.images.length})`);
-  const store = await scanSidecarStore(sidecarStorePath(boardPath));
-  assert.equal(store.records.length, 6, `the store should hold 6 records (found ${store.records.length})`);
-  assert.equal(store.torn, false, 'the store has no torn tail');
+  const box = await openContainer(boardPath, { write: false });
+  try {
+    assert.ok(box.index, 'the saved board is a single-file container with an index');
+    assert.equal(box.index.images.length, 6, `the index should list 6 images (found ${box.index.images.length})`);
+    assert.equal(box.recovered, false, 'the trailer at the end is valid');
+  } finally { await box.handle.close(); }
+  assert.equal(existsSync(`${boardPath}.images`), false, 'no second file beside the board');
   assert.equal(result.afterOpenCount, 6, `open should restore 6 images (found ${result.afterOpenCount})`);
   assert.equal(result.imageMap, 6, 'open should register 6 image records');
   assert.equal(result.overlayHidden, true, 'opening overlay should hide once items are on screen');

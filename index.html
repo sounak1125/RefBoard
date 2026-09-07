@@ -14570,7 +14570,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
         pixelGen: 0,
         // A sidecar index lists exactly what its store holds; a legacy board
         // has no store yet, so its first save starts one.
-        storedAs: j.version === 4 && meta.path ? { path: meta.path, gen: 0 } : null,
+        storedAs: j.version >= 4 && meta.path ? { path: meta.path, gen: 0 } : null,
       }, imgId);
       void ensureStableImageProxy(im, blob);
       nextImages.set(imgId, im);
