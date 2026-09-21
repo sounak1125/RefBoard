@@ -18,7 +18,18 @@ const listened = inPreload(/ipcRenderer\.on\('([^']+)'/g);
 
 const handled = inMain(/ipcMain\.handle\('([^']+)'/g);
 const received = inMain(/ipcMain\.on\('([^']+)'/g);
-const emitted = inMain(/(?:webContents|sender)\.send\('([^']+)'/g);
+const emitted = (() => {
+  const found = new Set();
+  for (const pattern of [
+    /(?:webContents|sender)\.send\('([^']+)'/g,
+    /sendTo(?:Panes|Primary)\([^,]+,\s*'([^']+)'/g,
+    /(?:primary|secondary|wc)\.send\('([^']+)'/g,
+    /(?:primaryWc|secondaryWc)\.send\('([^']+)'/g,
+  ]) {
+    for (const m of main.matchAll(pattern)) found.add(m[1]);
+  }
+  return found;
+})();
 
 assert.ok(invoked.size > 40, `expected the full invoke bridge, saw ${invoked.size} channels`);
 

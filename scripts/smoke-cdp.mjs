@@ -29,9 +29,25 @@ async function pageTarget(port) {
     if (targets.some(entry => entry.type === 'page')) break;
     await delay(100);
   }
-  return targets.find(entry => entry.type === 'page' && /RefBoard|index\.html/i.test(`${entry.title} ${entry.url}`))
+  return targets.find(entry => entry.type === 'page' && /index\.html/i.test(entry.url || '') && !/[?&]pane=secondary(?:&|$)/i.test(entry.url || ''))
+    || targets.find(entry => entry.type === 'page' && /index\.html/i.test(entry.url || ''))
+    || targets.find(entry => entry.type === 'page' && /RefBoard|index\.html/i.test(`${entry.title} ${entry.url}`))
     || targets.find(entry => entry.type === 'page')
     || null;
+}
+
+async function matchingPageTarget(port, urlPattern) {
+  const re = urlPattern instanceof RegExp ? urlPattern : new RegExp(String(urlPattern), 'i');
+  let targets = [];
+  for (let attempt = 0; attempt < 80; attempt++) {
+    try {
+      targets = await fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json());
+    } catch { /* retry */ }
+    const match = targets.find(entry => entry.type === 'page' && re.test(entry.url || ''));
+    if (match) return match;
+    await delay(100);
+  }
+  return null;
 }
 
 async function connect(target) {
@@ -67,9 +83,9 @@ async function connect(target) {
 // arrives - which is precisely the window this waits out.
 const READY = "/index\.html/.test(location.pathname) && document.readyState !== 'loading'";
 
-async function evaluateOnce(port, expression, focusEmulation) {
-  const target = await pageTarget(port);
-  if (!target) throw new Error('RefBoard page target was not available');
+async function evaluateOnce(port, expression, focusEmulation, urlPattern = null) {
+  const target = urlPattern ? await matchingPageTarget(port, urlPattern) : await pageTarget(port);
+  if (!target) throw new Error(urlPattern ? `RefBoard page target matching ${urlPattern} was not available` : 'RefBoard page target was not available');
   const { send, close } = await connect(target);
   try {
     await send('Runtime.enable');
@@ -107,11 +123,11 @@ async function evaluateOnce(port, expression, focusEmulation) {
   }
 }
 
-export async function evaluate(port, expression, { attempts = 4, focusEmulation = false } = {}) {
+export async function evaluate(port, expression, { attempts = 4, focusEmulation = false, urlPattern = null } = {}) {
   let lastError = null;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      return await evaluateOnce(port, expression, focusEmulation);
+      return await evaluateOnce(port, expression, focusEmulation, urlPattern);
     } catch (error) {
       lastError = error;
       // A page that throws is a test failure; a context that vanished is not.

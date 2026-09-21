@@ -14,7 +14,7 @@ assert.match(main, /function focusedWindow\(\)/, 'a focused window fallback is r
 // Window creation is repeatable and self-cleaning.
 assert.match(main, /async function createWindow\(startupFilePath = null\)/, 'createWindow must be reusable per board window');
 assert.match(main, /win\.on\('closed', \(\) => \{[\s\S]*?windows\.delete\(win\);/, 'closing a window must drop it from the registry');
-assert.match(main, /win\.webContents\.send\('open-board-path', startupFilePath\)/, 'a window can receive its initial board path after load');
+assert.match(main, /\.send\('open-board-path', startupFilePath\)/, 'a window can receive its initial board path after load');
 
 // No single-global window may remain outside createWindow's local scope.
 assert.doesNotMatch(main, /^let win =/m, 'the single global window reference must not return');
@@ -27,7 +27,7 @@ assert.equal(dialogCalls.length, 4, 'all 4 board save/save-as/open and export-fo
 assert.doesNotMatch(main, /dialog\.show(?:Save|Open)Dialog\((win|null),/, 'no dialog may use a shared window parent');
 
 // Per-window titlebar + close plumbing.
-assert.match(main, /ipcMain\.on\('window-close', event => \{[\s\S]*?windowForEvent\(event\)[\s\S]*?send\('close-request'\)/, 'window close must target the requesting window');
+assert.match(main, /ipcMain\.on\('window-close', event => \{[\s\S]*?windowForEvent\(event\)[\s\S]*?requestWindowClose\(target\)/, 'window close must target the requesting window');
 assert.match(main, /ipcMain\.on\('close-confirmed', event => \{[\s\S]*?windowForEvent\(event\)[\s\S]*?closingWindows\.add\(target\);[\s\S]*?target\.close\(\);/, 'confirmed close must mark and close only its own window');
 
 // The close flag is per window. A process-wide one let a single confirmed close
@@ -35,7 +35,7 @@ assert.match(main, /ipcMain\.on\('close-confirmed', event => \{[\s\S]*?windowFor
 assert.doesNotMatch(main, /^let closing = false;/m, 'the process-wide closing flag must not return');
 assert.match(main, /const closingWindows = new WeakSet\(\);/, 'closing state must be tracked per window');
 assert.match(main, /win\.on\('close', \(e\) => \{\s*if \(closingWindows\.has\(win\)\) return;/, 'a window may only skip the close handshake when it confirmed its own close');
-assert.match(main, /ipcMain\.handle\('install-update', \(\) => \{[\s\S]*?installUpdateWhenAllClosed = true;[\s\S]*?for \(const candidate of windows\)[\s\S]*?send\('close-request'\)/, 'Restart to update must ask every window to close through the handshake');
+assert.match(main, /ipcMain\.handle\('install-update', \(\) => \{[\s\S]*?installUpdateWhenAllClosed = true;[\s\S]*?for \(const candidate of windows\)[\s\S]*?requestWindowClose\(candidate\)/, 'Restart to update must ask every window to close through the handshake');
 assert.doesNotMatch(main, /ipcMain\.handle\('install-update'[\s\S]{0,600}?autoUpdater\.quitAndInstall\(/, 'the installer must not be spawned while a window can still veto the quit');
 assert.match(main, /app\.on\('window-all-closed', \(\) => \{[\s\S]*?installUpdateWhenAllClosed[\s\S]*?quitAndInstall\(\)[\s\S]*?app\.quit\(\);/, 'the update installs once the last window has closed');
 assert.match(main, /ipcMain\.on\('window-minimize', event => \{[\s\S]*?windowForEvent\(event\)/, 'minimize must target its own window');
@@ -43,7 +43,7 @@ assert.match(main, /ipcMain\.on\('window-maximize', event => \{[\s\S]*?windowFor
 assert.match(main, /ipcMain\.handle\('window-is-maximized', event => \{[\s\S]*?windowForEvent\(event\)/, 'maximized state must be read per window');
 
 // New-window IPC enforces the cap and reuses createWindow.
-assert.match(main, /ipcMain\.handle\('open-board-window', async \(_, payload = \{\}\) => \{[\s\S]*?windows\.size >= MAX_BOARD_WINDOWS[\s\S]*?reason: 'window-limit'[\s\S]*?await createWindow\(filePath\)/, 'open-board-window must enforce the 4-window cap and spawn a real window');
+assert.match(main, /ipcMain\.handle\('open-board-window', async \(_, payload = \{\}\) => \{[\s\S]*?boardPaneCount\(\) >= MAX_BOARD_WINDOWS[\s\S]*?reason: 'window-limit'[\s\S]*?await createWindow\(filePath\)/, 'open-board-window must enforce the 4-board cap and spawn a real window');
 
 // Shared notices reach every window; double-click focuses one window (no auto-spawn).
 assert.match(main, /function notifyRenderer\(msg\) \{[\s\S]*?for \(const candidate of windows\)/, 'update/pin notices must broadcast to every board window');
