@@ -156,7 +156,7 @@ assert.match(
 );
 assert.match(
   html,
-  /if \(sameFilePath\(currentBoardPath, result\.from\)\) \{[\s\S]*?currentBoardPath = result\.path;[\s\S]*?currentBoardTitle = result\.title;/,
+  /if \(sameFilePath\(currentBoardPath, result\.from\)\) \{[\s\S]*?setCurrentBoardPath\(result\.path\);[\s\S]*?currentBoardTitle = result\.title;/,
   'renaming the board that is still loaded must repoint this window at the new file',
 );
 assert.match(
