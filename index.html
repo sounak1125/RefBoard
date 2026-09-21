@@ -209,14 +209,17 @@ body.board-active.titlebar-revealed #titlebar{
 /* ---------- floating left toolbar ---------- */
 #toolbar{
   position:fixed; left:var(--float-gap);
-  top:50%; transform:translateY(-50%);
+  top:50%;
   display:flex; flex-direction:column; align-items:center; gap:2px;
   z-index:25;
   max-height:min(86vh, calc(100vh - var(--float-gap) * 2));
   overflow:visible;
   scrollbar-width:none;
-  transition:top .32s cubic-bezier(.22,1,.36,1), transform .22s cubic-bezier(.22,1,.36,1),
-    opacity .18s ease, max-height .32s cubic-bezier(.22,1,.36,1);
+  transform:translate3d(0, -50%, 0);
+  transition:top .32s cubic-bezier(.22,1,.36,1),
+    transform .34s cubic-bezier(.4,0,.2,1),
+    opacity .22s ease,
+    max-height .32s cubic-bezier(.22,1,.36,1);
 }
 body.board-active.titlebar-revealed #toolbar{
   top:calc(50vh + var(--titlebar-h) / 2);
@@ -230,20 +233,16 @@ body.board-active.titlebar-revealed #toolbar{
 /* Compact edge-reveal toolbar */
 #toolbarEdgeHandle{
   position:fixed; left:0; top:50%; z-index:26;
-  width:28px; height:48px; padding:0; border:1px solid var(--line); border-left:0;
-  border-radius:0 12px 12px 0;
-  display:none; align-items:center; justify-content:center; gap:1px;
+  width:34px; height:48px; padding:0; border:1px solid var(--line); border-left:0;
+  border-radius:0 18px 18px 0;
+  display:none; align-items:center; justify-content:center;
   background:color-mix(in srgb, var(--panel) 94%, transparent); color:var(--mut);
   box-shadow:0 8px 24px rgba(0,0,0,.34), 0 1px 0 rgba(255,255,255,.04) inset;
   backdrop-filter:blur(16px); cursor:pointer;
-  transform:translateY(-50%); transform-origin:left center;
-  transition:opacity .16s ease, transform .2s cubic-bezier(.22,1,.36,1),
+  transform:translate3d(0, -50%, 0);
+  transition:transform .32s cubic-bezier(.22,1,.36,1) .05s,
+    opacity .2s ease .04s,
     background .16s ease, color .16s ease, border-color .16s ease;
-}
-#toolbarEdgeHandle::before{
-  content:""; position:absolute; left:0; top:10px; bottom:10px; width:2px;
-  border-radius:0 2px 2px 0; background:var(--acc); opacity:.72;
-  box-shadow:0 0 10px color-mix(in srgb, var(--acc) 48%, transparent);
 }
 #toolbarEdgeHandle:hover,
 #toolbarEdgeHandle:focus-visible{
@@ -252,18 +251,29 @@ body.board-active.titlebar-revealed #toolbar{
   background:color-mix(in srgb, var(--panel) 90%, var(--acc) 10%);
 }
 #toolbarEdgeIcon{ width:15px; height:15px; stroke:currentColor; stroke-width:1.7; fill:none; stroke-linecap:round; stroke-linejoin:round; }
-.toolbar-edge-chevron{ width:8px; height:12px; stroke:currentColor; stroke-width:1.8; fill:none; opacity:.62; }
 body.board-active.toolbar-floating #toolbarEdgeHandle{ display:flex; }
 body.board-active.toolbar-floating #toolbar{
   left:8px; opacity:0; pointer-events:none;
-  transform:translate(calc(-100% - 14px), -50%) scale(.98);
+  transform:translate3d(calc(-100% - 8px), -50%, 0);
+  transition:top .32s cubic-bezier(.22,1,.36,1),
+    transform .3s cubic-bezier(.4,0,.2,1),
+    opacity .26s ease,
+    max-height .32s cubic-bezier(.22,1,.36,1);
 }
 body.board-active.toolbar-floating.toolbar-revealed #toolbar{
   opacity:1; pointer-events:auto;
-  transform:translate(0, -50%) scale(1);
+  transform:translate3d(0, -50%, 0);
+  transition:top .32s cubic-bezier(.22,1,.36,1),
+    transform .36s cubic-bezier(.22,1,.36,1) .04s,
+    opacity .22s ease .02s,
+    max-height .32s cubic-bezier(.22,1,.36,1);
 }
 body.toolbar-floating.toolbar-revealed #toolbarEdgeHandle{
-  opacity:0; pointer-events:none; transform:translate(-100%, -50%) scale(.94);
+  opacity:0; pointer-events:none;
+  transform:translate3d(-100%, -50%, 0);
+  transition:transform .2s cubic-bezier(.4,0,.2,1),
+    opacity .14s ease,
+    background .16s ease, color .16s ease, border-color .16s ease;
 }
 body.toolbar-floating #toolbar.pill{ padding:5px 4px; border-radius:12px; }
 body.toolbar-floating #toolbar .tb{ width:30px; height:34px; border-radius:8px; }
@@ -272,7 +282,10 @@ body.toolbar-floating #toolbar .sep{ width:18px; margin:4px 0; }
 body.board-active.titlebar-revealed #toolbarEdgeHandle{ top:calc(50vh + var(--titlebar-h) / 2); }
 
 @media (prefers-reduced-motion:reduce){
-  #toolbar,#toolbarEdgeHandle{ transition-duration:.01ms !important; }
+  #toolbar,#toolbarEdgeHandle{
+    transition-duration:.01ms !important;
+    transition-delay:0s !important;
+  }
 }
 
 /* Left-rail compact tooltips (toolbar + draw panel) */
@@ -3253,7 +3266,6 @@ try {
 
 <button type="button" id="toolbarEdgeHandle" aria-label="Show tools" aria-controls="toolbar" aria-expanded="false" title="Show tools">
   <svg id="toolbarEdgeIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 7.5-6 .75L9 20l-1.5-6.5L5 3z"/></svg>
-  <svg class="toolbar-edge-chevron" viewBox="0 0 12 18" aria-hidden="true"><path d="m4 4 4 5-4 5"/></svg>
 </button>
 
 <div id="addPanelWrap" aria-hidden="true">

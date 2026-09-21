@@ -18,6 +18,9 @@ assert.match(source, /id="toolbarEdgeHandle"[\s\S]*?aria-controls="toolbar"[\s\S
 assert.match(source, /body\.toolbar-floating #toolbar \.tb\{ width:30px; height:34px;/, 'the floating rail should keep compact width while matching the classic button height');
 assert.match(source, /body\.board-active\.toolbar-floating #toolbar\{[\s\S]*?opacity:0; pointer-events:none;/, 'the compact rail should remain collapsed until revealed');
 assert.match(source, /body\.board-active\.toolbar-floating #toolbarEdgeHandle\{ display:flex; \}/, 'the edge handle should only appear for floating board mode');
+assert.match(source, /#toolbarEdgeHandle\{[\s\S]*?border-radius:0 18px 18px 0;/, 'the hidden tab should be a quiet rounded edge tab');
+assert.doesNotMatch(source, /toolbar-edge-chevron/, 'the hidden tab should show the active tool without a chevron');
+assert.doesNotMatch(source, /#toolbarEdgeHandle::before/, 'the hidden tab should not paint an accent stripe');
 assert.match(source, /function revealToolbar\(\)[\s\S]*?setToolbarRevealed\(true\)/, 'the edge interaction should reveal the floating rail');
 assert.match(source, /if \(e\.clientX <= 10\) revealToolbar\(\)/, 'moving into the left-edge zone should reveal the toolbar');
 assert.match(source, /function toolbarShouldStayOpen\(\)[\s\S]*?drawFeaturesOpen \|\| addFeaturesOpen \|\| brushDrawerOpen/, 'open tool drawers should keep the floating rail visible');
