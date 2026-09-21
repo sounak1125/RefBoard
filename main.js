@@ -143,6 +143,11 @@ function sendPaneActivity(win) {
   const primaryWc = st.primaryView?.webContents;
   const secondaryWc = st.secondaryView?.webContents;
   if (!primaryWc || primaryWc.isDestroyed() || !secondaryWc || secondaryWc.isDestroyed()) return;
+  if (!st.secondaryBoardReady) {
+    try { primaryWc.send('pane-activity', { active: true, enabled: false }); } catch { /* gone */ }
+    try { secondaryWc.send('pane-activity', { active: true, enabled: false }); } catch { /* gone */ }
+    return;
+  }
   const point = screen.getCursorScreenPoint();
   const bounds = win.getContentBounds();
   const x = point.x - bounds.x;
@@ -151,8 +156,15 @@ function sendPaneActivity(win) {
   const onTitlebar = y < TITLEBAR_H;
   const primaryActive = onTitlebar || x < splitX;
   const secondaryActive = !onTitlebar && x >= splitX;
-  try { primaryWc.send('pane-activity', { active: primaryActive }); } catch { /* gone */ }
-  try { secondaryWc.send('pane-activity', { active: secondaryActive }); } catch { /* gone */ }
+  try { primaryWc.send('pane-activity', { active: primaryActive, enabled: true }); } catch { /* gone */ }
+  try { secondaryWc.send('pane-activity', { active: secondaryActive, enabled: true }); } catch { /* gone */ }
+}
+
+function sendBlockedBoardPath(win) {
+  const st = paneState(win);
+  const wc = st?.secondaryView?.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  try { wc.send('blocked-board-path', st.primaryPath || null); } catch { /* gone */ }
 }
 
 function startPaneActivityPolling(win) {
@@ -370,6 +382,8 @@ function destroySecondary(win) {
   const view = st.secondaryView;
   st.secondaryView = null;
   st.secondaryWindowId = null;
+  st.secondaryPath = null;
+  st.secondaryBoardReady = false;
   st.pendingClose = null;
   try { st.layout.removeChildView(view); } catch { /* already detached */ }
   closeWebContentsView(view);
@@ -452,6 +466,7 @@ async function enterSplit(win, ratio) {
     console.warn('RefBoard split pane failed to load:', err?.message || err);
   });
   try { secondaryView.webContents.focus(); } catch { /* focus is best-effort */ }
+  sendBlockedBoardPath(win);
   sendSplitState(win);
   startPaneActivityPolling(win);
   return { opened: true, ...splitStatePayload(win) };
@@ -1678,6 +1693,21 @@ function setupIpc() {
   ipcMain.on('split-drag-end', event => {
     const target = windowForEvent(event);
     if (target && !target.isDestroyed()) stopSplitDrag(target);
+  });
+
+  ipcMain.on('board-session', (event, payload = {}) => {
+    const target = windowForEvent(event);
+    const st = paneState(target);
+    if (!st) return;
+    const filePath = payload?.path ? String(payload.path) : null;
+    if (isSecondarySender(target, event.sender)) {
+      st.secondaryPath = filePath;
+      st.secondaryBoardReady = !!payload?.ready;
+      sendPaneActivity(target);
+      return;
+    }
+    st.primaryPath = filePath;
+    sendBlockedBoardPath(target);
   });
 
   ipcMain.on('close-confirmed', event => {

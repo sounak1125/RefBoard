@@ -1107,6 +1107,11 @@ body.board-active #recentWorks{ display:none; }
 }
 .rw-grid.hide{ display:none; }
 
+.rw-card.is-open-elsewhere,
+.ff-card.is-open-elsewhere{
+  opacity:.45;
+  cursor:not-allowed;
+}
 .rw-card{
   position:relative;
   display:flex; flex-direction:column; gap:10px;
@@ -5455,6 +5460,31 @@ let boardChangeVersion = 0;
 let suppressBoardDirty = false;
 let onLanding = true;
 let currentBoardPath = null;
+let secondaryImagesReady = false;
+let blockedBoardPath = null;
+
+function publishBoardSession(ready) {
+  if (BOARD_PANE === 'secondary' && typeof ready === 'boolean') secondaryImagesReady = ready;
+  window.RefBoardAPI?.reportBoardSession?.({
+    path: currentBoardPath || null,
+    ready: BOARD_PANE === 'secondary' && secondaryImagesReady && !onLanding,
+  });
+}
+
+function setCurrentBoardPath(path) {
+  currentBoardPath = path || null;
+  publishBoardSession();
+}
+
+function isBoardBlockedInThisPane(filePath) {
+  return BOARD_PANE === 'secondary' && !!blockedBoardPath && !!filePath && sameFilePath(filePath, blockedBoardPath);
+}
+
+function rejectBlockedBoard(filePath) {
+  if (!isBoardBlockedInThisPane(filePath)) return false;
+  toast('This board is already open in the other pane');
+  return true;
+}
 let currentBoardTitle = null;
 let restoredSessionPendingOpen = false;
 let pendingSessionRestore = false;
@@ -6894,7 +6924,7 @@ function resetLiveSessionToBlank() {
   drawActive = false;
   cancelDrawSession();
   cachedCurrentBoardThumb = null;
-  currentBoardPath = null;
+  setCurrentBoardPath(null);
   currentBoardTitle = null;
   restoredSessionPendingOpen = false;
   closeDrawFeatures();
@@ -6976,7 +7006,7 @@ async function restoreSession() {
     drawActive = false;
     cancelDrawSession();
     cachedCurrentBoardThumb = null;
-    currentBoardPath = meta.path || null;
+    setCurrentBoardPath(meta.path);
     currentBoardTitle = meta.title || (meta.path ? boardTitleFromPath(meta.path) : null);
     restoredSessionPendingOpen = true;
     closeDrawFeatures();
@@ -12255,10 +12285,12 @@ async function transitionToBoard(opts = {}) {
   invalidate();
   await nextUiFrame();
   document.body.classList.remove('board-instant-open');
+  publishBoardSession(true);
 }
 
 async function transitionToLanding() {
   onLanding = true;
+  publishBoardSession(false);
   setToolbarRevealed(false);
   focusFlowEntries = [];
   focusFlowIndex = 0;
@@ -12831,7 +12863,7 @@ async function performBoardSave(opts = {}) {
       const result = await window.RefBoardAPI.finishBoardSave(token);
       token = null;
       if (!result?.saved) return false;
-      currentBoardPath = result.filePath;
+      setCurrentBoardPath(result.filePath);
       currentBoardTitle = boardTitleFromPath(result.filePath);
       if (preview) cachedCurrentBoardThumb = preview;
       for (const ref of snapshot.imageRefs) {
@@ -12854,7 +12886,7 @@ async function performBoardSave(opts = {}) {
     if (window.RefBoardAPI?.saveBoardFile) {
       const result = await window.RefBoardAPI.saveBoardFile(defaultName, json, targetPath, saveAs);
       if (!result?.saved) return false;
-      currentBoardPath = result.filePath;
+      setCurrentBoardPath(result.filePath);
       currentBoardTitle = boardTitleFromPath(result.filePath);
     } else {
       downloadBlob(new Blob([json], { type: 'application/json' }), defaultName);
@@ -13432,7 +13464,7 @@ async function renameRecentWork(filePath, name) {
     // The renamed board may be the one still loaded in this window; leaving the
     // old path in place would make the next Ctrl+S write to a file that is gone.
     if (sameFilePath(currentBoardPath, result.from)) {
-      currentBoardPath = result.path;
+      setCurrentBoardPath(result.path);
       currentBoardTitle = result.title;
       // Rewrite the session record too, or a crash-restore would still point at
       // the old file name. This is not an edit, so it must not mark the board
@@ -13602,10 +13634,11 @@ async function renderClassicRecentWorks(listOverride = null, renderSeq = 0, opts
   for (const work of list) {
     const card = document.createElement('div');
     card.className = 'rw-card';
+    card.classList.toggle('is-open-elsewhere', isBoardBlockedInThisPane(work.path));
     card.role = 'button';
     card.tabIndex = 0;
     card.style.animationDelay = `${Math.min(i * 45, 360)}ms`;
-    card.title = work.path || work.title;
+    card.title = isBoardBlockedInThisPane(work.path) ? 'Already open in the other pane' : (work.path || work.title);
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';
     clearBtn.className = 'rw-card-clear';
@@ -14097,11 +14130,13 @@ async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
   for (let i = 0; i < focusFlowEntries.length; i++) {
     const entry = focusFlowEntries[i];
     const previous = previousCards.get(entry.key);
+    const blocked = isBoardBlockedInThisPane(entry.path);
     const signature = JSON.stringify([entry.title, entry.detail, !!entry.work?.pinned, recentSearchQuery,
-      entry.work?.lastEdited, entry.work?.thumbnail, entry.current ? entry.thumbnailSrc : null, entry.path]);
+      entry.work?.lastEdited, entry.work?.thumbnail, entry.current ? entry.thumbnailSrc : null, entry.path, blocked]);
     if (previous?.dataset.signature === signature && previous.dataset.previewReady === 'true') {
       previous.id = `focusCard${i}`;
       previous.dataset.focusIndex = String(i);
+      previous.classList.toggle('is-open-elsewhere', blocked);
       entry.thumbnailSrc = previous.querySelector('.rw-thumb img')?.getAttribute('src') || null;
       orderedCards.push(previous);
       continue;
@@ -14109,6 +14144,7 @@ async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
     const card = document.createElement('div');
     card.className = 'ff-card';
     card.classList.toggle('ff-card-current', !!entry.current);
+    card.classList.toggle('is-open-elsewhere', blocked);
     card.dataset.entryKey = entry.key;
     card.dataset.signature = signature;
     card.id = `focusCard${i}`;
@@ -14116,7 +14152,7 @@ async function renderFocusRecentWorks(list, renderSeq, opts = {}) {
     card.setAttribute('aria-roledescription', 'slide');
     card.setAttribute('aria-label', `${entry.title}. ${entry.detail}`);
     card.dataset.focusIndex = String(i);
-    card.title = entry.current ? 'Return to your current board' : (entry.path || entry.title);
+    card.title = blocked ? 'Already open in the other pane' : (entry.current ? 'Return to your current board' : (entry.path || entry.title));
     const thumb = rwPlaceholderThumb();
     const previousSrc = previous?.querySelector('.rw-thumb img')?.getAttribute('src');
     if (previousSrc && !entry.current) {
@@ -14606,7 +14642,7 @@ async function openNewBoardImpl() {
   arrowTool = null;
   setDrawActive(false);
   closeDrawFeatures();
-  currentBoardPath = null;
+  setCurrentBoardPath(null);
   currentBoardTitle = null;
   await dbPut('meta', SESSION_META_KEY, {
     items: [],
@@ -14813,8 +14849,8 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
     cropItemId = null;
     arrowTool = null;
     setDrawActive(false);
-    currentBoardPath = meta.path || null;
     currentBoardTitle = meta.title || (meta.path ? boardTitleFromPath(meta.path) : null);
+    setCurrentBoardPath(meta.path);
     suppressBoardDirty = true;
     updateSelBar(); scheduleSave(); updateEmpty();
     suppressBoardDirty = false;
@@ -14888,6 +14924,7 @@ async function openBoardPayloadFromDesktop(filePath) {
 
 async function openBoardFromPathImpl(filePath) {
   if (!filePath) return;
+  if (rejectBlockedBoard(filePath)) return;
   if (await returnToCurrentBoardForPath(filePath)) return;
   if (window.RefBoardAPI?.readBoardFile) {
     try {
@@ -14912,6 +14949,7 @@ async function openBoardFromDialogImpl() {
   if (window.RefBoardAPI?.openBoardDialog) {
     const r = await window.RefBoardAPI.openBoardDialog();
     if (!r) return;
+    if (rejectBlockedBoard(r.filePath)) return;
     if (await returnToCurrentBoardForPath(r.filePath)) return;
     try {
       const result = await openBoardPayloadFromDesktop(r.filePath);
@@ -14931,6 +14969,7 @@ function loadBoardFile(file) {
 }
 
 async function loadBoardFileImpl(file) {
+  if (rejectBlockedBoard(file?.path)) return;
   let j;
   try { j = JSON.parse(await file.text()); } catch (e) { toast('Could not read that file'); return; }
   const title = (file.name || '').replace(/\.refboard$/i, '') || 'Untitled';
@@ -18713,7 +18752,10 @@ function markSavingOverlayDone(text) {
 }
 function hideSavingOverlay() { savingOverlay.classList.remove('show', 'done'); }
 const openingOverlay = $('#openingOverlay');
-function showOpeningOverlay(){ openingOverlay.classList.add('show'); }
+function showOpeningOverlay(){
+  openingOverlay.classList.add('show');
+  publishBoardSession(false);
+}
 function hideOpeningOverlay(){ openingOverlay.classList.remove('show'); }
 const filePick = $('#filePick');
 const boardPick = $('#boardPick');
@@ -19717,6 +19759,7 @@ async function init() {
   // check below reaches the network, so waiting for it would make this flag
   // depend on GitHub being reachable.
   appStartupComplete = true;
+  publishBoardSession(!onLanding);
 
   const info = await window.RefBoardAPI?.getAppInfo?.();
   if (info) setPerfOverlayPackaged(!!info.isPackaged);
@@ -20057,8 +20100,18 @@ window.RefBoardAPI?.onSplitStateChange?.(state => {
 });
 
 window.RefBoardAPI?.onPaneActivity?.(state => {
-  if (!splitActive) return;
-  document.body.classList.toggle('pane-dim', !state?.active);
+  if (!splitActive || !state?.enabled) {
+    document.body.classList.remove('pane-dim');
+    return;
+  }
+  document.body.classList.toggle('pane-dim', !state.active);
+});
+
+window.RefBoardAPI?.onBlockedBoardPath?.(filePath => {
+  const next = filePath || null;
+  if (sameFilePath(blockedBoardPath, next) || (!blockedBoardPath && !next)) return;
+  blockedBoardPath = next;
+  if (onLanding) void renderRecentWorks();
 });
 
 splitDividerEl?.addEventListener('mousedown', e => {

@@ -47,6 +47,11 @@ assert.match(main, /startPaneActivityPolling\(win\)/, 'main must poll cursor pos
 assert.match(main, /stopPaneActivityPolling\(win\)/, 'main must stop polling when split exits');
 assert.match(preload, /onPaneActivity: \(cb\) => ipcRenderer\.on\('pane-activity'/, 'the bridge must forward pane activity state');
 assert.match(html, /pane-dim/, 'the renderer must dim the inactive pane');
-assert.match(html, /onPaneActivity\?\.\(state =>/, 'the renderer must react to pane activity changes');
+assert.match(main, /secondaryBoardReady/, 'pane dimming waits until the right board has finished opening');
+assert.match(main, /blocked-board-path/, 'the right pane learns which board the left pane already has open');
+assert.match(preload, /reportBoardSession: \(payload\) => ipcRenderer\.send\('board-session'/, 'a pane must report when its board is open');
+assert.match(preload, /onBlockedBoardPath: \(cb\) => ipcRenderer\.on\('blocked-board-path'/, 'the right pane must hear the left pane board path');
+assert.match(html, /function rejectBlockedBoard\(filePath\)/, 'the right pane must refuse the board already open on the left');
+assert.match(html, /publishBoardSession\(true\)/, 'dimming starts only after the opened board finishes loading its images');
 
 console.log('split-view contract tests passed');
