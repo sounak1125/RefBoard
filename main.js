@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage, WebContentsView, View, screen } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const { replaceBoardFile, recoverBoardFileIfMissing } = require('./scripts/board-file-replace');
@@ -28,9 +28,20 @@ if (!app.requestSingleInstanceLock()) app.quit();
 
 const windows = new Set();
 const MAX_BOARD_WINDOWS = 4;
+const WINDOW_MIN_WIDTH = 720;
+const WINDOW_MIN_HEIGHT = 480;
+const SPLIT_MIN_WIDTH = 1000;
+const SPLIT_GAP = 6;
+const SPLIT_RATIO_MIN = 0.25;
+const SPLIT_RATIO_MAX = 0.75;
+const SPLIT_RATIO_DEFAULT = 0.5;
+const SPLIT_ANIM_MS = 340;
+const TITLEBAR_H = 34;
 /* Per-window. One process-wide flag let a single confirmed close (or a "Restart
    to update") skip the unsaved-changes handshake in every other window. */
 const closingWindows = new WeakSet();
+const windowPanes = new WeakMap();
+const senderWindows = new WeakMap();
 let installUpdateWhenAllClosed = false;
 let pendingOpenPath = null;
 let appDownloadStatus = { phase: 'idle', percent: 0 };
@@ -47,7 +58,437 @@ function focusedWindow() {
 function windowForEvent(event) {
   const fromSender = BrowserWindow.fromWebContents(event.sender);
   if (fromSender && windows.has(fromSender) && !fromSender.isDestroyed()) return fromSender;
+  const mapped = senderWindows.get(event.sender);
+  if (mapped && windows.has(mapped) && !mapped.isDestroyed()) return mapped;
   return focusedWindow();
+}
+
+function boardWebPreferences(windowId) {
+  return {
+    contextIsolation: true,
+    nodeIntegration: false,
+    spellcheck: false,
+    preload: path.join(__dirname, 'preload.js'),
+    additionalArguments: [`--refboard-window-id=${windowId}`],
+  };
+}
+
+function clampSplitRatio(ratio) {
+  const n = Number(ratio);
+  if (!Number.isFinite(n)) return SPLIT_RATIO_DEFAULT;
+  return Math.min(SPLIT_RATIO_MAX, Math.max(SPLIT_RATIO_MIN, n));
+}
+
+function paneState(win) {
+  return win ? windowPanes.get(win) || null : null;
+}
+
+function registerSender(wc, win) {
+  if (wc && !wc.isDestroyed()) senderWindows.set(wc, win);
+}
+
+function paneWebContentsList(win) {
+  const st = paneState(win);
+  const list = [];
+  const primary = st?.primaryView?.webContents;
+  if (primary && !primary.isDestroyed()) list.push(primary);
+  else if (win?.webContents && !win.webContents.isDestroyed()) list.push(win.webContents);
+  const secondary = st?.secondaryView?.webContents;
+  if (secondary && !secondary.isDestroyed()) list.push(secondary);
+  return list;
+}
+
+function primaryWebContents(win) {
+  const st = paneState(win);
+  const wc = st?.primaryView?.webContents;
+  if (wc && !wc.isDestroyed()) return wc;
+  if (win?.webContents && !win.webContents.isDestroyed()) return win.webContents;
+  return null;
+}
+
+function sendToPanes(win, channel, ...args) {
+  if (!win || win.isDestroyed()) return;
+  const seen = new Set();
+  for (const wc of paneWebContentsList(win)) {
+    if (seen.has(wc)) continue;
+    seen.add(wc);
+    wc.send(channel, ...args);
+  }
+}
+
+function sendToPrimary(win, channel, ...args) {
+  const wc = primaryWebContents(win);
+  if (wc) wc.send(channel, ...args);
+}
+
+function executeInPanes(win, code) {
+  if (!win || win.isDestroyed()) return;
+  const seen = new Set();
+  for (const wc of paneWebContentsList(win)) {
+    if (seen.has(wc)) continue;
+    seen.add(wc);
+    wc.executeJavaScript(code).catch(() => {});
+  }
+}
+
+function isSecondarySender(win, sender) {
+  const st = paneState(win);
+  return !!(st?.secondaryView && sender === st.secondaryView.webContents);
+}
+
+function sendPaneActivity(win) {
+  if (!win || win.isDestroyed()) return;
+  const st = paneState(win);
+  if (!st?.secondaryView) return;
+  const primaryWc = st.primaryView?.webContents;
+  const secondaryWc = st.secondaryView?.webContents;
+  if (!primaryWc || primaryWc.isDestroyed() || !secondaryWc || secondaryWc.isDestroyed()) return;
+  const point = screen.getCursorScreenPoint();
+  const bounds = win.getContentBounds();
+  const x = point.x - bounds.x;
+  const y = point.y - bounds.y;
+  const splitX = st.secondaryView.getBounds().x;
+  const onTitlebar = y < TITLEBAR_H;
+  const primaryActive = onTitlebar || x < splitX;
+  const secondaryActive = !onTitlebar && x >= splitX;
+  try { primaryWc.send('pane-activity', { active: primaryActive }); } catch { /* gone */ }
+  try { secondaryWc.send('pane-activity', { active: secondaryActive }); } catch { /* gone */ }
+}
+
+function startPaneActivityPolling(win) {
+  const st = paneState(win);
+  if (!st || st.paneActivityTimer) return;
+  st.paneActivityTimer = setInterval(() => sendPaneActivity(win), 120);
+  sendPaneActivity(win);
+}
+
+function stopPaneActivityPolling(win) {
+  const st = paneState(win);
+  if (!st || !st.paneActivityTimer) return;
+  clearInterval(st.paneActivityTimer);
+  st.paneActivityTimer = null;
+}
+
+function boardPaneCount() {
+  let n = 0;
+  for (const candidate of windows) {
+    if (!candidate || candidate.isDestroyed()) continue;
+    n += 1;
+    const st = paneState(candidate);
+    if (st?.secondaryView?.webContents && !st.secondaryView.webContents.isDestroyed()) n += 1;
+  }
+  return n;
+}
+
+function splitFrame(win) {
+  const st = paneState(win);
+  const [width, height] = win.getContentSize();
+  const w = Math.max(1, width | 0);
+  const h = Math.max(1, height | 0);
+  if (!st?.secondaryView) {
+    return { w, h, contentWidth: w, secX: w, secW: 0, secY: 0, secH: h };
+  }
+  const gap = SPLIT_GAP;
+  const targetLeft = Math.max(1, Math.min(w - gap - 1, Math.round(w * clampSplitRatio(st.splitRatio))));
+  const targetSecX = targetLeft + gap;
+  const p = splitOpenProgress(st);
+  const secX = Math.round(targetSecX * p + w * (1 - p));
+  const chrome = Math.min(TITLEBAR_H, Math.max(0, h - 1));
+  return {
+    w,
+    h,
+    contentWidth: Math.max(1, Math.min(w, secX - gap)),
+    secX,
+    secW: Math.max(1, w - targetSecX),
+    secY: chrome,
+    secH: Math.max(1, h - chrome),
+  };
+}
+
+function layoutViews(win) {
+  const st = paneState(win);
+  if (!st || win.isDestroyed()) return;
+  const frame = splitFrame(win);
+  if (!st.secondaryView) {
+    st.primaryView?.setBounds({ x: 0, y: 0, width: frame.w, height: frame.h });
+    return;
+  }
+  st.primaryView.setBounds({ x: 0, y: 0, width: frame.w, height: frame.h });
+  st.secondaryView.setBounds({ x: frame.secX, y: frame.secY, width: frame.secW, height: frame.secH });
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2;
+}
+
+function splitOpenProgress(st) {
+  if (!st?.secondaryView) return 0;
+  if (!st.splitAnim) return 1;
+  const u = Math.max(0, Math.min(1, (Date.now() - st.splitAnim.t0) / Math.max(1, st.splitAnim.ms)));
+  const e = easeInOutCubic(u);
+  return st.splitAnim.dir === 'out' ? 1 - e : e;
+}
+
+function stopSplitAnim(win) {
+  const st = paneState(win);
+  if (!st) return;
+  if (st.animTimer) {
+    clearInterval(st.animTimer);
+    st.animTimer = 0;
+  }
+  st.splitAnim = null;
+}
+
+function tickSplitAnim(win) {
+  const st = paneState(win);
+  if (!st?.splitAnim || !st.secondaryView || win.isDestroyed()) {
+    stopSplitAnim(win);
+    return;
+  }
+  layoutViews(win);
+  if (Date.now() - st.splitAnim.t0 < st.splitAnim.ms) {
+    sendSplitState(win);
+    return;
+  }
+  const dir = st.splitAnim.dir;
+  stopSplitAnim(win);
+  if (dir === 'out') destroySecondary(win);
+  else {
+    layoutViews(win);
+    sendSplitState(win);
+  }
+}
+
+function startSplitAnim(win, dir) {
+  const st = paneState(win);
+  if (!st?.secondaryView || win.isDestroyed()) return;
+  const current = splitOpenProgress(st);
+  const now = Date.now();
+  st.splitAnim = dir === 'out'
+    ? { dir, t0: now - Math.round((1 - current) * SPLIT_ANIM_MS), ms: SPLIT_ANIM_MS }
+    : { dir, t0: now - Math.round(current * SPLIT_ANIM_MS), ms: SPLIT_ANIM_MS };
+  if (!st.animTimer) st.animTimer = setInterval(() => tickSplitAnim(win), 8);
+  layoutViews(win);
+}
+
+function animateSplitClose(win) {
+  const st = paneState(win);
+  if (!st?.secondaryView) {
+    sendSplitState(win);
+    return;
+  }
+  if (st.splitAnim?.dir === 'out') return;
+  stopSplitDrag(win, { notify: false });
+  startSplitAnim(win, 'out');
+}
+
+function applySplitScreenX(win, screenX) {
+  const bounds = win.getContentBounds();
+  if (!bounds?.width) return;
+  const st = paneState(win);
+  if (!st) return;
+  st.splitRatio = clampSplitRatio((Number(screenX) - bounds.x) / bounds.width);
+  layoutViews(win);
+  sendSplitState(win);
+}
+
+function splitStatePayload(win) {
+  const st = paneState(win);
+  return {
+    split: !!(st?.secondaryView),
+    ratio: clampSplitRatio(st?.splitRatio ?? SPLIT_RATIO_DEFAULT),
+    contentWidth: splitFrame(win).contentWidth,
+  };
+}
+
+function sendSplitState(win) {
+  sendToPanes(win, 'split-state-changed', splitStatePayload(win));
+}
+
+let leftButtonDownFn = null;
+function isLeftMouseDown() {
+  if (process.platform !== 'win32') return true;
+  try {
+    if (!leftButtonDownFn) {
+      const koffi = require('koffi');
+      const user32 = koffi.load('user32.dll');
+      const GetAsyncKeyState = user32.func('short __stdcall GetAsyncKeyState(int vKey)');
+      leftButtonDownFn = () => (GetAsyncKeyState(0x01) & 0x8000) !== 0;
+    }
+    return leftButtonDownFn();
+  } catch {
+    return true;
+  }
+}
+
+function stopSplitDrag(win, { notify = true } = {}) {
+  const st = paneState(win);
+  if (!st) return;
+  const wasDragging = !!st.dragging;
+  st.dragging = false;
+  if (st.dragTimer) {
+    clearInterval(st.dragTimer);
+    st.dragTimer = 0;
+  }
+  if (notify && wasDragging) sendSplitState(win);
+}
+
+function startSplitDrag(win, screenX) {
+  const st = paneState(win);
+  if (!st?.secondaryView || win.isDestroyed() || st.splitAnim) return;
+  st.dragging = true;
+  applySplitScreenX(win, screenX);
+  if (st.dragTimer) return;
+  st.dragTimer = setInterval(() => {
+    if (!st.dragging || win.isDestroyed()) {
+      stopSplitDrag(win);
+      return;
+    }
+    if (!isLeftMouseDown()) {
+      stopSplitDrag(win);
+      return;
+    }
+    applySplitScreenX(win, screen.getCursorScreenPoint().x);
+  }, 16);
+}
+
+function closeWebContentsView(view) {
+  if (!view) return;
+  try {
+    if (view.webContents && !view.webContents.isDestroyed()) {
+      view.webContents.close();
+    }
+  } catch { /* already gone */ }
+}
+
+function destroySecondary(win) {
+  const st = paneState(win);
+  if (!st?.secondaryView) return;
+  stopSplitAnim(win);
+  stopSplitDrag(win, { notify: false });
+  stopPaneActivityPolling(win);
+  const view = st.secondaryView;
+  st.secondaryView = null;
+  st.secondaryWindowId = null;
+  st.pendingClose = null;
+  try { st.layout.removeChildView(view); } catch { /* already detached */ }
+  closeWebContentsView(view);
+  if (!win || win.isDestroyed()) return;
+  win.setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+  layoutViews(win);
+  sendSplitState(win);
+}
+
+let sessionPermissionsHooked = false;
+function hookSessionPermissions(ses) {
+  if (!ses || sessionPermissionsHooked) return;
+  sessionPermissionsHooked = true;
+  const BLOCKED_PERMISSIONS = new Set([
+    'geolocation', 'camera', 'microphone', 'media', 'notifications',
+    'midi', 'midiSysex', 'push', 'background-sync', 'speaker-selection',
+    'hid', 'serial', 'usb', 'bluetooth', 'idle-detection',
+    'display-capture', 'window-management',
+  ]);
+  ses.setPermissionRequestHandler((_wc, perm, cb) => cb(!BLOCKED_PERMISSIONS.has(perm)));
+  ses.setPermissionCheckHandler((_wc, perm) => !BLOCKED_PERMISSIONS.has(perm));
+}
+
+function attachWebContentsSafety(win, wc, { windowId, role }) {
+  if (!wc || wc.isDestroyed()) return;
+  wc.on('will-navigate', e => e.preventDefault());
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.on('before-input-event', (e, input) => {
+    if (input.type !== 'keydown') return;
+    const key = String(input.key || '').toLowerCase();
+    if (input.control && !input.alt && !input.shift && key === 't') {
+      e.preventDefault();
+      pinAlways(win);
+      return;
+    }
+    if (input.control && input.alt && input.shift && key === 'a') {
+      e.preventDefault();
+      wc.send('pin-open-above');
+    }
+  });
+  let rendererCrashReloads = 0;
+  wc.on('render-process-gone', (_event, details) => {
+    const reason = details?.reason || 'unknown';
+    console.error('[window] renderer gone:', reason, details?.exitCode);
+    if (closingWindows.has(win) || win.isDestroyed() || wc.isDestroyed()) return;
+    if (rendererCrashReloads >= 2) return;
+    rendererCrashReloads++;
+    const query = role === 'secondary'
+      ? { wid: windowId, pane: 'secondary', recovered: '1' }
+      : { wid: windowId, recovered: '1' };
+    wc.loadFile('index.html', { query }).catch(err => {
+      console.warn('RefBoard window reload after renderer crash failed:', err?.message || err);
+    });
+  });
+}
+
+async function enterSplit(win, ratio) {
+  const st = paneState(win);
+  if (!st || win.isDestroyed()) return { opened: false };
+  if (st.secondaryView) return { opened: true, ...splitStatePayload(win) };
+  if (boardPaneCount() >= MAX_BOARD_WINDOWS) {
+    return { opened: false, reason: 'window-limit', limit: MAX_BOARD_WINDOWS };
+  }
+  st.splitRatio = clampSplitRatio(ratio ?? st.splitRatio);
+  const secondaryId = crypto.randomUUID();
+  const secondaryView = new WebContentsView({
+    webPreferences: boardWebPreferences(secondaryId),
+  });
+  secondaryView.setBackgroundColor('#141519');
+  st.layout.addChildView(secondaryView);
+  st.secondaryView = secondaryView;
+  st.secondaryWindowId = secondaryId;
+  registerSender(secondaryView.webContents, win);
+  attachWebContentsSafety(win, secondaryView.webContents, { windowId: secondaryId, role: 'secondary' });
+  win.setMinimumSize(SPLIT_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+  startSplitAnim(win, 'in');
+  await secondaryView.webContents.loadFile('index.html', {
+    query: { wid: secondaryId, pane: 'secondary' },
+  }).catch(err => {
+    console.warn('RefBoard split pane failed to load:', err?.message || err);
+  });
+  try { secondaryView.webContents.focus(); } catch { /* focus is best-effort */ }
+  sendSplitState(win);
+  startPaneActivityPolling(win);
+  return { opened: true, ...splitStatePayload(win) };
+}
+
+function requestSplitExit(win) {
+  const st = paneState(win);
+  if (!st?.secondaryView) {
+    sendSplitState(win);
+    return { closed: true };
+  }
+  if (st.pendingClose === 'split-exit' || st.splitAnim?.dir === 'out') {
+    return { pending: true };
+  }
+  st.pendingClose = 'split-exit';
+  const wc = st.secondaryView.webContents;
+  if (!wc || wc.isDestroyed() || wc.isCrashed()) {
+    destroySecondary(win);
+    return { closed: true };
+  }
+  wc.send('close-request', { reason: 'split-exit' });
+  return { pending: true };
+}
+
+function requestWindowClose(win) {
+  if (!win || win.isDestroyed()) return;
+  const st = paneState(win);
+  const secondary = st?.secondaryView?.webContents;
+  if (secondary && !secondary.isDestroyed() && !secondary.isCrashed()) {
+    st.pendingClose = 'window';
+    secondary.send('close-request');
+    return;
+  }
+  const primary = primaryWebContents(win);
+  if (primary && !primary.isDestroyed() && !primary.isCrashed()) {
+    primary.send('close-request');
+  }
 }
 
 const pinByWindow = new WeakMap();
@@ -78,13 +519,13 @@ function pinSnapshot(win) {
 
 function sendPinState(win) {
   if (!win || win.isDestroyed()) return;
-  win.webContents.send('pin-state-changed', pinSnapshot(win));
+  sendToPanes(win, 'pin-state-changed', pinSnapshot(win));
 }
 
 function toastPin(win, msg) {
   if (!win || win.isDestroyed()) return;
   const safe = JSON.stringify(msg);
-  win.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
+  executeInPanes(win, `window.__pinToast && window.__pinToast(${safe})`);
 }
 
 function clearPinWatch(state) {
@@ -380,7 +821,7 @@ function notifyRenderer(msg) {
   const safe = JSON.stringify(msg);
   for (const candidate of windows) {
     if (!candidate || candidate.isDestroyed()) continue;
-    candidate.webContents.executeJavaScript(`window.__pinToast && window.__pinToast(${safe})`).catch(() => {});
+    executeInPanes(candidate, `window.__pinToast && window.__pinToast(${safe})`);
   }
 }
 
@@ -1193,7 +1634,7 @@ function setupIpc() {
     const filePath = /\.refboard$/i.test(String(payload?.filePath || ''))
       ? path.resolve(String(payload.filePath))
       : null;
-    if (windows.size >= MAX_BOARD_WINDOWS) {
+    if (boardPaneCount() >= MAX_BOARD_WINDOWS) {
       const owner = focusedWindow();
       if (owner && !owner.isDestroyed()) {
         if (owner.isMinimized()) owner.restore();
@@ -1205,13 +1646,58 @@ function setupIpc() {
     return { opened: !!boardWindow, limit: MAX_BOARD_WINDOWS };
   });
 
-  ipcMain.handle('get-board-window-count', () =>
-    [...windows].filter(candidate => candidate && !candidate.isDestroyed()).length);
+  ipcMain.handle('get-board-window-count', () => boardPaneCount());
+
+  ipcMain.handle('split-enter', async (event, payload = {}) => {
+    const target = windowForEvent(event);
+    if (!target || target.isDestroyed()) return { opened: false };
+    if (isSecondarySender(target, event.sender)) return { opened: false, reason: 'nested' };
+    return enterSplit(target, payload?.ratio);
+  });
+
+  ipcMain.handle('split-exit', async event => {
+    const target = windowForEvent(event);
+    if (!target || target.isDestroyed()) return { closed: true };
+    if (isSecondarySender(target, event.sender)) {
+      animateSplitClose(target);
+      return { pending: true };
+    }
+    return requestSplitExit(target);
+  });
+
+  ipcMain.on('split-drag-start', (event, payload = {}) => {
+    const target = windowForEvent(event);
+    if (target && !target.isDestroyed()) startSplitDrag(target, payload.screenX);
+  });
+
+  ipcMain.on('split-drag-move', (event, payload = {}) => {
+    const target = windowForEvent(event);
+    if (target && !target.isDestroyed()) applySplitScreenX(target, payload.screenX);
+  });
+
+  ipcMain.on('split-drag-end', event => {
+    const target = windowForEvent(event);
+    if (target && !target.isDestroyed()) stopSplitDrag(target);
+  });
 
   ipcMain.on('close-confirmed', event => {
     const target = windowForEvent(event);
     if (!target || target.isDestroyed()) return;
+    const st = paneState(target);
+    if (st?.pendingClose === 'split-exit' && isSecondarySender(target, event.sender)) {
+      animateSplitClose(target);
+      return;
+    }
+    if (st?.pendingClose === 'window' && isSecondarySender(target, event.sender)) {
+      const primary = primaryWebContents(target);
+      if (primary && !primary.isDestroyed() && !primary.isCrashed()) {
+        primary.send('close-request');
+        return;
+      }
+    }
+    if (st) st.pendingClose = null;
     closingWindows.add(target);
+    destroySecondary(target);
     target.close();
   });
 
@@ -1229,7 +1715,7 @@ function setupIpc() {
 
   ipcMain.on('window-close', event => {
     const target = windowForEvent(event);
-    if (target && !target.isDestroyed()) target.webContents.send('close-request');
+    if (target && !target.isDestroyed()) requestWindowClose(target);
   });
 
   ipcMain.handle('window-is-maximized', event => {
@@ -1250,7 +1736,7 @@ function setupIpc() {
     // unsaved-changes handshake first; the install runs when the last one is gone.
     installUpdateWhenAllClosed = true;
     for (const candidate of windows) {
-      if (candidate && !candidate.isDestroyed()) candidate.webContents.send('close-request');
+      if (candidate && !candidate.isDestroyed()) requestWindowClose(candidate);
     }
     return { ok: true };
   });
@@ -1402,94 +1888,91 @@ async function createWindow(startupFilePath = null) {
   const win = new BrowserWindow({
     width: 1360,
     height: 860,
-    minWidth: 720,
-    minHeight: 480,
+    minWidth: WINDOW_MIN_WIDTH,
+    minHeight: WINDOW_MIN_HEIGHT,
     backgroundColor: '#141519',
     title: 'RefBoard',
     icon: appIconPath(),
     frame: false,
     autoHideMenuBar: true,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      spellcheck: false,
-      preload: path.join(__dirname, 'preload.js'),
-      additionalArguments: [`--refboard-window-id=${windowId}`],
-    },
+    webPreferences: boardWebPreferences(windowId),
   });
   windows.add(win);
 
+  const layout = new View();
+  layout.setBackgroundColor('#141519');
+  win.setContentView(layout);
+
+  let primaryView;
+  try {
+    primaryView = new WebContentsView({ webContents: win.webContents });
+  } catch {
+    primaryView = new WebContentsView({
+      webPreferences: boardWebPreferences(windowId),
+    });
+  }
+  primaryView.setBackgroundColor('#141519');
+  layout.addChildView(primaryView);
+
+  const st = {
+    layout,
+    primaryView,
+    secondaryView: null,
+    primaryWindowId: windowId,
+    secondaryWindowId: null,
+    splitRatio: SPLIT_RATIO_DEFAULT,
+    pendingClose: null,
+    dragging: false,
+    dragTimer: 0,
+    splitAnim: null,
+    animTimer: 0,
+    paneActivityTimer: null,
+  };
+  windowPanes.set(win, st);
+  registerSender(primaryView.webContents, win);
+  layoutViews(win);
+  win.on('resize', () => {
+    layoutViews(win);
+    if (paneState(win)?.secondaryView) sendSplitState(win);
+  });
+
   Menu.setApplicationMenu(null);
-  await win.loadFile('index.html', { query: { wid: windowId } }).catch(err => {
+  attachWebContentsSafety(win, primaryView.webContents, { windowId, role: 'primary' });
+  hookSessionPermissions(primaryView.webContents.session);
+
+  await primaryView.webContents.loadFile('index.html', { query: { wid: windowId } }).catch(err => {
     console.warn('RefBoard window initial load failed:', err?.message || err);
   });
 
-  win.webContents.on('will-navigate', e => e.preventDefault());
-  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-
-  // Only local features are used (system fonts + clipboard). Block privacy/device
-  // permissions; everything not listed (local-fonts, clipboard-*, fullscreen,
-  // persistent-storage) stays allowed so nothing the app relies on breaks.
-  const ses = win.webContents.session;
-  const BLOCKED_PERMISSIONS = new Set([
-    'geolocation', 'camera', 'microphone', 'media', 'notifications',
-    'midi', 'midiSysex', 'push', 'background-sync', 'speaker-selection',
-    'hid', 'serial', 'usb', 'bluetooth', 'idle-detection',
-    'display-capture', 'window-management',
-  ]);
-  ses.setPermissionRequestHandler((_wc, perm, cb) => cb(!BLOCKED_PERMISSIONS.has(perm)));
-  ses.setPermissionCheckHandler((_wc, perm) => !BLOCKED_PERMISSIONS.has(perm));
-
-  win.webContents.on('before-input-event', (e, input) => {
-    if (input.type !== 'keydown') return;
-    const key = String(input.key || '').toLowerCase();
-    if (input.control && !input.alt && !input.shift && key === 't') {
-      e.preventDefault();
-      pinAlways(win);
-      return;
-    }
-    if (input.control && input.alt && input.shift && key === 'a') {
-      e.preventDefault();
-      win.webContents.send('pin-open-above');
-    }
-  });
-
   win.on('closed', () => {
+    stopSplitDrag(win, { notify: false });
+    stopSplitAnim(win);
+    destroySecondary(win);
     unpinWindow(win, { silent: true });
     windows.delete(win);
   });
 
   const sendMaximizeState = () => {
     if (!win.isDestroyed()) {
-      win.webContents.send('window-maximize-changed', win.isMaximized());
+      sendToPanes(win, 'window-maximize-changed', win.isMaximized());
     }
   };
   win.on('maximize', sendMaximizeState);
   win.on('unmaximize', sendMaximizeState);
-  win.webContents.on('did-finish-load', () => {
+  primaryView.webContents.on('did-finish-load', () => {
     sendMaximizeState();
+    sendSplitState(win);
     if (startupFilePath && !win.isDestroyed()) {
-      win.webContents.send('open-board-path', startupFilePath);
+      primaryView.webContents.send('open-board-path', startupFilePath);
     }
-  });
-
-  let rendererCrashReloads = 0;
-  win.webContents.on('render-process-gone', (_event, details) => {
-    const reason = details?.reason || 'unknown';
-    console.error('[window] renderer gone:', reason, details?.exitCode);
-    if (closingWindows.has(win) || win.isDestroyed()) return;
-    if (rendererCrashReloads >= 2) return;
-    rendererCrashReloads++;
-    win.loadFile('index.html', { query: { wid: windowId, recovered: '1' } }).catch(err => {
-      console.warn('RefBoard window reload after renderer crash failed:', err?.message || err);
-    });
   });
 
   win.on('close', (e) => {
     if (closingWindows.has(win)) return;
-    if (win.webContents.isDestroyed() || win.webContents.isCrashed()) return;
+    const primary = primaryWebContents(win);
+    if (!primary || primary.isDestroyed() || primary.isCrashed()) return;
     e.preventDefault();
-    win.webContents.send('close-request');
+    requestWindowClose(win);
   });
 
   return win;
@@ -1501,7 +1984,7 @@ app.on('second-instance', (_e, argv) => {
   if (win) {
     if (win.isMinimized()) win.restore();
     win.focus();
-    if (filePath) win.webContents.send('open-board-path', filePath);
+    if (filePath) sendToPrimary(win, 'open-board-path', filePath);
   } else if (filePath) {
     pendingOpenPath = filePath;
   }
@@ -1511,7 +1994,7 @@ app.on('open-file', (e, filePath) => {
   e.preventDefault();
   if (/\.refboard$/i.test(filePath)) {
     const win = focusedWindow();
-    if (win && !win.isDestroyed()) win.webContents.send('open-board-path', filePath);
+    if (win && !win.isDestroyed()) sendToPrimary(win, 'open-board-path', filePath);
     else pendingOpenPath = filePath;
   }
 });
