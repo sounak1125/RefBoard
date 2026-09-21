@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   splitDragStart: (screenX) => ipcRenderer.send('split-drag-start', { screenX }),
   splitDragMove: (screenX) => ipcRenderer.send('split-drag-move', { screenX }),
   splitDragEnd: () => ipcRenderer.send('split-drag-end'),
+  reportBoardSession: (payload) => ipcRenderer.send('board-session', payload),
+  onBlockedBoardPath: (cb) => ipcRenderer.on('blocked-board-path', (_e, filePath) => cb(filePath || null)),
   onSplitStateChange: (cb) => ipcRenderer.on('split-state-changed', (_e, state) => cb(state)),
   onPaneActivity: (cb) => ipcRenderer.on('pane-activity', (_e, state) => cb(state)),
   updaterInit: (opts) => ipcRenderer.invoke('updater-init', opts),
