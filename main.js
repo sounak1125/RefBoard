@@ -148,16 +148,21 @@ function sendPaneActivity(win) {
     try { secondaryWc.send('pane-activity', { active: true, enabled: false }); } catch { /* gone */ }
     return;
   }
-  const point = screen.getCursorScreenPoint();
-  const bounds = win.getContentBounds();
-  const x = point.x - bounds.x;
-  const y = point.y - bounds.y;
-  const splitX = st.secondaryView.getBounds().x;
-  const onTitlebar = y < TITLEBAR_H;
-  const primaryActive = onTitlebar || x < splitX;
-  const secondaryActive = !onTitlebar && x >= splitX;
+  const primaryActive = st.activePane !== 'secondary';
+  const secondaryActive = st.activePane === 'secondary';
   try { primaryWc.send('pane-activity', { active: primaryActive, enabled: true }); } catch { /* gone */ }
   try { secondaryWc.send('pane-activity', { active: secondaryActive, enabled: true }); } catch { /* gone */ }
+}
+
+function sendSplitPinMenu(win, open) {
+  const st = paneState(win);
+  if (!st) return;
+  st.splitPinOpen = !!open;
+  const payload = { open: st.splitPinOpen };
+  const primary = primaryWebContents(win);
+  const secondary = st.secondaryView?.webContents;
+  try { if (primary && !primary.isDestroyed()) primary.send('split-pin-menu', payload); } catch { /* gone */ }
+  try { if (secondary && !secondary.isDestroyed()) secondary.send('split-pin-menu', payload); } catch { /* gone */ }
 }
 
 function sendBlockedBoardPath(win) {
@@ -169,8 +174,8 @@ function sendBlockedBoardPath(win) {
 
 function startPaneActivityPolling(win) {
   const st = paneState(win);
-  if (!st || st.paneActivityTimer) return;
-  st.paneActivityTimer = setInterval(() => sendPaneActivity(win), 120);
+  if (!st) return;
+  if (st.activePane !== 'primary' && st.activePane !== 'secondary') st.activePane = 'primary';
   sendPaneActivity(win);
 }
 
@@ -384,6 +389,8 @@ function destroySecondary(win) {
   st.secondaryWindowId = null;
   st.secondaryPath = null;
   st.secondaryBoardReady = false;
+  st.splitPinOpen = false;
+  st.activePane = 'primary';
   st.pendingClose = null;
   try { st.layout.removeChildView(view); } catch { /* already detached */ }
   closeWebContentsView(view);
@@ -479,6 +486,10 @@ function requestSplitExit(win) {
     return { closed: true };
   }
   if (st.pendingClose === 'split-exit' || st.splitAnim?.dir === 'out') {
+    const wc = st.secondaryView?.webContents;
+    if (wc && !wc.isDestroyed() && !wc.isCrashed()) {
+      wc.send('close-request', { reason: 'split-exit' });
+    }
     return { pending: true };
   }
   st.pendingClose = 'split-exit';
@@ -1695,6 +1706,38 @@ function setupIpc() {
     if (target && !target.isDestroyed()) stopSplitDrag(target);
   });
 
+  ipcMain.on('app-settings-changed', (event, payload) => {
+    for (const win of windows) {
+      if (!win || win.isDestroyed()) continue;
+      for (const wc of paneWebContentsList(win)) {
+        if (wc === event.sender) continue;
+        try { wc.send('app-settings-changed', payload); } catch { /* gone */ }
+      }
+    }
+  });
+
+  ipcMain.on('pane-select', event => {
+    const target = windowForEvent(event);
+    const st = paneState(target);
+    if (!st?.secondaryView) return;
+    st.activePane = isSecondarySender(target, event.sender) ? 'secondary' : 'primary';
+    sendPaneActivity(target);
+  });
+
+  ipcMain.on('split-pin-menu-toggle', event => {
+    const target = windowForEvent(event);
+    const st = paneState(target);
+    if (!st?.secondaryView) return;
+    sendSplitPinMenu(target, !st.splitPinOpen);
+  });
+
+  ipcMain.on('split-pin-menu-close', event => {
+    const target = windowForEvent(event);
+    const st = paneState(target);
+    if (!st?.splitPinOpen) return;
+    sendSplitPinMenu(target, false);
+  });
+
   ipcMain.on('board-session', (event, payload = {}) => {
     const target = windowForEvent(event);
     const st = paneState(target);
@@ -1708,6 +1751,12 @@ function setupIpc() {
     }
     st.primaryPath = filePath;
     sendBlockedBoardPath(target);
+  });
+
+  ipcMain.on('close-cancelled', event => {
+    const target = windowForEvent(event);
+    const st = paneState(target);
+    if (st?.pendingClose === 'split-exit' || st?.pendingClose === 'window') st.pendingClose = null;
   });
 
   ipcMain.on('close-confirmed', event => {
