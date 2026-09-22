@@ -1,18 +1,52 @@
 {
-  "headline": "One file per board again",
-  "summary": "A board is a single .refboard file once more, and saving still writes only what changed. Boards saved by 2.1.2 open only in 2.1.2 or later.",
+  "headline": "Two boards, side by side",
+  "summary": "Open a second board beside the one you are already using. Both stay in step, and closing the split asks you to save.",
   "sections": {
-    "new": [],
-    "improved": [
+    "new": [
       {
-        "title": "Boards are one file",
-        "description": "Your images live inside the .refboard file again, so a board is one thing to move, share, or back up. Boards from 2.1.0 and 2.1.1 fold their .refboard.images file back in the next time you save them."
+        "title": "Split view",
+        "description": "Use the control beside the minimap to open a second board in the same window. It slides in from the right and starts on Home, so you can pick a board. You cannot open the board that is already open on the left."
       },
       {
-        "title": "Saves stay quick",
-        "description": "A save adds only new or changed images to the file instead of rewriting everything, and a save interrupted by a crash leaves your previous board intact."
+        "title": "Click to choose a side",
+        "description": "Click a board to work in it. The other side darkens so you can see which one is active. Moving the mouse no longer switches sides."
+      },
+      {
+        "title": "A close that asks to save",
+        "description": "Closing split view asks you to save unsaved work on the right board. You can save, discard, or cancel, and you can try again if you cancel."
       }
     ],
-    "fixed": []
+    "improved": [
+      {
+        "title": "One title bar",
+        "description": "The title bar runs across both boards. Minimize, maximize, close, and pin stay at the top-right, and the pin menu opens where you can use it."
+      },
+      {
+        "title": "Settings follow both boards",
+        "description": "Theme, grid style, toolbar, and the rest of Settings apply to both panes. Each pane keeps its own minimap."
+      },
+      {
+        "title": "Dialogs stay in their pane",
+        "description": "Settings and other windows fit inside the side that opened them. The Saved notice stays in that pane as well."
+      },
+      {
+        "title": "A visible split",
+        "description": "A thin seam shows where the two boards meet, and you can drag it to resize them. The right tool tab stays on its icon until you open it."
+      },
+      {
+        "title": "Steadier resizing",
+        "description": "Images, icons, and the item count stay still while you drag the window edges. They no longer squash or jitter."
+      }
+    ],
+    "fixed": [
+      {
+        "title": "Split view closes reliably",
+        "description": "After you change the right board, closing split view still asks to save. The close control keeps working if you cancel."
+      },
+      {
+        "title": "The right tool tab stays put",
+        "description": "Turning on Always on top no longer drops the right board's tool tab."
+      }
+    ]
   }
 }
