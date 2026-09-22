@@ -23,7 +23,8 @@ assert.match(preload, /splitDragMove: \(screenX\) => ipcRenderer\.send\('split-d
 assert.match(preload, /onSplitStateChange: \(cb\) => ipcRenderer\.on\('split-state-changed'/, 'the bridge must forward split layout state');
 
 assert.match(html, /id="minimapToggle"[\s\S]{0,400}?id="splitToggle"/, 'the split control must sit next to the minimap toggle');
-assert.match(html, /id="splitDivider"/, 'the split edge must keep an invisible drag hit target');
+assert.match(html, /id="splitDivider"/, 'the split edge must keep a drag hit target');
+assert.match(html, /body\.split-active:not\(\.pane-secondary\) #splitDivider\{[\s\S]*?background:#0a0c11/, 'split view must show a visible seam between the panes');
 assert.doesNotMatch(html, /#splitDivider::after/, 'the split edge must not show a visual drag handle');
 assert.match(html, /html\.pane-secondary #titlebar,/, 'the right pane must not keep a second titlebar');
 assert.match(html, /html\.pane-secondary #titlebarClose,/, 'the right pane must not keep a second close button');
@@ -42,8 +43,10 @@ assert.match(main, /reason: 'split-exit'/, 'closing split must run the unsaved h
 assert.match(html, /const BOARD_PANE =/, 'the renderer must know whether it is the secondary pane');
 assert.match(html, /splitRatio: 0\.5/, 'the divider ratio must persist as an app setting');
 assert.match(html, /api\.splitEnter\(appSettings\.splitRatio\)/, 'entering split must send the remembered ratio');
-assert.match(main, /function sendPaneActivity\(win\)/, 'main must track which pane the cursor is over');
-assert.match(main, /startPaneActivityPolling\(win\)/, 'main must poll cursor position while split is active');
+assert.match(main, /function sendPaneActivity\(win\)/, 'main must track which split pane is selected');
+assert.match(main, /ipcMain\.on\('pane-select'/, 'a pane becomes selected when it is clicked');
+assert.match(preload, /reportPaneClick: \(\) => ipcRenderer\.send\('pane-select'\)/, 'the bridge must report a pane click');
+assert.match(html, /rgba\(0,0,0,\.42\)/, 'the inactive pane dim is stronger than a light hover shade');
 assert.match(main, /stopPaneActivityPolling\(win\)/, 'main must stop polling when split exits');
 assert.match(preload, /onPaneActivity: \(cb\) => ipcRenderer\.on\('pane-activity'/, 'the bridge must forward pane activity state');
 assert.match(html, /pane-dim/, 'the renderer must dim the inactive pane');
@@ -52,6 +55,17 @@ assert.match(main, /blocked-board-path/, 'the right pane learns which board the 
 assert.match(preload, /reportBoardSession: \(payload\) => ipcRenderer\.send\('board-session'/, 'a pane must report when its board is open');
 assert.match(preload, /onBlockedBoardPath: \(cb\) => ipcRenderer\.on\('blocked-board-path'/, 'the right pane must hear the left pane board path');
 assert.match(html, /function rejectBlockedBoard\(filePath\)/, 'the right pane must refuse the board already open on the left');
-assert.match(html, /publishBoardSession\(true\)/, 'dimming starts only after the opened board finishes loading its images');
+assert.match(main, /app-settings-changed/, 'settings changes must reach every open pane');
+assert.match(preload, /broadcastAppSettings: \(payload\) => ipcRenderer\.send\('app-settings-changed'/, 'the bridge must broadcast app settings');
+assert.match(html, /html\.window-resizing \*/, 'window resize must not animate the canvas or chrome');
+assert.match(html, /function onWindowResize\(\)/, 'live window resize snaps the board instead of stretching it');
+assert.match(main, /function sendSplitPinMenu\(win, open\)/, 'main must show the pin menu above the right pane');
+assert.match(preload, /toggleSplitPinMenu: \(\) => ipcRenderer\.send\('split-pin-menu-toggle'\)/, 'the bridge must toggle the split pin menu');
+assert.match(html, /\.modal \.settings2-card[\s\S]*?max-width:calc\(100% - 32px\)/, 'settings must shrink to the pane that opened them');
+assert.match(html, /BOARD_PANE === 'secondary'\) return;/, 'the right pane must not open its toolbar from the split seam');
+
+assert.match(html, /minimap: keepMinimap/, 'each pane keeps its own minimap');
+assert.match(preload, /cancelClose: \(\) => ipcRenderer\.send\('close-cancelled'\)/, 'cancelling the save prompt must release split close');
+assert.match(main, /ipcMain\.on\('close-cancelled'/, 'main must clear a cancelled split close');
 
 console.log('split-view contract tests passed');

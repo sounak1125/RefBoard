@@ -91,6 +91,13 @@ body{
   display:block; touch-action:none;
   transition:top .32s cubic-bezier(.22,1,.36,1), height .32s cubic-bezier(.22,1,.36,1);
 }
+html.window-resizing,
+html.window-resizing *,
+html.window-resizing *::before,
+html.window-resizing *::after{
+  transition:none !important;
+  animation:none !important;
+}
 .draw-size-preview{
   position:fixed; z-index:89; left:0; top:0;
   width:8px; height:8px; border:1px solid rgba(255,255,255,.96); border-radius:50%;
@@ -2157,12 +2164,12 @@ body.board-active #whatsNewNotice{ display:none; }
 
 /* ---------- modals ---------- */
 .modal{
-  position:fixed; inset:0; z-index:70; display:none;
+  position:fixed; inset:0; z-index:260; display:none;
   align-items:center; justify-content:center;
   background:var(--scrim); backdrop-filter:blur(3px);
 }
 .modal.show{ display:flex; }
-#autosaveIntervalModal, #unsavedModal, #confirmModal, #noteLinkModal{ z-index:85; }
+#autosaveIntervalModal, #unsavedModal, #confirmModal, #noteLinkModal{ z-index:270; }
 .card{
   background:var(--card); border:1px solid rgba(255,255,255,.09); border-radius:16px;
   padding:22px 24px; width:430px; max-width:calc(100vw - 40px);
@@ -2315,7 +2322,7 @@ body.board-active #whatsNewNotice{ display:none; }
 }
 .set-subhead{ font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--dim); margin:14px 0 2px; }
 .theme-row{
-  width:336px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
+  width:min(336px, 100%); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
 }
 .theme-swatch{
   --sw-bg:#0e1118; --sw-surface:#1e2532; --sw-acc:#6eabff;
@@ -2380,7 +2387,7 @@ body.board-active #whatsNewNotice{ display:none; }
 .settings2-head .modal-x{ position:absolute; right:12px; top:10px; width:28px; height:28px; border:none; border-radius:8px; background:transparent; color:var(--dim); font-size:18px; line-height:1; cursor:pointer; }
 .settings2-head .modal-x:hover{ background:var(--surface-3); color:var(--txt); }
 .settings2-body{ display:flex; flex:1; min-height:0; }
-.settings2-nav{ width:210px; flex-shrink:0; border-right:1px solid var(--line); padding:12px; display:flex; flex-direction:column; gap:6px; overflow:auto; }
+.settings2-nav{ width:210px; flex:0 1 210px; min-width:132px; border-right:1px solid var(--line); padding:12px; display:flex; flex-direction:column; gap:6px; overflow:auto; }
 .settings2-search{ height:34px; border-radius:9px; border:1px solid var(--line); background:var(--panel); color:var(--txt); padding:0 10px; font-size:13px; outline:none; margin-bottom:6px; }
 .s2-tab{ display:flex; align-items:center; gap:10px; padding:10px 12px; border:0; border-radius:9px; background:transparent; color:var(--mut); font-size:13px; text-align:left; cursor:pointer; }
 .s2-tab:hover{ background:rgba(255,255,255,.05); color:var(--txt); }
@@ -2395,7 +2402,7 @@ body.board-active #whatsNewNotice{ display:none; }
 .s2-cat:first-child{ margin-top:0; }
 .s2-keys{ display:flex; align-items:center; gap:4px; }
 .s2-plus{ color:var(--dim); font-size:10px; }
-.s2-row{ display:flex; align-items:center; justify-content:space-between; gap:24px; padding:11px 4px; border-bottom:1px solid var(--line); }
+.s2-row{ display:flex; align-items:center; justify-content:space-between; gap:24px; padding:11px 4px; border-bottom:1px solid var(--line); flex-wrap:wrap; min-width:0; }
 .s2-row:last-child{ border-bottom:0; }
 .s2-row .s2-label{ font-size:13px; color:var(--txt); }
 .s2-row .s2-sub{ font-size:11.5px; color:var(--dim); margin-top:2px; }
@@ -2951,7 +2958,13 @@ html.pane-secondary #titlebarPin,
 html.pane-secondary #titlebarMin,
 html.pane-secondary #titlebarMax,
 html.pane-secondary #titlebarPinMenu,
-html.pane-secondary #titlebarPinWindows,
+html.pane-secondary #titlebarPinWindows{ display:none !important; }
+html.pane-secondary body.split-pin-open #titlebarPinMenu.show{
+  display:block !important; top:8px; right:8px; left:auto; z-index:220;
+}
+html.pane-secondary body.split-pin-open #titlebarPinWindows.show{
+  display:block !important; z-index:221;
+}
 html.pane-secondary #titlebarClose,
 html.pane-secondary #titlebarControls,
 html.pane-secondary #rwNewWindow,
@@ -2965,21 +2978,27 @@ html.pane-secondary body.board-active #empty,
 html.pane-secondary body.board-active:not(.titlebar-revealed) #empty{
   top:0 !important;
 }
-html.pane-secondary #board,
 html.pane-secondary body.board-active #board,
+html.pane-secondary body.board-active.titlebar-revealed #board,
 html.pane-secondary body.board-active:not(.titlebar-revealed) #board{
+  top:0 !important;
   height:100vh !important;
+}
+html.pane-secondary body.board-active.titlebar-revealed #toolbar,
+html.pane-secondary body.board-active.titlebar-revealed #toolbarEdgeHandle,
+html.pane-secondary body.board-active.titlebar-revealed #drawPanelWrap{
+  top:50%;
 }
 body.split-active.pane-dim::after,
 html.pane-secondary body.pane-dim::after{
   content:''; position:fixed; inset:0; z-index:150; pointer-events:none;
-  background:rgba(0,0,0,.28); opacity:1;
+  background:rgba(0,0,0,.42); opacity:1;
   transition:opacity .16s ease;
 }
 body.split-active:not(.pane-dim)::after,
 html.pane-secondary body:not(.pane-dim)::after{
   content:''; position:fixed; inset:0; z-index:150; pointer-events:none;
-  background:rgba(0,0,0,.28); opacity:0;
+  background:rgba(0,0,0,.42); opacity:0;
   transition:opacity .16s ease;
 }
 html.pane-secondary body.pane-dim::after,
@@ -3006,7 +3025,24 @@ body.board-active #minimapToggle.on + #splitToggle{ right:50px; bottom:150px; }
 }
 html.pane-secondary #splitDivider{ display:block; left:0; }
 body.split-active:not(.pane-secondary) #splitDivider{
-  display:block; right:auto; left:calc(var(--split-left, 50%) - 3px);
+  display:block;
+  top:var(--titlebar-h);
+  left:var(--split-left, 50%);
+  width:6px;
+  background:#0a0c11;
+  box-shadow:inset 1px 0 0 rgba(255,255,255,.12), inset -1px 0 0 rgba(255,255,255,.12);
+}
+body.split-active:not(.pane-secondary) .modal,
+body.split-active:not(.pane-secondary) #savingOverlay,
+body.split-active:not(.pane-secondary) #openingOverlay{
+  left:0;
+  right:var(--split-inset-right);
+}
+.modal .card,
+.modal .settings2-card,
+#savingOverlay .save-card,
+#openingOverlay .save-card{
+  max-width:calc(100% - 32px);
 }
 body.split-active:not(.pane-secondary){
   --split-inset-right:calc(100vw - var(--split-left, 100vw));
@@ -3026,7 +3062,8 @@ body.split-active:not(.pane-secondary).board-active:not(.titlebar-revealed) #boa
   top:var(--titlebar-h); height:calc(100vh - var(--titlebar-h));
 }
 body.split-active:not(.pane-secondary) #selbar,
-body.split-active:not(.pane-secondary) #toast{
+body.split-active:not(.pane-secondary) #toast,
+body.split-active:not(.pane-secondary) #saveToast{
   left:calc(var(--split-left, 100vw) / 2);
 }
 body.split-active.board-active:not(.titlebar-revealed):not(.pane-secondary) #selbar{
@@ -4896,6 +4933,13 @@ function setToolbarRevealed(on) {
   if (reveal) requestAnimationFrame(syncToolbarDrawerOffset);
 }
 
+function collapseSplitToolbar() {
+  if (!splitActive || !toolbarIsFloating()) return;
+  if (drawFeaturesOpen) closeDrawFeatures();
+  if (addFeaturesOpen) closeAddFeatures();
+  setToolbarRevealed(false);
+}
+
 function toolbarShouldStayOpen() {
   if (!toolbarIsFloating()) return true;
   if (drawFeaturesOpen || addFeaturesOpen || brushDrawerOpen) return true;
@@ -4952,8 +4996,12 @@ function setupToolbarBehavior() {
     region.addEventListener('focusout', () => scheduleToolbarHide());
   }
   document.addEventListener('mousemove', e => {
+    if (BOARD_PANE === 'secondary') return;
     if (e.clientX <= 10) revealToolbar();
   }, { passive: true });
+  document.documentElement.addEventListener('mouseleave', () => {
+    if (splitActive) collapseSplitToolbar();
+  });
   window.addEventListener('resize', () => {
     syncToolbarDrawerOffset();
     syncAddPanelPosition();
@@ -4979,6 +5027,9 @@ function syncAddPanelPosition() {
   wrap.style.top = top + 'px';
 }
 let splitContentWidth = 0;
+function paneLimit() {
+  return splitContentWidth > 0 ? splitContentWidth : innerWidth;
+}
 function boardLayoutSize() {
   const cl = chromeLeft();
   const viewW = splitContentWidth > 0 ? splitContentWidth : innerWidth;
@@ -5510,10 +5561,12 @@ const SETTINGS_DEFAULTS = {
   minimap: false,
   imageMemoryMB: 'auto',
   splitRatio: 0.5,
+  gridStyle: 'dots',
   // How long tag labels stay up: 'always' | 'selected' | 'never'.
   tagLabels: 'always',
 };
 let appSettings = { ...SETTINGS_DEFAULTS };
+let applyingRemoteSettings = false;
 let undoLimit = SETTINGS_DEFAULTS.undoLimit;
 let renderQuality = SETTINGS_DEFAULTS.renderQuality;
 let pauseWhenHidden = SETTINGS_DEFAULTS.pauseWhenHidden;
@@ -5577,10 +5630,50 @@ function loadAppSettings() {
   appSettings.toolbarMode = normalizeToolbarMode(appSettings.toolbarMode);
   appSettings.imageMemoryMB = normalizeImageMemory(appSettings.imageMemoryMB);
   appSettings.splitRatio = clampSplitRatioSetting(appSettings.splitRatio);
+  appSettings.gridStyle = appSettings.gridStyle === 'none' ? 'none' : 'dots';
 }
 function saveAppSettings() {
   try { localStorage.setItem('refboard.settings', JSON.stringify(appSettings)); } catch (e) {}
+  publishSharedSettings();
 }
+function publishSharedSettings() {
+  if (applyingRemoteSettings) return;
+  window.RefBoardAPI?.broadcastAppSettings?.({
+    settings: appSettings,
+    theme: localStorage.getItem('refboard.theme') || 'midnight',
+  });
+}
+function adoptSharedSettings(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  applyingRemoteSettings = true;
+  try {
+    if (payload.theme) applyTheme(payload.theme);
+    if (payload.settings && typeof payload.settings === 'object') {
+      const keepMinimap = appSettings.minimap;
+      appSettings = { ...SETTINGS_DEFAULTS, ...payload.settings, minimap: keepMinimap };
+      appSettings.autosaveIntervalMin = normalizeAutosaveInterval(appSettings.autosaveIntervalMin);
+      appSettings.landingLayout = normalizeLandingLayout(appSettings.landingLayout);
+      appSettings.tagLabels = normalizeTagLabels(appSettings.tagLabels);
+      appSettings.toolbarMode = normalizeToolbarMode(appSettings.toolbarMode);
+      appSettings.imageMemoryMB = normalizeImageMemory(appSettings.imageMemoryMB);
+      appSettings.splitRatio = clampSplitRatioSetting(appSettings.splitRatio);
+      appSettings.gridStyle = appSettings.gridStyle === 'none' ? 'none' : 'dots';
+      try { localStorage.setItem('refboard.settings', JSON.stringify(appSettings)); } catch (e) {}
+      if (state.gridAppearance !== appSettings.gridStyle) {
+        state.gridAppearance = appSettings.gridStyle;
+        if (state.items.length) scheduleSave();
+        invalidate();
+      }
+      applyAppSettings();
+      syncSettingsUi();
+      renderTagPanel();
+      if (onLanding) void renderRecentWorks();
+    }
+  } finally {
+    applyingRemoteSettings = false;
+  }
+}
+window.RefBoardAPI?.onAppSettings?.(adoptSharedSettings);
 function applyAppSettings() {
   undoLimit = appSettings.undoLimit;
   renderQuality = appSettings.renderQuality;
@@ -8052,7 +8145,7 @@ function openDrawColorPop() {
   const gap = 9;
   let left = btnRect.right + gap;
   let top = btnRect.top + btnRect.height / 2 - popRect.height / 2;
-  if (left + popRect.width > window.innerWidth - 8) left = btnRect.left - popRect.width - gap;
+  if (left + popRect.width > paneLimit() - 8) left = btnRect.left - popRect.width - gap;
   top = clamp(top, 8, window.innerHeight - popRect.height - 8);
   pop.style.left = left + 'px';
   pop.style.top = top + 'px';
@@ -8211,7 +8304,7 @@ function openDrawCanvasPop(anchorEl) {
   const pr = pop.getBoundingClientRect();
   let left = ar.right + 8;
   let top = ar.top + ar.height / 2 - pr.height / 2;
-  if (left + pr.width > innerWidth - 8) left = ar.left - pr.width - 8;
+  if (left + pr.width > paneLimit() - 8) left = ar.left - pr.width - 8;
   top = clamp(top, 8, innerHeight - pr.height - 8);
   pop.style.left = left + 'px';
   pop.style.top = top + 'px';
@@ -9686,7 +9779,7 @@ function placePopNear(pop, anchorEl, clientX, clientY) {
     left = (clientX ?? innerWidth / 2) - popRect.width / 2;
     top = (clientY ?? innerHeight / 2) - popRect.height / 2;
   }
-  left = clamp(left, 8, window.innerWidth - popRect.width - 8);
+    left = clamp(left, 8, paneLimit() - popRect.width - 8);
   top = clamp(top, 8, window.innerHeight - popRect.height - 8);
   pop.style.left = left + 'px';
   pop.style.top = top + 'px';
@@ -12073,9 +12166,16 @@ function normalizeGridAppearance(v) {
 
 function setGridAppearance(mode) {
   if (mode !== 'none' && mode !== 'dots') return;
-  if (state.gridAppearance === mode) return;
+  const changed = state.gridAppearance !== mode;
   state.gridAppearance = mode;
-  scheduleSave(); invalidate();
+  if (appSettings.gridStyle !== mode) {
+    appSettings.gridStyle = mode;
+    saveAppSettings();
+  }
+  syncSettingsUi();
+  if (!changed) return;
+  scheduleSave();
+  invalidate();
   toast(`Appearance: ${GRID_APPEAR_LABELS[mode]}`);
 }
 
@@ -14979,17 +15079,39 @@ async function loadBoardFileImpl(file) {
 
 /* ================= rendering ================= */
 function resize() {
+  if (document.documentElement.classList.contains('window-resizing')
+      && splitActive && BOARD_PANE === 'primary' && !splitDragging) {
+    const gap = 6;
+    const ratio = clampSplitRatioSetting(appSettings.splitRatio);
+    const left = Math.max(1, Math.min(innerWidth - gap - 1, Math.round(innerWidth * ratio)));
+    if (left !== splitContentWidth) {
+      splitContentWidth = left;
+      document.documentElement.style.setProperty('--split-left', `${left}px`);
+    }
+  }
   const dpr = devicePixelRatio || 1;
   const { w, h } = boardLayoutSize();
   const cw = Math.round(w * dpr), ch = Math.round(h * dpr);
-  if (canvas.width === cw && canvas.height === ch) return;  // size unchanged → don't clear (fixes open/new-board flash)
-  canvas.width = cw;
-  canvas.height = ch;
-  canvas.style.width = w + 'px';
-  canvas.style.height = h + 'px';
-  invalidate();
+  const nextW = w + 'px', nextH = h + 'px';
+  const sizeChanged = canvas.width !== cw || canvas.height !== ch;
+  const styleChanged = canvas.style.width !== nextW || canvas.style.height !== nextH;
+  if (!sizeChanged && !styleChanged) return;
+  if (sizeChanged) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+  canvas.style.width = nextW;
+  canvas.style.height = nextH;
+  if (sizeChanged) invalidate();
 }
-window.addEventListener('resize', resize);
+let windowResizeEndTimer = 0;
+function onWindowResize() {
+  document.documentElement.classList.add('window-resizing');
+  clearTimeout(windowResizeEndTimer);
+  windowResizeEndTimer = setTimeout(() => document.documentElement.classList.remove('window-resizing'), 160);
+  resize();
+}
+window.addEventListener('resize', onWindowResize);
 
 function forceBoardCanvasRepaint() {
   const dpr = devicePixelRatio || 1;
@@ -15347,7 +15469,7 @@ function showNoteLinkPop(it, link) {
   pop.style.top = top + 'px';
   pop.style.visibility = 'hidden';
   const rect = pop.getBoundingClientRect();
-  if (left + rect.width > innerWidth - pad) left = innerWidth - rect.width - pad;
+  if (left + rect.width > paneLimit() - pad) left = paneLimit() - rect.width - pad;
   if (left < pad) left = pad;
   if (top + rect.height > innerHeight - pad) top = ay - rect.height - offsetY;
   if (top < pad) top = pad;
@@ -17848,7 +17970,7 @@ function openCtxSubMenu(anchorEl, x, y, { title, items }) {
   const ar = subEl.getBoundingClientRect();
   let left = anchorEl ? anchorEl.getBoundingClientRect().right + 4 : x;
   let top = anchorEl ? anchorEl.getBoundingClientRect().top : y;
-  if (left + ar.width > innerWidth - 8) left = Math.max(8, (anchorEl ? anchorEl.getBoundingClientRect().left : x) - ar.width - 4);
+  if (left + ar.width > paneLimit() - 8) left = Math.max(8, (anchorEl ? anchorEl.getBoundingClientRect().left : x) - ar.width - 4);
   if (top + ar.height > innerHeight - 8) top = innerHeight - ar.height - 8;
   subEl.style.left = left + 'px';
   subEl.style.top = top + 'px';
@@ -17879,7 +18001,7 @@ function openAppearMenu(anchorEl, x, y) {
   const ar = appearEl.getBoundingClientRect();
   let left = anchorEl ? anchorEl.getBoundingClientRect().right + 4 : x;
   let top = anchorEl ? anchorEl.getBoundingClientRect().top : y;
-  if (left + ar.width > innerWidth - 8) left = Math.max(8, (anchorEl ? anchorEl.getBoundingClientRect().left : x) - ar.width - 4);
+  if (left + ar.width > paneLimit() - 8) left = Math.max(8, (anchorEl ? anchorEl.getBoundingClientRect().left : x) - ar.width - 4);
   if (top + ar.height > innerHeight - 8) top = innerHeight - ar.height - 8;
   appearEl.style.left = left + 'px';
   appearEl.style.top = top + 'px';
@@ -18095,7 +18217,7 @@ function showMenu(x, y, hitItem) {
   }
   menuEl.classList.add('show');
   const r = menuEl.getBoundingClientRect();
-  menuEl.style.left = Math.min(x, innerWidth - r.width - 8) + 'px';
+  menuEl.style.left = Math.min(x, paneLimit() - r.width - 8) + 'px';
   menuEl.style.top = Math.min(y, innerHeight - r.height - 8) + 'px';
 }
 
@@ -18127,7 +18249,7 @@ function positionSettingsSelectMenu(control) {
   const rect = control.button.getBoundingClientRect();
   const width = Math.max(142, rect.width);
   control.menu.style.width = `${width}px`;
-  control.menu.style.left = `${Math.min(Math.max(8, rect.left), innerWidth - width - 8)}px`;
+  control.menu.style.left = `${Math.min(Math.max(8, rect.left), paneLimit() - width - 8)}px`;
   control.menu.style.top = `${rect.bottom + 6}px`;
   const menuRect = control.menu.getBoundingClientRect();
   if (menuRect.bottom > innerHeight - 8) {
@@ -18263,7 +18385,7 @@ function syncSettingsUi() {
     x.setAttribute('aria-pressed', String(active));
   });
   const gridStyleSel = document.getElementById('setGridStyle');
-  if (gridStyleSel) gridStyleSel.value = state.gridAppearance;
+  if (gridStyleSel) gridStyleSel.value = state.gridAppearance === 'none' ? 'none' : 'dots';
   const landingLayoutSel = document.getElementById('setLandingLayout');
   if (landingLayoutSel) landingLayoutSel.value = normalizeLandingLayout(appSettings.landingLayout);
   const toolbarModeSel = document.getElementById('setToolbarMode');
@@ -18516,7 +18638,10 @@ window.addEventListener('pointerdown', e => {
   wheelFocusPriorityUntil = 0;
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
   if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
-  if (!e.target.closest('#titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) window.closePinMenus?.();
+  if (!e.target.closest('#titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) {
+    window.closePinMenus?.();
+    if (splitActive && BOARD_PANE !== 'secondary') window.RefBoardAPI?.splitPinMenuClose?.();
+  }
   if (!e.target.closest('#tagColorPop') && !e.target.closest('.tag-dot')) closeTagColorPop();
   // #tagColorPop belongs to the panel even though it is not nested inside it.
   if (!e.target.closest('#tagPanel') && !e.target.closest('#btnTags')
@@ -18962,6 +19087,7 @@ function handleAppCloseRequest(payload = {}) {
     const action = payload?.reason === 'split-exit' ? 'split' : 'close';
     const result = await resolveUnsavedChanges(action);
     if (result === 'proceed') confirmAppClose();
+    else window.RefBoardAPI?.cancelClose?.();
   });
 }
 
@@ -19029,6 +19155,12 @@ if (window.RefBoardAPI?.onCloseRequest) {
   }
 
   function positionPinMenu() {
+    if (BOARD_PANE === 'secondary') {
+      pinMenu.style.top = '8px';
+      pinMenu.style.right = '8px';
+      pinMenu.style.left = 'auto';
+      return;
+    }
     const rect = btnPin.getBoundingClientRect();
     pinMenu.style.top = `${rect.bottom}px`;
     pinMenu.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
@@ -19042,18 +19174,25 @@ if (window.RefBoardAPI?.onCloseRequest) {
     pinWindows.style.right = `${Math.max(8, window.innerWidth - menuRect.left + 4)}px`;
     pinWindows.style.left = 'auto';
     const next = pinWindows.getBoundingClientRect();
+    if (next.left < 8) {
+      pinWindows.style.right = 'auto';
+      pinWindows.style.left = '8px';
+    }
     if (next.top + next.height > innerHeight - 8) {
       pinWindows.style.top = `${Math.max(8, innerHeight - next.height - 8)}px`;
     }
   }
 
   window.closePinMenus = closePinMenus;
-  function closePinMenus() {
+  function closePinMenus({ notify = true } = {}) {
+    const wasOpen = pinMenu.classList.contains('show') || document.body.classList.contains('split-pin-open');
     pinMenu.classList.remove('show');
     pinWindows.classList.remove('show');
     btnPin.setAttribute('aria-expanded', 'false');
-    document.body.classList.remove('titlebar-pin-open');
+    document.body.classList.remove('titlebar-pin-open', 'split-pin-open');
+    if (BOARD_PANE === 'secondary') document.body.classList.remove('titlebar-revealed');
     clearTimeout(pinHoverTimer);
+    if (notify && wasOpen && BOARD_PANE === 'secondary') api.splitPinMenuClose?.();
   }
 
   async function fillPinWindows() {
@@ -19094,17 +19233,22 @@ if (window.RefBoardAPI?.onCloseRequest) {
   function openPinMenu({ showWindows = false } = {}) {
     closeMenu();
     document.body.classList.add('titlebar-pin-open');
-    if (document.body.classList.contains('board-active')) {
+    if (document.body.classList.contains('board-active') && BOARD_PANE !== 'secondary') {
       document.body.classList.add('titlebar-revealed');
     }
     pinMenu.classList.add('show');
     btnPin.setAttribute('aria-expanded', 'true');
+    if (BOARD_PANE === 'secondary') document.body.classList.add('split-pin-open');
     positionPinMenu();
     if (showWindows) showPinWindows();
     else pinWindows.classList.remove('show');
   }
 
   btnPin.addEventListener('click', () => {
+    if (splitActive && BOARD_PANE !== 'secondary') {
+      api.toggleSplitPinMenu?.();
+      return;
+    }
     if (pinMenu.classList.contains('show')) closePinMenus();
     else openPinMenu();
   });
@@ -19140,6 +19284,16 @@ if (window.RefBoardAPI?.onCloseRequest) {
   api.pinGetState().then(applyPinState).catch(() => {});
   api.onPinStateChange(applyPinState);
   api.onPinOpenAbove(() => openPinMenu({ showWindows: true }));
+  api.onSplitPinMenu?.(state => {
+    if (BOARD_PANE === 'secondary') {
+      if (state?.open) openPinMenu();
+      else closePinMenus({ notify: false });
+      return;
+    }
+    const open = !!state?.open;
+    btnPin.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('titlebar-pin-open', open);
+  });
 })();
 
 (function initTitlebarAutoHide() {
@@ -19685,6 +19839,7 @@ function applyTheme(name) {
   GRID_DOT_COLOR = cs.getPropertyValue('--grid-dot').trim() || GRID_DOT_COLOR;
   ACC = cs.getPropertyValue('--acc').trim() || ACC;
   try { localStorage.setItem('refboard.theme', theme); } catch (e) {}
+  if (!applyingRemoteSettings) publishSharedSettings();
   document.querySelectorAll('.theme-swatch').forEach(x => {
     const active = x.dataset.theme === theme;
     x.classList.toggle('active', active);
@@ -20105,7 +20260,14 @@ window.RefBoardAPI?.onPaneActivity?.(state => {
     return;
   }
   document.body.classList.toggle('pane-dim', !state.active);
+  if (!state.active) collapseSplitToolbar();
 });
+
+document.addEventListener('pointerdown', e => {
+  if (!splitActive || e.button !== 0) return;
+  if (BOARD_PANE !== 'secondary' && e.clientY <= 34) return;
+  window.RefBoardAPI?.reportPaneClick?.();
+}, true);
 
 window.RefBoardAPI?.onBlockedBoardPath?.(filePath => {
   const next = filePath || null;
