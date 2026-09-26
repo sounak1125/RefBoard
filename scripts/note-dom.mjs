@@ -17,10 +17,6 @@ export function parseNoteLine(line) {
   return { type: 'plain', body: raw };
 }
 
-export function stripListPrefix(line) {
-  return parseNoteLine(line).body;
-}
-
 export function parseNoteLinkSegments(text) {
   const src = String(text ?? '');
   const segs = [];

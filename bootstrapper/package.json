@@ -8,11 +8,12 @@
   "scripts": {
     "sync-ui": "node sync-ui.js",
     "start": "npm run sync-ui && electron .",
-    "dist": "npm run sync-ui && electron-builder --win"
+    "dist": "npm run sync-ui && electron-builder --win",
+    "postinstall": "install-electron"
   },
   "devDependencies": {
-    "electron": "^37.0.0",
-    "electron-builder": "^26.0.0"
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "com.sounak.refboard.installer",
@@ -46,5 +47,8 @@
     "portable": {
       "artifactName": "RefBoard-Installer-${version}.exe"
     }
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

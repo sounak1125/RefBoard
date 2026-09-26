@@ -99,19 +99,18 @@ function runSilentInstall() {
 }
 
 // The renderer calls this when the user clicks Install. We kick off the real
-// install and, when it truly finishes, notify the renderer so its bar can
+// install and, when it truly finishes, return the result so its bar can
 // resolve to 100% and flip to "Launch". The renderer owns the timed animation;
 // we own the truth about completion.
 ipcMain.handle('installer:start', async () => {
   if (installStarted) return { alreadyRunning: true };
   installStarted = true;
 
-  const result = await runSilentInstall();
-
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('installer:complete', result);
+  try {
+    return await runSilentInstall();
+  } finally {
+    installStarted = false;
   }
-  return result;
 });
 
 // Launch the freshly installed RefBoard, then quit the bootstrapper.

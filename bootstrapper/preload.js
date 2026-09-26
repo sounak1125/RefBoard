@@ -9,16 +9,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 //   window.RefBoardInstaller.close()
 // plus the extras the bootstrapped flow needs:
 //   window.RefBoardInstaller.start()            -> begins the real silent install
-//   window.RefBoardInstaller.onComplete(cb)     -> fires when install truly finishes
 contextBridge.exposeInMainWorld('RefBoardInstaller', {
   // Begins the real NSIS silent install. Returns a promise that resolves when
-  // the install process exits (renderer can ignore it and rely on onComplete).
+  // the install process exits, including its success or failure result.
   start: () => ipcRenderer.invoke('installer:start'),
-
-  // Registers a callback for genuine install completion: { ok, code }.
-  onComplete: (cb) => {
-    ipcRenderer.on('installer:complete', (_event, result) => cb(result));
-  },
 
   // Launches the installed RefBoard and quits the bootstrapper.
   launch: () => ipcRenderer.invoke('installer:launch'),

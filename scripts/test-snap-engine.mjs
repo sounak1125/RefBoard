@@ -37,7 +37,7 @@ const CONSTS = [
 const FUNCS = [
   'rotRad', 'rotateVec', 'localToBoardRect', 'boardToLocalRect',
   'itemCorners', 'boundsOf',
-  'snapPullInBoard', 'snapRadii', 'isAxisAlignedItem',
+  'snapRadii', 'isAxisAlignedItem',
   'snapBoxOfItem', 'snapBoxOfItems', 'snapBoxCenterDist2',
   'buildSnapSession', 'snapSessionValid',
   'collectAxisCandidates', 'pushSnapCandidate', 'pickAxisCandidate', 'solveSnap',
@@ -62,7 +62,6 @@ vm.runInNewContext(`
   this.SNAP_EDGES_ALL = SNAP_EDGES_ALL;
   this.SNAP_TARGET_MAX = SNAP_TARGET_MAX;
   this.snapRadii = snapRadii;
-  this.snapPullInBoard = snapPullInBoard;
   this.isAxisAlignedItem = isAxisAlignedItem;
   this.snapBoxOfItem = snapBoxOfItem;
   this.snapBoxOfItems = snapBoxOfItems;
@@ -261,16 +260,29 @@ assert.equal(context.snapBoxOfItem({ id: 'a1', kind: 'arrow', x: 0, y: 0, w: 10,
   }
 }
 
-/* --- L: the feel is zoom-invariant --- */
+/* --- L: fresh engagement uses the same screen-space boundary at every zoom --- */
 {
+  const pullPx = context.snapRadii().pullIn.flush;
+  for (const zoom of [1, 2]) {
+    context.state.view.s = zoom;
+    for (const gapPx of [pullPx - 0.5, pullPx, pullPx + 0.5]) {
+      const gapBoard = gapPx / zoom;
+      const moving = box(100 - gapBoard, 20, 200 - gapBoard, 80);
+      const result = solve(moving, [T1]);
+      if (gapPx <= pullPx) {
+        assert.equal(result.x?.cls, 'flush', 'fresh snap engages through the pixel boundary at zoom ' + zoom);
+        assert.equal(result.dx * zoom, gapPx, 'the correction covers the same screen-space gap');
+      } else {
+        assert.equal(result.x, null, 'fresh snap stays disengaged just outside the pixel boundary at zoom ' + zoom);
+        assert.equal(result.dx, 0);
+      }
+    }
+  }
   context.state.view.s = 1;
-  const a = context.snapPullInBoard('flush');
   const alignA = context.snapRadii().alignRangeBoard;
   context.state.view.s = 2;
-  const b = context.snapPullInBoard('flush');
   const alignB = context.snapRadii().alignRangeBoard;
   context.state.view.s = 1;
-  assert.equal(b, a / 2, 'the board-space pull radius halves when zoom doubles');
   assert.equal(alignB, alignA / 2);
 }
 
