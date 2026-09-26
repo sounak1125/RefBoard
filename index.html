@@ -2129,14 +2129,6 @@ body.board-active #whatsNewNotice{ display:none; }
 .mi-tag .tag-dot{ padding:0 8px 0 2px; }
 .mhr{ height:1px; background:var(--line); margin:5px 8px; }
 
-/* ---------- appearance submenu ---------- */
-#ctxAppear{
-  position:fixed; z-index:51; display:none; min-width:168px;
-  background:var(--card); border:1px solid rgba(255,255,255,.09); border-radius:11px;
-  padding:5px; box-shadow:0 14px 44px rgba(0,0,0,.55); backdrop-filter:blur(16px);
-}
-#ctxAppear.show{ display:block; }
-
 /* ---------- context submenus (alignment, normalize, …) ---------- */
 #ctxSub{
   position:fixed; z-index:51; display:none; min-width:188px;
@@ -3541,7 +3533,6 @@ try {
 <div id="splitDivider" aria-hidden="true"></div>
 <div id="toast"></div>
 <div id="ctxmenu"></div>
-<div id="ctxAppear"></div>
 <div id="ctxSub"></div>
 <div id="titlebarPinMenu" role="menu" aria-labelledby="titlebarPin">
   <div class="mi" id="titlebarPinAlways" role="menuitemcheckbox" aria-checked="false">
@@ -4115,7 +4106,6 @@ import {
   pruneTagColors,
   tagKey,
   removeTag,
-  suggestTagColor,
   tagGlowColor,
   TAG_COLOR_PALETTE,
 } from './scripts/tags.mjs';
@@ -4132,7 +4122,6 @@ import {
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
 let ACC = '#5aa2ff';
-const ACC_FILL = 'rgba(90,162,255,.92)';
 const ACC_STROKE = 'rgba(90,162,255,.55)';
 const ACC_HANDLE_FILL = '#bfe3ff';
 const ACC_HANDLE_STROKE = '#5aa2ff';
@@ -5200,17 +5189,6 @@ function setRectFromTopLeftBoard(it, topLeft, w, h) {
   const c = rotateVec(w / 2, h / 2, a);
   const cx = topLeft[0] + c.x, cy = topLeft[1] + c.y;
   it.x = cx - w / 2; it.y = cy - h / 2; it.w = w; it.h = h;
-  invalidateWorkspaceBBox();
-}
-// build a rect from a sub-rectangle in the start rect's local frame;
-// preserves rotation and keeps the untouched edges fixed in board space
-function positionFromLocalRect(it, r, x0, y0, x1, y1) {
-  const nw = x1 - x0, nh = y1 - y0;
-  const center = localToBoardRect(r, (x0 + x1) / 2, (y0 + y1) / 2);
-  it.rot = r.rot;
-  it.w = nw; it.h = nh;
-  it.x = center[0] - nw / 2;
-  it.y = center[1] - nh / 2;
   invalidateWorkspaceBBox();
 }
 function cropOf(it) {
@@ -7681,12 +7659,6 @@ function boardPointToBitmap(it, bx, by) {
   return { x: px, y: py, scale: bitmapScaleForItem(it) };
 }
 
-function imageBitmapForDraw(it) {
-  if (drawSession && drawSession.itemId === it.id) return drawSession.canvas;
-  const im = images.get(it.imgId);
-  return im?.bitmap || null;
-}
-
 function imageItemReferenceCount(imgId) {
   let count = 0;
   for (const item of state.items) {
@@ -8454,8 +8426,6 @@ function clipboardHtmlToNoteText(html) {
   return normalizeClipboardText(lines.join('\n'));
 }
 
-const selectedNotes = () => selectedItems().filter(isNoteItem);
-
 function serializeNoteForClipboard(it) {
   return {
     kind: 'note',
@@ -8876,13 +8846,6 @@ function copyMenuLabel(selItems) {
   }
   if (selItems.length === 1 && isGroupItem(selItems[0])) return 'Copy group';
   return selItems.length > 1 ? `Copy ${selItems.length} items` : 'Copy image';
-}
-
-function insertTextAtCursor(editor, text) {
-  const ed = editor || $('#noteEditor');
-  if (!ed) return;
-  noteEditorInsertMarkdown(ed, String(text ?? ''));
-  refreshNoteEdit();
 }
 
 async function collectClipboardImages(snap, { allowAsyncRead = true } = {}) {
@@ -9604,24 +9567,12 @@ function noteFontFamilySafe(it) {
   return fam || 'Segoe UI';
 }
 
-function noteFontCss(it) {
-  const size = noteEffSize(it);
-  const weight = it.bold ? '700' : '400';
-  const style = it.italic ? 'italic' : 'normal';
-  const fam = noteFontFamilySafe(it);
-  return `${style} ${weight} ${size}px "${fam}", "Segoe UI", system-ui, sans-serif`;
-}
-
 function noteFontScreenCss(it) {
   const size = noteEffSize(it) * state.view.s;
   const weight = it.bold ? '700' : '400';
   const style = it.italic ? 'italic' : 'normal';
   const fam = noteFontFamilySafe(it);
   return `${style} ${weight} ${size}px "${fam}", "Segoe UI", system-ui, sans-serif`;
-}
-
-function noteFontCanvas(it) {
-  return noteFontCss(it);
 }
 
 // Canvas measureText/fillText diverge below ~1px — notes created at high zoom use
@@ -10471,11 +10422,6 @@ function noteListGutterMin(size) {
   return size * NOTE_LIST_GUTTER_EM;
 }
 
-/** @deprecated use noteListGutterMin / noteListGutterForText */
-function noteListGutter(size) {
-  return noteListGutterMin(size);
-}
-
 /**
  * Widest stored list prefix in the note ("• "/"- "/"* ", "N. " — same strings as
  * data-prefix / noteLinePrefixOf). Checks are CSS boxes (~0.82em), not measured
@@ -10519,10 +10465,6 @@ function noteListPrefixFor(mode, index, checked) {
   if (mode === 'number') return `${index + 1}. `;
   if (mode === 'check') return checked ? '[x] ' : '[ ] ';
   return '';
-}
-
-function stripListPrefix(line) {
-  return parseNoteLine(line).body;
 }
 
 function stripNoteMarkdown(text) {
@@ -10592,10 +10534,6 @@ function noteTextVertMetrics(g, fontPx, screenPx = fontPx) {
 
 function noteTextLineBaselineY(lineTop, lineH, vm) {
   return lineTop + Math.max(0, (lineH - vm.ink) / 2) + vm.ascent;
-}
-
-function measureNoteSegments(g, segs) {
-  return segs.reduce((w, s) => w + (s.text ? noteTextMeasure(g, s.text).width : 0), 0);
 }
 
 function noteLineContentWidth(g, parsed, size, gutter) {
@@ -10699,30 +10637,6 @@ function layoutNoteLines(g, text, it) {
   const layout = { lines, maxLineW, lineCount: lines.length, gutter };
   if (it) _noteLayoutByItem.set(it, { key: cacheKey, layout });
   return layout;
-}
-
-let _noteMeasureEl = null;
-function getNoteMeasureEl() {
-  if (!_noteMeasureEl) {
-    _noteMeasureEl = document.createElement('span');
-    _noteMeasureEl.style.cssText = 'position:fixed;left:-9999px;top:0;visibility:hidden;white-space:pre;pointer-events:none;margin:0;padding:0;border:0;';
-    document.body.appendChild(_noteMeasureEl);
-  }
-  return _noteMeasureEl;
-}
-
-function measureTextScreen(it, text) {
-  const el = getNoteMeasureEl();
-  el.style.font = noteFontScreenCss(it);
-  el.textContent = text || ' ';
-  return el.getBoundingClientRect().width;
-}
-
-function measureNoteNaturalWidth(it, text) {
-  const g = getMeasureCtx();
-  const { font, coordScale } = noteTextCanvasMetrics(it);
-  g.font = noteFontCanvasPx(it, font);
-  return layoutNoteLines(g, text, it).maxLineW * coordScale;
 }
 
 // PureRef-style: box hugs text when typing. Used on input/finish — not during resize/zoom.
@@ -12207,24 +12121,6 @@ function syncCropWithSelection() {
   }
 }
 
-function resetCrop(it) {
-  if (!it || !isImageItem(it)) return;
-  pushUndo();
-  const im = images.get(it.imgId);
-  const c = cropOf(it);
-  if (im) {
-    const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
-    const scaleX = it.w / (im.w * (c.r - c.l));
-    const scaleY = it.h / (im.h * (c.b - c.t));
-    const scale = Math.max(scaleX, scaleY);
-    it.w = im.w * scale; it.h = im.h * scale;
-    it.x = cx - it.w / 2; it.y = cy - it.h / 2;
-    invalidateWorkspaceBBox();
-  }
-  it.crop = { l: 0, t: 0, r: 1, b: 1 };
-  scheduleSave(); invalidate();
-}
-
 function activateSelectMode() {
   boardTool = 'select';
   syncBoardToolUi();
@@ -12313,26 +12209,6 @@ function animateViewTo(tx, ty, s, durationMs = 320) {
 
 function nextUiFrame() {
   return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-}
-
-const LANDING_TRANSITION_MS = 280;
-
-function waitTransition(el, ms = LANDING_TRANSITION_MS) {
-  return new Promise(resolve => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      resolve();
-    };
-    const timer = setTimeout(finish, ms + 50);
-    el.addEventListener('transitionend', function onEnd(e) {
-      if (e.target !== el) return;
-      el.removeEventListener('transitionend', onEnd);
-      clearTimeout(timer);
-      finish();
-    });
-  });
 }
 
 function computeOpenTargetView(opts = {}) {
@@ -15340,10 +15216,6 @@ function noteChecklistHitAt(it, lx, ly) {
   return closestLine;
 }
 
-function itemToNoteDrawLocal(it, lx, ly) {
-  return [lx, ly];
-}
-
 function getNoteLinkRegions(it) {
   if (!isNoteItem(it) || !String(it.text || '').trim()) return [];
   const g = getMeasureCtx();
@@ -16486,73 +16358,11 @@ function applyItemsRotate(orig, origin, deltaDeg) {
   invalidateWorkspaceBBox();
 }
 
-function imageContentAspect(it) {
-  if (!isImageItem(it)) return 1;
-  const im = images.get(it.imgId);
-  if (!im) return Math.max(0.01, it.w / Math.max(it.h, 1e-6));
-  const cr = cropOf(it);
-  const sw = Math.max(1e-6, (cr.r - cr.l) * im.w);
-  const sh = Math.max(1e-6, (cr.b - cr.t) * im.h);
-  return sw / sh;
-}
-
-function sizeImageBoxFromStart(r, k, ar, minW, minH) {
-  let nw = Math.max(minW, r.w * k);
-  let nh = nw / ar;
-  if (nh < minH) {
-    nh = minH;
-    nw = Math.max(minW, nh * ar);
-  }
-  return { nw, nh };
-}
-
 // Smallest allowed on-board item size while resizing. Tiny and zoom-INDEPENDENT
 // so items can be scaled down as far as the user wants at any zoom level (PureRef
 // style). A zoom-based min (12/view.s) balloons when zoomed out and would force a
 // scale-DOWN to become a scale-UP — the bug this replaces.
 const RESIZE_MIN_BOARD = 1;
-
-function correctImageBoxAspect(it) {
-  if (!isImageItem(it)) return;
-  const ar = imageContentAspect(it);
-  const cur = it.w / Math.max(it.h, 1e-6);
-  if (Math.abs(cur - ar) / ar < 0.002) return;
-  const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
-  let nw = it.w, nh = it.h;
-  if (nw / nh > ar) nw = nh * ar;
-  else nh = nw / ar;
-  const minW = RESIZE_MIN_BOARD;
-  const minH = RESIZE_MIN_BOARD;
-  nw = Math.max(minW, nw);
-  nh = Math.max(minH, nh);
-  it.w = nw;
-  it.h = nh;
-  it.x = cx - nw / 2;
-  it.y = cy - nh / 2;
-  invalidateWorkspaceBBox();
-}
-
-function imageCornerScaleK(r, corner, lx, ly, ar) {
-  const corners = { nw: [0, 0], ne: [r.w, 0], se: [r.w, r.h], sw: [0, r.h] };
-  const opp = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' };
-  const A = corners[opp[corner]];
-  const rawW = Math.abs(lx - A[0]);
-  const rawH = Math.abs(ly - A[1]);
-  let nw, nh;
-  if (rawW < 1e-6 && rawH < 1e-6) return 1;
-  if (rawW / Math.max(rawH, 1e-6) > ar) {
-    nw = rawW;
-    nh = nw / ar;
-  } else {
-    nh = rawH;
-    nw = nh * ar;
-  }
-  const minW = RESIZE_MIN_BOARD;
-  const minH = RESIZE_MIN_BOARD;
-  nw = Math.max(minW, nw);
-  nh = Math.max(minH, nh);
-  return Math.max(0.05, nw / Math.max(r.w, 1e-6));
-}
 
 function applyGroupProportionalResize(orig, r, kIn, anchorLx, anchorLy) {
   let k = Math.max(0.005, kIn);
@@ -16728,11 +16538,6 @@ const SNAP_TARGET_MAX = 1500;
 // Absorbs float residue from repeated rotates without admitting a visible tilt.
 const SNAP_ROT_TOL_DEG = 0.5;
 const SNAP_SESSION_ZOOM_DRIFT = 1.5;
-
-function snapPullInBoard(cls) {
-  const px = cls === 'flush' ? SNAP_PULL_IN_FLUSH_PX : SNAP_PULL_IN_ALIGN_PX;
-  return px / state.view.s;
-}
 
 // Singleton — the drag hot path must not allocate. Callers must not retain it.
 const snapRadiiCache = { s: 1, collectPx: 0, alignRangeBoard: 0, zeroEpsBoard: 0, pullIn: {}, release: {} };
@@ -17933,16 +17738,12 @@ canvas.addEventListener('dblclick', e => {
 
 /* ================= context menu ================= */
 const menuEl = $('#ctxmenu');
-const appearEl = $('#ctxAppear');
 const subEl = $('#ctxSub');
 
 function closeSubMenu() { subEl.classList.remove('show'); }
 
-function closeAppearMenu() { appearEl.classList.remove('show'); }
-
 function closeMenu() {
   menuEl.classList.remove('show');
-  closeAppearMenu();
   closeSubMenu();
 }
 
@@ -17976,40 +17777,9 @@ function openCtxSubMenu(anchorEl, x, y, { title, items }) {
   subEl.style.top = top + 'px';
 }
 
-function openAppearMenu(anchorEl, x, y) {
-  const modes = [
-    { id: 'none', l: 'None', d: 'Plain workspace, no grid' },
-    { id: 'dots', l: 'Dots', d: 'Dot grid with snap' },
-  ];
-  appearEl.innerHTML = '';
-  const head = document.createElement('div');
-  head.className = 'mcat';
-  head.textContent = 'Appearance';
-  appearEl.appendChild(head);
-  for (const m of modes) {
-    const d = document.createElement('div');
-    d.className = 'mi' + (state.gridAppearance === m.id ? ' on' : '');
-    d.innerHTML = `<span>${m.l}</span><span class="k">${state.gridAppearance === m.id ? '✓' : ''}</span>`;
-    d.title = m.d;
-    d.addEventListener('click', () => {
-      closeMenu();
-      setGridAppearance(m.id);
-    });
-    appearEl.appendChild(d);
-  }
-  appearEl.classList.add('show');
-  const ar = appearEl.getBoundingClientRect();
-  let left = anchorEl ? anchorEl.getBoundingClientRect().right + 4 : x;
-  let top = anchorEl ? anchorEl.getBoundingClientRect().top : y;
-  if (left + ar.width > paneLimit() - 8) left = Math.max(8, (anchorEl ? anchorEl.getBoundingClientRect().left : x) - ar.width - 4);
-  if (top + ar.height > innerHeight - 8) top = innerHeight - ar.height - 8;
-  appearEl.style.left = left + 'px';
-  appearEl.style.top = top + 'px';
-}
-
 window.addEventListener('contextmenu', e => {
   e.preventDefault();
-  if (e.target.closest('#toolbar, .pill, .modal, #ctxmenu, #ctxAppear, #ctxSub, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop, #groupColorPop')) return;
+  if (e.target.closest('#toolbar, .pill, .modal, #ctxmenu, #ctxSub, #drawPanelWrap, #addPanelWrap, #drawCanvasPop, #drawColorPop, #groupColorPop')) return;
   if (lastRightDrag > 5) { lastRightDrag = 0; return; }
   lastRightDrag = 0;
   const [sx, sy] = clientToCanvas(e.clientX, e.clientY);
@@ -18637,7 +18407,7 @@ window.addEventListener('pointerdown', e => {
   wheelFocusImageId = null;
   wheelFocusPriorityUntil = 0;
   if (!e.target.closest('.ui-select, .ui-select-menu')) closeSettingsSelectMenus();
-  if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxAppear') && !e.target.closest('#ctxSub')) closeMenu();
+  if (!e.target.closest('#ctxmenu') && !e.target.closest('#ctxSub')) closeMenu();
   if (!e.target.closest('#titlebarPin, #titlebarPinMenu, #titlebarPinWindows')) {
     window.closePinMenus?.();
     if (splitActive && BOARD_PANE !== 'secondary') window.RefBoardAPI?.splitPinMenuClose?.();

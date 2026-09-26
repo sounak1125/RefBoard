@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, shell, nativeImage, WebContentsView, View, screen } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, shell, nativeImage, WebContentsView, View, screen } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const { replaceBoardFile, recoverBoardFileIfMissing } = require('./scripts/board-file-replace');
@@ -887,6 +887,9 @@ function setupAutoUpdate() {
 
 function setupIpc() {
   const boardSaveSessions = new Map();
+  // A token may stop accepting requests before its file operation finishes.
+  // Keep the path reserved until commit or rollback has released every handle.
+  const boardSaveTargets = new Map();
   const boardOpenSessions = new Map();
 
   /* An open session expires if the renderer stops reading; every read re-arms
@@ -951,11 +954,18 @@ function setupIpc() {
       await handle.close();
     }
   }
+  function boardTargetKey(target) {
+    const resolved = path.resolve(target);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  }
+
   function boardSaveSessionForTarget(target) {
-    for (const session of boardSaveSessions.values()) {
-      if (path.resolve(session.target) === target) return session;
-    }
-    return null;
+    return boardSaveTargets.get(boardTargetKey(target)) || null;
+  }
+
+  function releaseBoardSaveTarget(session) {
+    const key = boardTargetKey(session.target);
+    if (boardSaveTargets.get(key) === session) boardSaveTargets.delete(key);
   }
 
   /* Single-file boards (see scripts/board-container.js): the file grows by the
@@ -1093,9 +1103,14 @@ function setupIpc() {
       if (r.canceled || !r.filePath) return { saved: false };
       target = r.filePath;
     }
-    await fs.writeFile(target, data, 'utf8');
-    refreshShellIcons(target);
-    return { saved: true, filePath: target };
+    if (boardSaveSessionForTarget(target)) throw new Error('Board save in progress');
+    const reservation = { target };
+    boardSaveTargets.set(boardTargetKey(target), reservation);
+    try {
+      await fs.writeFile(target, data, 'utf8');
+      refreshShellIcons(target);
+      return { saved: true, filePath: target };
+    } finally { releaseBoardSaveTarget(reservation); }
   });
 
   ipcMain.handle('begin-board-save', async (event, { defaultName, filePath, forceDialog = false, core, preview, imageRefs }) => {
@@ -1119,6 +1134,7 @@ function setupIpc() {
       mode: 'fresh', container: null, tempPath: null, startSize: null, sourceStorePath: null,
       existing: new Map(), appended: new Map(),
     };
+    boardSaveTargets.set(boardTargetKey(target), session);
     try {
       const kind = await boardFileKind(target);
       if (kind === 'container') {
@@ -1158,31 +1174,41 @@ function setupIpc() {
       boardSaveSessions.set(token, session);
       return { started: true, token, filePath: target, stored: [...session.existing.keys()] };
     } catch (err) {
-      await discardBoardSaveSession(session);
+      try { await discardBoardSaveSession(session); }
+      finally { releaseBoardSaveTarget(session); }
       throw err;
     }
   });
   ipcMain.handle('append-board-save-image', async (event, { token, image, data }) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
-    const entry = await appendBoardSaveImageParts(session, image, data);
-    return { appended: true, entry };
+    if (session.appending) throw new Error('Board save in progress');
+    session.appending = true;
+    try {
+      const entry = await appendBoardSaveImageParts(session, image, data);
+      return { appended: true, entry };
+    } finally { session.appending = false; }
   });
 
   ipcMain.handle('append-board-save-images', async (event, { token, images }) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
-    const list = Array.isArray(images) ? images : [];
-    const entries = [];
-    for (const entry of list) {
-      entries.push(await appendBoardSaveImageParts(session, entry?.image, entry?.data));
-    }
-    return { appended: true, count: list.length, entries };
+    if (session.appending) throw new Error('Board save in progress');
+    session.appending = true;
+    try {
+      const list = Array.isArray(images) ? images : [];
+      const entries = [];
+      for (const entry of list) {
+        entries.push(await appendBoardSaveImageParts(session, entry?.image, entry?.data));
+      }
+      return { appended: true, count: list.length, entries };
+    } finally { session.appending = false; }
   });
 
   ipcMain.handle('finish-board-save', async (event, token) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
+    if (session.appending) throw new Error('Board save in progress');
     boardSaveSessions.delete(token);
     try {
       let images = session.imageRefs.map(ref => {
@@ -1241,14 +1267,19 @@ function setupIpc() {
     } catch (err) {
       await discardBoardSaveSession(session);
       throw err;
+    } finally {
+      releaseBoardSaveTarget(session);
     }
   });
   ipcMain.handle('abort-board-save', async (event, token) => {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) return { aborted: false };
+    if (session.appending) throw new Error('Board save in progress');
     boardSaveSessions.delete(token);
-    await discardBoardSaveSession(session);
-    return { aborted: true };
+    try {
+      await discardBoardSaveSession(session);
+      return { aborted: true };
+    } finally { releaseBoardSaveTarget(session); }
   });
 
   ipcMain.handle('open-board-dialog', async event => {
@@ -1479,9 +1510,7 @@ function setupIpc() {
     // Moving a file out from under an in-flight save or streamed open would
     // leave the session writing to (or reading from) a path that no longer
     // names this board.
-    for (const session of boardSaveSessions.values()) {
-      if (path.resolve(session.target) === from) return { ok: false, reason: 'busy', message: boardRenameFailureText('busy') };
-    }
+    if (boardSaveSessionForTarget(from)) return { ok: false, reason: 'busy', message: boardRenameFailureText('busy') };
     for (const session of boardOpenSessions.values()) {
       if (path.resolve(session.filePath) === from) return { ok: false, reason: 'busy', message: boardRenameFailureText('busy') };
     }
@@ -1581,48 +1610,57 @@ function setupIpc() {
   ipcMain.handle('write-board-preview', async (_, { filePath, preview } = {}) => {
     if (!filePath || typeof preview !== 'string' || !preview.length) return { written: false };
     const target = path.resolve(String(filePath));
-    for (const session of boardSaveSessions.values()) {
-      if (path.resolve(session.target) === target) {
-        throw new Error('Board save in progress');
+    if (boardSaveSessionForTarget(target)) throw new Error('Board save in progress');
+    const reservation = { target };
+    boardSaveTargets.set(boardTargetKey(target), reservation);
+    try {
+      if ((await boardFileKind(target)) === 'container') {
+        // A fresh index at the tail and a new head stub; nothing else moves.
+        const box = await openContainer(target);
+        try {
+          if (!box.index) throw new Error('This board file has no readable index');
+          const { images, format: _format, preview: _old, ...core } = box.index;
+          await writeContainerIndex(box, core, preview, images);
+        } finally {
+          await box.handle.close().catch(() => {});
+        }
+        refreshShellIcons(target);
+        return { written: true, filePath: target };
       }
-    }
-    if ((await boardFileKind(target)) === 'container') {
-      // A fresh index at the tail and a new head stub; nothing else moves.
-      const box = await openContainer(target);
-      try {
-        if (!box.index) throw new Error('This board file has no readable index');
-        const { images, format: _format, preview: _old, ...core } = box.index;
-        await writeContainerIndex(box, core, preview, images);
-      } finally {
-        await box.handle.close().catch(() => {});
+      const index = await readSidecarIndex(target).catch(() => null);
+      if (index) {
+        const { images, format: _format, preview: _old, ...core } = index;
+        await writeSidecarIndex(target, core, preview, images);
+        refreshShellIcons(target);
+        return { written: true, filePath: target };
       }
+      const result = await rewriteBoardFilePreview(target, preview);
       refreshShellIcons(target);
-      return { written: true, filePath: target };
-    }
-    const index = await readSidecarIndex(target).catch(() => null);
-    if (index) {
-      const { images, format: _format, preview: _old, ...core } = index;
-      await writeSidecarIndex(target, core, preview, images);
-      refreshShellIcons(target);
-      return { written: true, filePath: target };
-    }
-    const result = await rewriteBoardFilePreview(target, preview);
-    refreshShellIcons(target);
-    return result;
+      return result;
+    } finally { releaseBoardSaveTarget(reservation); }
   });
 
   ipcMain.handle('clipboard-read-image', async () => {
-    const img = clipboard.readImage();
-    if (img.isEmpty()) return null;
-    return img.toPNG().toString('base64');
+    for (const item of await clipboard.read()) {
+      const type = item.types.find(type => type === 'image/png') || item.types.find(type => type.startsWith('image/'));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const img = nativeImage.createFromBuffer(Buffer.from(await blob.arrayBuffer()));
+      if (!img.isEmpty()) return img.toPNG().toString('base64');
+    }
+    return null;
   });
 
-  const NOTE_CLIP_FORMAT = 'application/x-refboard-note+json';
+  // Keep the native format name so notes copied by older RefBoard releases
+  // still round-trip through Electron 44's asynchronous clipboard API.
+  const NOTE_CLIP_FORMAT = 'electron application/osclipboard;format="application/x-refboard-note+json"';
 
   ipcMain.handle('clipboard-write-notes', async (_, { payload, plainText } = {}) => {
     try {
-      clipboard.write({ text: String(plainText ?? '') });
-      clipboard.writeBuffer(NOTE_CLIP_FORMAT, Buffer.from(String(payload ?? ''), 'utf8'));
+      await clipboard.write([new ClipboardItem({
+        'text/plain': String(plainText ?? ''),
+        [NOTE_CLIP_FORMAT]: new Blob([String(payload ?? '')]),
+      })]);
       return { ok: true };
     } catch {
       return { ok: false };
@@ -1631,9 +1669,11 @@ function setupIpc() {
 
   ipcMain.handle('clipboard-read-notes', async () => {
     try {
-      const buf = clipboard.readBuffer(NOTE_CLIP_FORMAT);
-      if (!buf?.length) return null;
-      return buf.toString('utf8');
+      for (const item of await clipboard.read()) {
+        if (!item.types.includes(NOTE_CLIP_FORMAT)) continue;
+        return await (await item.getType(NOTE_CLIP_FORMAT)).text();
+      }
+      return null;
     } catch {
       return null;
     }

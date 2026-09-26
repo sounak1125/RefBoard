@@ -24,8 +24,8 @@ async function resizePng(input, size) {
 }
 
 async function writeIco(pngBuffers) {
-  const toIco = (await import('to-ico')).default;
-  const ico = await toIco(pngBuffers);
+  const pngToIco = (await import('png-to-ico')).default;
+  const ico = await pngToIco(pngBuffers);
   fs.writeFileSync(ICO_PATH, ico);
 }
 

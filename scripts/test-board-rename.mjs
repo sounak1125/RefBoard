@@ -122,7 +122,7 @@ assert.match(preload, /renameRecentWork: \(filePath, name\) => ipcRenderer\.invo
 assert.match(main, /ipcMain\.handle\('rename-recent-work'/, 'main must handle the rename');
 assert.match(
   main,
-  /ipcMain\.handle\('rename-recent-work'[\s\S]*?boardSaveSessions\.values\(\)[\s\S]*?reason: 'busy'/,
+  /ipcMain\.handle\('rename-recent-work'[\s\S]*?boardSaveSessionForTarget\(from\)[\s\S]*?reason: 'busy'/,
   'a rename must be refused while that board is mid-save',
 );
 assert.match(

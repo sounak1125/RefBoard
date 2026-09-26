@@ -129,7 +129,7 @@ Press **?** on a board for the full shortcut reference.
 
 ## Run from source
 
-On Windows, with Node.js 22 and npm installed:
+On Windows, with Node.js 22.12 or later and npm installed:
 
 ```bash
 git clone https://github.com/sounak1125/RefBoard.git
