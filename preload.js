@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   getBoardWindowCount: () => ipcRenderer.invoke('get-board-window-count'),
   splitEnter: (ratio) => ipcRenderer.invoke('split-enter', { ratio }),
   splitExit: () => ipcRenderer.invoke('split-exit'),
+  splitAnimationFrame: (animationId) => ipcRenderer.send('split-animation-frame', animationId),
   splitDragStart: (screenX) => ipcRenderer.send('split-drag-start', { screenX }),
   splitDragMove: (screenX) => ipcRenderer.send('split-drag-move', { screenX }),
   splitDragEnd: () => ipcRenderer.send('split-drag-end'),

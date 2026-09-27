@@ -49,7 +49,7 @@ const finish = handler('finish-board-save');
 assert.match(finish, /const written = await writeContainerIndex\(box, session\.core, session\.preview, images\);/, 'the index is written at the tail, then the head stub');
 assert.match(finish, /if \(session\.mode === 'append'\) \{[\s\S]*?shouldCompactContainer\(written\.size, garbage/, 'an in-place save considers compaction');
 assert.match(finish, /rebuildContainer\(session\.target, \{\s*sourcePath: session\.target/, 'compaction copies the live records into a fresh file');
-assert.match(finish, /await replaceBoardFile\(session\.target, tempPath\);/, 'a conversion or a new file swaps the temp container in, keeping the previous file as .bak');
+assert.match(finish, /await replaceBoardFile\(session\.target, tempPath\);/, 'a conversion or new file uses the recoverable replacement helper');
 assert.match(finish, /if \(session\.mode === 'convert-sidecar' && session\.sourceStorePath\) \{\s*await fs\.unlink\(session\.sourceStorePath\)/, 'a converted pair\'s store is removed once its images are in the board');
 
 const discard = fn('discardBoardSaveSession');

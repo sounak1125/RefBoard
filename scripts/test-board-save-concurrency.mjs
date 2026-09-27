@@ -101,6 +101,8 @@ try {
   const initial = await container.openContainer(target, { create: true });
   await container.writeContainerIndex(initial, { items: [] }, null, []);
   await initial.handle.close();
+  const backup = `${target}.bak`;
+  await fs.writeFile(backup, 'old-release-backup');
 
   const opening = pause('open');
   const pendingBegin = begin(target, [{ id: 'A', type: 'image/png' }]);
@@ -129,6 +131,7 @@ try {
   const committing = pause('index');
   const pendingFinish = finish(a);
   await committing.entered;
+  assert.equal(await fs.readFile(backup, 'utf8'), 'old-release-backup', 'backup stays until the save commits');
   await expectBusy();
   await assert.rejects(call('save-board-file', { filePath: target, data: 'overwrite' }), /Board save in progress/);
   await assert.rejects(call('write-board-preview', { filePath: target, preview: 'YQ==' }), /Board save in progress/);
@@ -136,7 +139,9 @@ try {
   committing.release();
   assert.equal((await pendingFinish).saved, true);
   assert.deepEqual(await readSaved(), [{ id: 'A', bytes: 'AAAA' }]);
+  await assert.rejects(fs.stat(backup), { code: 'ENOENT' }, 'successful incremental save removes a leftover backup');
 
+  await fs.writeFile(backup, 'keep-on-failure');
   const b = await begin();
   await call('append-board-save-image', {
     token: b.token, image: { id: 'B' }, data: Buffer.from('BBBB'),
@@ -148,6 +153,7 @@ try {
   aborting.release();
   assert.equal((await pendingAbort).aborted, true);
   assert.deepEqual(await readSaved(), [{ id: 'A', bytes: 'AAAA' }], 'abort preserves the previous committed board');
+  assert.equal(await fs.readFile(backup, 'utf8'), 'keep-on-failure', 'aborting must keep existing recovery data');
 
   // A failed commit must hold its reservation while rollback is still pending,
   // and release it afterward so the user can retry.
@@ -160,6 +166,7 @@ try {
   rollingBack.release();
   await pendingFailure;
   failIndexWrite = false;
+  assert.equal(await fs.readFile(backup, 'utf8'), 'keep-on-failure', 'a failed commit must not delete the backup');
   assert.deepEqual(await readSaved(), [{ id: 'A', bytes: 'AAAA' }]);
 
   const compacted = await begin(target, [{ id: 'A', type: 'image/png' }]);
@@ -172,15 +179,18 @@ try {
   assert.equal((await pendingCompaction).compacted, true);
   forceCompact = false;
   assert.deepEqual(await readSaved(), [{ id: 'A', bytes: 'AAAA' }]);
+  await assert.rejects(fs.stat(backup), { code: 'ENOENT' }, 'successful compaction also cleans up the old backup');
 
   // Preview backfills also mutate the container and must exclude saves in the
   // opposite direction, including the initial asynchronous open.
   const previewOpening = pause('open');
+  await fs.writeFile(backup, 'old-preview-backup');
   const pendingPreview = call('write-board-preview', { filePath: target, preview: 'YQ==' });
   await previewOpening.entered;
   await expectBusy();
   previewOpening.release();
   assert.equal((await pendingPreview).written, true);
+  await assert.rejects(fs.stat(backup), { code: 'ENOENT' }, 'successful preview updates clean up old backups');
   const retry = await begin();
   await abort(retry);
 
@@ -190,6 +200,18 @@ try {
   await fs.mkdir(path.dirname(missingDirTarget));
   const recovered = await begin(missingDirTarget);
   await abort(recovered);
+
+  // The fallback whole-file save also uses a flushed temporary replacement.
+  const rawTarget = path.join(dir, 'raw.refboard');
+  await fs.writeFile(rawTarget, 'original');
+  await fs.writeFile(`${rawTarget}.bak`, 'older');
+  await assert.rejects(call('save-board-file', { filePath: rawTarget, data: undefined }));
+  assert.equal(await fs.readFile(rawTarget, 'utf8'), 'original');
+  assert.equal(await fs.readFile(`${rawTarget}.bak`, 'utf8'), 'older');
+  assert.equal((await call('save-board-file', { filePath: rawTarget, data: 'updated' })).saved, true);
+  assert.equal(await fs.readFile(rawTarget, 'utf8'), 'updated');
+  await assert.rejects(fs.stat(`${rawTarget}.bak`), { code: 'ENOENT' });
+  assert.ok(!(await fs.readdir(dir)).some(name => name.startsWith('raw.refboard.saving-')));
   console.log('board save concurrency passed — pending begin, case aliases, append, commit, abort, rollback, compaction, preview, and retry');
 } finally {
   for (const name of [...gates.keys()]) gates.delete(name);

@@ -62,6 +62,7 @@ let autoTimer = null;
 let paused = false;
 let installing = false;
 let installComplete = false;
+let launching = false;
 
 const sceneElements = features.map((feature, index) => {
   const scene = document.createElement('div');
@@ -169,10 +170,29 @@ function animateInstallPhase(from, to, duration, label, meta) {
 
 async function simulateInstall() {
   if (installComplete) {
-    if (window.RefBoardInstaller?.launch) window.RefBoardInstaller.launch();
-    else {
+    if (launching) return;
+    if (!window.RefBoardInstaller?.launch) {
       installState.textContent = 'Launch is ready';
       installMeta.textContent = 'The packaged installer will now open RefBoard.';
+      return;
+    }
+    launching = true;
+    installButton.disabled = true;
+    installButton.querySelector('.button-label').textContent = 'Launching\u2026';
+    let result;
+    try {
+      result = await window.RefBoardInstaller.launch();
+    } catch {
+      result = { launched: false };
+    }
+    if (result?.launched !== true) {
+      launching = false;
+      installButton.disabled = false;
+      installButton.querySelector('.button-label').textContent = 'Retry launch';
+      installState.textContent = 'Could not launch RefBoard';
+      installMeta.textContent = result?.reason === 'app-not-found'
+        ? 'The installed app could not be found. Run setup again to repair the installation.'
+        : 'Windows could not start the app. Please try again.';
     }
     return;
   }

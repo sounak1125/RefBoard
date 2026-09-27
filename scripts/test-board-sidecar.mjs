@@ -66,9 +66,9 @@ try {
   assert.equal(await sidecar.readSidecarIndex(legacyPath), null, 'a legacy board reads as null, not an error');
   assert.equal(sidecar.isSidecarIndexHead(Buffer.from('{"preview":"...')), false);
 
-  // A second write keeps the previous index as .bak and no temp files.
+  // A second successful write leaves neither a .bak nor temporary files.
   await sidecar.writeSidecarIndex(indexPath, core, null, images);
-  assert.ok(existsSync(`${indexPath}.bak`), 'rewriting the index keeps the previous one as .bak');
+  assert.equal(existsSync(`${indexPath}.bak`), false, 'rewriting the index removes its temporary .bak');
   assert.equal(JSON.parse(await readFile(indexPath, 'utf8')).preview, undefined, 'a null preview omits the key');
 
   /* --- reopening appends after the existing records --- */

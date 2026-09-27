@@ -96,12 +96,7 @@ try {
   );
 
   const bakPath = `${filePath}.bak`;
-  assert.equal(existsSync(bakPath), true, 'preview backfill must keep the previous board as .bak');
-  assert.equal(await readBoardPreview(bakPath), null, 'the first .bak should be the pre-preview save');
-  assert.ok(
-    (await readBoardImageBytes(bakPath, (await scanBoardFile(bakPath)).images[0])).equals(bytes),
-    'the kept .bak must still contain the original image bytes',
-  );
+  assert.equal(existsSync(bakPath), false, 'successful preview backfill removes its temporary .bak');
 
   // Second backfill should replace the preview without corrupting images.
   const preview2 = Buffer.from('second-preview').toString('base64');
@@ -111,8 +106,7 @@ try {
     (await readBoardImageBytes(filePath, (await scanBoardFile(filePath)).images[0])).equals(bytes),
     'replacing an existing preview must keep image bytes intact',
   );
-  assert.equal(existsSync(bakPath), true, 'a second backfill must still leave a .bak');
-  assert.equal(await readBoardPreview(bakPath), preview, 'the rotated .bak should keep the previous preview generation');
+  assert.equal(existsSync(bakPath), false, 'repeated preview updates must not leave .bak');
 } finally {
   await rm(tempDir, { recursive: true, force: true });
 }

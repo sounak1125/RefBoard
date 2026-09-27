@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -113,8 +113,11 @@ ipcMain.handle('installer:start', async () => {
   }
 });
 
-// Launch the freshly installed RefBoard, then quit the bootstrapper.
-ipcMain.handle('installer:launch', async () => {
+// Only leave the installer once Windows has accepted the launch. A missing or
+// blocked executable must leave the Launch button available for another try.
+let launchInFlight = null;
+
+function launchInstalledApp() {
   // Per-user install path used by electron-builder NSIS (perMachine:false).
   const localAppData = process.env.LOCALAPPDATA || '';
   const guesses = [
@@ -123,15 +126,33 @@ ipcMain.handle('installer:launch', async () => {
   ];
   const exe = guesses.find((p) => p && fs.existsSync(p));
 
-  if (exe) {
-    spawn(exe, [], { detached: true, stdio: 'ignore' }).unref();
-  } else if (localAppData) {
-    // Fallback: open the Programs folder so the user can find it.
-    shell.openPath(path.join(localAppData, 'Programs', 'RefBoard'));
-  }
+  if (!exe) return Promise.resolve({ launched: false, reason: 'app-not-found' });
 
-  setTimeout(() => app.quit(), 400);
-  return { launched: Boolean(exe) };
+  return new Promise(resolve => {
+    let child;
+    try {
+      child = spawn(exe, [], { detached: true, stdio: 'ignore', windowsHide: true });
+    } catch (err) {
+      resolve({ launched: false, reason: 'spawn-failed', error: String(err) });
+      return;
+    }
+    child.once('error', err => {
+      resolve({ launched: false, reason: 'process-error', error: String(err) });
+    });
+    child.once('spawn', () => {
+      child.unref();
+      resolve({ launched: true });
+    });
+  });
+}
+
+ipcMain.handle('installer:launch', async () => {
+  if (launchInFlight) return launchInFlight;
+  launchInFlight = launchInstalledApp();
+  const result = await launchInFlight;
+  if (result.launched) setTimeout(() => app.quit(), 400);
+  else launchInFlight = null;
+  return result;
 });
 
 // Window chrome controls (your app.js calls minimize / close).

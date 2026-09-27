@@ -199,33 +199,12 @@ assert.deepEqual(
 );
 assert.deepEqual(pruneTagColors({ mood: '#5aa2ff' }, []), {});
 
-/* ================= the datalist trap ================= */
-
-/* Rebuilding a <datalist> while its popover is open crashes the renderer
-   outright — an access violation, not an exception, so nothing is logged and
-   the window simply disappears. renderTagSelection runs after every tag edit,
-   which is exactly when the popover is open, so the suggestion rebuild has to
-   stay out of it and happen once per open instead. Found the hard way. */
+/* The suggestions must stay ordinary DOM: updating an open native datalist
+   previously crashed Chromium. The interactive smoke covers live refresh. */
 {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  const start = html.indexOf('function renderTagSelection()');
-  assert.notEqual(start, -1, 'renderTagSelection should exist');
-  let depth = 0;
-  let body = '';
-  for (let i = html.indexOf('{', start); i < html.length; i++) {
-    if (html[i] === '{') depth++;
-    else if (html[i] === '}' && --depth === 0) { body = html.slice(start, i + 1); break; }
-  }
-  assert.ok(body, 'renderTagSelection should have a complete body');
-  assert.ok(
-    !body.includes('tagPopSuggestEl'),
-    'renderTagSelection must not touch the suggestion datalist — rebuilding it while the '
-    + 'popover is open crashes the renderer; refresh it when the panel opens instead',
-  );
-  assert.ok(
-    /function setTagPanelOpen\([\s\S]{0,400}refreshTagSuggestions\(\)/.test(html),
-    'opening the panel must refresh the suggestions, or autocomplete never populates',
-  );
+  assert.doesNotMatch(html, /<datalist[^>]*id="tagPopSuggest"/, 'label suggestions must not recreate the native datalist crash');
+  assert.doesNotMatch(html, /list="tagPopSuggest"/, 'the input must not use a native suggestion popup');
 }
 
-console.log('tags ok — values, board collection, filter modes, pruning and the datalist trap all hold');
+console.log('tags ok — values, board collection, filter modes, pruning and safe suggestions');

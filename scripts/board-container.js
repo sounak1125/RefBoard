@@ -207,7 +207,7 @@ async function openContainer(filePath, { create = false, truncate = false, write
   } catch (err) {
     if (err.code !== 'ENOENT' || !create) throw err;
     handle = await fs.open(target, 'w+');
-    return initializeContainer(handle);
+    truncate = true;
   }
   try {
     if (truncate) return await initializeContainer(handle);

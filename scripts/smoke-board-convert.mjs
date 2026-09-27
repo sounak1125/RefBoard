@@ -4,8 +4,8 @@
  * Runs the real app twice over: once on a 2.1.0 sidecar pair (index plus
  * .refboard.images store) and once on a legacy embedded JSON board. Each is
  * opened, saved to the same path, and checked: the board is now a single
- * container file, the pair's store is gone, the previous file is kept as
- * .bak, every image reads back with its original bytes, and the Explorer
+ * container file, the pair's store and temporary .bak are gone,
+ * every image reads back with its original bytes, and the Explorer
  * preview extractor finds the preview at the front of the new file.
  */
 import assert from 'node:assert/strict';
@@ -117,7 +117,7 @@ async function checkConverted(filePath, label) {
   } finally {
     await box.handle.close();
   }
-  assert.ok(existsSync(`${filePath}.bak`), `${label}: the previous board file is kept as .bak`);
+  assert.equal(existsSync(`${filePath}.bak`), false, `${label}: successful conversion removes the temporary .bak`);
   assert.equal(typeof extractPreviewBase64(filePath), 'string', `${label}: the Explorer extractor finds a preview at the front`);
 }
 
@@ -136,8 +136,6 @@ try {
   assert.equal(legacy.saved, true, 'the legacy board saved');
   assert.equal(legacy.stats.appended, 2, 'a legacy board\'s images are sent once');
   await checkConverted(legacyPath, 'legacy');
-  const bak = await readFile(`${legacyPath}.bak`, 'utf8');
-  assert.ok(bak.startsWith('{"preview"'), 'the .bak is the original embedded file');
 
   console.log('board convert Electron smoke passed');
 } finally {
