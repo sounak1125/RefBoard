@@ -1,7 +1,7 @@
 {
   "name": "refboard",
   "productName": "RefBoard",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "A fast, clean moodboard and reference app. Made by Sounak.",
   "author": "Sounak",
   "license": "MIT",
@@ -40,6 +40,7 @@
     "test:reveal-board-smoke": "electron scripts/smoke-reveal-board.cjs",
     "release:publish": "powershell -ExecutionPolicy Bypass -File scripts/publish-local-dist.ps1 -ReplaceAssets",
     "release:ship": "powershell -ExecutionPolicy Bypass -File scripts/ship-release.ps1 -DistDir dist -Draft",
+    "release:verify": "node scripts/verify-release.cjs",
     "release:fix-v100-assets": "powershell -ExecutionPolicy Bypass -File scripts/upload-release-assets.ps1 -Tag v1.0.0",
     "bench:content-aware": "node scripts/bench-content-aware.mjs",
     "stress:content-aware": "node scripts/stress-content-aware.mjs",

@@ -864,5 +864,44 @@
         }
       ]
     }
+  },
+  "2.1.4": {
+    "headline": "Clearer labels, smoother split view",
+    "summary": "Manage labels with clearer controls, move between split boards smoothly, and save without leftover backup files.",
+    "sections": {
+      "new": [],
+      "improved": [
+        {
+          "title": "Clearer label controls",
+          "description": "Add labels explicitly, see which labels are shared by your selection, and apply or remove them with clear actions and Undo support."
+        },
+        {
+          "title": "Smoother split view",
+          "description": "Opening and closing split view keeps images at their original size, with one continuous movement as the top bar appears."
+        },
+        {
+          "title": "Updated app runtime",
+          "description": "RefBoard and its installer use an updated Electron runtime."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "No leftover backups after successful saves",
+          "description": "Successful saves no longer leave .bak files beside your boards. Recovery safeguards remain in place if a save is interrupted."
+        },
+        {
+          "title": "Label colors stay with the board",
+          "description": "Label colors return when you reopen a board or restore a session, without carrying colors over from another board."
+        },
+        {
+          "title": "Safer interrupted saves",
+          "description": "File handles are released after failed saves, and overlapping save and close requests preserve the correct board data."
+        },
+        {
+          "title": "Installer launch retries",
+          "description": "If RefBoard cannot launch after installation, the installer stays open and offers a retry."
+        }
+      ]
+    }
   }
 }
