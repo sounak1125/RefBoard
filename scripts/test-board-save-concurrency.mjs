@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import vm from 'node:vm';
+import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +16,7 @@ const handlers = new Map();
 const gates = new Map();
 let forceCompact = false;
 let failIndexWrite = false;
+let dialogResult = null;
 const checkpoint = async name => { await gates.get(name)?.(); };
 const pause = name => {
   let arrived, resume;
@@ -58,6 +60,8 @@ const wrappedContainer = {
 const electron = {
   app: { requestSingleInstanceLock: () => true, on() {}, whenReady: () => ({ then() {} }) },
   ipcMain: { handle: (name, fn) => handlers.set(name, fn), on() {} },
+  BrowserWindow: { fromWebContents: () => null, getFocusedWindow: () => null },
+  dialog: { async showSaveDialog() { await checkpoint('dialog'); return dialogResult; } },
 };
 const source = await fs.readFile(new URL('../main.js', import.meta.url), 'utf8');
 vm.runInNewContext(`${source}\nsetupIpc();`, {
@@ -78,8 +82,8 @@ vm.runInNewContext(`${source}\nsetupIpc();`, {
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'refboard-save-concurrency-'));
 const target = path.join(dir, 'race.refboard');
 const otherTarget = path.join(dir, 'other.refboard');
-const owner = { sender: { id: 1 } };
-const otherOwner = { sender: { id: 2 } };
+const owner = { sender: Object.assign(new EventEmitter(), { id: 1 }) };
+const otherOwner = { sender: Object.assign(new EventEmitter(), { id: 2 }) };
 const call = (name, arg, event = owner) => handlers.get(name)(event, arg);
 const begin = (filePath = target, imageRefs = [], event = owner) => call('begin-board-save', {
   filePath, core: { app: 'refboard', items: [] }, imageRefs,
@@ -87,6 +91,21 @@ const begin = (filePath = target, imageRefs = [], event = owner) => call('begin-
 const finish = session => call('finish-board-save', session.token);
 const abort = session => call('abort-board-save', session.token);
 const expectBusy = () => assert.rejects(begin(target, [], otherOwner), /Board save in progress/);
+const assertOwnerReleased = () => {
+  for (const event of ['render-process-gone', 'destroyed']) {
+    assert.equal(owner.sender.listenerCount(event), 0, `${event} listener is removed after the save`);
+  }
+};
+async function beginAfterCleanup() {
+  const deadline = Date.now() + 2000;
+  while (true) {
+    try { return await begin(); }
+    catch (err) {
+      if (!/Board save in progress/.test(err.message) || Date.now() >= deadline) throw err;
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+  }
+}
 async function readSaved() {
   const box = await container.openContainer(target, { write: false });
   try {
@@ -212,7 +231,105 @@ try {
   assert.equal(await fs.readFile(rawTarget, 'utf8'), 'updated');
   await assert.rejects(fs.stat(`${rawTarget}.bak`), { code: 'ENOENT' });
   assert.ok(!(await fs.readdir(dir)).some(name => name.startsWith('raw.refboard.saving-')));
-  console.log('board save concurrency passed — pending begin, case aliases, append, commit, abort, rollback, compaction, preview, and retry');
+
+  // A crashed renderer loses its token. Cleanup must keep its reservation
+  // until rollback finishes, even if a subsequent destroyed event also fires.
+  const crashSession = await begin();
+  await call('append-board-save-image', {
+    token: crashSession.token, image: { id: 'crashed' }, data: Buffer.from('uncommitted'),
+  });
+  const crashRollback = pause('rollback');
+  owner.sender.emit('render-process-gone', {}, { reason: 'crashed' });
+  await crashRollback.entered;
+  await expectBusy();
+  assert.equal((await abort(crashSession)).aborted, false, 'crashed renderer tokens are invalidated');
+  owner.sender.emit('destroyed');
+  assertOwnerReleased();
+  crashRollback.release();
+  const afterCrash = await beginAfterCleanup();
+  await abort(afterCrash);
+  assert.deepEqual(await readSaved(), [{ id: 'A', bytes: 'AAAA' }], 'crash rollback preserves the committed board');
+
+  // Renderer recovery reuses the same WebContents/id. New saves must neither
+  // inherit an abandoned token nor retain its old lifecycle listeners.
+  assertOwnerReleased();
+  for (const kind of ['append', 'fresh']) {
+    const filePath = kind === 'append' ? target : path.join(dir, 'crash-fresh.refboard');
+    const initializing = pause('open');
+    const interruptedBegin = assert.rejects(begin(filePath), /Board save interrupted/);
+    await initializing.entered;
+    owner.sender.emit('render-process-gone', {}, { reason: 'crashed' });
+    await assert.rejects(begin(filePath, [], otherOwner), /Board save in progress/);
+    owner.sender.emit('destroyed');
+    initializing.release();
+    await interruptedBegin;
+    assertOwnerReleased();
+    const recoveredBegin = await begin(filePath);
+    await abort(recoveredBegin);
+    assert.ok(!(await fs.readdir(dir)).some(name => name.startsWith('crash-fresh.refboard.saving-')),
+      'interrupted fresh initialization removes its temporary file');
+  }
+
+  for (const batch of [false, true]) {
+    const interrupted = await begin();
+    const writing = pause('append');
+    const payload = { image: { id: 'in-flight' }, data: Buffer.from('uncommitted') };
+    const appendCall = batch
+      ? call('append-board-save-images', { token: interrupted.token, images: [payload, payload] })
+      : call('append-board-save-image', { token: interrupted.token, ...payload });
+    const interruptedAppend = assert.rejects(appendCall, /Board save interrupted/);
+    await writing.entered;
+    const rollback = pause('rollback');
+    let rollbackStarted = false;
+    rollback.entered.then(() => { rollbackStarted = true; });
+    owner.sender.emit('render-process-gone', {}, { reason: 'crashed' });
+    owner.sender.emit('destroyed');
+    await expectBusy();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(rollbackStarted, false, 'crash cleanup must wait for the active image write');
+    writing.release();
+    await rollback.entered;
+    await expectBusy();
+    rollback.release();
+    await interruptedAppend;
+    assertOwnerReleased();
+    assert.deepEqual(await readSaved(), [{ id: 'A', bytes: 'AAAA' }]);
+    const next = await begin();
+    await abort(next);
+  }
+
+  const finishing = await begin(target, [{ id: 'A', type: 'image/png' }]);
+  const finishGate = pause('index');
+  const committedAfterCrash = finish(finishing);
+  await finishGate.entered;
+  assertOwnerReleased();
+  owner.sender.emit('render-process-gone', {}, { reason: 'crashed' });
+  owner.sender.emit('destroyed');
+  await expectBusy();
+  assert.equal((await abort(finishing)).aborted, false, 'a crash cannot abort an in-flight commit');
+  finishGate.release();
+  assert.equal((await committedAfterCrash).saved, true, 'a commit already in progress finishes normally');
+  assert.deepEqual(await readSaved(), [{ id: 'A', bytes: 'AAAA' }]);
+  const afterCommit = await begin();
+  await abort(afterCommit);
+  assertOwnerReleased();
+
+  const choosing = pause('dialog');
+  dialogResult = { canceled: false, filePath: target };
+  const interruptedChooser = assert.rejects(call('begin-board-save', {
+    filePath: target, forceDialog: true, core: { items: [] }, imageRefs: [],
+  }), /Board save interrupted/);
+  await choosing.entered;
+  owner.sender.emit('render-process-gone', {}, { reason: 'crashed' });
+  choosing.release();
+  await interruptedChooser;
+  assertOwnerReleased();
+  const afterChooser = await begin();
+  await abort(afterChooser);
+  dialogResult = { canceled: true };
+  assert.equal((await call('begin-board-save', { filePath: target, forceDialog: true })).started, false);
+  assertOwnerReleased();
+  console.log('board save concurrency passed — pending begin, case aliases, append, commit, abort, rollback, compaction, preview, crash cleanup, and renderer reload');
 } finally {
   for (const name of [...gates.keys()]) gates.delete(name);
   await fs.rm(dir, { recursive: true, force: true });

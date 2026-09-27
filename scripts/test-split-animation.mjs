@@ -99,6 +99,7 @@ function harness() {
   assert.equal(h.timers.size, 0, 'only the secondary renderer can report its readiness');
   h.ready();
   assert.equal(st.secondaryView.webContents.throttled, false, 'secondary keeps painting throughout the slide');
+  assert.equal(h.frames.at(-1).animationDirection, 'in');
   assert.equal(c.splitOpenProgress(st), 0, 'first opening frame starts at zero');
   const started = st.splitAnim.t0;
   h.ready();
@@ -122,6 +123,7 @@ function harness() {
   assert.equal(st.splitRatio, 0.65, 'divider resizing works after the animation');
   assert.equal(c.splitFrame(win).contentWidth, 780);
   c.startSplitAnim(win, 'out');
+  assert.equal(h.frames.at(-1).animationDirection, 'out');
   h.time(200); h.frame();
   assert.equal(c.splitFrame(win).contentWidth, 990, 'closing also has an intermediate frame');
   h.time(200); h.frame();
@@ -227,7 +229,7 @@ function rendererFunctions(names) {
 }
 
 {
-  let backingWidth = 2400, backingHeight = 1532, widthWrites = 0, heightWrites = 0;
+  let backingWidth = 2400, backingHeight = 1600, widthWrites = 0, heightWrites = 0;
   let redraws = 0;
   const boardClasses = new Set(['board-active', 'titlebar-revealed']);
   const canvas = {
@@ -235,7 +237,7 @@ function rendererFunctions(names) {
     set width(value) { backingWidth = value; widthWrites++; },
     get height() { return backingHeight; },
     set height(value) { backingHeight = value; heightWrites++; },
-    style: { width: '1200px', height: '766px' },
+    style: { width: '1200px', height: '800px' },
   };
   const c = vm.createContext({
     canvas, splitContentWidth: 1200, splitAnimating: true, splitActive: true,
@@ -267,7 +269,7 @@ function rendererFunctions(names) {
   assert.equal(canvas.width, 1200, 'settled split gets its exact visible backing size');
   assert.equal(canvas.style.width, '600px');
   assert.equal(widthWrites, 1);
-  assert.equal(heightWrites, 0, 'resizing only width never resets the unchanged height');
+  assert.equal(heightWrites, 1, 'settling crops the full backing to the visible height once');
   assertRasterScale();
 
   c.splitAnimating = true;
@@ -278,7 +280,7 @@ function rendererFunctions(names) {
     c.splitContentWidth = width;
     c.resize();
     assert.equal(widthWrites, preparedWrites, 'closing never reallocates between frames');
-    assert.equal(heightWrites, 0);
+    assert.equal(heightWrites, 2, 'closing preserves the prepared full-height backing');
     assertRasterScale();
   }
   c.splitAnimating = false;
@@ -287,14 +289,14 @@ function rendererFunctions(names) {
   c.resize();
   assert.equal(canvas.width, 2400);
   assert.equal(widthWrites, 2, 'there is only one backing resize at each necessary boundary');
-  assert.equal(redraws, 2);
+  assert.equal(redraws, 3, 'closing settles the height back to the revealed titlebar inset');
   assertRasterScale();
 
   c.innerHeight = 900;
   c.resize();
   c.resize();
   assert.equal(widthWrites, 2, 'height-only changes preserve width');
-  assert.equal(heightWrites, 1, 'unchanged dimensions are not assigned again');
+  assert.equal(heightWrites, 4, 'unchanged dimensions are not assigned again');
   assertRasterScale();
   c.BOARD_PANE = 'secondary';
   c.splitAnimating = true;
@@ -320,10 +322,71 @@ function rendererFunctions(names) {
   assertRasterScale();
   c.splitAnimating = true;
   boardClasses.add('titlebar-revealed');
-  assert.equal(c.boardCanvasSize().h, 766, 'an explicitly revealed titlebar retains its existing inset');
+  assert.equal(c.boardCanvasSize().h, 800, 'hover changes cannot resize the backing during a split slide');
   boardClasses.delete('board-active');
   boardClasses.delete('titlebar-revealed');
   assert.equal(c.boardCanvasSize().h, 766, 'the landing page retains its existing inset');
+}
+
+// The vertical path starts at the actual painted position, even when split
+// interrupts a titlebar reveal, reverses, or receives a late hover event.
+{
+  let paintedTop = 26;
+  const properties = new Map();
+  const classes = new Set(['board-active', 'titlebar-revealed']);
+  const root = { style: {
+    setProperty(name, value) { properties.set(name, value); paintedTop = parseFloat(value); },
+    removeProperty: name => properties.delete(name),
+  } };
+  const c = vm.createContext({
+    splitBoardMotion: null,
+    boardRect: () => ({ top: paintedTop }),
+    getComputedStyle: () => ({ getPropertyValue: () => '34px' }),
+    document: { documentElement: root, body: { classList: { contains: name => classes.has(name) } } },
+  });
+  vm.runInContext(rendererFunctions(['updateSplitBoardMotion']), c);
+  const frame = (animationId, progress, animationDirection = 'in') => c.updateSplitBoardMotion({
+    split: true, animating: true, animationId, progress, animationDirection,
+  });
+  frame(null, 0);
+  assert.equal(paintedTop, 26, 'loading freezes a partially revealed board without snapping down');
+  frame('opening', 0);
+  assert.equal(paintedTop, 26, 'starting the native slide does not reset the captured top');
+  frame('opening', 0.5);
+  assert.equal(paintedTop, 30);
+  classes.delete('titlebar-revealed');
+  frame('opening', 0.5);
+  assert.equal(paintedTop, 30, 'the hover-hide timer cannot reverse an opening board');
+  frame('opening', 1);
+  assert.equal(paintedTop, 34);
+  c.updateSplitBoardMotion({ split: true, animating: false });
+  assert.equal(properties.size, 0, 'settling releases the temporary top override');
+
+  frame('closing', 1, 'out');
+  assert.equal(paintedTop, 34);
+  frame('closing', 0.5, 'out');
+  assert.equal(paintedTop, 17);
+  classes.add('titlebar-revealed');
+  frame('closing', 0.5, 'out');
+  assert.equal(paintedTop, 17, 'hovering during close retargets from the current position');
+  frame('closing', 0, 'out');
+  assert.equal(paintedTop, 34, 'a hovered titlebar remains visible after closing');
+  c.updateSplitBoardMotion({ split: false, animating: false });
+  assert.equal(c.splitBoardMotion, null);
+
+  paintedTop = 0;
+  classes.delete('titlebar-revealed');
+  frame('open-again', 0);
+  frame('open-again', 0.5);
+  assert.equal(paintedTop, 17);
+  frame('reverse', 0.5, 'out');
+  assert.equal(paintedTop, 17, 'reversal starts at the current top instead of the full titlebar height');
+  frame('reverse', 0.25, 'out');
+  assert.equal(paintedTop, 8.5);
+  frame('reverse', 0, 'out');
+  assert.equal(paintedTop, 0);
+  c.updateSplitBoardMotion({ split: false });
+  assert.equal(properties.size, 0, 'cancelled or failed split startup releases the offset');
 }
 
 // Animation requests are display paced. Repeated state messages must neither

@@ -61,28 +61,46 @@ app.whenReady().then(async () => {
     const expected = nativeImage.createFromBuffer(fixture);
     assert.equal(result.isEmpty(), false);
     assert.deepEqual(result.getSize(), expected.getSize());
-    assert.deepEqual(result.toBitmap(), expected.toBitmap(), 'existing fixture pixels must survive clipboard round-trip');
+    assert.ok(result.toBitmap().equals(expected.toBitmap()), 'existing fixture pixels must survive clipboard round-trip');
     console.log(`clipboard bridge smoke passed on Electron ${process.versions.electron}`);
   } catch (error) {
     console.error(error);
     process.exitCode = 1;
   } finally {
+    let restorationStep = 'writing original formats';
     try {
       if (changed) {
         if (saved.length) await clipboard.write(saved);
         else clipboard.clear();
+        restorationStep = 'reading restored formats';
         const restored = await clipboard.read();
         for (const [type, bytes] of savedPayloads) {
+          restorationStep = 'finding restored ' + type;
           const item = restored.find(item => item.types.includes(type));
           assert.ok(item, 'original clipboard format must be restored');
-          assert.deepEqual(Buffer.from(await (await item.getType(type)).arrayBuffer()), bytes,
-            'original clipboard bytes must be restored');
+          restorationStep = 'reading restored blob for ' + type;
+          const blob = await item.getType(type);
+          restorationStep = 'reading restored bytes for ' + type;
+          const restoredBytes = Buffer.from(await blob.arrayBuffer());
+          restorationStep = 'comparing restored content for ' + type;
+          if (type === 'image/png') {
+            // The native clipboard stores pixels and may re-encode PNG on
+            // readback. Preserve the image, not its incidental PNG encoding.
+            const actualImage = nativeImage.createFromBuffer(restoredBytes);
+            const originalImage = nativeImage.createFromBuffer(bytes);
+            assert.equal(actualImage.isEmpty(), false, 'restored clipboard image must decode');
+            assert.deepEqual(actualImage.getSize(), originalImage.getSize(), 'original clipboard image dimensions must be restored');
+            assert.ok(actualImage.toBitmap().equals(originalImage.toBitmap()), 'original clipboard image pixels must be restored');
+          } else {
+            // Avoid constructing huge buffer diffs if restoration fails.
+            assert.ok(restoredBytes.equals(bytes), 'original clipboard bytes must be restored');
+          }
         }
         if (!saved.length) assert.equal(restored.length, 0);
         console.log('Original clipboard restored');
       }
     } catch (error) {
-      console.error('Could not restore original clipboard:', error);
+      console.error('Could not restore original clipboard (' + restorationStep + '):', error);
       process.exitCode = 1;
     }
     win?.destroy();

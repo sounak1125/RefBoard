@@ -92,6 +92,14 @@ Push-Location bootstrapper; npm run dist; Pop-Location
 ```powershell
 (Get-FileHash dist\RefBoard-Setup-2.0.9.exe).Hash -eq (Get-FileHash bootstrapper\payload\RefBoard-Setup.exe).Hash
 ```
+
+   Run `npm run release:verify` after both builds. It compares the packaged
+   runtime files with the checkout, checks both versions and the installer's
+   embedded setup, and validates the update feed's size and SHA-512 hash.
+   It also writes a release manifest and SHA-256 checksums into `dist/`.
+   Commit the release changes before the final verification so the manifest
+   records the source commit with `sourceDirty: false`.
+
 6. Create a **draft** GitHub release and upload auto-update assets (`latest.yml`, setup `.exe`, `.blockmap`):
 
 ```powershell

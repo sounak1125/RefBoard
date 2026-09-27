@@ -89,7 +89,8 @@ body{
   position:fixed; top:var(--titlebar-h); left:0; right:0; bottom:0;
   width:100%; height:calc(100vh - var(--titlebar-h));
   display:block; touch-action:none;
-  transition:top .32s cubic-bezier(.22,1,.36,1), height .32s cubic-bezier(.22,1,.36,1);
+  /* Canvas pixels resize immediately; interpolating height would stretch them. */
+  transition:top .32s cubic-bezier(.22,1,.36,1);
 }
 html.window-resizing,
 html.window-resizing *,
@@ -3074,9 +3075,9 @@ body.split-active:not(.pane-secondary).board-active:not(.titlebar-revealed) #emp
 body.split-active:not(.pane-secondary).board-active:not(.titlebar-revealed) #board{
   top:var(--titlebar-h); height:calc(100vh - var(--titlebar-h));
 }
-body.split-active.split-animating.board-active:not(.titlebar-revealed) #board{
-  /* Slide under the shared titlebar without squeezing the painted surface. */
-  top:calc(var(--titlebar-h) * var(--split-progress, 0));
+body.split-active.split-animating.board-active:not(.pane-secondary) #board{
+  /* The split owns this offset, including when titlebar hover changes midway. */
+  top:var(--split-board-top, 0px);
 }
 body.split-active:not(.pane-secondary) #selbar,
 body.split-active:not(.pane-secondary) #toast,
@@ -5068,10 +5069,7 @@ function boardCanvasSize() {
   // closing must already have pixels ready for the area it is about to reveal.
   if (splitAnimating && BOARD_PANE === 'primary') {
     size.w = Math.max(1, innerWidth - chromeLeft());
-    if (document.body.classList.contains('board-active')
-        && !document.body.classList.contains('titlebar-revealed')) {
-      size.h = Math.max(1, innerHeight);
-    }
+    if (document.body.classList.contains('board-active')) size.h = Math.max(1, innerHeight);
   }
   return size;
 }
@@ -19970,6 +19968,7 @@ let splitDragRaf = 0;
 let splitDragScreenX = 0;
 let splitAnimationId = null;
 let splitAnimationRaf = 0;
+let splitBoardMotion = null;
 
 function requestSplitAnimationFrame() {
   splitAnimationRaf = 0;
@@ -20007,20 +20006,39 @@ function setSplitToggle(on) {
   splitToggleEl.setAttribute('aria-label', splitActive ? 'Close split view' : 'Split view');
 }
 
+function updateSplitBoardMotion(state) {
+  const root = document.documentElement;
+  if (!state?.split || !state?.animating) {
+    splitBoardMotion = null;
+    root.style.removeProperty('--split-board-top');
+    return;
+  }
+  const progress = Number.isFinite(state.progress) ? Math.max(0, Math.min(1, state.progress)) : 0;
+  const endProgress = state.animationDirection === 'out' ? 0 : 1;
+  const barHeight = parseFloat(getComputedStyle(root).getPropertyValue('--titlebar-h')) || 34;
+  const targetTop = endProgress === 0 && document.body.classList.contains('board-active')
+    && !document.body.classList.contains('titlebar-revealed') ? 0 : barHeight;
+  const id = state.animationId || null;
+  if (!splitBoardMotion || splitBoardMotion.id !== id || splitBoardMotion.targetTop !== targetTop) {
+    // Read the painted position before changing classes. This also preserves
+    // an unfinished titlebar reveal or a split that reverses partway through.
+    splitBoardMotion = { id, startTop: boardRect().top, startProgress: progress, targetTop };
+  }
+  const { startTop, startProgress } = splitBoardMotion;
+  const distance = endProgress - startProgress;
+  const t = distance === 0 ? 1 : Math.max(0, Math.min(1, (progress - startProgress) / distance));
+  root.style.setProperty('--split-board-top', `${startTop + (targetTop - startTop) * t}px`);
+}
+
 function applySplitChrome(state) {
   const split = !!state?.split;
   const previousContentWidth = splitContentWidth;
   const wasAnimating = splitAnimating;
+  if (BOARD_PANE === 'primary') updateSplitBoardMotion(state);
   splitAnimating = split && !!state?.animating;
   setSplitToggle(split);
   document.body.classList.toggle('split-animating', splitAnimating && BOARD_PANE === 'primary');
   if (BOARD_PANE !== 'primary') return;
-  if (splitAnimating) {
-    const progress = Number.isFinite(state?.progress) ? Math.max(0, Math.min(1, state.progress)) : 0;
-    document.documentElement.style.setProperty('--split-progress', String(progress));
-  } else {
-    document.documentElement.style.removeProperty('--split-progress');
-  }
   if (split && Number.isFinite(state?.contentWidth) && state.contentWidth > 0) {
     const width = Math.round(state.contentWidth);
     if (splitContentWidth !== width) {

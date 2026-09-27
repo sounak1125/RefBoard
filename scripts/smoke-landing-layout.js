@@ -414,7 +414,7 @@ async function run() {
       document.querySelector('#uiSelectMenu-setToolbarMode [data-value="pinned"]').click();
     })()
   `);
-  await waitFor(win, "document.body.classList.contains('toolbar-pinned') && JSON.parse(localStorage.getItem('refboard.settings')).toolbarMode === 'pinned'", 'Always Visible setting');
+  await waitFor(win, "document.body.classList.contains('toolbar-pinned') && JSON.parse(localStorage.getItem('refboard.settings')).toolbarMode === 'pinned' && getComputedStyle(document.querySelector('#toolbar')).opacity === '1'", 'Always Visible setting and completed toolbar fade');
   const pinnedToolbar = await win.webContents.executeJavaScript(`({
     mode: document.querySelector('#setToolbarMode').value,
     buttonLabel: document.querySelector('#setToolbarMode').closest('.ui-select').querySelector('.ui-select-button-label').textContent,

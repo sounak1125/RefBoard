@@ -40,10 +40,16 @@ const handlerSource = channel => {
 for (const channel of ['begin-board-save', 'finish-board-save', 'abort-board-save']) {
   assert.match(
     handlerSource(channel),
-    /await discardBoardSaveSession\(session\)/,
+    /await (?:discardBoardSaveSession|cleanupBoardSaveSession)\(session\)/,
     `'${channel}' must discard the session on its failure/abort branch`,
   );
 }
+const cleanupStart = main.indexOf('function cleanupBoardSaveSession(session)');
+assert.ok(cleanupStart >= 0, 'crash cleanup must share the save-session discard path');
+const cleanup = main.slice(cleanupStart, main.indexOf('\n  }', cleanupStart));
+assert.match(cleanup, /discardBoardSaveSession\(session\)/, 'the shared cleanup must discard the session');
+assert.match(cleanup, /\.finally\(\(\) => releaseBoardSaveTarget\(session\)\)/,
+  'the file stays reserved until discard completes');
 // finish must drop the session from the map *before* trying to complete it, so a
 // failed finish cannot leave a half-written session that later reports "busy".
 const finish = handlerSource('finish-board-save');

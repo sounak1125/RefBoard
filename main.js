@@ -338,6 +338,7 @@ function splitStatePayload(win, frame = splitFrame(win)) {
     progress: frame.progress,
     animating: !!(st?.secondaryLoading || st?.splitAnim),
     animationId: st?.splitAnim?.id || null,
+    animationDirection: st?.secondaryLoading ? 'in' : st?.splitAnim?.dir || null,
   };
 }
 
@@ -1003,8 +1004,45 @@ function setupIpc() {
   }
 
   function releaseBoardSaveTarget(session) {
+    unwatchBoardSaveOwner(session);
     const key = boardTargetKey(session.target);
     if (boardSaveTargets.get(key) === session) boardSaveTargets.delete(key);
+  }
+
+  function unwatchBoardSaveOwner(session) {
+    if (!session.ownerGone) return;
+    session.owner?.removeListener?.('render-process-gone', session.ownerGone);
+    session.owner?.removeListener?.('destroyed', session.ownerGone);
+    session.ownerGone = null;
+    session.owner = null;
+  }
+
+  function cleanupBoardSaveSession(session) {
+    if (!session.cleanup) {
+      unwatchBoardSaveOwner(session);
+      boardSaveSessions.delete(session.token);
+      session.cleanup = discardBoardSaveSession(session)
+        .finally(() => releaseBoardSaveTarget(session));
+    }
+    return session.cleanup;
+  }
+
+  function watchBoardSaveOwner(session, owner) {
+    session.owner = owner;
+    session.ownerGone = () => {
+      // Reloading the renderer loses its token even when WebContents survives.
+      // Invalidate it immediately, but never truncate underneath an active write.
+      session.abandoned = true;
+      boardSaveSessions.delete(session.token);
+      if (!session.initializing && !session.appending) {
+        void cleanupBoardSaveSession(session).catch(err => {
+          console.warn('RefBoard interrupted save cleanup failed:', err?.message || err);
+        });
+      }
+    };
+    owner.once?.('render-process-gone', session.ownerGone);
+    owner.once?.('destroyed', session.ownerGone);
+    if (owner.isDestroyed?.() || owner.isCrashed?.()) session.ownerGone();
   }
 
   /* Single-file boards (see scripts/board-container.js): the file grows by the
@@ -1166,13 +1204,27 @@ function setupIpc() {
   ipcMain.handle('begin-board-save', async (event, { defaultName, filePath, forceDialog = false, core, preview, imageRefs }) => {
     let target = forceDialog ? null : filePath;
     if (!target) {
-      const r = await dialog.showSaveDialog(windowForEvent(event), {
-        title: 'Save RefBoard board',
-        defaultPath: filePath || path.join(app.getPath('documents'), defaultName),
-        filters: [{ name: 'RefBoard board', extensions: ['refboard'] }],
-      });
-      if (r.canceled || !r.filePath) return { started: false };
-      target = r.filePath;
+      // A modal chooser can outlive a renderer crash and its automatic reload.
+      // Do not create a session for the old request after the chooser returns.
+      let ownerGone = false;
+      const markOwnerGone = () => { ownerGone = true; };
+      event.sender.once?.('render-process-gone', markOwnerGone);
+      event.sender.once?.('destroyed', markOwnerGone);
+      try {
+        const r = await dialog.showSaveDialog(windowForEvent(event), {
+          title: 'Save RefBoard board',
+          defaultPath: filePath || path.join(app.getPath('documents'), defaultName),
+          filters: [{ name: 'RefBoard board', extensions: ['refboard'] }],
+        });
+        if (ownerGone || event.sender.isDestroyed?.() || event.sender.isCrashed?.()) {
+          throw new Error('Board save interrupted');
+        }
+        if (r.canceled || !r.filePath) return { started: false };
+        target = r.filePath;
+      } finally {
+        event.sender.removeListener?.('render-process-gone', markOwnerGone);
+        event.sender.removeListener?.('destroyed', markOwnerGone);
+      }
     }
 
     target = path.resolve(target);
@@ -1183,9 +1235,12 @@ function setupIpc() {
       core, preview, imageRefs: Array.isArray(imageRefs) ? imageRefs : [],
       mode: 'fresh', container: null, tempPath: null, startSize: null, sourceStorePath: null,
       existing: new Map(), appended: new Map(),
+      initializing: true, abandoned: false,
     };
     boardSaveTargets.set(boardTargetKey(target), session);
+    watchBoardSaveOwner(session, event.sender);
     try {
+      if (session.abandoned) throw new Error('Board save interrupted');
       const kind = await boardFileKind(target);
       if (kind === 'container') {
         // Save in place: append what the file lacks, then a fresh index.
@@ -1221,11 +1276,13 @@ function setupIpc() {
           }
         }
       }
+      if (session.abandoned) throw new Error('Board save interrupted');
+      session.initializing = false;
       boardSaveSessions.set(token, session);
       return { started: true, token, filePath: target, stored: [...session.existing.keys()] };
     } catch (err) {
-      try { await discardBoardSaveSession(session); }
-      finally { releaseBoardSaveTarget(session); }
+      session.initializing = false;
+      await cleanupBoardSaveSession(session);
       throw err;
     }
   });
@@ -1236,8 +1293,12 @@ function setupIpc() {
     session.appending = true;
     try {
       const entry = await appendBoardSaveImageParts(session, image, data);
+      if (session.abandoned) throw new Error('Board save interrupted');
       return { appended: true, entry };
-    } finally { session.appending = false; }
+    } finally {
+      session.appending = false;
+      if (session.abandoned) await cleanupBoardSaveSession(session);
+    }
   });
 
   ipcMain.handle('append-board-save-images', async (event, { token, images }) => {
@@ -1249,10 +1310,15 @@ function setupIpc() {
       const list = Array.isArray(images) ? images : [];
       const entries = [];
       for (const entry of list) {
+        if (session.abandoned) throw new Error('Board save interrupted');
         entries.push(await appendBoardSaveImageParts(session, entry?.image, entry?.data));
       }
+      if (session.abandoned) throw new Error('Board save interrupted');
       return { appended: true, count: list.length, entries };
-    } finally { session.appending = false; }
+    } finally {
+      session.appending = false;
+      if (session.abandoned) await cleanupBoardSaveSession(session);
+    }
   });
 
   ipcMain.handle('finish-board-save', async (event, token) => {
@@ -1260,6 +1326,9 @@ function setupIpc() {
     if (!session || session.ownerId !== event.sender.id) throw new Error('Unknown board save session');
     if (session.appending) throw new Error('Board save in progress');
     boardSaveSessions.delete(token);
+    // Once committing starts, finish or roll it back normally even if the
+    // renderer disappears; a crash must not race an already written index.
+    unwatchBoardSaveOwner(session);
     try {
       let images = session.imageRefs.map(ref => {
         const id = String(ref?.id || '');
@@ -1328,11 +1397,8 @@ function setupIpc() {
     const session = boardSaveSessions.get(token);
     if (!session || session.ownerId !== event.sender.id) return { aborted: false };
     if (session.appending) throw new Error('Board save in progress');
-    boardSaveSessions.delete(token);
-    try {
-      await discardBoardSaveSession(session);
-      return { aborted: true };
-    } finally { releaseBoardSaveTarget(session); }
+    await cleanupBoardSaveSession(session);
+    return { aborted: true };
   });
 
   ipcMain.handle('open-board-dialog', async event => {

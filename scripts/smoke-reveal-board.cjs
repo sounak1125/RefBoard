@@ -7,7 +7,7 @@ const path = require('node:path');
 const os = require('node:os');
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'refboard-reveal-'));
-const output = path.join(root, 'stress-out-smoke', 'reveal-board');
+const output = process.env.REFBOARD_SMOKE_OUTPUT || path.join(root, 'stress-out-smoke', 'reveal-board');
 fs.mkdirSync(output, { recursive: true });
 app.setAppPath(root);
 app.setPath('userData', path.join(temp, 'profile'));
@@ -23,8 +23,15 @@ app.on('browser-window-created', (_event, window) => {
 require('../main.js');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-let win;
-const run = expression => win.webContents.executeJavaScript(expression);
+let win, page;
+const run = expression => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('Timed out evaluating primary board renderer')), 8000);
+  page.executeJavaScript(expression).then(value => {
+    clearTimeout(timer); resolve(value);
+  }, error => {
+    clearTimeout(timer); reject(error);
+  });
+});
 async function waitFor(check, label) {
   for (let i = 0; i < 150; i++) {
     if (await check()) return;
@@ -42,16 +49,16 @@ async function click(selector) {
     })()`);
     return !!point;
   }, 'clickable '+selector);
-  win.webContents.sendInputEvent({type:'mouseMove', ...point});
-  win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});
-  win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
+  page.sendInputEvent({type:'mouseMove', ...point});
+  page.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...point});
+  page.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...point});
 }
 async function reveal(selector, expectedPath, keyboard = false) {
   const count = revealed.length;
   if (keyboard) {
     await run(`document.querySelector(${JSON.stringify(selector)}).focus()`);
-    await win.webContents.debugger.sendCommand('Input.dispatchKeyEvent', {type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});
-    await win.webContents.debugger.sendCommand('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+    await page.debugger.sendCommand('Input.dispatchKeyEvent', {type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});
+    await page.debugger.sendCommand('Input.dispatchKeyEvent', {type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
   } else await click(selector);
   await waitFor(() => revealed.length > count, 'native reveal call');
   await waitFor(() => run(`!document.querySelector(${JSON.stringify(selector)}).disabled`), 'reveal response');
@@ -69,9 +76,16 @@ async function main() {
   try {
     await app.whenReady();
     await waitFor(() => (win = BrowserWindow.getAllWindows()[0]), 'app window');
+    // The BrowserWindow hosts native views; its own renderer stays blank.
+    // Exercise the primary board's actual WebContentsView instead.
+    await waitFor(() => {
+      page = win.contentView.children.find(view => view.webContents)?.webContents;
+      return page && !page.isDestroyed() && !page.isLoading() && /index\.html/.test(page.getURL());
+    }, 'primary board renderer');
+    page.setBackgroundThrottling(false);
     await waitFor(() => run('!!window.RefBoard?.startupComplete').catch(() => false), 'startup');
-    win.webContents.debugger.attach('1.3');
-    await win.webContents.debugger.sendCommand('Emulation.setFocusEmulationEnabled', {enabled:true});
+    page.debugger.attach('1.3');
+    await page.debugger.sendCommand('Emulation.setFocusEmulationEnabled', {enabled:true});
     const boards = ['Moodboard café (v2)', 'Second board'].map(name => ({name, file:path.join(temp, name+'.refboard')}));
     await run(`(async()=>{
       document.querySelectorAll('.modal.show').forEach(el=>el.classList.remove('show'));
@@ -104,7 +118,7 @@ async function main() {
           && buttons.every((r,i)=>buttons.slice(i+1).every(s=>r.right<=s.left||s.right<=r.left));
       })()`), 'card actions must fit without overlapping at '+width+'x'+height);
       await run('document.activeElement?.blur()');
-      fs.writeFileSync(path.join(output, width+'x'+height+'.png'), (await win.webContents.capturePage()).toPNG());
+      fs.writeFileSync(path.join(output, width+'x'+height+'.png'), (await page.capturePage()).toPNG());
     }
 
     // A completed rename must reveal the new file, not its former location.
@@ -153,7 +167,7 @@ async function main() {
   } catch (error) {
     console.error(error);
     exitCode = 1;
-    if (win && !win.isDestroyed()) fs.writeFileSync(path.join(output,'failure.png'),(await win.webContents.capturePage()).toPNG());
+    if (page && !page.isDestroyed()) fs.writeFileSync(path.join(output,'failure.png'),(await page.capturePage()).toPNG());
   } finally {
     shell.showItemInFolder = originalReveal;
     app.removeAllListeners('window-all-closed');

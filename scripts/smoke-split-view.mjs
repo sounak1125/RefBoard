@@ -48,10 +48,15 @@ const primaryExpression = `(async()=>{
   document.querySelector('#rwNewBoard').click();
   for(let i=0;i<100&&!document.body.classList.contains('board-active');i++)await wait(50);
   if(!document.body.classList.contains('board-active'))throw new Error('primary board did not open');
-  const image=document.createElement('canvas');image.width=80;image.height=60;
-  image.getContext('2d').fillRect(0,0,80,60);
+  const image=document.createElement('canvas');image.width=400;image.height=400;
+  image.getContext('2d').fillRect(0,0,400,400);
   const blob=await new Promise(resolve=>image.toBlob(resolve));
-  await window.RefBoard.addImages([new File([blob],'split.png',{type:'image/png'})]);
+  const fixtures=await window.RefBoard.addImages([0,1,2].map(i=>new File([blob],'split-'+i+'.png',{type:'image/png'})));
+  // Stack three images near the bottom at 25% zoom: a small canvas stretch is
+  // most visible there, as in the reported reference board.
+  Object.assign(window.RefBoard.state.view,{s:0.25,tx:60,ty:60});
+  const imageSide=(innerHeight-120)/3/0.25;
+  fixtures.forEach((fixture,i)=>Object.assign(fixture,{x:0,y:i*imageSide,h:imageSide,w:imageSide}));
   // Exercise the slide with a populated board, not only an empty canvas.
   for(let i=0;i<120;i++)window.RefBoard.state.items.push(window.RefBoard.makeNoteForTest({
     id:'split-note-'+i,x:(i%15)*100,y:Math.floor(i/15)*90,w:90,h:70,
@@ -59,6 +64,7 @@ const primaryExpression = `(async()=>{
   window.RefBoard.invalidate();
   await wait(400);
   const originalItems=JSON.stringify(window.RefBoard.state.items);
+  window.splitSmokeOriginalItems=originalItems;
   const toggle=document.querySelector('#splitToggle');
   const minimap=document.querySelector('#minimapToggle');
   if(!toggle)throw new Error('split toggle missing');
@@ -77,11 +83,23 @@ const primaryExpression = `(async()=>{
       return descriptor.set.call(this,value);
     }});
   }
-  function sampleSlide(){
+  window.splitSmokeSample=()=>{
     const rect=board.getBoundingClientRect();
-    window.splitSmokeMeasure.samples.push({at:performance.now(),
-      top:rect.top,height:rect.height,rasterHeight:board.height/(devicePixelRatio||1),
-      width:parseFloat(document.documentElement.style.getPropertyValue('--split-left'))||innerWidth});
+    const images=window.RefBoard.state.items.filter(item=>item.imgId);
+    const firstImage=images[0],lastImage=images.at(-1);
+    const view=window.RefBoard.state.view;
+    const rasterHeight=board.height/(devicePixelRatio||1);
+    const scale=rect.height/rasterHeight;
+    return {at:performance.now(),
+      top:rect.top,height:rect.height,rasterHeight,
+      imageTop:rect.top+(firstImage.y*view.s+view.ty)*scale,
+      imageBottom:rect.top+((lastImage.y+lastImage.h)*view.s+view.ty)*scale,
+      revealed:document.body.classList.contains('titlebar-revealed'),
+      animating:document.body.classList.contains('split-animating'),
+      width:parseFloat(document.documentElement.style.getPropertyValue('--split-left'))||innerWidth};
+  };
+  function sampleSlide(){
+    window.splitSmokeMeasure.samples.push(window.splitSmokeSample());
     requestAnimationFrame(sampleSlide);
   }
   requestAnimationFrame(sampleSlide);
@@ -96,6 +114,7 @@ const primaryExpression = `(async()=>{
       boardWidth:rect.width,boardTop:rect.top,visibleBoardWidth:rect.width-right-left,
       cssWidth:parseFloat(document.documentElement.style.getPropertyValue('--split-left'))||innerWidth});
   });
+  window.splitSmokeMeasure.samples.push(window.splitSmokeSample());
   toggle.click();
   for(let i=0;i<300;i++){
     const last=window.splitSmokeFrames.at(-1);
@@ -104,6 +123,9 @@ const primaryExpression = `(async()=>{
   }
   const opened=window.splitSmokeFrames.at(-1);
   if(!opened?.split||opened.animating)throw new Error('split opening never completed: '+JSON.stringify(opened));
+  // Observe the final paint too: CSS height transitions can distort the canvas
+  // after the native pane has already reached its destination.
+  await wait(450);
   return {
     pane: window.RefBoard.boardPane,
     toggleVisible: shown,
@@ -128,7 +150,7 @@ function checkMotion(label, frames, measure, fullWidth) {
   const resets=measure.sets;
   for(const key of ['width','height'])assert.ok(resets.filter(set=>set.key===key).length<=3,
     `${label} must keep its canvas surface stable instead of clearing ${key} every frame`);
-  for(const sample of samples)assert.ok(Math.abs(sample.height-sample.rasterHeight)<=1,
+  for(const sample of measure.samples)assert.ok(Math.abs(sample.height-sample.rasterHeight)<=1,
     `${label} must move the board without stretching its raster surface`);
   const firstTop=frames[0].boardTop,lastTop=frames.at(-1).boardTop;
   if(Math.abs(lastTop-firstTop)>2)assert.ok(moving.some(frame=>frame.boardTop>Math.min(firstTop,lastTop)+1
@@ -138,6 +160,20 @@ function checkMotion(label, frames, measure, fullWidth) {
   const median=gaps.length?Math.round(gaps[Math.floor(gaps.length/2)]*10)/10:0;
   console.log(`split ${label}: ${steps} visible positions / ${samples.length} display frames; `+
     `${resets.length} canvas dimension writes; ${median} ms median layout interval`);
+}
+
+function checkVerticalMotion(label, samples, direction) {
+  assert.ok(samples.length>=3, `${label} must observe painted image positions`);
+  for(let i=1;i<samples.length;i++){
+    for(const key of ['imageTop','imageBottom']){
+      const delta=samples[i][key]-samples[i-1][key];
+      assert.ok(delta*direction>=-0.75,
+        `${label} image must move once without bouncing (${key} reversed ${delta.toFixed(2)} px)`);
+    }
+  }
+  const first=samples[0],last=samples.at(-1);
+  assert.ok(Math.abs((last.imageBottom-last.imageTop)-(first.imageBottom-first.imageTop))<=0.75,
+    `${label} must preserve the displayed image size`);
 }
 
 const secondaryExpression = `(async()=>{
@@ -184,6 +220,7 @@ try {
     assert.ok(Math.abs(openingFrames[i].visibleBoardWidth-openingFrames[i].contentWidth)<=1, 'the clipped board follows the divider');
   }
   checkMotion('opening', openingFrames, primary.measure, primary.width);
+  checkVerticalMotion('opening', primary.measure.samples, 1);
 
   const secondary = await evaluate(port, secondaryExpression, { urlPattern: /[?&]pane=secondary(?:&|$)/ });
   assert.equal(secondary.pane, 'secondary');
@@ -213,17 +250,20 @@ try {
       pending: !!(r?.pending || r?.closed),
       reason: r?.reason || null,
       pressed: document.querySelector('#splitToggle')?.getAttribute('aria-pressed'),
+      itemsUnchanged:window.splitSmokeOriginalItems===JSON.stringify(window.RefBoard.state.items),
       frames:window.splitSmokeFrames,measure:window.splitSmokeMeasure,errors:window.splitSmokeErrors,width:innerWidth,
     };
   })()`, { urlPattern: /index\.html\?(?!.*pane=secondary)/i });
   assert.ok(afterExit.pending, 'split-exit should close or wait for the right pane handshake');
   assert.equal(afterExit.pressed, 'false', 'closing must complete');
+  assert.equal(afterExit.itemsUnchanged,true,'closing split must preserve board items');
   assert.deepEqual(afterExit.errors, [], 'split transitions must not throw renderer errors');
   const closingFrames = afterExit.frames;
   assert.ok(closingFrames.some(frame => frame.contentWidth > finalWidth + 5 && frame.contentWidth < afterExit.width - 5), 'closing must also slide through intermediate positions');
   for(const frame of closingFrames)assert.ok(Math.abs(frame.visibleBoardWidth-frame.contentWidth)<=1,
     'closing keeps the clipped canvas and divider aligned');
   checkMotion('closing', closingFrames, afterExit.measure, afterExit.width);
+  checkVerticalMotion('closing', afterExit.measure.samples, -1);
   const settledAt=closingFrames.at(-1).at;
   const settledSamples=afterExit.measure.samples.filter(sample=>sample.at>=settledAt);
   assert.ok(settledSamples.length>=2, 'closing must observe painted frames after the pane is removed');
@@ -246,13 +286,65 @@ try {
     await window.RefBoardAPI.splitExit();
     for(let i=0;i<100&&document.querySelector('#splitToggle').getAttribute('aria-pressed')!=='false';i++)await wait(50);
     return {frame,dragged,width:innerWidth,errors:window.splitSmokeErrors,
+      itemsUnchanged:window.splitSmokeOriginalItems===JSON.stringify(window.RefBoard.state.items),
       closed:document.querySelector('#splitToggle').getAttribute('aria-pressed')==='false'};
   })()`, { urlPattern: /index\.html\?(?!.*pane=secondary)/i });
   assert.equal(reopened.frame.animating, false);
   assert.ok(Math.abs(reopened.frame.contentWidth - Math.round(reopened.width * 0.65)) <= 1, 'reopening honors the remembered ratio');
   assert.ok(Math.abs(reopened.dragged.ratio - 0.4) < 0.03, 'divider movement still resizes the panes');
   assert.equal(reopened.closed, true);
+  assert.equal(reopened.itemsUnchanged,true,'reopening and divider movement must preserve board items');
   assert.deepEqual(reopened.errors, []);
+
+  const hoverCases=await evaluate(port, `(async()=>{
+    const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+    const board=document.querySelector('#board'),bar=document.querySelector('#titlebar');
+    const cases=[];
+    for(const kind of ['revealed','hover-hide-overlap','mid-reveal']){
+      // Use the real hover handlers and their timer, rather than setting the
+      // titlebar class directly. This reproduces clicking while chrome moves.
+      bar.dispatchEvent(new MouseEvent('mouseleave',{relatedTarget:board}));
+      await wait(800);
+      bar.dispatchEvent(new MouseEvent('mouseenter'));
+      await wait(kind==='mid-reveal'?80:400);
+      if(kind==='hover-hide-overlap')bar.dispatchEvent(new MouseEvent('mouseleave',{relatedTarget:board}));
+      window.splitSmokeFrames=[];
+      window.splitSmokeMeasure={sets:[],samples:[window.splitSmokeSample()]};
+      const originalItems=JSON.stringify(window.RefBoard.state.items);
+      document.querySelector('#splitToggle').click();
+      for(let i=0;i<300;i++){
+        const last=window.splitSmokeFrames.at(-1);
+        if(last?.split&&!last.animating)break;
+        await wait(50);
+      }
+      const opened=window.splitSmokeFrames.at(-1);
+      if(!opened?.split||opened.animating)throw new Error(kind+' never finished opening');
+      await wait(450);
+      cases.push({kind,frames:window.splitSmokeFrames,measure:window.splitSmokeMeasure,
+        width:innerWidth,itemsUnchanged:originalItems===JSON.stringify(window.RefBoard.state.items)});
+      // Replace buffers before closing so no later RAF mutates this case.
+      window.splitSmokeFrames=[];
+      window.splitSmokeMeasure={sets:[],samples:[]};
+      await window.RefBoardAPI.splitExit();
+      for(let i=0;i<100&&document.querySelector('#splitToggle').getAttribute('aria-pressed')!=='false';i++)await wait(50);
+      if(document.querySelector('#splitToggle').getAttribute('aria-pressed')!=='false')throw new Error(kind+' never finished closing');
+      await wait(450);
+      cases.at(-1).closing={frames:window.splitSmokeFrames,measure:window.splitSmokeMeasure,
+        itemsUnchanged:originalItems===JSON.stringify(window.RefBoard.state.items)};
+      window.splitSmokeFrames=[];
+      window.splitSmokeMeasure={sets:[],samples:[]};
+    }
+    return {cases,errors:window.splitSmokeErrors};
+  })()`, { urlPattern: /index\.html\?(?!.*pane=secondary)/i });
+  assert.deepEqual(hoverCases.errors, [], 'hover timing transitions must not throw renderer errors');
+  for(const entry of hoverCases.cases){
+    assert.equal(entry.itemsUnchanged,true,entry.kind+' must preserve board items');
+    assert.equal(entry.closing.itemsUnchanged,true,entry.kind+' closing must preserve board items');
+    checkMotion(entry.kind+' opening',entry.frames,entry.measure,entry.width);
+    checkVerticalMotion(entry.kind+' opening',entry.measure.samples,1);
+    checkMotion(entry.kind+' closing',entry.closing.frames,entry.closing.measure,entry.width);
+    checkVerticalMotion(entry.kind+' closing',entry.closing.measure.samples,-1);
+  }
 } catch (err) {
   failed = true;
   console.error(err);
@@ -262,4 +354,4 @@ try {
   await removeProfileDir(profile);
 }
 if (failed) process.exit(1);
-console.log('split-view smoke ok — intermediate opening/closing frames, synchronized layout, reopen and divider resize');
+console.log('split-view smoke ok — opening/closing image motion, settled canvas scale, titlebar hover timing, reopen and divider resize');
