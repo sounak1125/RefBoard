@@ -22,6 +22,22 @@ async function fileMtimeMs(filePath) {
   }
 }
 
+// Call only after a successful save. A backup is needed during replacement,
+// not as a permanent sibling of the board. Failure to tidy an obsolete copy
+// must not report the already-committed save as failed.
+async function cleanupBoardBackup(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false;
+  const target = path.resolve(filePath);
+  if (await fileMtimeMs(target) == null) return false;
+  try {
+    await fs.unlink(boardBakPath(target));
+    return true;
+  } catch (err) {
+    if (err.code !== 'ENOENT') console.warn('Could not remove completed board backup:', err.message);
+    return false;
+  }
+}
+
 async function replaceBoardFile(target, tempPath) {
   const dest = path.resolve(String(target || ''));
   const temp = path.resolve(String(tempPath || ''));
@@ -35,6 +51,9 @@ async function replaceBoardFile(target, tempPath) {
       movedToBak = true;
     }
     await fs.rename(temp, dest);
+    // The caller has flushed and closed the complete new file. Keep .bak if
+    // the app stops before this point; remove it only after the swap succeeds.
+    await cleanupBoardBackup(dest);
     return { replaced: true, bakPath: fsSync.existsSync(bakPath) ? bakPath : null };
   } catch (err) {
     if (movedToBak && !fsSync.existsSync(dest)) {
@@ -84,6 +103,7 @@ async function recoverBoardFileIfMissing(filePath) {
 
 module.exports = {
   boardBakPath,
+  cleanupBoardBackup,
   replaceBoardFile,
   recoverBoardFileIfMissing,
 };

@@ -14,13 +14,16 @@ const handlers = new Map();
 const children = [];
 let setupExists = true;
 let spawnError = null;
+const quitTimers = [];
+let quitCount = 0;
 const electron = {
-  app: { whenReady: () => ({ then() {} }), on() {} },
+  app: { whenReady: () => ({ then() {} }), on() {}, quit: () => quitCount++ },
   ipcMain: { handle: (name, handler) => handlers.set(name, handler), on() {} },
 };
 vm.runInNewContext(mainSource, {
   __dirname: path.resolve('bootstrapper'),
   process: { resourcesPath: path.resolve('bootstrapper/payload'), env: {} },
+  setTimeout: callback => quitTimers.push(callback),
   require(name) {
     if (name === 'electron') return electron;
     if (name === 'path') return path;
@@ -28,6 +31,8 @@ vm.runInNewContext(mainSource, {
     if (name === 'child_process') return { spawn() {
       if (spawnError) throw spawnError;
       const child = new EventEmitter();
+      child.unrefCount = 0;
+      child.unref = () => child.unrefCount++;
       children.push(child);
       return child;
     } };
@@ -35,6 +40,7 @@ vm.runInNewContext(mainSource, {
   },
 });
 const start = handlers.get('installer:start');
+const launch = handlers.get('installer:launch');
 
 // The renderer runs with minimal DOM controls and instant animation frames.
 function element() {
@@ -58,7 +64,7 @@ const root = element();
 const body = element();
 let frameTime = 0;
 let launched = 0;
-const bridge = { start, launch: () => launched++ };
+const bridge = { start, launch: () => { launched++; return { launched: true }; } };
 const ui = vm.createContext({
   document: {
     body, querySelector: selector => root.querySelector(selector),
@@ -116,7 +122,7 @@ children.at(-1).emit('exit', 0);
 assert.equal((await recovered).ok, true);
 
 // A rejected IPC promise must also offer retry instead of leaving the UI busy.
-vm.runInContext('installComplete = false', ui);
+vm.runInContext('installComplete = false; launching = false', ui);
 bridge.start = () => Promise.reject(new Error('IPC disconnected'));
 await install();
 assert.equal(label(), 'Retry install');
@@ -125,4 +131,50 @@ bridge.start = () => Promise.resolve({ ok: true });
 await install();
 assert.equal(label(), 'Launch RefBoard');
 
-console.log('installer retry tests passed');
+// Launch failures stay in the completed installer and retry launching only.
+bridge.launch = () => Promise.reject(new Error('IPC disconnected'));
+await install();
+assert.equal(label(), 'Retry launch');
+assert.equal(button.disabled, false);
+assert.equal(body.classList.contains('is-complete'), true);
+bridge.launch = () => ({ launched: false, reason: 'app-not-found' });
+await install();
+assert.equal(label(), 'Retry launch');
+assert.match(root.querySelector('#installMeta').textContent, /could not be found/);
+assert.equal(button.disabled, false);
+
+// Exercise production launch IPC, including asynchronous errors from spawn.
+setupExists = false;
+assert.equal((await launch()).reason, 'app-not-found');
+setupExists = true;
+spawnError = new Error('spawn EPERM');
+assert.equal((await launch()).reason, 'spawn-failed');
+spawnError = null;
+const failedLaunch = launch();
+const failedChild = children.at(-1);
+assert.doesNotThrow(() => failedChild.emit('error', new Error('spawn EACCES')));
+assert.equal((await failedLaunch).reason, 'process-error');
+assert.equal(failedChild.unrefCount, 0);
+assert.equal(quitTimers.length, 0, 'failed launches must keep the installer open');
+
+bridge.launch = launch;
+const launchRetry = install();
+const launchedChild = children.at(-1);
+const childrenBeforeDuplicate = children.length;
+await install();
+const duplicateLaunch = launch();
+assert.equal(children.length, childrenBeforeDuplicate, 'repeated launch requests must share one process');
+assert.equal(button.disabled, true);
+assert.equal(label(), 'Launching\u2026');
+assert.equal(quitTimers.length, 0, 'wait for the spawn event before quitting');
+launchedChild.emit('spawn');
+await launchRetry;
+assert.equal((await duplicateLaunch).launched, true);
+assert.equal(launchedChild.unrefCount, 1);
+assert.equal(quitTimers.length, 1, 'one successful launch schedules one quit');
+assert.equal((await launch()).launched, true);
+assert.equal(children.length, childrenBeforeDuplicate, 'a completed launch must not spawn twice before quit');
+quitTimers[0]();
+assert.equal(quitCount, 1);
+
+console.log('installer install and launch retry tests passed');

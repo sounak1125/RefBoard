@@ -481,10 +481,6 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 }
 .tag-chip-label{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tag-chip-count{ opacity:.6; font-variant-numeric:tabular-nums; }
-/* A partial chip marks a tag only some of the selection carries, so removing
-   it does not look like it is doing nothing to the rest. */
-.tag-chip.partial .tag-chip-label{ opacity:.65; font-style:italic; }
-
 /* A tag row is a colour well joined to the filter chip, so setting a colour
    and filtering by the tag are one control rather than two lists. */
 .tag-row{
@@ -525,13 +521,17 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 .tag-color-sw.on{ box-shadow:0 0 0 2px var(--panel), 0 0 0 4px #fff; }
 .tag-color-none{ width:100%; }
 
-.tag-panel{ width:266px; }
+.tag-panel{ width:min(340px, calc(100vw - 96px)); overflow-y:auto; }
+.tag-panel,.tag-suggestions,#ctxSub:has(.mi-tag){ scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent; }
+.tag-panel > *{ flex-shrink:0; }
 .tag-sel{
   display:flex; flex-direction:column; gap:7px;
-  padding-bottom:9px; border-bottom:1px solid var(--line);
+  padding-bottom:9px;
 }
 .tag-sel.empty .tag-pop-chips,
-.tag-sel.empty .tag-pop-input{ display:none; }
+.tag-sel.empty .tag-input-row,
+.tag-sel.empty .tag-suggestions,
+.tag-sel.empty .tag-applied-title{ display:none; }
 .tag-sel.empty #tagSelClear{ display:none; }
 .tag-more{ border-top:1px solid var(--line); }
 .tag-more-head{
@@ -549,16 +549,37 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 }
 .tag-more-badge:empty{ display:none; }
 .tag-more-body{ display:flex; flex-direction:column; gap:8px; padding-top:4px; }
-.tag-pop-chips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.tag-pop-chips{ display:flex; flex-direction:column; gap:6px; }
 .tag-pop-chips:empty{ display:none; }
+.tag-input-row{ display:flex; gap:6px; }
+.tag-input-row .tag-pop-input{ min-width:0; flex:1; }
+.tag-add{ border:0; border-radius:8px; padding:0 12px; background:var(--acc); color:var(--acc-contrast); font-weight:600; }
+.tag-add:disabled{ opacity:.45; cursor:default; }
+.tag-suggestions{ display:flex; flex-direction:column; gap:3px; max-height:150px; overflow-y:auto; }
+.tag-suggestion{ display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:7px 8px; border:0; border-radius:7px; background:var(--surface-2); color:var(--txt); font-size:11.5px; }
+.tag-suggestion > span:first-child{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tag-suggestion > span:last-child{ color:var(--dim); font-size:10.5px; flex-shrink:0; }
+.tag-suggestion:hover:not(:disabled){ background:color-mix(in srgb, var(--acc) 16%, var(--surface-2)); }
+.tag-suggestion:disabled{ opacity:.6; cursor:default; }
+.tag-applied-title{ font-size:11px; color:var(--dim); margin-top:5px; }
+.tag-assignment{ display:flex; align-items:center; gap:7px; padding:6px; border:1px solid var(--line); border-radius:8px; color:var(--txt); }
+.tag-assignment-info{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.tag-assignment-name{ font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tag-assignment-scope{ font-size:10.5px; color:var(--dim); }
+.tag-apply,.tag-remove{ flex-shrink:0; border:1px solid var(--line); border-radius:6px; background:transparent; color:var(--txt); padding:5px 7px; font-size:11px; }
+.tag-remove{ width:28px; height:28px; padding:0; font-size:17px; }
+.tag-apply:hover{ background:color-mix(in srgb, var(--acc) 18%, transparent); }
+.tag-remove:hover{ color:var(--danger); background:color-mix(in srgb, var(--danger) 12%, transparent); }
+#tagSelClear{ align-self:flex-start; margin-top:5px; text-align:left; }
+.tag-panel button:focus-visible,.tag-assignment button:focus-visible{ outline:2px solid var(--acc); outline-offset:2px; }
+.tag-panel-labels{ flex-direction:column; align-items:flex-start; border:0; padding:8px 0 2px; }
 .tag-pop-input{
   width:100%; box-sizing:border-box;
   background:var(--void); border:1px solid var(--line); border-radius:8px;
-  color:#e7eaf2; font-size:12px; padding:7px 9px; outline:none;
+  color:var(--txt); font-size:12px; padding:7px 9px; outline:none;
 }
 .tag-pop-input:focus{ border-color:color-mix(in srgb, var(--acc) 55%, transparent); }
 .tag-pop-hint{ font-size:10.5px; color:var(--dim); margin-top:7px; line-height:1.5; }
-/* Empty most of the time now, and an empty line still takes up a line. */
 .tag-pop-hint:empty{ display:none; }
 
 #selbar .sel-multi-only{ display:none; }
@@ -2119,14 +2140,8 @@ body.board-active #whatsNewNotice{ display:none; }
 .mi.has-sub .sub-arrow{ font-size:11px; color:var(--dim); margin-left:8px; }
 .mi.on{ color:var(--txt); }
 .mi.on .k{ color:var(--acc); }
-/* A tag row is dot, label, then the tick — the label takes the slack so the
-   tick stays on the right whatever the tag is called. */
-.mi-tag{ gap:0; padding-left:6px; }
-.mi-tag > span:not(.k){
-  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-  margin-right:18px;
-}
-.mi-tag .tag-dot{ padding:0 8px 0 2px; }
+.mi-tag{ width:300px; max-width:calc(100vw - 40px); cursor:default; margin:3px 0; }
+.mi-tag .tag-dot{ padding:0 3px; }
 .mhr{ height:1px; background:var(--line); margin:5px 8px; }
 
 /* ---------- context submenus (alignment, normalize, …) ---------- */
@@ -2136,6 +2151,7 @@ body.board-active #whatsNewNotice{ display:none; }
   padding:5px; box-shadow:0 14px 44px rgba(0,0,0,.55); backdrop-filter:blur(16px);
 }
 #ctxSub.show{ display:block; }
+#ctxSub:has(.mi-tag){ max-height:min(70vh, 560px); overflow-y:auto; }
 
 /* ---------- note link hover tooltip ---------- */
 #noteLinkPop{
@@ -3039,6 +3055,11 @@ body.split-active:not(.pane-secondary) #openingOverlay{
 body.split-active:not(.pane-secondary){
   --split-inset-right:calc(100vw - var(--split-left, 100vw));
 }
+body.split-active.split-animating #board{
+  /* Move the visible edge without reallocating or stretching the canvas. */
+  clip-path:inset(0 var(--split-inset-right) 0 0);
+  transition:none;
+}
 body.split-active:not(.pane-secondary) #titlebar,
 body.split-active:not(.pane-secondary).board-active:not(.titlebar-revealed) #titlebar{
   transform:none !important; opacity:1 !important; pointer-events:auto !important;
@@ -3052,6 +3073,10 @@ body.split-active:not(.pane-secondary).board-active:not(.titlebar-revealed) #emp
 }
 body.split-active:not(.pane-secondary).board-active:not(.titlebar-revealed) #board{
   top:var(--titlebar-h); height:calc(100vh - var(--titlebar-h));
+}
+body.split-active.split-animating.board-active:not(.titlebar-revealed) #board{
+  /* Slide under the shared titlebar without squeezing the painted surface. */
+  top:calc(var(--titlebar-h) * var(--split-progress, 0));
 }
 body.split-active:not(.pane-secondary) #selbar,
 body.split-active:not(.pane-secondary) #toast,
@@ -3279,7 +3304,7 @@ try {
   <button class="tb" id="btnSearch" data-tip-title="Search" data-tip-sub="Ctrl+F">
     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
   </button>
-  <button class="tb" id="btnTags" data-tip-title="Tags" data-tip-sub="Ctrl+Shift+T">
+  <button class="tb" id="btnTags" data-tip-title="Labels" data-tip-sub="Ctrl+Shift+T" aria-label="Labels" aria-expanded="false" aria-controls="tagPanel">
     <svg viewBox="0 0 24 24"><path d="M3.5 11.2V5.5a2 2 0 0 1 2-2h5.7a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-5.7 5.7a2 2 0 0 1-2.8 0L4.1 12.6a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.5"/></svg>
   </button>
   <span class="sep"></span>
@@ -3420,7 +3445,7 @@ try {
   <span class="tb sel-images-only" id="sDragOut" role="button" tabindex="0" draggable="true" data-tip="Drag out to another app" aria-label="Drag out to another app">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M15 3h6v6M21 3l-9 9"/></svg>
   </span>
-  <button class="tb sel-taggable-only" id="sTags" data-tip="Tags">
+  <button class="tb sel-taggable-only" id="sTags" data-tip="Labels" aria-label="Edit labels for selected items" aria-expanded="false" aria-controls="tagPanel">
     <svg viewBox="0 0 24 24"><path d="M3.5 11.2V5.5a2 2 0 0 1 2-2h5.7a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-5.7 5.7a2 2 0 0 1-2.8 0L4.1 12.6a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.5"/></svg>
   </button>
   <span class="sep sel-multi-only"></span>
@@ -3479,45 +3504,52 @@ try {
   </button>
 </div>
 
-<div id="tagPanel" class="tag-panel" aria-hidden="true">
+<div id="tagPanel" class="tag-panel" aria-hidden="true" role="region" aria-label="Labels">
   <div class="tag-sel" id="tagSelSection">
     <div class="tag-panel-head">
-      <span class="tag-panel-title" id="tagSelTitle">Selection</span>
-      <button type="button" class="tag-clear" id="tagSelClear">Clear tags</button>
+      <span class="tag-panel-title" id="tagSelTitle">Labels</span>
     </div>
-    <div class="tag-pop-chips" id="tagPopChips"></div>
-    <input type="text" id="tagPopInput" class="tag-pop-input" list="tagPopSuggest"
-      placeholder="Add tags, comma separated" maxlength="240"
-      spellcheck="false" autocomplete="off" aria-label="Add tags to the selection">
-    <datalist id="tagPopSuggest"></datalist>
+    <div class="tag-input-row">
+      <input type="text" id="tagPopInput" class="tag-pop-input"
+        placeholder="Search or create a label…" maxlength="240"
+        spellcheck="false" autocomplete="off" aria-label="Search or create a label" aria-describedby="tagPopHint">
+      <button type="button" id="tagAdd" class="tag-add" disabled>Add</button>
+    </div>
     <div class="tag-pop-hint" id="tagPopHint"></div>
+    <div id="tagPopSuggest" class="tag-suggestions" role="group" aria-label="Suggested labels"></div>
+    <div class="tag-applied-title">Applied labels</div>
+    <div class="tag-pop-chips" id="tagPopChips"></div>
+    <button type="button" class="tag-clear" id="tagSelClear" disabled>Remove all labels from selected items</button>
   </div>
   <details class="tag-more" id="tagMore">
     <summary class="tag-more-head">
       <span class="tag-more-chev" aria-hidden="true">▸</span>
-      <span>Filter &amp; labels</span>
+      <span>Filter board</span>
       <span class="tag-more-badge" id="tagMoreBadge"></span>
     </summary>
     <div class="tag-more-body">
       <div class="tag-panel-head">
-        <span class="tag-panel-title">Filter</span>
+        <span class="tag-panel-title">Match labels</span>
         <div class="tag-mode" role="group" aria-label="Match mode">
           <button type="button" id="tagModeAny" class="tag-mode-btn on" aria-pressed="true">Any</button>
           <button type="button" id="tagModeAll" class="tag-mode-btn" aria-pressed="false">All</button>
         </div>
       </div>
-      <div class="tag-panel-list" id="tagPanelList" role="group" aria-label="Tags on this board"></div>
-      <div class="tag-panel-labels">
-        <span>Labels</span>
-        <div class="tag-mode" role="group" aria-label="When to show tag labels">
-          <button type="button" id="tagLabelsAlways" class="tag-mode-btn">Always</button>
-          <button type="button" id="tagLabelsSelected" class="tag-mode-btn">Selected</button>
-          <button type="button" id="tagLabelsNever" class="tag-mode-btn">Off</button>
-        </div>
-      </div>
+      <div class="tag-panel-list" id="tagPanelList" role="group" aria-label="Filter by labels on this board"></div>
       <div class="tag-panel-foot">
         <span id="tagPanelCount"></span>
-        <button type="button" class="tag-clear" id="tagClear">Clear</button>
+        <button type="button" class="tag-clear" id="tagClear">Reset filters</button>
+      </div>
+    </div>
+  </details>
+  <details class="tag-more" id="tagDisplay">
+    <summary class="tag-more-head"><span class="tag-more-chev" aria-hidden="true">▸</span><span>Display</span></summary>
+    <div class="tag-panel-labels">
+      <span>Show labels on canvas</span>
+      <div class="tag-mode" role="group" aria-label="When to show labels on canvas">
+        <button type="button" id="tagLabelsAlways" class="tag-mode-btn">Always</button>
+        <button type="button" id="tagLabelsSelected" class="tag-mode-btn">Selected</button>
+        <button type="button" id="tagLabelsNever" class="tag-mode-btn">Off</button>
       </div>
     </div>
   </details>
@@ -3806,12 +3838,13 @@ try {
       <span class="ks">Locked group</span><span class="d">Select children individually; unlock to move, resize, or drop items in/out</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>A</kbd></span><span class="d">Select all</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>F</kbd></span><span class="d">Find on board</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Filter the board by tag — matching items stay lit, the rest dim and stop responding</span>
-      <span class="ks">Selection bar → tag</span><span class="d">Opens the tag panel with the cursor ready — tag the selection, clear its tags, set colours and filter, all in one place</span>
-      <span class="ks">Right-click → Tags</span><span class="d">Add a tag, switch one on or off for the whole selection, or set its colour</span>
-      <span class="ks">Tag panel → Clear tags</span><span class="d">Strip every tag from the selection in one go</span>
-      <span class="ks">Tag panel → colour well</span><span class="d">Give a tag a colour and every item wearing it gets a soft glow behind it</span>
-      <span class="ks">Tag panel → Labels</span><span class="d">Show tag labels on the board always, only on the selection, or not at all</span>
+      <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Open Labels to edit selected items, filter the board, or change label display</span>
+      <span class="ks">Selection bar → Labels</span><span class="d">Choose an existing label or type a new one and press Add or Enter</span>
+      <span class="ks">Right-click → Labels</span><span class="d">Apply a label to all selected items; use × to remove it</span>
+      <span class="ks">Labels → Remove all labels</span><span class="d">Remove labels from selected items; use Undo to restore them</span>
+      <span class="ks">Labels → colour dot</span><span class="d">Give a label a colour and every item wearing it gets a soft glow</span>
+      <span class="ks">Labels → Filter board</span><span class="d">Matching items stay lit; Reset filters restores the full board</span>
+      <span class="ks">Labels → Display</span><span class="d">Show labels on canvas always, only on selected items, or turn them off</span>
       <span class="ks"><kbd>Del</kbd></span><span class="d">Delete selection</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Z</kbd> / <kbd>Y</kbd></span><span class="d">Undo / redo</span>
       <span class="ks"><kbd>Wheel</kbd></span><span class="d">Zoom at cursor</span>
@@ -4108,6 +4141,7 @@ import {
   removeTag,
   tagGlowColor,
   TAG_COLOR_PALETTE,
+  TAGS_MAX_PER_ITEM,
 } from './scripts/tags.mjs';
 import {
   initPerfOverlay,
@@ -5016,6 +5050,7 @@ function syncAddPanelPosition() {
   wrap.style.top = top + 'px';
 }
 let splitContentWidth = 0;
+let splitAnimating = false;
 function paneLimit() {
   return splitContentWidth > 0 ? splitContentWidth : innerWidth;
 }
@@ -5026,6 +5061,19 @@ function boardLayoutSize() {
     w: Math.max(1, viewW - cl),
     h: Math.max(1, innerHeight - titlebarH()),
   };
+}
+function boardCanvasSize() {
+  const size = boardLayoutSize();
+  // Keep the complete board painted behind the sliding pane. In particular,
+  // closing must already have pixels ready for the area it is about to reveal.
+  if (splitAnimating && BOARD_PANE === 'primary') {
+    size.w = Math.max(1, innerWidth - chromeLeft());
+    if (document.body.classList.contains('board-active')
+        && !document.body.classList.contains('titlebar-revealed')) {
+      size.h = Math.max(1, innerHeight);
+    }
+  }
+  return size;
 }
 function boardRect() {
   return canvas.getBoundingClientRect();
@@ -5497,6 +5545,7 @@ function publishBoardSession(ready) {
   window.RefBoardAPI?.reportBoardSession?.({
     path: currentBoardPath || null,
     ready: BOARD_PANE === 'secondary' && secondaryImagesReady && !onLanding,
+    startupComplete: appStartupComplete,
   });
 }
 
@@ -7122,6 +7171,7 @@ async function persistBoardNow() {
     title: currentBoardTitle || null,
     dirty: boardFileDirty,
     boardGray: state.boardGray,
+    tagColors: { ...state.tagColors },
     // Emitted for older builds that still read it as board state.
     snapEnabled: !!appSettings.snapEnabled,
     gridAppearance: state.gridAppearance,
@@ -7287,6 +7337,7 @@ function trimUndoHistory() { boardHistory.trim(); }
  * attach an image's pre-edit bytes for a pixel edit.
  */
 function pushUndo(opts) {
+  dismissLabelUndo();
   let extra = null;
   if (opts && opts.imgId && opts.blob instanceof Blob) {
     extra = { bitmap: { imgId: opts.imgId, before: createBitmapHistoryRef(opts.imgId, opts.blob), after: null } };
@@ -7294,6 +7345,7 @@ function pushUndo(opts) {
   boardHistory.begin(extra);
 }
 function clearUndoHistory() {
+  dismissLabelUndo();
   boardHistory.clear();
 }
 
@@ -7401,11 +7453,16 @@ const boardHistoryQueue = createAsyncQueue();
    underneath it would leave both wrong. Checked before queueing, so a held
    key does not pile up work, and again after waiting, in case a gesture
    began meanwhile. */
-function undo() {
+function undo(expectedEntry = null) {
   if (mode) return Promise.resolve();
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
     if (mode) return;
+    if (expectedEntry) {
+      boardHistory.finalize();
+      if (undoStack.at(-1) !== expectedEntry) return;
+    }
+    dismissLabelUndo();
     if (!undoStack.length && !boardHistory.hasPending()) {
       // A freshly opened board can enter crop mode before any history exists.
       // Ctrl+Z should still return to normal selection in that case.
@@ -7428,6 +7485,7 @@ function redo() {
   return boardHistoryQueue.run(async () => {
     await settleDrawCommitForHistory();
     if (mode) return;
+    dismissLabelUndo();
     const entry = boardHistory.redo();
     if (!entry) return;
     await applyUndoEntry(entry, 'after');
@@ -12208,7 +12266,17 @@ function animateViewTo(tx, ty, s, durationMs = 320) {
 }
 
 function nextUiFrame() {
-  return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  return new Promise(resolve => {
+    // A new split pane initializes offscreen, where Chromium may not deliver
+    // frames until it slides into view. Let its startup layout settle without
+    // waiting for the very reveal that startup completion will trigger.
+    const timer = BOARD_PANE === 'secondary' && !appStartupComplete
+      ? setTimeout(resolve, 32) : null;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (timer !== null) clearTimeout(timer);
+      resolve();
+    }));
+  });
 }
 
 function computeOpenTargetView(opts = {}) {
@@ -14818,6 +14886,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
     state.items = nextItems;
     invalidateWorkspaceBBox();
     state.boardGray = !!j.boardGray;
+    state.tagColors = normalizeTagColors(j.tagColors);
     const ga = normalizeGridAppearance(j.gridAppearance);
     if (ga) state.gridAppearance = ga;
     state.sel.clear();
@@ -14956,7 +15025,7 @@ async function loadBoardFileImpl(file) {
 /* ================= rendering ================= */
 function resize() {
   if (document.documentElement.classList.contains('window-resizing')
-      && splitActive && BOARD_PANE === 'primary' && !splitDragging) {
+      && splitActive && BOARD_PANE === 'primary' && !splitDragging && !splitAnimating) {
     const gap = 6;
     const ratio = clampSplitRatioSetting(appSettings.splitRatio);
     const left = Math.max(1, Math.min(innerWidth - gap - 1, Math.round(innerWidth * ratio)));
@@ -14966,18 +15035,18 @@ function resize() {
     }
   }
   const dpr = devicePixelRatio || 1;
-  const { w, h } = boardLayoutSize();
+  const { w, h } = boardCanvasSize();
   const cw = Math.round(w * dpr), ch = Math.round(h * dpr);
   const nextW = w + 'px', nextH = h + 'px';
   const sizeChanged = canvas.width !== cw || canvas.height !== ch;
   const styleChanged = canvas.style.width !== nextW || canvas.style.height !== nextH;
   if (!sizeChanged && !styleChanged) return;
   if (sizeChanged) {
-    canvas.width = cw;
-    canvas.height = ch;
+    if (canvas.width !== cw) canvas.width = cw;
+    if (canvas.height !== ch) canvas.height = ch;
   }
-  canvas.style.width = nextW;
-  canvas.style.height = nextH;
+  if (canvas.style.width !== nextW) canvas.style.width = nextW;
+  if (canvas.style.height !== nextH) canvas.style.height = nextH;
   if (sizeChanged) invalidate();
 }
 let windowResizeEndTimer = 0;
@@ -14991,7 +15060,7 @@ window.addEventListener('resize', onWindowResize);
 
 function forceBoardCanvasRepaint() {
   const dpr = devicePixelRatio || 1;
-  const { w, h } = boardLayoutSize();
+  const { w, h } = boardCanvasSize();
   // Assign even when the dimensions match. This replaces a backing surface
   // Chromium may have discarded while the canvas was hidden or its GPU
   // context was lost.
@@ -15048,7 +15117,7 @@ function drawGridDotsScreen() {
   if (state.gridAppearance !== 'dots') return;
   const { tx, ty } = state.view;
   const sr = workspaceScreenRect();
-  const { w: bw, h: bh } = boardSize();
+  const { w: bw, h: bh } = boardCanvasSize();
   const visL = Math.max(0, sr.x);
   const visT = Math.max(0, sr.y);
   const visR = Math.min(bw, sr.x + sr.w);
@@ -15924,7 +15993,7 @@ let lastBoardStatusText = '';
 function draw() {
   const dpr = devicePixelRatio || 1;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const { w: W, h: H } = boardSize();
+  const { w: W, h: H } = boardCanvasSize();
   const viewport = expandedViewportRect(W, H);
   ctx.fillStyle = BG_VOID;
   ctx.fillRect(0, 0, W, H);
@@ -17792,44 +17861,9 @@ window.addEventListener('contextmenu', e => {
   showMenu(e.clientX, e.clientY, it);
 });
 
-/**
- * One row of the right-click Tags submenu: a colour well on the left and the
- * tag itself as a toggle. Deliberately the same pair as the tag panel — one
- * interaction to learn, wherever you reach tags from.
- */
+/** The context menu uses exactly the panel's assignment actions. */
 function ctxTagRow(entry) {
-  const state3 = selectionTagState(entry.tag);
-  const row = document.createElement('div');
-  row.className = 'mi mi-tag' + (state3 === 'all' ? ' on' : '');
-
-  const dot = document.createElement('button');
-  dot.type = 'button';
-  dot.className = 'tag-dot';
-  const color = state.tagColors[tagKey(entry.tag)] || '';
-  dot.style.setProperty('--dot', color || 'transparent');
-  dot.title = color ? 'Change the glow colour for this tag' : 'Give this tag a glow colour';
-  dot.addEventListener('click', e => {
-    e.stopPropagation();
-    // The colour popover outlives the menu, so the menu gets out of its way.
-    const anchor = dot.getBoundingClientRect();
-    closeMenu();
-    openTagColorPop(entry.tag, null, anchor.left, anchor.bottom);
-  });
-  row.appendChild(dot);
-
-  const label = document.createElement('span');
-  label.textContent = entry.tag;          // user text: never innerHTML
-  row.appendChild(label);
-
-  const mark = document.createElement('span');
-  mark.className = 'k';
-  // A partial mark matters: without it, one click looks like it did nothing to
-  // the items that already carried the tag.
-  mark.textContent = state3 === 'all' ? '✓' : state3 === 'some' ? '–' : '';
-  row.appendChild(mark);
-
-  row.addEventListener('click', () => { closeMenu(); toggleTagOnSelection(entry.tag); });
-  return row;
+  return tagAssignmentRow(entry.tag, true);
 }
 
 function showMenu(x, y, hitItem) {
@@ -17866,7 +17900,7 @@ function showMenu(x, y, hitItem) {
       { l: sel > 1 ? 'Export images' : 'Export image', k: 'Ctrl+Shift+I', f: exportOriginals },
     );
     if (selectedTaggableItems().length) {
-      entries.push({ l: 'Tags', sub: 'tags' });
+      entries.push({ l: 'Labels', sub: 'tags' });
     }
     if (sel === 1 && isImageItem(selItems[0])) {
       entries.push({ l: 'Extract palette', f: () => void extractPaletteFromItem(selItems[0]) });
@@ -17928,7 +17962,6 @@ function showMenu(x, y, hitItem) {
       d.innerHTML = `<span>${en.l}</span><span class="sub-arrow">▸</span>`;
       d.addEventListener('click', e => {
         e.stopPropagation();
-        closeAppearMenu();
         openCtxSubMenu(d, x, y, {
           title: 'Alignment',
           items: [
@@ -17941,21 +17974,19 @@ function showMenu(x, y, hitItem) {
       d.innerHTML = `<span>${en.l}</span><span class="sub-arrow">▸</span>`;
       d.addEventListener('click', e => {
         e.stopPropagation();
-        closeAppearMenu();
-        const items = [{ l: 'Add tag…', f: openTagPanelForSelection }];
+        const items = [{ l: 'Add label…', f: openTagPanelForSelection }];
         const board = boardTagList();
         if (board.length) {
           items.push({ sep: true });
           for (const entry of board) items.push({ node: ctxTagRow(entry) });
         }
-        items.push({ sep: true }, { l: 'Tag panel…', k: 'Ctrl+Shift+T', f: () => setTagPanelOpen(true) });
-        openCtxSubMenu(d, x, y, { title: 'Tags', items });
+        items.push({ sep: true }, { l: 'Label panel…', k: 'Ctrl+Shift+T', f: () => setTagPanelOpen(true) });
+        openCtxSubMenu(d, x, y, { title: 'Labels · ' + selectedTaggableItems().length + ' selected', items });
       });
     } else if (en.sub === 'normalize') {
       d.innerHTML = `<span>${en.l}</span><span class="sub-arrow">▸</span>`;
       d.addEventListener('click', e => {
         e.stopPropagation();
-        closeAppearMenu();
         openCtxSubMenu(d, x, y, {
           title: 'Normalize',
           items: [
@@ -17969,7 +18000,6 @@ function showMenu(x, y, hitItem) {
       d.innerHTML = `<span>${en.l}</span><span class="sub-arrow">▸</span>`;
       d.addEventListener('click', e => {
         e.stopPropagation();
-        closeAppearMenu();
         openCtxSubMenu(d, x, y, {
           title: 'Blank canvas',
           items: [
@@ -18657,6 +18687,7 @@ const boardPick = $('#boardPick');
 let toastTimer = 0;
 
 function clearToastAction() {
+  delete toastEl.dataset.labelUndo;
   toastEl.classList.remove('actionable');
   const btn = toastEl.querySelector('.toast-action');
   if (btn) btn.remove();
@@ -19937,6 +19968,29 @@ let splitActive = false;
 let splitDragging = false;
 let splitDragRaf = 0;
 let splitDragScreenX = 0;
+let splitAnimationId = null;
+let splitAnimationRaf = 0;
+
+function requestSplitAnimationFrame() {
+  splitAnimationRaf = 0;
+  if (!splitAnimationId) return;
+  window.RefBoardAPI?.splitAnimationFrame?.(splitAnimationId);
+  splitAnimationRaf = requestAnimationFrame(requestSplitAnimationFrame);
+}
+
+function syncSplitAnimationFrames(animationId) {
+  const next = BOARD_PANE === 'primary' && typeof animationId === 'string' && animationId
+    ? animationId : null;
+  if (next === splitAnimationId) return;
+  if (splitAnimationRaf) cancelAnimationFrame(splitAnimationRaf);
+  splitAnimationRaf = 0;
+  splitAnimationId = next;
+  // resize() has marked any new backing surface dirty. The board's existing
+  // render loop paints it before this next-frame request advances the pane.
+  if (next) splitAnimationRaf = requestAnimationFrame(requestSplitAnimationFrame);
+}
+
+window.addEventListener('pagehide', () => syncSplitAnimationFrames(null));
 
 function setSplitToggle(on) {
   splitActive = !!on;
@@ -19955,13 +20009,30 @@ function setSplitToggle(on) {
 
 function applySplitChrome(state) {
   const split = !!state?.split;
+  const previousContentWidth = splitContentWidth;
+  const wasAnimating = splitAnimating;
+  splitAnimating = split && !!state?.animating;
   setSplitToggle(split);
+  document.body.classList.toggle('split-animating', splitAnimating && BOARD_PANE === 'primary');
   if (BOARD_PANE !== 'primary') return;
+  if (splitAnimating) {
+    const progress = Number.isFinite(state?.progress) ? Math.max(0, Math.min(1, state.progress)) : 0;
+    document.documentElement.style.setProperty('--split-progress', String(progress));
+  } else {
+    document.documentElement.style.removeProperty('--split-progress');
+  }
   if (split && Number.isFinite(state?.contentWidth) && state.contentWidth > 0) {
-    splitContentWidth = state.contentWidth;
-    document.documentElement.style.setProperty('--split-left', `${Math.round(state.contentWidth)}px`);
+    const width = Math.round(state.contentWidth);
+    if (splitContentWidth !== width) {
+      splitContentWidth = width;
+      document.documentElement.style.setProperty('--split-left', `${width}px`);
+    }
   }
   resize();
+  if (previousContentWidth !== splitContentWidth || wasAnimating !== splitAnimating) {
+    drawMinimap(!splitAnimating);
+  }
+  syncSplitAnimationFrames(splitAnimating ? state?.animationId : null);
 }
 
 function persistSplitRatio(ratio) {
@@ -20010,6 +20081,7 @@ splitToggleEl?.addEventListener('click', async () => {
       toast(`Up to ${r.limit || 4} RefBoard boards can stay open at once`);
       return;
     }
+    if (!r?.opened && r?.reason === 'load-failed') toast('Could not open split view');
     if (r?.opened) {
       setSplitToggle(true);
       persistSplitRatio(r.ratio);
@@ -20185,23 +20257,35 @@ function selectionTagList() {
   return collectBoardTags(selectedTaggableItems(), isTaggableItem);
 }
 
-/** 'all' | 'some' | 'none' — how much of the selection carries this tag. */
-function selectionTagState(tag) {
-  const items = selectedTaggableItems();
-  if (!items.length) return 'none';
-  const key = tagKey(tag);
-  const carrying = items.filter(it => (it.tags || []).some(t => t.toLowerCase() === key)).length;
-  if (!carrying) return 'none';
-  return carrying === items.length ? 'all' : 'some';
+function dismissLabelUndo() {
+  if ($('#toast')?.dataset.labelUndo) clearToastAction();
 }
 
-/* Partly-applied counts as off, so one click brings the whole selection up to
-   the tag rather than stripping it from the items that already had it. */
-function toggleTagOnSelection(tag) {
-  const removing = selectionTagState(tag) === 'all';
-  const changed = applyTagsToSelection(tags => (removing ? removeTag(tags, tag) : addTags(tags, tag)));
-  if (!changed) return;
-  toast((removing ? 'Removed ' : 'Tagged ') + tag);
+function labelEditToast(message) {
+  // Finalise this edit so the button can only undo this particular entry.
+  const entry = boardHistory.finalize();
+  toast(message, entry ? {
+    duration: 6000,
+    actionLabel: 'Undo',
+    onAction: () => { hideToast(); void undo(entry); },
+  } : undefined);
+  if (entry) toastEl.dataset.labelUndo = 'true';
+}
+
+function addLabelsToSelection(incoming) {
+  const items = selectedTaggableItems();
+  if (!items.length) return false;
+  const changed = applyTagsToSelection(tags => addTags(tags, incoming));
+  const incomplete = items.some(it => incoming.some(tag => !it.tags?.some(own => tagKey(own) === tagKey(tag))));
+  const limitMessage = 'Some items have ' + TAGS_MAX_PER_ITEM + ' labels. Remove a label to add more.';
+  if (changed) labelEditToast(incomplete ? limitMessage : 'Added labels to ' + changed + (changed === 1 ? ' item' : ' items'));
+  else toast(incomplete ? limitMessage : 'Already applied to all selected items');
+  return !incomplete;
+}
+
+function removeLabelFromSelection(tag) {
+  const changed = applyTagsToSelection(tags => removeTag(tags, tag));
+  if (changed) labelEditToast('Removed “' + tag + '” from ' + changed + (changed === 1 ? ' item' : ' items'));
 }
 
 function applyTagsToSelection(mutate) {
@@ -20405,7 +20489,7 @@ function tagChipEl(tag, opts) {
   const o = opts || {};
   const chip = document.createElement('button');
   chip.type = 'button';
-  chip.className = 'tag-chip' + (o.active ? ' on' : '') + (o.partial ? ' partial' : '');
+  chip.className = 'tag-chip' + (o.active ? ' on' : '');
   chip.dataset.tag = tag;
   const label = document.createElement('span');
   label.className = 'tag-chip-label';
@@ -20416,12 +20500,6 @@ function tagChipEl(tag, opts) {
     count.className = 'tag-chip-count';
     count.textContent = String(o.count);
     chip.appendChild(count);
-  }
-  if (o.removable) {
-    const cross = document.createElement('span');
-    cross.className = 'tag-chip-count';
-    cross.textContent = '×';
-    chip.appendChild(cross);
   }
   return chip;
 }
@@ -20434,7 +20512,7 @@ function renderTagPanel() {
   if (!board.length) {
     const empty = document.createElement('div');
     empty.className = 'tag-panel-empty';
-    empty.textContent = 'No tags yet.';
+    empty.textContent = 'No labels on this board yet.';
     tagPanelListEl.appendChild(empty);
   } else {
     for (const entry of board) {
@@ -20447,12 +20525,14 @@ function renderTagPanel() {
       dot.className = 'tag-dot';
       const color = state.tagColors[tagKey(entry.tag)] || '';
       dot.style.setProperty('--dot', color || 'transparent');
-      dot.title = color ? 'Change the glow colour for this tag' : 'Give this tag a glow colour';
+      dot.title = color ? 'Change the glow colour for this label' : 'Give this label a glow colour';
       dot.setAttribute('aria-label', dot.title);
       dot.addEventListener('click', e => { e.stopPropagation(); openTagColorPop(entry.tag, dot); });
       row.appendChild(dot);
 
-      const chip = tagChipEl(entry.tag, { count: entry.count });
+      const chip = tagChipEl(entry.tag, { count: entry.count, active });
+      chip.setAttribute('aria-pressed', String(active));
+      chip.title = 'Filter board by “' + entry.tag + '”';
       chip.addEventListener('click', () => toggleTagFilter(entry.tag));
       row.appendChild(chip);
 
@@ -20548,58 +20628,136 @@ function setTagColor(tag, color) {
   invalidate();
 }
 
+/** Text and scope are inert; only the named buttons change assignments. */
+function tagAssignmentRow(tag, inMenu = false) {
+  const items = selectedTaggableItems();
+  const count = items.filter(it => it.tags?.some(own => tagKey(own) === tagKey(tag))).length;
+  const row = document.createElement('div');
+  row.className = 'tag-assignment' + (inMenu ? ' mi-tag' : '');
+  row.dataset.tag = tag;
+  const dot = document.createElement('button');
+  dot.type = 'button';
+  dot.className = 'tag-dot';
+  dot.style.setProperty('--dot', state.tagColors[tagKey(tag)] || 'transparent');
+  dot.title = 'Change colour for “' + tag + '” on this board';
+  dot.setAttribute('aria-label', dot.title);
+  dot.addEventListener('click', e => {
+    e.stopPropagation();
+    const anchor = dot.getBoundingClientRect();
+    if (inMenu) closeMenu();
+    openTagColorPop(tag, inMenu ? null : dot, anchor.left, anchor.bottom);
+  });
+  const info = document.createElement('div');
+  info.className = 'tag-assignment-info';
+  const name = document.createElement('span');
+  name.className = 'tag-assignment-name';
+  name.textContent = tag;
+  name.title = tag;
+  const scope = document.createElement('span');
+  scope.className = 'tag-assignment-scope';
+  scope.textContent = count === items.length
+    ? (count === 1 ? '1 item' : 'All ' + count + ' items')
+    : count + ' of ' + items.length + ' items';
+  info.append(name, scope);
+  row.append(dot, info);
+  const act = callback => {
+    if (inMenu) closeMenu();
+    callback();
+    // Rerendering removes the clicked button. Keep focus in the editor.
+    if (!inMenu) tagPopInputEl.focus();
+  };
+  if (count < items.length) {
+    const apply = document.createElement('button');
+    apply.type = 'button';
+    apply.className = 'tag-apply';
+    apply.textContent = count ? 'Apply to all' : 'Add';
+    apply.setAttribute('aria-label', 'Apply “' + tag + '” to all selected items');
+    apply.addEventListener('click', () => act(() => addLabelsToSelection([tag])));
+    row.appendChild(apply);
+  }
+  if (count) {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'tag-remove';
+    remove.textContent = '×';
+    remove.title = 'Remove “' + tag + '” from selected items';
+    remove.setAttribute('aria-label', remove.title);
+    remove.addEventListener('click', () => act(() => removeLabelFromSelection(tag)));
+    row.appendChild(remove);
+  }
+  return row;
+}
+
 function renderTagSelection() {
   const items = selectedTaggableItems();
+  const labels = selectionTagList();
   tagPopChipsEl.textContent = '';
-  for (const entry of selectionTagList()) {
-    const partial = entry.count < items.length;
-    const chip = tagChipEl(entry.tag, { removable: true, partial });
-    chip.title = partial
-      ? 'On ' + entry.count + ' of ' + items.length + ' selected — click to remove from all'
-      : 'Click to remove';
-    chip.addEventListener('click', () => {
-      if (applyTagsToSelection(tags => removeTag(tags, entry.tag))) toast('Removed ' + entry.tag);
-    });
-    tagPopChipsEl.appendChild(chip);
+  for (const entry of labels) tagPopChipsEl.appendChild(tagAssignmentRow(entry.tag));
+  if (items.length && !labels.length) {
+    const empty = document.createElement('div');
+    empty.className = 'tag-panel-empty';
+    empty.textContent = 'No labels on selected items.';
+    tagPopChipsEl.appendChild(empty);
   }
-
-  if (tagPopHintEl) {
-    tagPopHintEl.textContent = items.length ? '' : 'Select images or notes to tag them.';
-  }
-  if (tagSelTitleEl) {
-    tagSelTitleEl.textContent = items.length
-      ? (items.length === 1 ? '1 selected' : items.length + ' selected')
-      : 'Selection';
-  }
-  // An empty selection hides the input rather than offering a box that would
-  // do nothing, but the section stays so the panel does not jump about.
+  if (tagPopHintEl) tagPopHintEl.textContent = items.length
+    ? 'Choose a label, or type and press Add. Separate multiple labels with commas.'
+    : 'Select images, notes, or a group to add labels.';
+  if (tagSelTitleEl) tagSelTitleEl.textContent = items.length ? 'Labels · ' + items.length + ' selected' : 'Labels';
+  $('#tagSelClear').disabled = !labels.length;
   tagSelSectionEl?.classList.toggle('empty', !items.length);
+  refreshTagSuggestions();
 }
 
-/* Strip every tag from the selection in one go — the way out of a board that
-   has been over-tagged, without clicking each chip. */
 function clearTagsOnSelection() {
-  const items = selectedTaggableItems();
-  if (!items.length) { toast('Select images or notes first'); return; }
-  const carrying = items.filter(it => (it.tags || []).length).length;
-  if (!carrying) { toast('Nothing tagged in the selection'); return; }
+  const carrying = selectedTaggableItems().filter(it => it.tags?.length).length;
+  if (!carrying) return;
   applyTagsToSelection(() => []);
-  toast(carrying === 1 ? 'Cleared tags on 1 item' : 'Cleared tags on ' + carrying + ' items');
+  labelEditToast('Removed all labels from ' + carrying + (carrying === 1 ? ' item' : ' items'));
+  tagPopInputEl.focus();
 }
 
-/**
- * Fill the suggestion list. Deliberately not part of renderTagSelection:
- * rebuilding a <datalist> while its popover is open crashes the renderer
- * outright — an access violation, not an exception — and renderTagSelection
- * runs after every tag edit. Refreshing when the panel opens avoids that.
- */
+/* Ordinary buttons replace the native datalist, whose open popup could crash
+   Chromium when refreshed. Suggestions can now follow edits immediately. */
 function refreshTagSuggestions() {
   if (!tagPopSuggestEl) return;
+  const items = selectedTaggableItems();
+  const incoming = parseTagInput(tagPopInputEl.value);
+  const query = incoming.length === 1 ? tagKey(incoming[0]) : '';
+  const board = boardTagList();
+  $('#tagAdd').disabled = !items.length || !incoming.length;
   tagPopSuggestEl.textContent = '';
-  for (const entry of boardTagList()) {
-    const option = document.createElement('option');
-    option.value = entry.tag;
-    tagPopSuggestEl.appendChild(option);
+  if (!items.length) return;
+  const suggest = (title, detail, tags, disabled = false) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tag-suggestion';
+    button.disabled = disabled;
+    const label = document.createElement('span');
+    label.textContent = title;
+    label.title = title;
+    const action = document.createElement('span');
+    action.textContent = detail;
+    button.append(label, action);
+    button.addEventListener('click', () => {
+      if (addLabelsToSelection(tags)) tagPopInputEl.value = '';
+      refreshTagSuggestions();
+      tagPopInputEl.focus();
+    });
+    tagPopSuggestEl.appendChild(button);
+  };
+  if (incoming.length > 1) {
+    suggest('Add ' + incoming.length + ' labels', 'To selection', incoming);
+    return;
+  }
+  const matches = board.map(entry => ({
+    ...entry, count: items.filter(it => it.tags?.some(tag => tagKey(tag) === tagKey(entry.tag))).length,
+  })).filter(entry => query ? tagKey(entry.tag).includes(query) : entry.count === 0);
+  for (const entry of matches.slice(0, 6)) {
+    const count = entry.count;
+    suggest(entry.tag, count === items.length ? 'Applied' : count ? 'Apply to all' : 'Add', [entry.tag], count === items.length);
+  }
+  if (query && !board.some(entry => tagKey(entry.tag) === query)) {
+    suggest('Create “' + incoming[0] + '”', 'Add to selection', incoming);
   }
 }
 
@@ -20609,7 +20767,6 @@ function refreshTagSuggestions() {
 function openTagPanelForSelection() {
   closeMenu();
   setTagPanelOpen(true);
-  tagPopInputEl.value = '';
   if (selectedTaggableItems().length) tagPopInputEl.focus();
 }
 
@@ -20621,6 +20778,8 @@ function setTagPanelOpen(open) {
   tagPanelEl.setAttribute('aria-hidden', String(!open));
   $('#btnTags')?.classList.toggle('open', open);
   $('#sTags')?.classList.toggle('on', open);
+  $('#btnTags')?.setAttribute('aria-expanded', String(open));
+  $('#sTags')?.setAttribute('aria-expanded', String(open));
   if (open) renderTagPanel();
 }
 
@@ -20635,25 +20794,35 @@ function resetTagFilterState() {
   tagFilter = [];
   tagFilterKeys = [];
   tagFilterPass.clear();
+  tagPopInputEl.value = '';
   renderTagPanel();
 }
 
 function commitTagInput() {
   const incoming = parseTagInput(tagPopInputEl.value);
-  if (!incoming.length) return;
-  const changed = applyTagsToSelection(tags => addTags(tags, incoming));
-  tagPopInputEl.value = '';
-  renderTagSelection();
-  if (!changed) { toast('Already tagged'); return; }
-  toast(changed === 1 ? 'Tagged 1 item' : 'Tagged ' + changed + ' items');
+  if (!incoming.length || !selectedTaggableItems().length) return;
+  if (addLabelsToSelection(incoming)) tagPopInputEl.value = '';
+  refreshTagSuggestions();
+  tagPopInputEl.focus();
 }
 
+$('#tagAdd')?.addEventListener('click', commitTagInput);
+tagPopInputEl?.addEventListener('input', refreshTagSuggestions);
 $('#btnTags')?.addEventListener('click', e => { e.stopPropagation(); toggleTagPanel(); });
 $('#sTags')?.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   e.preventDefault();
   e.stopPropagation();
   openTagPanelForSelection();
+});
+$('#sTags')?.addEventListener('click', e => {
+  if (e.detail === 0) openTagPanelForSelection();
+});
+tagPanelEl?.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  e.preventDefault(); e.stopPropagation();
+  setTagPanelOpen(false);
+  $('#btnTags').focus();
 });
 $('#tagClear')?.addEventListener('click', clearTagFilter);
 $('#tagSelClear')?.addEventListener('click', clearTagsOnSelection);
@@ -20664,13 +20833,7 @@ $('#tagLabelsSelected')?.addEventListener('click', () => setTagLabelMode('select
 $('#tagLabelsNever')?.addEventListener('click', () => setTagLabelMode('never'));
 $('#tagColorNone')?.addEventListener('click', () => { setTagColor(tagColorTarget, ''); closeTagColorPop(); });
 tagPopInputEl?.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    e.preventDefault(); e.stopPropagation();
-    setTagPanelOpen(false);
-    canvas.focus?.();
-    return;
-  }
-  if (e.key !== 'Enter') return;
+  if (e.key !== 'Enter' || e.isComposing) return;
   e.preventDefault();
   commitTagInput();
 });

@@ -38,7 +38,7 @@ assert.match(html, /if \(k === 'enter'\) \{\s*const it = state\.sel\.size === 1 
 /* --- 2. history refuses a live gesture --- */
 for (const name of ['undo', 'redo']) {
   const body = fn(name);
-  assert.match(body, /^function \w+\(\) \{\s*if \(mode\) return Promise\.resolve\(\);/, `${name} refuses while a gesture is live, before queueing`);
+  assert.match(body, /^function \w+\([^)]*\) \{\s*if \(mode\) return Promise\.resolve\(\);/, `${name} refuses while a gesture is live, before queueing`);
   assert.match(body, /await settleDrawCommitForHistory\(\);\s*if \(mode\) return;/, `${name} re-checks after waiting its turn, in case a gesture began meanwhile`);
 }
 

@@ -172,7 +172,7 @@ async function openSidecarStore(storePath, { create = false, truncate = false } 
   } catch (err) {
     if (err.code !== 'ENOENT' || !create) throw err;
     handle = await fs.open(target, 'w+');
-    return initializeStore(handle);
+    truncate = true;
   }
   try {
     if (truncate) return await initializeStore(handle);

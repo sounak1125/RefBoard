@@ -8,7 +8,7 @@
  * feature. This starts clean and does one thing.
  *
  * Covers all three capabilities the submenu is meant to carry: adding a tag,
- * toggling one the selection partly has, and setting that tag's glow colour.
+ * applying one to a mixed selection, explicitly removing it, and setting that tag's glow colour.
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -58,6 +58,7 @@ const smokeExpression = `(async()=>{
   await wait(400);
   document.querySelectorAll('.modal.show').forEach(el=>el.classList.remove('show'));
 
+  const errors=[];window.addEventListener('error',e=>errors.push(e.message));
   const RB=window.RefBoard;
   const mk=async fill=>{
     const c=document.createElement('canvas');c.width=200;c.height=150;
@@ -93,7 +94,7 @@ const smokeExpression = `(async()=>{
   };
   const openTagsSub=async()=>{
     if(!await openCtx())throw new Error('the context menu did not open');
-    const row=[...document.querySelectorAll('#ctxmenu .mi')].find(r=>r.textContent.startsWith('Tags'));
+    const row=[...document.querySelectorAll('#ctxmenu .mi')].find(r=>r.textContent.startsWith('Labels'));
     if(!row)throw new Error('no Tags entry — sel='+RB.state.sel.size
       +' rows=['+[...document.querySelectorAll('#ctxmenu .mi')].map(r=>r.textContent.trim()).join(' | ')+']');
     press(row);
@@ -102,20 +103,22 @@ const smokeExpression = `(async()=>{
   };
 
   const subShown=await openTagsSub();
-  const rows=[...document.querySelectorAll('#ctxSub .mi')].map(r=>r.textContent.trim());
+  const rows=[...document.querySelectorAll('#ctxSub .mi, #ctxSub .mi-tag')].map(r=>r.textContent.trim());
   const moodRow=[...document.querySelectorAll('#ctxSub .mi-tag')]
     .find(r=>r.textContent.toLowerCase().includes('mood'));
-  if(!moodRow)throw new Error('the submenu does not list the board tags');
-  const partialMark=moodRow.querySelector('.k').textContent.trim();
+  if(!moodRow)throw new Error('the submenu does not list the board tags: '+document.querySelector('#ctxSub').outerHTML+' errors='+JSON.stringify(errors));
+  const partialMark=moodRow.querySelector('.tag-assignment-scope').textContent.trim();
+  press(moodRow.querySelector('.tag-assignment-name'));
+  const afterNameClick=added.map(it=>(it.tags||[]).some(t=>t.toLowerCase()==='mood'));
 
-  press(moodRow);
+  press(moodRow.querySelector('.tag-apply'));
   await wait(250);
   const afterToggle=added.map(it=>(it.tags||[]).some(t=>t.toLowerCase()==='mood'));
 
-  // Toggling again, now that all of them carry it, must take it off all of them.
+  // Only the explicit remove button takes it off all selected items.
   await openTagsSub();
   press([...document.querySelectorAll('#ctxSub .mi-tag')]
-    .find(r=>r.textContent.toLowerCase().includes('mood')));
+    .find(r=>r.textContent.toLowerCase().includes('mood')).querySelector('.tag-remove'));
   await wait(250);
   const afterSecondToggle=added.map(it=>(it.tags||[]).some(t=>t.toLowerCase()==='mood'));
 
@@ -133,38 +136,48 @@ const smokeExpression = `(async()=>{
   await wait(280);
   const colors={...RB.state.tagColors};
 
-  // 'Add tag…' opens the same panel the selection bar uses.
+  // 'Add label…' opens the same panel the selection bar uses.
   await openTagsSub();
-  press([...document.querySelectorAll('#ctxSub .mi')].find(r=>r.textContent.includes('Add tag')));
+  press([...document.querySelectorAll('#ctxSub .mi')].find(r=>r.textContent.includes('Add label')));
   await wait(300);
   const addOpensPop=document.querySelector('#tagPanel').classList.contains('open');
 
-  return {subShown,rows,partialMark,afterToggle,afterSecondToggle,colorPopOpen,colors,addOpensPop};
+  // All submenus shared the same obsolete appearance-menu call.
+  const otherSubmenus=[];
+  for(const name of ['Alignment','Normalize','Blank canvas']){
+    await openCtx();
+    press([...document.querySelectorAll('#ctxmenu .mi')].find(row=>row.textContent.startsWith(name)));
+    otherSubmenus.push(document.querySelector('#ctxSub').classList.contains('show')&&document.querySelector('#ctxSub .mcat').textContent===name);
+  }
+  return {errors,otherSubmenus,subShown,rows,partialMark,afterNameClick,afterToggle,afterSecondToggle,colorPopOpen,colors,addOpensPop};
 })()`;
 
 try {
   const r = await evaluate(await debuggerPort(), smokeExpression);
 
-  assert.equal(r.subShown, true, 'right-click on a selection must offer a Tags submenu');
-  assert.ok(r.rows.some(t => t.includes('Add tag')), `no "Add tag…" row: ${r.rows.join(' | ')}`);
+  assert.deepEqual(r.errors,[],'context menu interactions must not throw');
+  assert.deepEqual(r.otherSubmenus,[true,true,true],'related submenus must still open');
+  assert.equal(r.subShown, true, 'right-click on a selection must offer a Labels submenu');
+  assert.ok(r.rows.some(t => t.includes('Add label')), `no "Add label…" row: ${r.rows.join(' | ')}`);
   assert.ok(r.rows.some(t => t.toLowerCase().includes('mood')), 'the board tags must be listed');
-  assert.ok(r.rows.some(t => t.includes('Tag panel')), 'the submenu must reach the tag panel');
+  assert.ok(r.rows.some(t => t.includes('Label panel')), 'the submenu must reach the tag panel');
 
   // Some-but-not-all has to look different from none, or one click looks inert.
-  assert.equal(r.partialMark, '–', `a partly-applied tag must be marked, got "${r.partialMark}"`);
+  assert.deepEqual(r.afterNameClick, [true, false], 'clicking the label name must not change assignments');
+  assert.equal(r.partialMark, '1 of 2 items', `a partly-applied tag must be marked, got "${r.partialMark}"`);
 
   assert.deepEqual(r.afterToggle, [true, true],
-    'toggling a partly-applied tag must bring the whole selection up to it, not strip it');
+    'Apply to all must add the label to the rest of the selection');
   assert.deepEqual(r.afterSecondToggle, [false, false],
-    'toggling again, once every item carries it, must remove it from all of them');
+    'the explicit remove button must remove the label from all selected items');
 
   assert.equal(r.colorPopOpen, true, 'the colour well in the submenu must open the palette');
   assert.equal(Object.keys(r.colors).length, 1, `picking a swatch must assign a colour, got ${JSON.stringify(r.colors)}`);
   assert.match(Object.values(r.colors)[0], /^#[0-9a-f]{6}$/, 'the colour must be stored as hex');
 
-  assert.equal(r.addOpensPop, true, '"Add tag…" must open the same panel the selection bar uses');
+  assert.equal(r.addOpensPop, true, '"Add label…" must open the same panel the selection bar uses');
 
-  console.log('tag context menu Electron smoke passed — add, toggle from partial, and colour, all from right-click');
+  console.log('tag context menu Electron smoke passed — add, apply to all, explicit removal, and colour, all from right-click');
 } finally {
   if (child.exitCode === null) child.kill();
   await Promise.race([once(child, 'exit'), delay(3000)]).catch(() => {});

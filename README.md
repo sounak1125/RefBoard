@@ -77,14 +77,14 @@ Prefer to browse one board at a time? Switch to **Focus Flow** for large preview
 
 ### More than a collection of images
 
-Keep the thinking alongside the references. Add text notes, lists, drawings, and arrows; tag images to find them again; and pull a color palette from a reference.
+Keep the thinking alongside the references. Add text notes, lists, drawings, and arrows; label images to find them again; and pull a color palette from a reference.
 
 | Tool | What you can do |
 |---|---|
 | **Arrange & group** | Resize with proportions intact, rotate, snap to nearby items, and organize references in named groups. |
 | **Notes & drawing** | Add formatted notes, checklists, pen marks, and arrows to explain an idea. |
 | **Image tools** | Crop, flip, view in grayscale, and sample colors with the eyedropper. |
-| **Tags & search** | Label references, filter by tag, and search within a board. |
+| **Labels & search** | Label references, filter by label, and search within a board. |
 | **Navigation** | Zoom at the cursor, pan across the canvas, fit the selection or whole board, and jump around with the minimap. |
 | **Appearance** | Choose from six dark themes, toggle the dot grid, and keep tools compact or always visible. |
 
@@ -104,9 +104,10 @@ like any other document.
 
 Saving adds only new or changed images to the file, so a save on a large
 board takes a moment instead of rewriting everything. Boards from older
-versions open as before and become the current format on their next save,
-with the previous file kept once as `.refboard.bak`. Boards saved by 2.1.2 or
-later need **RefBoard 2.1.2 or later**. See [board files](docs/BOARD_FILES.md).
+versions open as before and become the current format on their next save.
+A temporary `.refboard.bak` protects file replacement and is removed after a
+successful save; an interrupted replacement keeps it available for recovery.
+Boards saved by 2.1.2 or later need **RefBoard 2.1.2 or later**. See [board files](docs/BOARD_FILES.md).
 
 ## Keyboard shortcuts
 
@@ -120,7 +121,7 @@ later need **RefBoard 2.1.2 or later**. See [board files](docs/BOARD_FILES.md).
 | Pan / zoom | **Space+drag** / **Mouse wheel** |
 | Add a text note | **Shift+T** |
 | Group / ungroup | **Ctrl+G** / **Ctrl+Shift+G** |
-| Search / tags | **Ctrl+F** / **Ctrl+Shift+T** |
+| Search / labels | **Ctrl+F** / **Ctrl+Shift+T** |
 | Toggle the minimap | **M** |
 | Undo / redo | **Ctrl+Z** / **Ctrl+Shift+Z** |
 | Export board / images | **Ctrl+E** / **Ctrl+Shift+I** |

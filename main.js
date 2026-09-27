@@ -2,17 +2,15 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, shell, nativeImage, WebContentsView, View, screen } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
-const { replaceBoardFile, recoverBoardFileIfMissing } = require('./scripts/board-file-replace');
+const { replaceBoardFile, recoverBoardFileIfMissing, cleanupBoardBackup } = require('./scripts/board-file-replace');
 const { boardRenameFailureText, renameBoardFile } = require('./scripts/board-rename');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
-const { boardHeaderPrefix, boardImageParts } = require('./scripts/board-save-format');
 const {
-  sidecarStorePath, readSidecarIndex, writeSidecarIndex, openSidecarStore, appendSidecarImage,
-  readSidecarImage, sidecarGarbageBytes, shouldCompactSidecar, compactSidecarStore,
+  sidecarStorePath, readSidecarIndex, writeSidecarIndex, openSidecarStore, readSidecarImage,
 } = require('./scripts/board-sidecar');
 const {
   isContainerHead, openContainer, appendContainerImage, readContainerImage, writeContainerIndex,
@@ -35,7 +33,7 @@ const SPLIT_GAP = 6;
 const SPLIT_RATIO_MIN = 0.25;
 const SPLIT_RATIO_MAX = 0.75;
 const SPLIT_RATIO_DEFAULT = 0.5;
-const SPLIT_ANIM_MS = 340;
+const SPLIT_ANIM_MS = 400;
 const TITLEBAR_H = 34;
 /* Per-window. One process-wide flag let a single confirmed close (or a "Restart
    to update") skip the unsaved-changes handshake in every other window. */
@@ -203,18 +201,20 @@ function splitFrame(win) {
   const w = Math.max(1, width | 0);
   const h = Math.max(1, height | 0);
   if (!st?.secondaryView) {
-    return { w, h, contentWidth: w, secX: w, secW: 0, secY: 0, secH: h };
+    return { w, h, progress: 0, contentWidth: w, secX: w, secW: 0, secY: 0, secH: h };
   }
   const gap = SPLIT_GAP;
   const targetLeft = Math.max(1, Math.min(w - gap - 1, Math.round(w * clampSplitRatio(st.splitRatio))));
   const targetSecX = targetLeft + gap;
   const p = splitOpenProgress(st);
-  const secX = Math.round(targetSecX * p + w * (1 - p));
+  const contentWidth = Math.round(targetLeft * p + w * (1 - p));
+  const secX = contentWidth + Math.round(gap * p);
   const chrome = Math.min(TITLEBAR_H, Math.max(0, h - 1));
   return {
     w,
     h,
-    contentWidth: Math.max(1, Math.min(w, secX - gap)),
+    progress: p,
+    contentWidth,
     secX,
     secW: Math.max(1, w - targetSecX),
     secY: chrome,
@@ -227,33 +227,47 @@ function layoutViews(win) {
   if (!st || win.isDestroyed()) return;
   const frame = splitFrame(win);
   if (!st.secondaryView) {
-    st.primaryView?.setBounds({ x: 0, y: 0, width: frame.w, height: frame.h });
-    return;
+    setPaneBounds(st.primaryView, { x: 0, y: 0, width: frame.w, height: frame.h });
+    return frame;
   }
-  st.primaryView.setBounds({ x: 0, y: 0, width: frame.w, height: frame.h });
-  st.secondaryView.setBounds({ x: frame.secX, y: frame.secY, width: frame.secW, height: frame.secH });
+  setPaneBounds(st.primaryView, { x: 0, y: 0, width: frame.w, height: frame.h });
+  setPaneBounds(st.secondaryView, { x: frame.secX, y: frame.secY, width: frame.secW, height: frame.secH });
+  return frame;
 }
 
-function easeInOutCubic(t) {
-  return t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2;
+function setPaneBounds(view, bounds) {
+  if (!view) return;
+  const previous = view.getBounds();
+  if (previous.x !== bounds.x || previous.y !== bounds.y
+      || previous.width !== bounds.width || previous.height !== bounds.height) {
+    view.setBounds(bounds);
+  }
+}
+
+function easeSplitMotion(t) {
+  // Zero velocity and acceleration at both ends, with a gentler midpoint.
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 function splitOpenProgress(st) {
   if (!st?.secondaryView) return 0;
+  if (st.secondaryLoading) return 0;
   if (!st.splitAnim) return 1;
-  const u = Math.max(0, Math.min(1, (Date.now() - st.splitAnim.t0) / Math.max(1, st.splitAnim.ms)));
-  const e = easeInOutCubic(u);
-  return st.splitAnim.dir === 'out' ? 1 - e : e;
+  const u = Math.max(0, Math.min(1, (performance.now() - st.splitAnim.t0) / Math.max(1, st.splitAnim.ms)));
+  const e = easeSplitMotion(u);
+  return st.splitAnim.from + (st.splitAnim.to - st.splitAnim.from) * e;
 }
 
 function stopSplitAnim(win) {
   const st = paneState(win);
   if (!st) return;
   if (st.animTimer) {
-    clearInterval(st.animTimer);
+    clearTimeout(st.animTimer);
     st.animTimer = 0;
   }
   st.splitAnim = null;
+  const secondary = st.secondaryView?.webContents;
+  if (secondary && !secondary.isDestroyed()) secondary.setBackgroundThrottling(true);
 }
 
 function tickSplitAnim(win) {
@@ -262,9 +276,9 @@ function tickSplitAnim(win) {
     stopSplitAnim(win);
     return;
   }
-  layoutViews(win);
-  if (Date.now() - st.splitAnim.t0 < st.splitAnim.ms) {
-    sendSplitState(win);
+  const frame = layoutViews(win);
+  if (performance.now() - st.splitAnim.t0 < st.splitAnim.ms) {
+    sendSplitState(win, frame);
     return;
   }
   const dir = st.splitAnim.dir;
@@ -280,12 +294,18 @@ function startSplitAnim(win, dir) {
   const st = paneState(win);
   if (!st?.secondaryView || win.isDestroyed()) return;
   const current = splitOpenProgress(st);
-  const now = Date.now();
-  st.splitAnim = dir === 'out'
-    ? { dir, t0: now - Math.round((1 - current) * SPLIT_ANIM_MS), ms: SPLIT_ANIM_MS }
-    : { dir, t0: now - Math.round(current * SPLIT_ANIM_MS), ms: SPLIT_ANIM_MS };
-  if (!st.animTimer) st.animTimer = setInterval(() => tickSplitAnim(win), 8);
-  layoutViews(win);
+  const to = dir === 'out' ? 0 : 1;
+  if (st.animTimer) clearTimeout(st.animTimer);
+  st.secondaryLoading = false;
+  st.secondaryView.webContents.setBackgroundThrottling(false);
+  st.splitAnim = {
+    id: crypto.randomUUID(), dir, from: current, to, t0: performance.now(),
+    ms: Math.max(1, Math.round(Math.abs(to - current) * SPLIT_ANIM_MS)),
+  };
+  // The visible renderer supplies display-paced ticks. This single deadline
+  // only settles the transition if that renderer becomes hidden or stalls.
+  st.animTimer = setTimeout(() => tickSplitAnim(win), st.splitAnim.ms + 100);
+  sendSplitState(win, layoutViews(win));
 }
 
 function animateSplitClose(win) {
@@ -303,23 +323,26 @@ function applySplitScreenX(win, screenX) {
   const bounds = win.getContentBounds();
   if (!bounds?.width) return;
   const st = paneState(win);
-  if (!st) return;
+  if (!st?.secondaryView || st.secondaryLoading || st.splitAnim) return;
   st.splitRatio = clampSplitRatio((Number(screenX) - bounds.x) / bounds.width);
   layoutViews(win);
   sendSplitState(win);
 }
 
-function splitStatePayload(win) {
+function splitStatePayload(win, frame = splitFrame(win)) {
   const st = paneState(win);
   return {
     split: !!(st?.secondaryView),
     ratio: clampSplitRatio(st?.splitRatio ?? SPLIT_RATIO_DEFAULT),
-    contentWidth: splitFrame(win).contentWidth,
+    contentWidth: frame.contentWidth,
+    progress: frame.progress,
+    animating: !!(st?.secondaryLoading || st?.splitAnim),
+    animationId: st?.splitAnim?.id || null,
   };
 }
 
-function sendSplitState(win) {
-  sendToPanes(win, 'split-state-changed', splitStatePayload(win));
+function sendSplitState(win, frame) {
+  sendToPanes(win, 'split-state-changed', splitStatePayload(win, frame));
 }
 
 let leftButtonDownFn = null;
@@ -352,7 +375,7 @@ function stopSplitDrag(win, { notify = true } = {}) {
 
 function startSplitDrag(win, screenX) {
   const st = paneState(win);
-  if (!st?.secondaryView || win.isDestroyed() || st.splitAnim) return;
+  if (!st?.secondaryView || win.isDestroyed() || st.secondaryLoading || st.splitAnim) return;
   st.dragging = true;
   applySplitScreenX(win, screenX);
   if (st.dragTimer) return;
@@ -386,6 +409,7 @@ function destroySecondary(win) {
   stopPaneActivityPolling(win);
   const view = st.secondaryView;
   st.secondaryView = null;
+  st.secondaryLoading = false;
   st.secondaryWindowId = null;
   st.secondaryPath = null;
   st.secondaryBoardReady = false;
@@ -460,19 +484,29 @@ async function enterSplit(win, ratio) {
     webPreferences: boardWebPreferences(secondaryId),
   });
   secondaryView.setBackgroundColor('#141519');
-  st.layout.addChildView(secondaryView);
+  // Keep startup timers responsive while the pane is offscreen.
+  secondaryView.webContents.setBackgroundThrottling(false);
   st.secondaryView = secondaryView;
+  st.secondaryLoading = true;
   st.secondaryWindowId = secondaryId;
+  // Set offscreen bounds before attaching; loading must not expose a blank pane.
+  layoutViews(win);
+  st.layout.addChildView(secondaryView);
   registerSender(secondaryView.webContents, win);
   attachWebContentsSafety(win, secondaryView.webContents, { windowId: secondaryId, role: 'secondary' });
   win.setMinimumSize(SPLIT_MIN_WIDTH, WINDOW_MIN_HEIGHT);
-  startSplitAnim(win, 'in');
-  await secondaryView.webContents.loadFile('index.html', {
-    query: { wid: secondaryId, pane: 'secondary' },
-  }).catch(err => {
+  sendSplitState(win, layoutViews(win));
+  try {
+    await secondaryView.webContents.loadFile('index.html', {
+      query: { wid: secondaryId, pane: 'secondary' },
+    });
+  } catch (err) {
+    if (win.isDestroyed() || st.secondaryView !== secondaryView) return { opened: false, reason: 'cancelled' };
     console.warn('RefBoard split pane failed to load:', err?.message || err);
-  });
-  try { secondaryView.webContents.focus(); } catch { /* focus is best-effort */ }
+    if (st.secondaryView === secondaryView) destroySecondary(win);
+    return { opened: false, reason: 'load-failed' };
+  }
+  if (win.isDestroyed() || st.secondaryView !== secondaryView) return { opened: false, reason: 'cancelled' };
   sendBlockedBoardPath(win);
   sendSplitState(win);
   startPaneActivityPolling(win);
@@ -483,6 +517,10 @@ function requestSplitExit(win) {
   const st = paneState(win);
   if (!st?.secondaryView) {
     sendSplitState(win);
+    return { closed: true };
+  }
+  if (st.secondaryLoading) {
+    destroySecondary(win);
     return { closed: true };
   }
   if (st.pendingClose === 'split-exit' || st.splitAnim?.dir === 'out') {
@@ -505,6 +543,7 @@ function requestSplitExit(win) {
 function requestWindowClose(win) {
   if (!win || win.isDestroyed()) return;
   const st = paneState(win);
+  if (st?.secondaryLoading) destroySecondary(win);
   const secondary = st?.secondaryView?.webContents;
   if (secondary && !secondary.isDestroyed() && !secondary.isCrashed()) {
     st.pendingClose = 'window';
@@ -1106,10 +1145,21 @@ function setupIpc() {
     if (boardSaveSessionForTarget(target)) throw new Error('Board save in progress');
     const reservation = { target };
     boardSaveTargets.set(boardTargetKey(target), reservation);
+    const tempPath = `${target}.saving-${process.pid}-${crypto.randomUUID()}`;
+    let handle = null;
     try {
-      await fs.writeFile(target, data, 'utf8');
+      handle = await fs.open(tempPath, 'wx');
+      await handle.writeFile(data, 'utf8');
+      await handle.sync();
+      await handle.close();
+      handle = null;
+      await replaceBoardFile(target, tempPath);
       refreshShellIcons(target);
       return { saved: true, filePath: target };
+    } catch (err) {
+      await handle?.close().catch(() => {});
+      await fs.unlink(tempPath).catch(() => {});
+      throw err;
     } finally { releaseBoardSaveTarget(reservation); }
   });
 
@@ -1239,6 +1289,9 @@ function setupIpc() {
           })).images;
           compacted = true;
         }
+        // Older releases left .bak behind after conversion or replacement.
+        // Retire it only once this save has committed and closed successfully.
+        await cleanupBoardBackup(session.target);
         refreshShellIcons(session.target);
         return {
           saved: true, filePath: session.target,
@@ -1247,8 +1300,8 @@ function setupIpc() {
         };
       }
       // A conversion or a brand-new file: swap the temp container in. The
-      // previous board file, when there was one, is kept as .bak once; a
-      // sidecar pair's store is removed, its images now live in the board.
+      // previous file is protected by .bak during the swap, then cleaned up;
+      // a sidecar pair's store is removed, its images now live in the board.
       const tempPath = session.tempPath;
       session.tempPath = null;
       await replaceBoardFile(session.target, tempPath);
@@ -1624,6 +1677,7 @@ function setupIpc() {
         } finally {
           await box.handle.close().catch(() => {});
         }
+        await cleanupBoardBackup(target);
         refreshShellIcons(target);
         return { written: true, filePath: target };
       }
@@ -1736,6 +1790,14 @@ function setupIpc() {
     if (target && !target.isDestroyed()) startSplitDrag(target, payload.screenX);
   });
 
+  ipcMain.on('split-animation-frame', (event, animationId) => {
+    const target = windowForEvent(event);
+    const st = paneState(target);
+    if (!target || target.isDestroyed() || event.sender !== primaryWebContents(target)
+        || !st?.splitAnim || st.splitAnim.id !== animationId) return;
+    tickSplitAnim(target);
+  });
+
   ipcMain.on('split-drag-move', (event, payload = {}) => {
     const target = windowForEvent(event);
     if (target && !target.isDestroyed()) applySplitScreenX(target, payload.screenX);
@@ -1786,6 +1848,10 @@ function setupIpc() {
     if (isSecondarySender(target, event.sender)) {
       st.secondaryPath = filePath;
       st.secondaryBoardReady = !!payload?.ready;
+      if (st.secondaryLoading && payload?.startupComplete === true) {
+        startSplitAnim(target, 'in');
+        try { event.sender.focus(); } catch { /* focus is best-effort */ }
+      }
       sendPaneActivity(target);
       return;
     }
@@ -2037,6 +2103,7 @@ async function createWindow(startupFilePath = null) {
     layout,
     primaryView,
     secondaryView: null,
+    secondaryLoading: false,
     primaryWindowId: windowId,
     secondaryWindowId: null,
     splitRatio: SPLIT_RATIO_DEFAULT,

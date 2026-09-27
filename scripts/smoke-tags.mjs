@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,13 +21,15 @@ import { removeProfileDir } from './smoke-profile-cleanup.mjs';
 import { evaluate } from './smoke-cdp.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const electron = path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
+const electron = process.env.REFBOARD_SMOKE_EXECUTABLE || path.join(root, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
 const profile = await mkdtemp(path.join(os.tmpdir(), 'refboard-tags-'));
 const workDir = await mkdtemp(path.join(os.tmpdir(), 'refboard-tags-board-'));
 const boardPath = path.join(workDir, 'tagged.refboard');
+const otherBoardPath = path.join(workDir, 'other.refboard');
+await writeFile(otherBoardPath, JSON.stringify({ app: 'refboard', version: 3, items: [], images: [] }));
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-const child = spawn(electron, ['.', '--remote-debugging-port=0', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion', `--user-data-dir=${profile}`], {
+const child = spawn(electron, [...(process.env.REFBOARD_SMOKE_EXECUTABLE ? [] : ['.']), '--remote-debugging-port=0', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--disable-features=CalculateNativeWinOcclusion', `--user-data-dir=${profile}`], {
   cwd: root, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
 });
 let stderr = '';
@@ -60,6 +62,8 @@ const smokeExpression = `(async()=>{
   await wait(300);
   document.querySelectorAll('.modal.show').forEach(el=>el.classList.remove('show'));
 
+  const runtimeErrors=[];
+  window.addEventListener('error',e=>runtimeErrors.push(e.message));
   const RB=window.RefBoard;
   const filePath=${JSON.stringify(boardPath)};
   const png=async(fill)=>{
@@ -77,7 +81,9 @@ const smokeExpression = `(async()=>{
   if(added.length!==3)throw new Error('expected three images');
 
   // A note as well: notes are rebuilt field by field on load, images are not.
-  const note=RB.state.items.find(it=>it.kind==='note');
+  const note=RB.makeNoteForTest({x:800,y:100,text:'A note',name:'Label test note'});
+  RB.state.items.push(note);
+  RB.invalidate();
 
   const select=ids=>{ RB.state.sel=new Set(ids); RB.updateSelBarForTest(); };
   /* What a mouse actually sends. A bare .click() skips pointerdown, which is
@@ -103,17 +109,19 @@ const smokeExpression = `(async()=>{
         +' toast="'+document.querySelector('#toast').textContent+'"');
     }
   };
-  const typeTags=async(text)=>{
+  const typeTags=async(text, useButton=false)=>{
     await ensureTagPanelOpen();
     const input=document.querySelector('#tagPopInput');
     input.value=text;
-    input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    if(useButton)press(document.querySelector('#tagAdd'));
+    else input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
     await wait(160);
   };
 
   // Tag two images at once, then one on its own.
   select([added[0].id,added[1].id]);
-  await typeTags('Mood, lighting');
+  await typeTags('Mood, lighting',true);
   select([added[2].id]);
   await typeTags('mood');
 
@@ -141,6 +149,59 @@ const smokeExpression = `(async()=>{
   await wait(220);
   const clearedItemTags=[...(added[2].tags||[])];
   await typeTags('mood');           // put it back for the checks below
+
+  // Mixed selections use the same explicit actions as the right-click menu.
+  select([added[0].id,added[2].id]);
+  const rowFor=tag=>[...document.querySelectorAll('#tagPopChips .tag-assignment')].find(row=>row.dataset.tag.toLowerCase()===tag);
+  const mixedScope=rowFor('lighting').querySelector('.tag-assignment-scope').textContent;
+  press(rowFor('lighting').querySelector('.tag-assignment-name'));
+  const nameClickKeptTags=tagsOf(added[0].id).includes('lighting')&&!tagsOf(added[2].id).includes('lighting');
+  press(rowFor('lighting').querySelector('.tag-apply'));
+  const afterApplyAll=[tagsOf(added[0].id),tagsOf(added[2].id)];
+  press(rowFor('lighting').querySelector('.tag-remove'));
+  const afterRemove=[tagsOf(added[0].id),tagsOf(added[2].id)];
+  const undoButtonPresent=!!document.querySelector('#toast .toast-action');
+  press(document.querySelector('#toast .toast-action'));
+  await wait(180);
+  const afterRemoveUndo=[tagsOf(added[0].id),tagsOf(added[2].id)];
+  await RB.undoForTest(); // undo Apply to all, restore the original mixed selection
+  await ensureTagPanelOpen();
+
+  // Clear acts only on the selection, and restores the full label list on Undo.
+  press(document.querySelector('#tagSelClear'));
+  const bulkCleared=[tagsOf(added[0].id),tagsOf(added[2].id)];
+  const unselectedKeptTags=tagsOf(added[1].id);
+  const clearDisabled=document.querySelector('#tagSelClear').disabled;
+  press(document.querySelector('#toast .toast-action'));
+  await wait(180);
+  const bulkRestored=[tagsOf(added[0].id),tagsOf(added[2].id)];
+  await RB.redoForTest();
+  const bulkRedone=[tagsOf(added[0].id),tagsOf(added[2].id)];
+  await RB.undoForTest();
+  await ensureTagPanelOpen();
+
+  // A suggestion creates a label immediately; it appears without reopening.
+  const input=document.querySelector('#tagPopInput');
+  input.value='New label';input.dispatchEvent(new Event('input',{bubbles:true}));
+  const createSuggestion=document.querySelector('#tagPopSuggest .tag-suggestion');
+  const createText=createSuggestion.textContent;
+  press(createSuggestion);
+  const createdForBoth=[tagsOf(added[0].id),tagsOf(added[2].id)].every(tags=>tags.includes('New label'));
+  select([added[1].id]);
+  input.value='new';input.dispatchEvent(new Event('input',{bubbles:true}));
+  const existingSuggestion=[...document.querySelectorAll('#tagPopSuggest .tag-suggestion')].find(btn=>btn.firstElementChild.textContent==='New label');
+  const freshSuggestion=!!existingSuggestion;
+  press(existingSuggestion);
+  const reusedLabel=tagsOf(added[1].id).includes('New label');
+  await RB.undoForTest();await RB.undoForTest();
+  await ensureTagPanelOpen();
+
+  // Merely switching off display or resetting a filter never edits assignments.
+  const beforeFilters=added.map(it=>tagsOf(it.id));
+  select([]);
+  const noSelectionHidden=document.querySelector('#tagSelSection').classList.contains('empty');
+  const noSelectionAddDisabled=document.querySelector('#tagAdd').disabled;
+  select([added[2].id]);
 
   // Filter to 'lighting': two images carry it, one does not.
   // The toolbar button toggles, and tagging above may have left the panel
@@ -179,6 +240,7 @@ const smokeExpression = `(async()=>{
   press(document.querySelector('#tagClear'));
   await wait(120);
   const cleared=RB.tagStateForTest();
+  const afterFilters=added.map(it=>tagsOf(it.id));
 
   // Give 'mood' a colour through the well on its panel row.
   const moodDot=[...document.querySelectorAll('#tagPanelList .tag-row')]
@@ -281,7 +343,26 @@ const smokeExpression = `(async()=>{
   const noteTagsBefore=note?tagsOf(note.id):null;
   const saved=await RB.saveBoardFile({silent:true,filePath});
   if(!saved)throw new Error('board save failed');
-  await wait(400);
+  await wait(1000);
+  const db=await new Promise((resolve,reject)=>{
+    const request=indexedDB.open('refboard',4);
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error);
+  });
+  const session=await new Promise((resolve,reject)=>{
+    const request=db.transaction('meta','readonly').objectStore('meta').get('board:main');
+    request.onsuccess=()=>resolve(request.result);
+    request.onerror=()=>reject(request.error);
+  });
+  db.close();
+  const sessionColors=session?.tagColors;
+  // Opening the current path is intentionally a no-op. Leave it first so this
+  // tests disk loading, including clearing colors when an older file has none.
+  const confirmOpen=setInterval(()=>document.querySelector('#confirmModal.show #confirmOk')?.click(),50);
+  try { await RB.openBoardFromPath(${JSON.stringify(otherBoardPath)}); }
+  finally { clearInterval(confirmOpen); }
+  if(RB.state.items.length!==0)throw new Error('did not leave the saved board');
+  const otherBoardColors={...RB.state.tagColors};
   await RB.openBoardFromPath(filePath);
   for(let i=0;i<200&&RB.state.items.length<3;i++)await wait(25);
   await wait(600);
@@ -292,19 +373,73 @@ const smokeExpression = `(async()=>{
   const reloadedBoardTags=RB.tagStateForTest().boardTags;
   const reloadedColors={...RB.state.tagColors};
 
+  // Group selection edits its contents, while the group itself carries no labels.
+  const reopenedImages=RB.state.items.filter(it=>it.kind==='image');
+  select(reopenedImages.slice(0,2).map(it=>it.id));
+  input.blur();
+  document.querySelector('#board').dispatchEvent(new KeyboardEvent('keydown',{key:'g',ctrlKey:true,bubbles:true}));
+  const group=RB.state.items.find(it=>it.kind==='group'&&RB.state.sel.has(it.id));
+  if(!group)throw new Error('group did not form for label scope check');
+  await typeTags('Group label',true);
+  const groupLabels=reopenedImages.slice(0,2).every(it=>it.tags.includes('Group label'))&&!group.tags?.length;
+  const groupScope=document.querySelector('#tagSelTitle').textContent;
+  await RB.undoForTest();await RB.undoForTest();
+
+  // A later operation must retire a stale label Undo action.
+  select([reopenedImages[0].id]);
+  await typeTags('Temporary',true);
+  const staleUndo=document.querySelector('#toast .toast-action');
+  RB.pushUndoForTest();
+  reopenedImages[0].x+=12;
+  const movedX=reopenedImages[0].x;
+  const staleUndoRemoved=!document.querySelector('#toast .toast-action');
+  staleUndo.click();await wait(100);
+  const laterEditKept=reopenedImages[0].tags.includes('Temporary')&&reopenedImages[0].x===movedX;
+  await RB.undoForTest();await RB.undoForTest();
+
+  // At the label limit, preserve the typed label and explain why it was not added.
+  const capped=reopenedImages[0];
+  RB.pushUndoForTest();capped.tags=Array.from({length:24},(_,i)=>'Label '+i);
+  select([capped.id]);
+  await typeTags('Overflow label',true);
+  const limitPreservesInput=input.value==='Overflow label'&&capped.tags.length===24&&!capped.tags.includes('Overflow label');
+  const limitExplained=document.querySelector('#toast').textContent.includes('24 labels');
+  await RB.undoForTest();
+  input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));
+
+  // Keyboard activation and dismissal work without a pointer.
+  input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+  const escapeClosed=!document.querySelector('#tagPanel').classList.contains('open');
+  document.querySelector('#sTags').click();
+  const keyboardOpened=document.querySelector('#tagPanel').classList.contains('open')&&document.activeElement===input;
+
   return {
+    runtimeErrors,groupLabels,groupScope,staleUndoRemoved,laterEditKept,limitPreservesInput,limitExplained,escapeClosed,keyboardOpened,
+    mixedScope,nameClickKeptTags,afterApplyAll,afterRemove,undoButtonPresent,afterRemoveUndo,
+    bulkCleared,unselectedKeptTags,clearDisabled,bulkRestored,bulkRedone,createText,createdForBoth,
+    freshSuggestion,reusedLabel,noSelectionHidden,noSelectionAddDisabled,beforeFilters,afterFilters,
     afterTagging, afterDuplicate, selbarOffersTags, panelOpen, chipLabels,
     stillOpenBeforeToggle, openAfterSecondPress, clearedItemTags,
     colorPopOpen, chosen, colorsAfterPick, colorsAfterUndo, colorsBeforeSave, labelModes,
     panelSurvivedColorPick, glowNear, glowMid, glowFar,
     filtered, countText, anyMode, allMode, cleared, moreOpened, moreBadge,
-    searchHits, noteTagsBefore, reloaded, reloadedBoardTags, reloadedColors,
+    searchHits, noteTagsBefore, reloaded, reloadedBoardTags, reloadedColors, sessionColors, otherBoardColors,
     ids:{first:added[0].id,second:added[1].id,third:added[2].id},
   };
 })()`;
 
 try {
   const r = await evaluate(await debuggerPort(), smokeExpression);
+
+  assert.deepEqual(r.runtimeErrors,[],'label interactions must not throw renderer errors');
+  assert.equal(r.groupLabels,true,'group selection must label its contents');
+  assert.equal(r.groupScope,'Labels · 2 selected');
+  assert.equal(r.staleUndoRemoved,true,'a later operation dismisses the previous label Undo action');
+  assert.equal(r.laterEditKept,true,'even a stale Undo callback cannot undo a later edit');
+  assert.equal(r.limitPreservesInput,true);
+  assert.equal(r.limitExplained,true);
+  assert.equal(r.escapeClosed,true);
+  assert.equal(r.keyboardOpened,true);
 
   /* ---- writing tags ---- */
   assert.deepEqual(r.afterTagging.first, ['Mood', 'lighting'], 'both tags land on the first selected image');
@@ -316,9 +451,28 @@ try {
   assert.equal(r.openAfterSecondPress, true, 'the tag button opens the panel and leaves it open');
   assert.deepEqual(r.clearedItemTags, [], 'Clear tags must strip every tag from the selection');
 
+  assert.equal(r.mixedScope,'1 of 2 items');
+  assert.equal(r.nameClickKeptTags,true,'a label name is not a remove button');
+  assert.ok(r.afterApplyAll.every(tags=>tags.includes('lighting')),'Apply to all fills missing assignments');
+  assert.ok(r.afterRemove.every(tags=>!tags.includes('lighting')),'the remove button clears that label from the selection');
+  assert.equal(r.undoButtonPresent,true);
+  assert.deepEqual(r.afterRemoveUndo,r.afterApplyAll,'Undo restores a removed label');
+  assert.deepEqual(r.bulkCleared,[[],[]]);
+  assert.deepEqual(r.unselectedKeptTags,['Mood','lighting'],'bulk removal must not affect unselected items');
+  assert.equal(r.clearDisabled,true,'bulk removal disables when there are no labels');
+  assert.deepEqual(r.bulkRestored,[['Mood','lighting'],['mood']]);
+  assert.deepEqual(r.bulkRedone,[[],[]],'bulk removal supports redo');
+  assert.match(r.createText,/Create “New label”/);
+  assert.equal(r.createdForBoth,true);
+  assert.equal(r.freshSuggestion,true,'new labels become suggestions immediately');
+  assert.equal(r.reusedLabel,true,'choosing a suggestion applies the existing label');
+  assert.equal(r.noSelectionHidden,true);
+  assert.equal(r.noSelectionAddDisabled,true);
+  assert.deepEqual(r.afterFilters,r.beforeFilters,'filtering and Reset filters must preserve assignments');
+
   /* ---- the filter ---- */
   assert.equal(r.panelOpen, true, 'the tag button opens the filter panel');
-  assert.equal(r.moreOpened, true, 'the Filter & labels disclosure must open when its summary is pressed');
+  assert.equal(r.moreOpened, true, 'the Filter board disclosure must open when its summary is pressed');
   assert.ok(r.chipLabels.includes('lighting'), `panel is missing tags: ${r.chipLabels.join(', ')}`);
 
   assert.deepEqual(r.filtered.filter, ['lighting'], 'clicking a chip filters by that tag');
@@ -397,6 +551,8 @@ try {
   );
   assert.deepEqual(r.reloadedColors, r.colorsBeforeSave,
     'tag colours travel with the board, so they must survive save and reopen');
+  assert.deepEqual(r.otherBoardColors, {}, 'opening a board without colors must clear the previous board colors');
+  assert.deepEqual(r.sessionColors, r.colorsBeforeSave, 'crash recovery session data must include label colors');
 
   console.log(
     `tags Electron smoke passed — tagged through the panel, filtered to `
