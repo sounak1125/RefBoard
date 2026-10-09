@@ -903,5 +903,37 @@
         }
       ]
     }
+  },
+  "2.1.5": {
+    "headline": "Draw on your board, link your images",
+    "summary": "Write and highlight on top of anything, and connect images with links that follow them around.",
+    "sections": {
+      "new": [
+        {
+          "title": "Brush and highlighter",
+          "description": "Write, sketch, or highlight on top of images and notes without changing them. Boards with brush strokes need RefBoard 2.1.5 or later."
+        },
+        {
+          "title": "Links between images",
+          "description": "Drag an arrow from one image to another to link them. The link stays attached when you move either one."
+        }
+      ],
+      "improved": [
+        {
+          "title": "Clearer arrows",
+          "description": "Arrows have a cleaner shape and an outline that keeps them visible on any image. Change their color, size, and heads from the selection bar."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Menus in Export images and Settings",
+          "description": "The Format, Export order, and Naming menus open again, along with the menus in Settings."
+        },
+        {
+          "title": "Double-clicking annotations",
+          "description": "Double-clicking an arrow, or tapping twice with the brush, no longer jumps the view."
+        }
+      ]
+    }
   }
 }

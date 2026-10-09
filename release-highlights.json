@@ -1,38 +1,31 @@
 {
-  "headline": "Clearer labels, smoother split view",
-  "summary": "Manage labels with clearer controls, move between split boards smoothly, and save without leftover backup files.",
+  "headline": "Draw on your board, link your images",
+  "summary": "Write and highlight on top of anything, and connect images with links that follow them around.",
   "sections": {
-    "new": [],
+    "new": [
+      {
+        "title": "Brush and highlighter",
+        "description": "Write, sketch, or highlight on top of images and notes without changing them. Boards with brush strokes need RefBoard 2.1.5 or later."
+      },
+      {
+        "title": "Links between images",
+        "description": "Drag an arrow from one image to another to link them. The link stays attached when you move either one."
+      }
+    ],
     "improved": [
       {
-        "title": "Clearer label controls",
-        "description": "Add labels explicitly, see which labels are shared by your selection, and apply or remove them with clear actions and Undo support."
-      },
-      {
-        "title": "Smoother split view",
-        "description": "Opening and closing split view keeps images at their original size, with one continuous movement as the top bar appears."
-      },
-      {
-        "title": "Updated app runtime",
-        "description": "RefBoard and its installer use an updated Electron runtime."
+        "title": "Clearer arrows",
+        "description": "Arrows have a cleaner shape and an outline that keeps them visible on any image. Change their color, size, and heads from the selection bar."
       }
     ],
     "fixed": [
       {
-        "title": "No leftover backups after successful saves",
-        "description": "Successful saves no longer leave .bak files beside your boards. Recovery safeguards remain in place if a save is interrupted."
+        "title": "Menus in Export images and Settings",
+        "description": "The Format, Export order, and Naming menus open again, along with the menus in Settings."
       },
       {
-        "title": "Label colors stay with the board",
-        "description": "Label colors return when you reopen a board or restore a session, without carrying colors over from another board."
-      },
-      {
-        "title": "Safer interrupted saves",
-        "description": "File handles are released after failed saves, and overlapping save and close requests preserve the correct board data."
-      },
-      {
-        "title": "Installer launch retries",
-        "description": "If RefBoard cannot launch after installation, the installer stays open and offers a retry."
+        "title": "Double-clicking annotations",
+        "description": "Double-clicking an arrow, or tapping twice with the brush, no longer jumps the view."
       }
     ]
   }
