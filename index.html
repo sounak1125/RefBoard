@@ -592,6 +592,28 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 #selbar .sel-group-only{ display:none; }
 #selbar.group-sel .sel-group-only.tb{ display:flex; }
 #selbar.group-sel .sel-group-only.sep{ display:block; }
+/* Annotation styling: only when every selected item is an arrow or ink. */
+#selbar .sel-annot-only{ display:none; }
+#selbar.annot-sel .sel-annot-only.tb{ display:flex; }
+#selbar.annot-sel .sel-annot-only.sep{ display:block; }
+#selbar.annot-sel .annot-swatches{ display:flex; }
+#selbar.annot-sel:not(.arrow-sel) .sel-arrow-only{ display:none; }
+#selbar .annot-swatches{ align-items:center; gap:3px; padding:0 3px; }
+#selbar .annot-swatch{
+  width:16px; height:16px; border-radius:50%; padding:0; flex-shrink:0;
+  border:1.5px solid rgba(255,255,255,.18); background:var(--sw);
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.25);
+  cursor:pointer; transition:transform .12s ease, border-color .12s ease;
+}
+#selbar .annot-swatch:hover{ transform:scale(1.14); border-color:rgba(255,255,255,.55); }
+#selbar .annot-swatch.sel{ border-color:#fff; box-shadow:0 0 0 2px color-mix(in srgb, var(--sw) 45%, transparent); }
+#selbar .annot-wbtn{ font-size:15px; font-weight:600; width:24px; }
+#sArrowStyle svg, #sArrowHeads svg{ display:none; }
+#sArrowStyle[data-v="solid"] .annot-ico-solid,
+#sArrowStyle[data-v="dotted"] .annot-ico-dotted,
+#sArrowHeads[data-v="end"] .annot-ico-end,
+#sArrowHeads[data-v="both"] .annot-ico-both,
+#sArrowHeads[data-v="none"] .annot-ico-none{ display:block; }
 #selbar .tb.on{ background:rgba(90,162,255,.22); color:#fff; }
 #selbar .group-name-inp{
   display:none; width:110px; height:28px; flex-shrink:0;
@@ -3374,6 +3396,12 @@ try {
       <button type="button" class="tb" id="arrowDottedBtn" data-tip-title="Dotted arrow">
         <svg viewBox="0 0 24 24"><path d="M5 12h12" stroke-dasharray="3 3"/><path d="m13 7 5 5-5 5"/></svg>
       </button>
+      <button type="button" class="tb" id="inkPenBtn" data-tip-title="Brush" data-tip-sub="Write or sketch on top of anything">
+        <svg viewBox="0 0 24 24"><path d="M3.5 17.5c2.2-.2 3.4-2.3 4.6-4.6 1.1-2.1 2.4-4.4 4-4.4 1.9 0 .4 4.2 2.1 4.2 1.2 0 1.9-2.6 3.3-2.6 1.1 0 1.2 1.6 3 1.7"/><path d="M4 21h9" opacity=".45"/></svg>
+      </button>
+      <button type="button" class="tb" id="inkHighlightBtn" data-tip-title="Highlighter" data-tip-sub="Translucent marker for emphasis">
+        <svg viewBox="0 0 24 24"><path d="M3 19.5h18" stroke-width="4.5" opacity=".38"/><path d="m8.5 14.5 7.8-9.3a1.6 1.6 0 0 1 2.3-.2l.9.8a1.6 1.6 0 0 1 .1 2.3l-8.2 8.9-3.6.6Z"/><path d="m14.6 7.3 2.9 2.6"/></svg>
+      </button>
     </div>
   </div>
 </div>
@@ -3498,6 +3526,22 @@ try {
   </button>
   <button class="tb sel-group-only" id="sGroupPack" data-tip="Pack group">
     <svg viewBox="0 0 24 24"><rect x="3" y="4" width="7" height="7" rx="1"/><rect x="14" y="4" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+  </button>
+  <span class="sep sel-annot-only"></span>
+  <div class="annot-swatches sel-annot-only" id="sAnnotSwatches" role="group" aria-label="Annotation color"></div>
+  <button class="tb sel-annot-only annot-wbtn" id="sAnnotThinner" data-tip="Thinner">−</button>
+  <button class="tb sel-annot-only annot-wbtn" id="sAnnotThicker" data-tip="Thicker">+</button>
+  <button class="tb sel-annot-only sel-arrow-only" id="sArrowStyle" data-tip="Solid / dotted line">
+    <svg viewBox="0 0 24 24" class="annot-ico-solid"><path d="M4 12h16"/></svg>
+    <svg viewBox="0 0 24 24" class="annot-ico-dotted"><path d="M4 12h16" stroke-dasharray="2.5 3"/></svg>
+  </button>
+  <button class="tb sel-annot-only sel-arrow-only" id="sArrowHeads" data-tip="Arrowheads">
+    <svg viewBox="0 0 24 24" class="annot-ico-end"><path d="M4 12h14"/><path d="m14 8 4 4-4 4"/></svg>
+    <svg viewBox="0 0 24 24" class="annot-ico-both"><path d="M6 12h12"/><path d="m15 8 4 4-4 4M9 8l-4 4 4 4"/></svg>
+    <svg viewBox="0 0 24 24" class="annot-ico-none"><path d="M5 12h14"/><circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>
+  </button>
+  <button class="tb sel-annot-only" id="sAnnotOutline" data-tip="Contrast outline">
+    <svg viewBox="0 0 24 24"><path d="M5 17c3-6 6-9 14-11" stroke-width="5" opacity=".35"/><path d="M5 17c3-6 6-9 14-11"/></svg>
   </button>
   <span class="sep"></span>
   <button class="tb danger" id="sDel" data-tip="Delete  (Del)">
@@ -3862,7 +3906,9 @@ try {
       <span class="ks"><kbd>D</kbd></span><span class="d">Activate draw mode with the pen</span>
       <span class="ks"><kbd>E</kbd></span><span class="d">Activate draw mode with the eraser</span>
       <span class="ks"><kbd>[</kbd> / <kbd>]</kbd></span><span class="d">Decrease / increase brush or eraser size; hold to resize continuously</span>
-      <span class="ks">Draw panel → Annotate</span><span class="d">Solid or dotted arrow — drag to place; drag endpoints to adjust</span>
+      <span class="ks">Draw panel → Annotate</span><span class="d">Arrow or dotted arrow — drag to place, <kbd>Shift</kbd> locks the angle. Drag from one image or note onto another to link them like Blender nodes: the link stays attached when either moves. Drag a link's end to unplug or re-plug it</span>
+      <span class="ks">Annotate → Brush / Highlighter</span><span class="d">Write or mark on top of anything without touching the image; strokes written together stay one item</span>
+      <span class="ks">Select an annotation</span><span class="d">Recolor, resize the line, switch arrowheads or the contrast outline from the selection bar</span>
       <span class="ks">Drag image</span><span class="d">Selection rises to the front as soon as you start dragging</span>
       <span class="ks"><kbd>Arrows</kbd></span><span class="d">Nudge selection (Shift = faster)</span>
       <span class="ks">2× click image</span><span class="d">Enter crop mode; drag edges, Esc to finish</span>
@@ -4130,6 +4176,24 @@ import {
 import { buildDragOutNames, dragOutStem } from './scripts/drag-out.mjs';
 import { exportEncoding } from './scripts/export-encoding.mjs';
 import {
+  annotationHaloColor,
+  arrowBounds,
+  arrowDistance,
+  arrowGeometry,
+  distanceToPolyline,
+  highlighterWidth,
+  inkMaxRadius,
+  inkPointsBounds,
+  inkStrokeOutline,
+  linkGeometry,
+  linkSocket,
+  penPressure,
+  replayPath,
+  simulatedPressure,
+  smoothPolyline,
+  thinStroke,
+} from './scripts/annotation-geometry.mjs';
+import {
   addTags,
   collectBoardTags,
   normalizeTags,
@@ -4373,7 +4437,16 @@ let brushDrawerOpen = false;
 let drawFeaturesOpen = false;
 let addFeaturesOpen = false;
 let boardTool = 'select';       // 'select' | 'hand'
-let arrowTool = null;           // null | 'solid' | 'dotted'
+// The armed annotation tool. Arrows: 'solid' | 'dotted'. Brush ink: 'ink' |
+// 'highlighter'. Null when no annotation tool is armed.
+let arrowTool = null;
+const isInkTool = t => t === 'ink' || t === 'highlighter';
+// Screen-pixel sizes per annotation tool; the panel's −/+ and [ ] edit the armed one.
+const annotToolWidths = { solid: 3, dotted: 3, ink: 3, highlighter: 16 };
+// The highlighter keeps its own colour: the pen's default black would only
+// ever make a grey smear.
+let highlighterColor = '#ffd60a';
+const activeDrawColor = () => (arrowTool === 'highlighter' ? highlighterColor : drawColor);
 let drawColor = '#000000';
 const DRAW_WIDTH_MIN = 1;
 const DRAW_WIDTH_MAX = 48;
@@ -4451,6 +4524,9 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const isImageItem = it => !!it && (it.kind || 'image') === 'image';
 const isNoteItem = it => it?.kind === 'note';
 const isArrowItem = it => it?.kind === 'arrow';
+const isInkItem = it => it?.kind === 'ink';
+// Annotations draw above images and notes and never join groups or carry labels.
+const isAnnotationItem = it => isArrowItem(it) || isInkItem(it);
 const isGroupItem = it => it?.kind === 'group';
 const isGroupableItem = it => isImageItem(it) || isNoteItem(it);
 const GROUP_MIN_PADDING = 40;
@@ -5155,47 +5231,417 @@ function itemUiRect(it) {
   return { x: it.x, y: it.y, w: it.w, h: it.h };
 }
 
-function arrowHeadLen(it) {
-  const sw = it.strokeWidth || 2;
-  return Math.max(8, sw * 4);
-}
+/* ---------------- annotations: arrows and ink ----------------
+   Geometry lives in scripts/annotation-geometry.mjs. Both kinds carry an
+   optional contrast outline (a halo in a light or dark tone opposite the mark)
+   so a red arrow still reads on a red shirt and a black note on a dark board. */
+const ANNOT_HALO_MUL = 1.1;          // halo stroke width per unit of mark width
+const ANNOT_MAX_WIDTH = 4000;        // board units; widths are zoom-relative at creation
+const INK_MERGE_WINDOW_MS = 1400;    // strokes this close in time join one ink item…
+const INK_MERGE_GAP_PX = 140;        // …when they start this close (screen px) to it
+const INK_HIGHLIGHT_MULTIPLY_ALPHA = 0.85;
+const INK_HIGHLIGHT_SCREEN_ALPHA = 0.18;
+const ANNOT_SWATCHES = ['#ff4d4f', '#ff9f1a', '#ffd60a', '#2fd28a', '#3d9bff', '#b76bff', '#ffffff', '#15161c'];
 
 function arrowBBox(it) {
-  const pad = arrowHeadLen(it) + 6;
-  const x1 = Math.min(it.x1, it.x2) - pad;
-  const y1 = Math.min(it.y1, it.y2) - pad;
-  const x2 = Math.max(it.x1, it.x2) + pad;
-  const y2 = Math.max(it.y1, it.y2) + pad;
-  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+  return arrowBounds(it, it.outline !== false ? (it.strokeWidth || 2) * ANNOT_HALO_MUL : 0);
 }
 
 function arrowHitTolerance(it) {
-  return Math.max(6 / state.view.s, (it.strokeWidth || 2) + 4);
+  return Math.max(7 / state.view.s, (it.strokeWidth || 2) * 0.9);
 }
 
-function drawArrowShape(g, x1, y1, x2, y2, { color, width, dashed }) {
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const headLen = Math.max(8, width * 4);
-  const headAngle = Math.PI / 7;
-  const lineEndX = x2 - headLen * Math.cos(angle);
-  const lineEndY = y2 - headLen * Math.sin(angle);
-  g.strokeStyle = color;
-  g.lineWidth = width;
+function pathFrom(cmds) {
+  return replayPath(new Path2D(), cmds);
+}
+
+function drawArrowShape(g, a) {
+  const color = a.color || '#000000';
+  const geo = arrowGeometry(a);
+  const shaft = geo.shaft ? pathFrom(geo.shaft) : null;
+  const heads = geo.heads.map(pathFrom);
+  let line = null;
+  if (geo.line) {
+    line = pathFrom(smoothPolyline(geo.line));
+  }
+  const dash = [geo.width * 1.6, geo.width * 2.1];
   g.lineCap = 'round';
   g.lineJoin = 'round';
-  g.setLineDash(dashed ? [width * 2.5, width * 2] : []);
-  g.beginPath();
-  g.moveTo(x1, y1);
-  g.lineTo(lineEndX, lineEndY);
-  g.stroke();
-  g.setLineDash([]);
+  if (a.outline !== false) {
+    const halo = annotationHaloColor(color);
+    const hw = geo.width * ANNOT_HALO_MUL;
+    g.strokeStyle = halo;
+    if (line) {
+      g.setLineDash(dash);
+      g.lineWidth = geo.width + hw;
+      g.stroke(line);
+      g.setLineDash([]);
+    }
+    g.lineWidth = hw;
+    if (shaft) g.stroke(shaft);
+    for (const h of heads) g.stroke(h);
+  }
   g.fillStyle = color;
-  g.beginPath();
-  g.moveTo(x2, y2);
-  g.lineTo(x2 - headLen * Math.cos(angle - headAngle), y2 - headLen * Math.sin(angle - headAngle));
-  g.lineTo(x2 - headLen * Math.cos(angle + headAngle), y2 - headLen * Math.sin(angle + headAngle));
-  g.closePath();
-  g.fill();
+  g.strokeStyle = color;
+  if (line) {
+    g.setLineDash(dash);
+    g.lineWidth = geo.width;
+    g.stroke(line);
+    g.setLineDash([]);
+  }
+  if (shaft) g.fill(shaft);
+  for (const h of heads) g.fill(h);
+}
+
+/* An ink item's strokes are stored in its base box (0..bw, 0..bh) and drawn
+   through the item's rect, so move, resize and rotate are the ordinary rect
+   paths. Path2D outlines are cached per strokes array: every mutation that
+   changes the strokes replaces the array, which drops the cache entry. */
+const inkPathCache = new WeakMap();
+
+function inkStrokePaths(it) {
+  let paths = inkPathCache.get(it.strokes);
+  if (paths && paths.style === it.inkStyle && paths.size === it.size) return paths;
+  const list = it.inkStyle === 'highlighter'
+    ? it.strokes.map(s => pathFrom(smoothPolyline(s, 3)))
+    : it.strokes.map(s => pathFrom(inkStrokeOutline(s, it.size)));
+  paths = { style: it.inkStyle, size: it.size, list };
+  inkPathCache.set(it.strokes, paths);
+  return paths;
+}
+
+function paintInkPaths(g, list, { style, size, color, outline }) {
+  if (style === 'highlighter') {
+    // Multiply is how ink on paper behaves: dark text under it stays crisp
+    // black. On its own it vanishes over dark images, so a faint screen pass
+    // lifts the tint there. A stroke never darkens itself; a second pass over
+    // it does, like a real marker, and the live preview matches the result.
+    const alpha = g.globalAlpha;
+    g.save();
+    g.strokeStyle = color;
+    g.lineWidth = highlighterWidth(size);
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.globalCompositeOperation = 'multiply';
+    g.globalAlpha = alpha * INK_HIGHLIGHT_MULTIPLY_ALPHA;
+    for (const p of list) g.stroke(p);
+    g.globalCompositeOperation = 'screen';
+    g.globalAlpha = alpha * INK_HIGHLIGHT_SCREEN_ALPHA;
+    for (const p of list) g.stroke(p);
+    g.restore();
+    return;
+  }
+  if (outline) {
+    g.strokeStyle = annotationHaloColor(color);
+    g.lineWidth = size * ANNOT_HALO_MUL;
+    g.lineJoin = 'round';
+    for (const p of list) g.stroke(p);
+  }
+  g.fillStyle = color;
+  for (const p of list) g.fill(p);
+}
+
+function drawInkItem(g, it) {
+  if (!it.strokes?.length) return;
+  g.save();
+  g.translate(it.x + it.w / 2, it.y + it.h / 2);
+  g.rotate(rotRad(it));
+  g.scale(it.w / (it.bw || it.w), it.h / (it.bh || it.h));
+  g.translate(-(it.bw || it.w) / 2, -(it.bh || it.h) / 2);
+  paintInkPaths(g, inkStrokePaths(it).list, {
+    style: it.inkStyle, size: it.size, color: it.color, outline: it.outline !== false,
+  });
+  g.restore();
+}
+
+/** Board point -> an ink item's base-box coordinates. */
+function inkLocalPoint(it, bx, by) {
+  const [lx, ly] = boardToItemLocal(it, bx, by);
+  return [lx * ((it.bw || it.w) / it.w), ly * ((it.bh || it.h) / it.h)];
+}
+
+function inkHitTest(it, bx, by) {
+  const k = (it.bw || it.w) / it.w;
+  const [lx, ly] = inkLocalPoint(it, bx, by);
+  const tol = Math.max(inkMaxRadius(it.inkStyle, it.size), (7 / state.view.s) * k);
+  for (const s of it.strokes) {
+    if (distanceToPolyline(s, lx, ly, 3) <= tol) return true;
+  }
+  return false;
+}
+
+function inkBoxPad(style, size, outline) {
+  return inkMaxRadius(style, size) + (outline && style !== 'highlighter' ? size * ANNOT_HALO_MUL : 0) + size * 0.25;
+}
+
+/**
+ * Build or extend an ink item from board-space strokes. `base` is an existing
+ * unrotated, unscaled ink item to merge into, or null for a new one.
+ */
+function buildInkItem(boardStrokes, opts, base = null) {
+  const strokes = [];
+  if (base) {
+    for (const s of base.strokes) {
+      const out = new Array(s.length);
+      for (let i = 0; i < s.length; i += 3) {
+        out[i] = s[i] + base.x; out[i + 1] = s[i + 1] + base.y; out[i + 2] = s[i + 2];
+      }
+      strokes.push(out);
+    }
+  }
+  strokes.push(...boardStrokes);
+  const pad = inkBoxPad(opts.inkStyle, opts.size, opts.outline);
+  const bb = inkPointsBounds(strokes, pad);
+  if (!bb) return null;
+  const local = strokes.map(s => {
+    const out = new Array(s.length);
+    for (let i = 0; i < s.length; i += 3) {
+      out[i] = Math.round((s[i] - bb.x) * 100) / 100;
+      out[i + 1] = Math.round((s[i + 1] - bb.y) * 100) / 100;
+      out[i + 2] = Math.round(s[i + 2] * 1000) / 1000;
+    }
+    return out;
+  });
+  return normalizeItem({
+    id: base?.id || uid(), kind: 'ink',
+    x: bb.x, y: bb.y, w: bb.w, h: bb.h, bw: bb.w, bh: bb.h, rot: 0,
+    inkStyle: opts.inkStyle, color: opts.color, size: opts.size, outline: opts.outline,
+    strokes: local,
+  });
+}
+
+/** Re-fit an ink item's box after its size or outline changed. Keeps its look. */
+function refitInkItem(it) {
+  if (!isInkItem(it)) return;
+  const sx = it.w / (it.bw || it.w), sy = it.h / (it.bh || it.h);
+  const rot = it.rot || 0;
+  const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+  // Work in the unscaled, unrotated frame centred on the item, then put the
+  // scale and rotation back so nothing moves on screen.
+  const bw = it.bw || it.w, bh = it.bh || it.h;
+  const pts = it.strokes.map(s => s.slice());
+  const pad = inkBoxPad(it.inkStyle, it.size, it.outline !== false);
+  const bb = inkPointsBounds(pts, pad);
+  if (!bb) return;
+  for (const s of pts) {
+    for (let i = 0; i < s.length; i += 3) { s[i] -= bb.x; s[i + 1] -= bb.y; }
+  }
+  // Offset of the new box centre from the old one, in base units, then to board.
+  const ocx = (bb.x + bb.w / 2 - bw / 2) * sx, ocy = (bb.y + bb.h / 2 - bh / 2) * sy;
+  const v = rotateVec(ocx, ocy, rotRad(it));
+  it.strokes = pts;
+  it.bw = bb.w; it.bh = bb.h;
+  it.w = bb.w * sx; it.h = bb.h * sy;
+  it.x = cx + v.x - it.w / 2;
+  it.y = cy + v.y - it.h / 2;
+  it.rot = rot;
+  invalidateWorkspaceBBox();
+}
+
+// Head and outline choices made in the selection bar carry over to the next
+// arrow or stroke, so a board's annotations stay consistent without re-styling.
+let annotHeads = 'end';
+let annotOutline = true;
+
+/** Annotation width for the current zoom: the toolbar width is screen pixels. */
+function annotWidthForView() {
+  return clamp((annotToolWidths[arrowTool] ?? drawWidth) / state.view.s, 0.01, ANNOT_MAX_WIDTH);
+}
+
+function arrowDraftOf(m) {
+  const draft = {
+    kind: 'arrow',
+    x1: m.x1, y1: m.y1, x2: m.x2, y2: m.y2,
+    arrowStyle: m.style,
+    color: drawColor,
+    strokeWidth: m.width,
+    fromId: null,
+    toId: null,
+    curve: null,
+    heads: annotHeads,
+    outline: annotOutline,
+  };
+  // Dragged from one item onto another: the draft snaps into a link.
+  const from = linkRectOf(byId(m.fromId)), to = linkRectOf(byId(m.linkHoverId));
+  if (from && to) {
+    const g = linkGeometry([{ id: 'draft', from, to, width: m.width }]).get('draft');
+    Object.assign(draft, g, { fromId: m.fromId, toId: m.linkHoverId });
+  }
+  return draft;
+}
+
+/* ---------------- links ----------------
+   With the arrow tool, a drag that starts on one image or note and ends on a
+   different one makes a link between them, drawn like a Blender node link.
+   The link stays plugged into both: syncLinks re-routes every link from its
+   items' current boxes before each frame, so moving, resizing or rotating
+   either end, undo, and reopening the board all just work. A drag within one
+   item, or onto empty board, stays an ordinary annotation arrow. */
+const isLinkableItem = it => isImageItem(it) || isNoteItem(it);
+
+function linkRectOf(it) {
+  if (!it || !isLinkableItem(it)) return null;
+  const r = itemUiRect(it);
+  return { id: it.id, x: r.x, y: r.y, w: r.w, h: r.h, rot: it.rot || 0 };
+}
+
+/** Topmost image or note under a screen point, skipping `excludeId`. */
+function linkTargetAt(sx, sy, excludeId = null) {
+  const [bx, by] = toBoard(sx, sy);
+  const tol = 1 / state.view.s;
+  const candidates = layout.queryRect(bx - tol, by - tol, tol * 2, tol * 2);
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const it = candidates[i];
+    if (!isLinkableItem(it) || it.id === excludeId || !itemPassesTagFilter(it)) continue;
+    const [lx, ly] = boardToItemLocal(it, bx, by);
+    const r = itemUiRect(it);
+    if (lx >= 0 && lx <= r.w && ly >= 0 && ly <= r.h) return it;
+  }
+  return null;
+}
+
+function syncLinks() {
+  const links = [];
+  for (const it of state.items) {
+    if (!isArrowItem(it) || (!it.fromId && !it.toId)) continue;
+    const from = linkRectOf(byId(it.fromId)), to = linkRectOf(byId(it.toId));
+    // An end whose item is gone (or not on this board) holds its last spot.
+    if (!from && !to) continue;
+    links.push({ id: it.id, item: it, from, to, x1: it.x1, y1: it.y1, x2: it.x2, y2: it.y2, width: it.strokeWidth });
+  }
+  if (!links.length) return;
+  const geo = linkGeometry(links);
+  let changed = false;
+  for (const l of links) {
+    const g = geo.get(l.id), it = l.item;
+    const same = Math.abs(it.x1 - g.x1) < 1e-6 && Math.abs(it.y1 - g.y1) < 1e-6
+      && Math.abs(it.x2 - g.x2) < 1e-6 && Math.abs(it.y2 - g.y2) < 1e-6
+      && it.curve && it.curve.every((v, i) => Math.abs(v - g.curve[i]) < 1e-6);
+    if (same) continue;
+    it.x1 = g.x1; it.y1 = g.y1; it.x2 = g.x2; it.y2 = g.y2; it.curve = g.curve;
+    changed = true;
+  }
+  if (changed) invalidateWorkspaceBBox();
+}
+
+/** Clones keep a link only to items cloned with them; other ends come loose. */
+function remapLinkClones(clones, idMap) {
+  for (const c of clones) {
+    if (!isArrowItem(c) || (!c.fromId && !c.toId)) continue;
+    c.fromId = idMap.get(c.fromId) || null;
+    c.toId = idMap.get(c.toId) || null;
+    if (!c.fromId && !c.toId) c.curve = null;
+  }
+}
+
+/* With the arrow tool armed, the image or note under the pointer shows its
+   four sockets; while dragging a link, source and target light up. */
+let linkHoverId = null;
+
+function drawLinkHints() {
+  if (arrowTool !== 'solid' && arrowTool !== 'dotted') return;
+  const creating = mode?.type === 'arrowCreate' ? mode : null;
+  const ids = creating ? [creating.fromId, creating.linkHoverId] : [linkHoverId];
+  ctx.save();
+  for (const id of new Set(ids.filter(Boolean))) {
+    const r = linkRectOf(byId(id));
+    if (!r) continue;
+    const corners = itemCorners(byId(id)).map(p => toScreen(p[0], p[1]));
+    if (creating) strokeScreenPoly(corners, ACC, 1.5);
+    for (const side of ['left', 'right', 'top', 'bottom']) {
+      const sk = linkSocket(r, side, 0.5);
+      const [x, y] = toScreen(sk.x, sk.y);
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(14,15,20,.75)';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = ACC_HANDLE_FILL;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+/** Shift locks the dragged end to 15-degree steps around the fixed end. */
+function arrowEndpointDragTarget(ax, ay, bx, by, lockAngle) {
+  if (!lockAngle) return [bx, by];
+  const len = Math.hypot(bx - ax, by - ay);
+  const step = Math.PI / 12;
+  const ang = Math.round(Math.atan2(by - ay, bx - ax) / step) * step;
+  return [ax + Math.cos(ang) * len, ay + Math.sin(ang) * len];
+}
+
+let inkMergeState = null;   // { id, at, style, color, size, outline } of the last stroke
+
+function startInkStroke(e, sx, sy) {
+  const [bx, by] = toBoard(sx, sy);
+  const isPen = e.pointerType === 'pen';
+  const p = isPen && e.pressure > 0 ? penPressure(e.pressure) : 0.62;
+  mode = {
+    type: 'inkDraw',
+    style: arrowTool === 'highlighter' ? 'highlighter' : 'pen',
+    color: activeDrawColor(),
+    size: annotWidthForView(),
+    outline: annotOutline,
+    isPen,
+    pressure: p,
+    pts: [bx, by, p],
+    lastSx: sx, lastSy: sy,
+    committed: false,
+  };
+}
+
+function appendInkPoint(m, ev, sx, sy, final = false) {
+  if (!m || m.committed) return;
+  const d = Math.hypot(sx - m.lastSx, sy - m.lastSy);
+  if (d < (final ? 0.01 : 0.75)) return;
+  if (m.isPen && ev.pressure > 0) m.pressure = penPressure(ev.pressure);
+  else if (!m.isPen) m.pressure = simulatedPressure(m.pressure, d);
+  const [rx, ry] = toBoard(sx, sy);
+  const n = m.pts.length;
+  // Light streamlining takes the jitter out of a mouse hand without the lag
+  // of heavy smoothing; the final sample lands exactly under the cursor.
+  const k = final ? 1 : 0.55;
+  const x = m.pts[n - 3] + (rx - m.pts[n - 3]) * k;
+  const y = m.pts[n - 2] + (ry - m.pts[n - 2]) * k;
+  m.pts.push(x, y, m.style === 'highlighter' ? 1 : m.pressure);
+  m.lastSx = sx; m.lastSy = sy;
+}
+
+function drawInkDraft(g, m) {
+  const cmds = m.style === 'highlighter' ? smoothPolyline(m.pts, 3) : inkStrokeOutline(m.pts, m.size);
+  paintInkPaths(g, [pathFrom(cmds)], { style: m.style, size: m.size, color: m.color, outline: m.outline });
+}
+
+function inkMergeTarget(m, stroke) {
+  const last = inkMergeState;
+  if (!last || performance.now() - last.at > INK_MERGE_WINDOW_MS) return null;
+  if (last.style !== m.style || last.color !== m.color || last.size !== m.size || last.outline !== m.outline) return null;
+  const it = byId(last.id);
+  if (!isInkItem(it) || (it.rot || 0) !== 0) return null;
+  if (Math.abs(it.w - it.bw) > 1e-6 || Math.abs(it.h - it.bh) > 1e-6) return null;
+  const sb = inkPointsBounds([stroke], 0);
+  const gap = INK_MERGE_GAP_PX / state.view.s;
+  const dx = Math.max(it.x - (sb.x + sb.w), sb.x - (it.x + it.w), 0);
+  const dy = Math.max(it.y - (sb.y + sb.h), sb.y - (it.y + it.h), 0);
+  return Math.hypot(dx, dy) <= gap ? it : null;
+}
+
+function commitInkStroke(m) {
+  if (!m || m.committed) return;
+  m.committed = true;
+  const stroke = thinStroke(m.pts, 0.6 / state.view.s);
+  const opts = { inkStyle: m.style, color: m.color, size: m.size, outline: m.outline };
+  const base = inkMergeTarget(m, stroke);
+  const built = buildInkItem([stroke], opts, base);
+  if (!built) return;
+  pushUndo();
+  if (base) Object.assign(base, built);
+  else state.items.push(built);
+  inkMergeState = { id: built.id, at: performance.now(), style: m.style, color: m.color, size: m.size, outline: m.outline };
+  invalidateWorkspaceBBox();
+  scheduleSave(); invalidate(); updateEmpty();
 }
 
 function itemCorners(it) {
@@ -5295,7 +5741,32 @@ function normalizeItem(it) {
       x2: Number(it.x2) || 100, y2: Number(it.y2) || 0,
       arrowStyle: it.arrowStyle === 'dotted' ? 'dotted' : 'solid',
       color: it.color || '#000000',
-      strokeWidth: clamp(Number(it.strokeWidth) || 2, 1, 12),
+      strokeWidth: clamp(Number(it.strokeWidth) || 2, 0.01, ANNOT_MAX_WIDTH),
+      // A link: the ids of the items its ends plug into, and the derived
+      // cubic handles (recomputed from those items every frame, see syncLinks).
+      fromId: typeof it.fromId === 'string' && it.fromId ? it.fromId : null,
+      toId: typeof it.toId === 'string' && it.toId ? it.toId : null,
+      curve: Array.isArray(it.curve) && it.curve.length === 4 && it.curve.every(Number.isFinite) && (it.fromId || it.toId)
+        ? it.curve.slice() : null,
+      heads: ['end', 'both', 'none'].includes(it.heads) ? it.heads : 'end',
+      outline: it.outline !== false,
+    };
+  }
+  if (it.kind === 'ink') {
+    const strokes = (Array.isArray(it.strokes) ? it.strokes : [])
+      .filter(s => Array.isArray(s) && s.length >= 3)
+      .map(s => s.slice(0, s.length - (s.length % 3)).map(v => Number(v) || 0));
+    const w = Math.max(1e-3, Number(it.w) || 1), h = Math.max(1e-3, Number(it.h) || 1);
+    return {
+      id: it.id || uid(), kind: 'ink',
+      x: Number(it.x) || 0, y: Number(it.y) || 0, w, h,
+      bw: Math.max(1e-3, Number(it.bw) || w), bh: Math.max(1e-3, Number(it.bh) || h),
+      rot: Number(it.rot) || 0,
+      inkStyle: it.inkStyle === 'highlighter' ? 'highlighter' : 'pen',
+      color: it.color || '#000000',
+      size: clamp(Number(it.size) || 2, 0.01, ANNOT_MAX_WIDTH),
+      outline: it.outline !== false,
+      strokes,
     };
   }
   return {
@@ -7079,7 +7550,7 @@ async function restoreSession() {
         missingImages = true;
         continue;
       }
-      if (isImageItem(it) || isNoteItem(it) || isGroupItem(it) || isArrowItem(it)) {
+      if (isImageItem(it) || isNoteItem(it) || isGroupItem(it) || isArrowItem(it) || (isInkItem(it) && it.strokes.length)) {
         nextItems.push(it);
       }
     }
@@ -7970,6 +8441,13 @@ function showDrawSizePreview() {
 }
 
 function setDrawWidth(nextWidth, showPreview = false) {
+  // An armed annotation tool owns the width controls: each keeps its own size,
+  // so a fat highlighter never turns the next arrow into a club.
+  if (arrowTool) {
+    annotToolWidths[arrowTool] = clamp(Math.round(nextWidth), DRAW_WIDTH_MIN, DRAW_WIDTH_MAX);
+    syncDrawUi();
+    return;
+  }
   drawWidth = clamp(Math.round(nextWidth), DRAW_WIDTH_MIN, DRAW_WIDTH_MAX);
   drawToolWidths[drawTool] = drawWidth;
   syncDrawUi();
@@ -7977,7 +8455,7 @@ function setDrawWidth(nextWidth, showPreview = false) {
 }
 
 function adjustDrawWidth(delta, showPreview = false) {
-  setDrawWidth(drawWidth + delta, showPreview);
+  setDrawWidth((arrowTool ? annotToolWidths[arrowTool] : drawWidth) + delta, showPreview);
 }
 
 function setDrawTool(tool) {
@@ -8124,7 +8602,8 @@ function updateDrawColorPickerUi() {
   if (hue) hue.value = String(Math.round(drawCpH));
   if (preview) preview.style.background = hex;
   if (hexIn && document.activeElement !== hexIn) hexIn.value = hex;
-  drawColor = hex;
+  if (arrowTool === 'highlighter') highlighterColor = hex;
+  else drawColor = hex;
   const norm = rgbToHexColor(...Object.values(parseHexColor(hex) || { r: 0, g: 0, b: 0 }));
   $('#drawCpPresets')?.querySelectorAll('.draw-cp-swatch').forEach(btn => {
     btn.classList.toggle('sel', btn.dataset.color === norm);
@@ -8159,7 +8638,7 @@ function openDrawColorPop() {
     return;
   }
   closeBrushDrawer();
-  applyDrawColorPickerHex(drawColor);
+  applyDrawColorPickerHex(activeDrawColor());
   renderDrawColorPresets();
   pop.classList.add('open');
   pop.setAttribute('aria-hidden', 'false');
@@ -8258,10 +8737,12 @@ function syncDrawUi() {
   $('#annotateHeadBtn')?.classList.toggle('on', !!arrowTool);
   $('#arrowSolidBtn')?.classList.toggle('on', arrowTool === 'solid');
   $('#arrowDottedBtn')?.classList.toggle('on', arrowTool === 'dotted');
+  $('#inkPenBtn')?.classList.toggle('on', arrowTool === 'ink');
+  $('#inkHighlightBtn')?.classList.toggle('on', arrowTool === 'highlighter');
   const sw = $('#drawColorSwatch');
-  if (sw) sw.style.background = drawColor;
+  if (sw) sw.style.background = activeDrawColor();
   const wv = $('#drawWidthVal');
-  if (wv) wv.textContent = String(drawWidth);
+  if (wv) wv.textContent = String(arrowTool ? annotToolWidths[arrowTool] : drawWidth);
   if (drawActive || arrowTool) updateCursor(mouse.x, mouse.y);
 }
 
@@ -8281,8 +8762,16 @@ function setArrowTool(style) {
   syncToolbarEdgeIcon();
   syncDrawUi();
   invalidate();
-  if (arrowTool) toast(arrowTool === 'dotted' ? 'Dotted arrow — drag to place' : 'Arrow — drag to place');
+  if (arrowTool) toast(ANNOT_TOOL_HINTS[arrowTool]);
 }
+
+const ANNOT_TOOL_LABELS = { solid: 'arrow', dotted: 'dotted arrow', ink: 'brush', highlighter: 'highlighter' };
+const ANNOT_TOOL_HINTS = {
+  solid: 'Arrow — drag to place · Shift locks the angle',
+  dotted: 'Dotted arrow — drag to place · Shift locks the angle',
+  ink: 'Brush — write or sketch anywhere · Esc to stop',
+  highlighter: 'Highlighter — mark over anything · Esc to stop',
+};
 
 function setDrawActive(on) {
   drawActive = !!on;
@@ -8708,6 +9197,7 @@ function placeClipboardItemDefs(defs, payload, pos) {
     }
     return normalizeItem(base);
   });
+  remapLinkClones(clones, idMap);
 
   state.items.push(...clones);
   reconcileGroupOrder();
@@ -9018,7 +9508,7 @@ async function compositeBlob(items, { isCancelled, maxDimension = 8192 } = {}) {
   g.translate(-bb.x, -bb.y);
   // Draw from the immutable snapshot only — never re-scan live state.items.
   for (const it of items) {
-    if (isNoteItem(it) || isArrowItem(it)) continue;
+    if (isNoteItem(it) || isAnnotationItem(it)) continue;
     if (isImageItem(it)) {
       const im = images.get(it.imgId);
       if (im) await withFullBitmap(im, () => drawBoardItem(g, it, { noLod: true }));
@@ -9030,7 +9520,7 @@ async function compositeBlob(items, { isCancelled, maxDimension = 8192 } = {}) {
     drawBoardItem(g, it, { noLod: true });
   }
   for (const it of items) {
-    if (!isArrowItem(it)) continue;
+    if (!isAnnotationItem(it)) continue;
     drawBoardItem(g, it, { noLod: true });
   }
   if (isCancelled?.()) return null;
@@ -9115,7 +9605,7 @@ async function boundedCompositeCanvas(items, {
   g.scale(scale, scale);
   g.translate(-(bb.x + bb.w / 2), -(bb.y + bb.h / 2));
   for (const it of items) {
-    if (isNoteItem(it) || isArrowItem(it)) continue;
+    if (isNoteItem(it) || isAnnotationItem(it)) continue;
     if (isImageItem(it)) {
       const im = images.get(it.imgId);
       if (!im) continue;
@@ -9128,7 +9618,7 @@ async function boundedCompositeCanvas(items, {
     if (isNoteItem(it)) drawBoardItem(g, it, { noLod: true });
   }
   for (const it of items) {
-    if (isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
+    if (isAnnotationItem(it)) drawBoardItem(g, it, { noLod: true });
   }
   return c;
 }
@@ -9481,6 +9971,10 @@ function deleteItemsByIds(idIterable) {
   if (!toDelete.size) return false;
 
   if (noteEditId && toDelete.has(noteEditId)) finishNoteEdit();
+  // A link goes with either item it connects (and comes back with it on undo).
+  for (const it of state.items) {
+    if (isArrowItem(it) && (toDelete.has(it.fromId) || toDelete.has(it.toId))) toDelete.add(it.id);
+  }
   pushUndo();
 
   const affectedGroups = new Set();
@@ -9565,6 +10059,7 @@ function duplicateSelection() {
     }
     return normalizeItem({ ...it, id: uid(), x: it.x + off, y: it.y + off });
   });
+  remapLinkClones(clones, new Map(items.map((it, i) => [it.id, clones[i].id])));
   state.items.push(...clones);
   invalidateWorkspaceBBox();
   state.sel = new Set(clones.map(c => c.id));
@@ -12678,7 +13173,7 @@ async function doExportPNG(mult, bg) {
   g.scale(k, k);
   g.translate(-bb.x, -bb.y);
   for (const it of state.items) {
-    if (isNoteItem(it) || isArrowItem(it)) continue;
+    if (isNoteItem(it) || isAnnotationItem(it)) continue;
     if (isImageItem(it)) {
       const im = images.get(it.imgId);
       if (im) await withFullBitmap(im, () => drawBoardItem(g, it, { noLod: true }));
@@ -12688,7 +13183,7 @@ async function doExportPNG(mult, bg) {
     if (isNoteItem(it)) drawBoardItem(g, it, { noLod: true });
   }
   for (const it of state.items) {
-    if (isArrowItem(it)) drawBoardItem(g, it, { noLod: true });
+    if (isAnnotationItem(it)) drawBoardItem(g, it, { noLod: true });
   }
   const outW = c.width, outH = c.height;
   const b = await new Promise(r => c.toBlob(r, 'image/png'));
@@ -14858,7 +15353,7 @@ async function applyBoardPayload(j, meta = {}, imageLoader = null, imageBatchLoa
       if (isImageItem(it)) {
         if (nextImages.has(it.imgId)) nextItems.push(it);
         else droppedImageItems = true;
-      } else if (isNoteItem(it) || isGroupItem(it) || isArrowItem(it)) {
+      } else if (isNoteItem(it) || isGroupItem(it) || isArrowItem(it) || (isInkItem(it) && it.strokes.length)) {
         nextItems.push(it);
       }
     }
@@ -15667,11 +16162,11 @@ function drawBoardItem(g, it, opts = {}) {
   // bar overlays it) — only a truly live text editor replaces the canvas draw.
   if (isNoteItem(it) && noteEditId === it.id && noteTextLive) return;
   if (isArrowItem(it)) {
-    drawArrowShape(g, it.x1, it.y1, it.x2, it.y2, {
-      color: it.color || '#000000',
-      width: it.strokeWidth || 2,
-      dashed: it.arrowStyle === 'dotted',
-    });
+    drawArrowShape(g, it);
+    return;
+  }
+  if (isInkItem(it)) {
+    drawInkItem(g, it);
     return;
   }
   const note = isNoteItem(it);
@@ -15910,22 +16405,32 @@ function drawArrowSelectionUi(it) {
   const [x1, y1] = toScreen(it.x1, it.y1);
   const [x2, y2] = toScreen(it.x2, it.y2);
   ctx.save();
-  ctx.strokeStyle = ACC_STROKE;
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  if (!it.curve) {
+    ctx.strokeStyle = ACC_STROKE;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   ctx.fillStyle = ACC_HANDLE_FILL;
   ctx.strokeStyle = ACC_HANDLE_STROKE;
   ctx.lineWidth = 1;
-  for (const [cx, cy] of [[x1, y1], [x2, y2]]) {
+  for (const [cx, cy, plugged] of [[x1, y1, !!it.fromId], [x2, y2, !!it.toId]]) {
     ctx.beginPath();
     ctx.arc(cx, cy, RESIZE_HANDLE_R, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+    // A plugged end is a socket: a dark core marks it as attached.
+    if (plugged) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, RESIZE_HANDLE_R * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(14,15,20,.8)';
+      ctx.fill();
+      ctx.fillStyle = ACC_HANDLE_FILL;
+    }
   }
   ctx.restore();
 }
@@ -16011,6 +16516,8 @@ function draw() {
   // Keep the sampling mode stable across wheel frames. Toggling low -> high at
   // settle reads as a blur flicker even when the decoded image tier is stable.
   applyRenderSmoothing(ctx);
+  // Links follow their items before anything reads their geometry.
+  syncLinks();
   collectVisibleItems(viewport);
   updateImageRenderDemandPlan(drawVisibleItems);
   beginImageLodFrame();
@@ -16034,7 +16541,7 @@ function draw() {
     }
   }
   for (const it of drawVisibleItems) {
-    if (!isNoteItem(it) && !isArrowItem(it) && !isGroupItem(it)) {
+    if (!isNoteItem(it) && !isAnnotationItem(it) && !isGroupItem(it)) {
       ctx.globalAlpha = dimmed(it);
       drawBoardItem(ctx, it);
     }
@@ -16046,18 +16553,16 @@ function draw() {
     }
   }
   for (const it of drawVisibleItems) {
-    if (isArrowItem(it)) {
+    if (isAnnotationItem(it)) {
       ctx.globalAlpha = dimmed(it);
       drawBoardItem(ctx, it);
     }
   }
   ctx.globalAlpha = 1;
   if (mode?.type === 'arrowCreate') {
-    drawArrowShape(ctx, mode.x1, mode.y1, mode.x2, mode.y2, {
-      color: drawColor,
-      width: Math.max(1, Math.min(12, drawWidth)),
-      dashed: mode.style === 'dotted',
-    });
+    drawArrowShape(ctx, arrowDraftOf(mode));
+  } else if (mode?.type === 'inkDraw') {
+    drawInkDraft(ctx, mode);
   }
   ctx.restore();
 
@@ -16085,6 +16590,7 @@ function draw() {
       else drawResizeUi(it);
     }
   }
+  drawLinkHints();
   if (marquee) {
     const x = Math.min(marquee.sx, marquee.ex), y = Math.min(marquee.sy, marquee.ey);
     const w = Math.abs(marquee.ex - marquee.sx), h = Math.abs(marquee.ey - marquee.sy);
@@ -16112,7 +16618,7 @@ function draw() {
   if (cropItemId) bits.push('crop mode');
   if (tool === 'eyedropper') bits.push('eyedropper');
   if (drawActive) bits.push('draw');
-  if (arrowTool) bits.push(arrowTool === 'dotted' ? 'dotted arrow' : 'arrow');
+  if (arrowTool) bits.push(ANNOT_TOOL_LABELS[arrowTool] || 'annotate');
   drawMinimap();
 
   const statusText = bits.join('  ·  ');
@@ -16225,8 +16731,11 @@ function itemAt(sx, sy) {
     const it = candidates[i];
     if (!itemPassesTagFilter(it)) continue;
     if (isArrowItem(it)) {
-      if (arrowHitTolerance(it) >= pointSegmentDistance(bx, by, it.x1, it.y1, it.x2, it.y2))
-        return it;
+      if (arrowHitTolerance(it) >= arrowDistance(it, bx, by)) return it;
+      continue;
+    }
+    if (isInkItem(it)) {
+      if (inkHitTest(it, bx, by)) return it;
       continue;
     }
     const r = itemUiRect(it);
@@ -16251,11 +16760,11 @@ function imageItemAt(sx, sy) {
   return null;
 }
 
-function arrowEndpointAt(sx, sy, it) {
-  const [s1x, s1y] = toScreen(it.x1, it.y1);
-  const [s2x, s2y] = toScreen(it.x2, it.y2);
-  if (Math.hypot(sx - s1x, sy - s1y) <= RESIZE_HANDLE_HIT) return 'start';
-  if (Math.hypot(sx - s2x, sy - s2y) <= RESIZE_HANDLE_HIT) return 'end';
+/** Which end of an arrow is under the pointer. */
+function arrowHandleAt(sx, sy, it) {
+  const near = (x, y) => Math.hypot(sx - x, sy - y) <= RESIZE_HANDLE_HIT;
+  if (near(...toScreen(it.x1, it.y1))) return { part: 'start' };
+  if (near(...toScreen(it.x2, it.y2))) return { part: 'end' };
   return null;
 }
 
@@ -16354,7 +16863,7 @@ function handlesHitOnPts(sx, sy, pts) {
 }
 
 function selectionCanMouseRotate(items) {
-  return !!items.length && items.every(it => isImageItem(it) || isNoteItem(it));
+  return !!items.length && items.every(it => isImageItem(it) || isNoteItem(it) || isInkItem(it));
 }
 
 function rotateHitOnPts(sx, sy, pts, innerR = 14, outerR = 28) {
@@ -16485,8 +16994,8 @@ function handleAt(sx, sy) {
   if (!items.length) return null;
 
   if (items.length === 1 && isArrowItem(items[0])) {
-    const ep = arrowEndpointAt(sx, sy, items[0]);
-    if (ep) return { arrowEndpoint: ep, it: items[0] };
+    const ep = arrowHandleAt(sx, sy, items[0]);
+    if (ep) return { arrowHandle: ep, it: items[0] };
     return null;
   }
 
@@ -16642,7 +17151,7 @@ function isAxisAlignedItem(it) {
 // exact multiples of 90 degrees are square as far as this is concerned: their
 // AABB really is the visible rect.
 function snapBoxOfItem(it) {
-  if (!it || isGroupItem(it) || isArrowItem(it)) return null;
+  if (!it || isGroupItem(it) || isAnnotationItem(it)) return null;
   const b = boundsOf(it);
   if (!(b.w > 0 && b.h > 0)) return null;
   const box = { x1: b.x, y1: b.y, x2: b.x + b.w, y2: b.y + b.h };
@@ -17111,12 +17620,22 @@ canvas.addEventListener('pointerdown', async e => {
     return;
   }
 
+  if (isInkTool(arrowTool) && e.button === 0 && !(spaceDown || altDown || e.altKey)) {
+    finishNoteEdit();
+    startInkStroke(e, sx, sy);
+    invalidate();
+    return;
+  }
+
   if (arrowTool && e.button === 0 && !(spaceDown || altDown || e.altKey)) {
     const hit = itemAt(sx, sy);
     if (!hit || !isArrowItem(hit)) {
       finishNoteEdit();
       const [bx, by] = toBoard(sx, sy);
-      mode = { type: 'arrowCreate', style: arrowTool, x1: bx, y1: by, x2: bx, y2: by, sx, sy };
+      mode = {
+        type: 'arrowCreate', style: arrowTool, x1: bx, y1: by, x2: bx, y2: by, width: annotWidthForView(), sx, sy,
+        fromId: linkTargetAt(sx, sy)?.id || null, linkHoverId: null,
+      };
       invalidate();
       return;
     }
@@ -17208,10 +17727,12 @@ canvas.addEventListener('pointerdown', async e => {
 
   const h = handleAt(sx, sy);
   if (h) {
-    if (h.arrowEndpoint) {
+    if (h.arrowHandle) {
       mode = {
-        type: 'arrowEndpoint', it: h.it, endpoint: h.arrowEndpoint,
-        orig: { x1: h.it.x1, y1: h.it.y1, x2: h.it.x2, y2: h.it.y2 },
+        type: 'arrowEndpoint', it: h.it, endpoint: h.arrowHandle.part,
+        // Only a link re-plugs: a plain annotation arrow dragged onto an image
+        // still just points at that spot.
+        isLink: !!(h.it.fromId || h.it.toId),
         sx, sy, pushed: false,
       };
       return;
@@ -17370,6 +17891,9 @@ window.addEventListener('pointermove', e => {
   if (!mode) {
     updateNoteLinkHover(sx, sy);
     updateCursor(sx, sy);
+    const hover = (arrowTool === 'solid' || arrowTool === 'dotted') && e.target === canvas
+      ? (linkTargetAt(sx, sy)?.id || null) : null;
+    if (hover !== linkHoverId) { linkHoverId = hover; invalidate(); }
     return;
   }
   const dx = sx - mode.sx, dy = sy - mode.sy;
@@ -17525,18 +18049,36 @@ window.addEventListener('pointermove', e => {
     updateSelBar(); invalidate();
   } else if (mode.type === 'arrowCreate') {
     const [bx, by] = toBoard(sx, sy);
-    mode.x2 = bx; mode.y2 = by;
+    [mode.x2, mode.y2] = arrowEndpointDragTarget(mode.x1, mode.y1, bx, by, e.shiftKey);
+    // Over a different image or note than it started on, the drag is a link.
+    mode.linkHoverId = mode.fromId ? (linkTargetAt(sx, sy, mode.fromId)?.id || null) : null;
+    invalidate();
+  } else if (mode.type === 'inkDraw') {
+    const events = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : null;
+    for (const ev of (events && events.length ? events : [e])) {
+      appendInkPoint(mode, ev, ...clientToCanvas(ev.clientX, ev.clientY));
+    }
     invalidate();
   } else if (mode.type === 'arrowEndpoint') {
+    const it = mode.it;
     if (!mode.pushed) {
       if (Math.hypot(dx, dy) < 2) return;
       mode.pushed = true;
       pushUndo();
     }
     const [bx, by] = toBoard(sx, sy);
-    const it = mode.it;
-    if (mode.endpoint === 'start') { it.x1 = bx; it.y1 = by; }
-    else { it.x2 = bx; it.y2 = by; }
+    const start = mode.endpoint === 'start';
+    const key = start ? 'fromId' : 'toId';
+    // A link's end unplugs as it moves and plugs into whatever item it is
+    // dropped on (never the item its other end is in), like a node socket.
+    const target = mode.isLink ? linkTargetAt(sx, sy, start ? it.toId : it.fromId) : null;
+    it[key] = target ? target.id : null;
+    if (!target) {
+      if (start) [it.x1, it.y1] = arrowEndpointDragTarget(it.x2, it.y2, bx, by, e.shiftKey);
+      else [it.x2, it.y2] = arrowEndpointDragTarget(it.x1, it.y1, bx, by, e.shiftKey);
+    }
+    if (!it.fromId && !it.toId) it.curve = null;
+    mode.linkHoverId = target?.id || null;
     invalidateWorkspaceBBox();
     scheduleSave(); invalidate();
   } else if (mode.type === 'draw') {
@@ -17555,6 +18097,8 @@ window.addEventListener('pointercancel', () => {
   drawPrepareSeq++;
   if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
+  // A pen lifted out of range still leaves what it wrote.
+  if (mode?.type === 'inkDraw') commitInkStroke(mode);
   mode = null;
   marquee = null;
   dropTargetGroupId = null;
@@ -17614,20 +18158,19 @@ window.addEventListener('pointerup', e => {
     invalidate();
   } else if (mode.type === 'arrowCreate') {
     const len = Math.hypot(mode.x2 - mode.x1, mode.y2 - mode.y1);
-    if (len >= 8 / state.view.s) {
+    if (len >= 8 / state.view.s || mode.linkHoverId) {
       pushUndo();
-      const arrow = normalizeItem({
-        id: uid(), kind: 'arrow',
-        x1: mode.x1, y1: mode.y1, x2: mode.x2, y2: mode.y2,
-        arrowStyle: mode.style,
-        color: drawColor,
-        strokeWidth: clamp(drawWidth, 1, 12),
-      });
+      const arrow = normalizeItem({ id: uid(), ...arrowDraftOf(mode) });
       state.items.push(arrow);
       invalidateWorkspaceBBox();
       state.sel = new Set([arrow.id]);
       updateSelBar(); scheduleSave(); invalidate(); updateEmpty();
     }
+  } else if (mode.type === 'arrowEndpoint' && mode.pushed) {
+    updateSelBar();
+  } else if (mode.type === 'inkDraw') {
+    appendInkPoint(mode, e, ...clientToCanvas(e.clientX, e.clientY), true);
+    commitInkStroke(mode);
   } else if (mode.type === 'draw') {
     commitDrawSessionAndSave();
   }
@@ -17648,6 +18191,7 @@ window.addEventListener('blur', () => {
   finishNoteEdit();
   if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
+  if (mode?.type === 'inkDraw') commitInkStroke(mode);
   mode = null; marquee = null; dropTargetGroupId = null; releaseSnapSession(); invalidate();
 });
 
@@ -17693,8 +18237,31 @@ function rotateCursorForHandle(handle, rotation = 0) {
   return css;
 }
 
+/* The brush cursor is the nib itself: its real on-screen size and colour, ringed
+   so it reads on any image. Cached per size/colour/tool. */
+const inkCursorCache = new Map();
+function inkCursorCss() {
+  const hl = arrowTool === 'highlighter';
+  const px = annotToolWidths[arrowTool] || 3;
+  const d = clamp(hl ? px : px * 1.1, 4, 64);
+  const color = activeDrawColor();
+  const key = `${arrowTool}|${d}|${color}`;
+  let css = inkCursorCache.get(key);
+  if (css) return css;
+  const size = Math.ceil(d + 6), c = size / 2, r = d / 2;
+  const fill = hl ? `fill="${color}" fill-opacity=".5"` : `fill="${color}"`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
+    + `<circle cx="${c}" cy="${c}" r="${r + 1.25}" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="1"/>`
+    + `<circle cx="${c}" cy="${c}" r="${r + 0.5}" fill="none" stroke="#fff" stroke-width="1"/>`
+    + `<circle cx="${c}" cy="${c}" r="${r}" ${fill}/></svg>`;
+  css = `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${c} ${c}, crosshair`;
+  inkCursorCache.set(key, css);
+  return css;
+}
+
 function updateCursor(sx, sy) {
   if (drawActive) { canvas.style.cursor = drawModeCursor(); return; }
+  if (isInkTool(arrowTool)) { canvas.style.cursor = inkCursorCss(); return; }
   if (arrowTool) { canvas.style.cursor = 'crosshair'; return; }
   if (tool === 'eyedropper') { canvas.style.cursor = 'crosshair'; return; }
   if (boardTool === 'hand') {
@@ -17709,7 +18276,7 @@ function updateCursor(sx, sy) {
   }
   const h = handleAt(sx, sy);
   if (h) {
-    if (h.arrowEndpoint) { canvas.style.cursor = 'crosshair'; return; }
+    if (h.arrowHandle) { canvas.style.cursor = h.arrowHandle.part === 'add' ? 'copy' : 'crosshair'; return; }
     if (h.rotate) {
       canvas.style.cursor = rotateCursorForHandle(h, h.group ? selectionFrameRot() : (h.it?.rot || 0));
       return;
@@ -17719,7 +18286,7 @@ function updateCursor(sx, sy) {
   }
   {
     const it = itemAt(sx, sy);
-    if (it && isArrowItem(it)) { canvas.style.cursor = 'default'; return; }
+    if (it && isAnnotationItem(it)) { canvas.style.cursor = 'default'; return; }
     // Skip only for the note that's truly caret-live — its checkboxes/links
     // are inert while typing, and a toolbar-only selected note (or any other
     // note) should still show these hints.
@@ -17789,9 +18356,15 @@ $('#noteOverlay').addEventListener('wheel', e => {
 }, { passive: false });
 
 canvas.addEventListener('dblclick', e => {
-  if (drawActive) return;
+  // Two quick taps with an annotation tool are marks (the dot on an i, a
+  // colon), never a request to refit the view.
+  if (drawActive || arrowTool) return;
   const [sx, sy] = clientToCanvas(e.clientX, e.clientY);
+  const handle = handleAt(sx, sy);
+  if (handle?.arrowHandle) return;
   const it = itemAt(sx, sy);
+  // An annotation is a mark to select and restyle, not something to zoom to.
+  if (it && isAnnotationItem(it)) return;
   if (it && isImageItem(it)) enterCropMode(it);
   else if (it && isNoteItem(it)) startNoteEdit(it, e.clientX, e.clientY);
   else if (it && isGroupItem(it)) {
@@ -18523,7 +19096,7 @@ window.addEventListener('keydown', e => {
     if (noteEditId) { finishNoteEdit(); return; }
     if (addFeaturesOpen) { closeAddFeatures(); return; }
     if (drawFeaturesOpen) { closeDrawFeatures(); return; }
-    if (arrowTool) { arrowTool = null; syncDrawUi(); toast('Arrow tool off'); invalidate(); return; }
+    if (arrowTool) { arrowTool = null; syncDrawUi(); toast('Annotate tool off'); invalidate(); return; }
     if (drawActive) { setDrawActive(false); toast('Draw mode off'); return; }
     if (toolbarIsFloating() && document.body.classList.contains('toolbar-revealed')) {
       setToolbarRevealed(false);
@@ -18584,6 +19157,11 @@ window.addEventListener('keydown', e => {
     else if (drawActive && (e.key === '[' || e.key === ']')) {
       e.preventDefault();
       adjustDrawWidth(e.key === '[' ? -1 : 1, true);
+    }
+    else if (arrowTool && (e.key === '[' || e.key === ']')) {
+      e.preventDefault();
+      adjustDrawWidth(e.key === '[' ? -1 : 1);
+      toast(`${ANNOT_TOOL_LABELS[arrowTool]} size ${annotToolWidths[arrowTool]}`);
     }
     else if (k === 'r') rotateSelection(e.shiftKey ? -15 : 15);
     else if (k === 'v') activateSelectMode();
@@ -19182,6 +19760,7 @@ function updateSelBar() {
   // The panel's selection half follows whatever is selected, including nothing.
   if (tagPanelEl?.classList.contains('open')) renderTagSelection();
   bar.classList.toggle('group-sel', !!grp);
+  syncAnnotSelBar(bar);
   if (n) $('#selcount').textContent = n === 1 ? '1 selected' : `${n} selected`;
   if (grp) {
     const nameInp = $('#sGroupName');
@@ -19194,6 +19773,95 @@ function updateSelBar() {
       lockBtn.dataset.tip = grp.locked ? 'Unlock group' : 'Lock group';
     }
   }
+}
+
+function selectedAnnotations() {
+  const items = selectedItems();
+  return items.length && items.every(isAnnotationItem) ? items : [];
+}
+
+function syncAnnotSelBar(bar = $('#selbar')) {
+  const items = selectedAnnotations();
+  const arrows = items.filter(isArrowItem);
+  bar.classList.toggle('annot-sel', items.length > 0);
+  bar.classList.toggle('arrow-sel', arrows.length > 0);
+  if (!items.length) return;
+  const color = String(items[0].color || '').toLowerCase();
+  const same = items.every(it => String(it.color || '').toLowerCase() === color);
+  for (const sw of document.querySelectorAll('#sAnnotSwatches .annot-swatch')) {
+    sw.classList.toggle('sel', same && sw.dataset.color === color);
+  }
+  $('#sAnnotOutline')?.classList.toggle('on', items.every(it => it.outline !== false));
+  const style = $('#sArrowStyle');
+  if (style && arrows.length) style.dataset.v = arrows.every(a => a.arrowStyle === 'dotted') ? 'dotted' : 'solid';
+  const heads = $('#sArrowHeads');
+  if (heads && arrows.length) heads.dataset.v = arrows[0].heads || 'end';
+}
+
+/** Apply a style change to every selected annotation as one undo step. */
+function editSelectedAnnotations(fn) {
+  const items = selectedAnnotations();
+  if (!items.length) return;
+  pushUndo();
+  for (const it of items) fn(it);
+  invalidateWorkspaceBBox();
+  syncAnnotSelBar();
+  scheduleSave(); invalidate();
+}
+
+function scaleAnnotationWidth(it, k) {
+  if (isArrowItem(it)) it.strokeWidth = clamp(it.strokeWidth * k, 0.01, ANNOT_MAX_WIDTH);
+  else if (isInkItem(it)) {
+    it.size = clamp(it.size * k, 0.01, ANNOT_MAX_WIDTH);
+    refitInkItem(it);
+  }
+}
+
+function setupAnnotSelBar() {
+  const wrap = $('#sAnnotSwatches');
+  if (wrap && !wrap.childElementCount) {
+    for (const color of ANNOT_SWATCHES) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'annot-swatch';
+      b.dataset.color = color;
+      b.style.setProperty('--sw', color);
+      b.setAttribute('aria-label', `Color ${color}`);
+      b.addEventListener('click', () => {
+        const items = selectedAnnotations();
+        editSelectedAnnotations(it => { it.color = color; });
+        // The next mark uses it too, so restyling one arrow sets the pen and
+        // restyling a highlight sets the highlighter.
+        if (items.length && items.every(it => isInkItem(it) && it.inkStyle === 'highlighter')) {
+          highlighterColor = color;
+          syncDrawUi();
+        } else if (arrowTool !== 'highlighter') {
+          applyDrawColorPickerHex(color);
+        }
+      });
+      wrap.appendChild(b);
+    }
+  }
+  $('#sAnnotThinner')?.addEventListener('click', () => editSelectedAnnotations(it => scaleAnnotationWidth(it, 0.8)));
+  $('#sAnnotThicker')?.addEventListener('click', () => editSelectedAnnotations(it => scaleAnnotationWidth(it, 1.25)));
+  $('#sArrowStyle')?.addEventListener('click', () => {
+    const next = $('#sArrowStyle').dataset.v === 'dotted' ? 'solid' : 'dotted';
+    editSelectedAnnotations(it => { if (isArrowItem(it)) it.arrowStyle = next; });
+  });
+  $('#sArrowHeads')?.addEventListener('click', () => {
+    const order = ['end', 'both', 'none'];
+    const next = order[(order.indexOf($('#sArrowHeads').dataset.v || 'end') + 1) % order.length];
+    annotHeads = next;
+    editSelectedAnnotations(it => { if (isArrowItem(it)) it.heads = next; });
+  });
+  $('#sAnnotOutline')?.addEventListener('click', () => {
+    const next = !selectedAnnotations().every(it => it.outline !== false);
+    annotOutline = next;
+    editSelectedAnnotations(it => {
+      it.outline = next;
+      refitInkItem(it);
+    });
+  });
 }
 
 $('#btnAdd').addEventListener('click', toggleAddFeatures);
@@ -19251,11 +19919,13 @@ $('#annotateHeadBtn')?.addEventListener('click', () => {
     arrowTool = null;
     syncDrawUi();
     invalidate();
-    toast('Arrow tool off');
+    toast('Annotate tool off');
   }
 });
 $('#arrowSolidBtn').addEventListener('click', () => setArrowTool('solid'));
 $('#arrowDottedBtn').addEventListener('click', () => setArrowTool('dotted'));
+$('#inkPenBtn').addEventListener('click', () => setArrowTool('ink'));
+$('#inkHighlightBtn').addEventListener('click', () => setArrowTool('highlighter'));
 for (const btn of document.querySelectorAll('#drawCanvasPop .draw-ratio-btn')) {
   btn.addEventListener('click', () => {
     const ratio = btn.dataset.ratio;
@@ -19661,6 +20331,7 @@ async function init() {
   syncSettingsUi();
   syncChromeLayout();
   setupNoteFmtDropdowns();
+  setupAnnotSelBar();
   setupNoteIconDropdowns();
   setupNoteColorPicker();
   setupDrawColorPicker();
@@ -19900,7 +20571,7 @@ function drawMinimap(force = false) {
 
   // Items as flat blocks: the minimap is about position, not content.
   for (const it of state.items) {
-    if (isArrowItem(it)) continue;
+    if (isAnnotationItem(it)) continue;
     const r = boundsOf(it);
     const x = r.x * t.k + t.ox, y = r.y * t.k + t.oy;
     const w = Math.max(1, r.w * t.k), h = Math.max(1, r.h * t.k);
@@ -20895,6 +21566,7 @@ function searchKindLabel(it) {
   if (isNoteItem(it)) return 'note';
   if (isGroupItem(it)) return 'group';
   if (isArrowItem(it)) return 'arrow';
+  if (isInkItem(it)) return 'ink';
   return 'image';
 }
 
@@ -20903,7 +21575,7 @@ function collectSearchHits(query) {
   if (!needle) return [];
   const hits = [];
   for (const it of state.items) {
-    if (isArrowItem(it)) continue;               // nothing textual to match on
+    if (isAnnotationItem(it)) continue;               // nothing textual to match on
     const text = searchableTextWithTags(it);
     if (!text) continue;
     const at = text.toLowerCase().indexOf(needle);
