@@ -53,6 +53,8 @@ vm.runInNewContext(`
   const boardSize = () => ({ w: 1400, h: 900 });
   const isGroupItem = it => it?.kind === 'group';
   const isArrowItem = it => it?.kind === 'arrow';
+  const isInkItem = it => it?.kind === 'ink';
+  const isAnnotationItem = it => isArrowItem(it) || isInkItem(it);
   const itemUiRect = it => ({ x: it.x, y: it.y, w: it.w, h: it.h });
   ${CONSTS}
   ${FUNCS}
@@ -224,6 +226,7 @@ function candidates(axis, mv, targets) {
 
 /* --- H: arrows carry an arrowhead pad, so they are not edges either --- */
 assert.equal(context.snapBoxOfItem({ id: 'a1', kind: 'arrow', x: 0, y: 0, w: 10, h: 10 }), null);
+assert.equal(context.snapBoxOfItem({ id: 'k1', kind: 'ink', x: 0, y: 0, w: 10, h: 10 }), null, 'ink annotations are not snap edges');
 
 /* --- I: idempotent, which is what stops per-frame oscillation --- */
 {

@@ -114,3 +114,6 @@ jobs:
 
       - name: Board history smoke
         run: npm run test:history-smoke
+
+      - name: Annotations smoke
+        run: npm run test:annotations-smoke

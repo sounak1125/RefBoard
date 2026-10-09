@@ -519,14 +519,17 @@ async function run() {
         strokeWidth: arrow.strokeWidth,
       } : null,
       widthLabel: document.querySelector('#drawWidthVal').textContent,
+      viewScale: RefBoard.state.view.s,
       arrowActive: document.querySelector('#arrowSolidBtn').classList.contains('on'),
       drawActive: document.querySelector('#drawModeBtn').classList.contains('on'),
     };
   })()`);
   if (!arrowResult.arrow
       || arrowResult.arrow.arrowStyle !== 'solid'
-      || arrowResult.arrow.strokeWidth !== 2
-      || arrowResult.widthLabel !== '2'
+      // Arrows keep their own on-screen width (3px), independent of the pen
+      // and above all of the eraser; stored in board units at creation zoom.
+      || Math.abs(arrowResult.arrow.strokeWidth * arrowResult.viewScale - 3) > 1e-6
+      || arrowResult.widthLabel !== '3'
       || !arrowResult.arrowActive
       || arrowResult.drawActive) {
     throw new Error(`Arrow inherited eraser width or failed creation: ${JSON.stringify(arrowResult)}`);
