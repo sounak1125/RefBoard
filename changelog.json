@@ -935,5 +935,19 @@
         }
       ]
     }
+  },
+  "2.1.6": {
+    "headline": "Steady panning when zoomed in",
+    "summary": "The board stays under your cursor while you drag it, even if you zoom at the same time.",
+    "sections": {
+      "new": [],
+      "improved": [],
+      "fixed": [
+        {
+          "title": "Board no longer jumps while panning",
+          "description": "Scrolling to zoom while you drag the board no longer throws it off to one side. This was most noticeable when zoomed in a lot, or when panning with the middle mouse button."
+        }
+      ]
+    }
   }
 }
