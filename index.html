@@ -17615,7 +17615,7 @@ canvas.addEventListener('pointerdown', async e => {
 
   if (boardTool === 'hand' && e.button === 0) {
     finishNoteEdit();
-    mode = { type: 'pan', sx, sy, tx: state.view.tx, ty: state.view.ty };
+    mode = { type: 'pan', sx, sy, lx: sx, ly: sy };
     canvas.style.cursor = 'grabbing';
     return;
   }
@@ -17709,12 +17709,12 @@ canvas.addEventListener('pointerdown', async e => {
 
   if (e.button === 1 || (e.button === 0 && (spaceDown || altDown || e.altKey))) {
     finishNoteEdit();
-    mode = { type: 'pan', sx, sy, tx: state.view.tx, ty: state.view.ty };
+    mode = { type: 'pan', sx, sy, lx: sx, ly: sy };
     canvas.style.cursor = 'grabbing';
     return;
   }
   if (e.button === 2) {
-    mode = { type: 'pan', right: true, dist: 0, sx, sy, tx: state.view.tx, ty: state.view.ty };
+    mode = { type: 'pan', right: true, dist: 0, sx, sy, lx: sx, ly: sy };
     return;
   }
   if (e.button !== 0) return;
@@ -17900,8 +17900,12 @@ window.addEventListener('pointermove', e => {
 
   if (mode.type === 'pan') {
     if (mode.right) mode.dist = Math.max(mode.dist, Math.hypot(dx, dy));
-    state.view.tx = mode.tx + dx;
-    state.view.ty = mode.ty + dy;
+    // Step from the live view, not a pointerdown snapshot. A wheel zoom mid-drag
+    // shifts tx/ty to keep the cursor anchored; restoring the snapshot under the
+    // new scale threw the board by (board x) * (scale change), huge when zoomed in.
+    state.view.tx += sx - mode.lx;
+    state.view.ty += sy - mode.ly;
+    mode.lx = sx; mode.ly = sy;
     invalidate();
   } else if (mode.type === 'move') {
     if (!mode.pushed) {

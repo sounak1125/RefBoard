@@ -117,3 +117,6 @@ jobs:
 
       - name: Annotations smoke
         run: npm run test:annotations-smoke
+
+      - name: Pan zoom smoke
+        run: npm run test:pan-zoom-smoke
