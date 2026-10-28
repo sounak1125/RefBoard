@@ -1,5 +1,6 @@
 /**
- * Deterministic ordering helpers for exporting board images.
+ * Deterministic ordering helpers for exporting board images, and the visual
+ * rows that the same reading order is built from, which alignment also moves.
  *
  * Selection order is deliberately kept separate from board/z-order. The UI can
  * therefore preserve Shift-click order while marquee and Select All operations
@@ -34,17 +35,19 @@ export function uniqueIds(ids = []) {
   return result;
 }
 
+const decorate = (items, getBounds) => items.map((item, index) => ({ item, index, rect: itemRect(item, getBounds) }));
+const stable = (a, b, primary, secondary) =>
+  primary(a.rect) - primary(b.rect)
+  || secondary(a.rect) - secondary(b.rect)
+  || a.index - b.index;
+
 /**
  * Sort items by a direction or by visual reading order. Visual order clusters
  * overlapping items into rows, then reads rows top-to-bottom and left-to-right.
  * A vertical stack naturally becomes one item per row.
  */
 export function sortItemsForExport(items = [], order = 'visual', getBounds) {
-  const decorated = items.map((item, index) => ({ item, index, rect: itemRect(item, getBounds) }));
-  const stable = (a, b, primary, secondary) =>
-    primary(a.rect) - primary(b.rect)
-    || secondary(a.rect) - secondary(b.rect)
-    || a.index - b.index;
+  const decorated = decorate(items, getBounds);
 
   if (order === 'horizontal') {
     return decorated.sort((a, b) => stable(a, b, r => r.x, r => r.y)).map(d => d.item);
@@ -52,7 +55,50 @@ export function sortItemsForExport(items = [], order = 'visual', getBounds) {
   if (order === 'vertical') {
     return decorated.sort((a, b) => stable(a, b, r => r.y, r => r.x)).map(d => d.item);
   }
+  return visualRows(decorated).flatMap(row => row.entries.map(entry => entry.item));
+}
 
+/**
+ * Line the rows of a selection up like lines of text. Each visual row moves
+ * sideways as one block, so the spacing inside it is kept: 'left' starts every
+ * row at the selection's left edge, 'right' ends it at the right edge, and
+ * 'center' centres it between the two. Items alone in their row, as in a
+ * column, simply line up. Items `follows` picks out (arrows, pen marks) never
+ * shape a row or its edges; each moves with the row whose band holds its
+ * centre, or stays put between rows.
+ */
+export function rowAlignShifts(items = [], align = 'left', getBounds, follows = () => false) {
+  const anchors = [];
+  const followers = [];
+  for (const entry of decorate(items, getBounds)) (follows(entry.item) ? followers : anchors).push(entry);
+  const rows = visualRows(anchors);
+  if (!rows.length) return { rows: 0, shifts: [] };
+  for (const row of rows) {
+    row.left = Math.min(...row.entries.map(entry => entry.rect.x));
+    row.right = Math.max(...row.entries.map(entry => entry.rect.right));
+  }
+  const left = Math.min(...rows.map(row => row.left));
+  const right = Math.max(...rows.map(row => row.right));
+  const shifts = [];
+  for (const row of rows) {
+    row.dx = align === 'right' ? right - row.right
+      : align === 'center' ? (left + right - row.left - row.right) / 2
+        : left - row.left;
+    for (const entry of row.entries) shifts.push({ item: entry.item, dx: row.dx });
+  }
+  for (const entry of followers) {
+    const row = rows.find(r => entry.rect.cy >= r.top && entry.rect.cy <= r.bottom);
+    shifts.push({ item: entry.item, dx: row ? row.dx : 0 });
+  }
+  return { rows: rows.length, shifts };
+}
+
+/**
+ * Cluster decorated items into rows: an item joins the row it overlaps most
+ * once that overlap reaches 35% of the smaller height. Rows come back top to
+ * bottom with their entries left to right.
+ */
+function visualRows(decorated) {
   const rows = [];
   decorated.sort((a, b) => stable(a, b, r => r.y, r => r.x));
   for (const entry of decorated) {
@@ -78,9 +124,8 @@ export function sortItemsForExport(items = [], order = 'visual', getBounds) {
   }
 
   rows.sort((a, b) => a.top - b.top || a.entries[0].index - b.entries[0].index);
-  return rows.flatMap(row => row.entries
-    .sort((a, b) => stable(a, b, r => r.x, r => r.y))
-    .map(entry => entry.item));
+  for (const row of rows) row.entries.sort((a, b) => stable(a, b, r => r.x, r => r.y));
+  return rows;
 }
 
 /** Keep still-selected explicit IDs, then append new IDs in visual order. */
