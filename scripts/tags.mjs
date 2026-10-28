@@ -204,3 +204,14 @@ export function pruneTagColors(colors, boardTags = []) {
   }
   return out;
 }
+
+/**
+ * Where a row of label chips or dots starts under an item spanning [x1, x2].
+ * Anything but 'center' or 'right' keeps the left edge, where every row sat
+ * before alignment was a choice.
+ */
+export function tagRowStartX(x1, x2, rowW, align = 'left') {
+  if (align === 'center') return (x1 + x2 - rowW) / 2;
+  if (align === 'right') return x2 - rowW;
+  return x1;
+}

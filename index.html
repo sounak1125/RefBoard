@@ -3597,6 +3597,14 @@ try {
         <button type="button" id="tagLabelsNever" class="tag-mode-btn">Off</button>
       </div>
     </div>
+    <div class="tag-panel-labels">
+      <span>Align labels under items</span>
+      <div class="tag-mode" role="group" aria-label="Where labels sit under each item">
+        <button type="button" id="tagAlignLeft" class="tag-mode-btn">Left</button>
+        <button type="button" id="tagAlignCenter" class="tag-mode-btn">Center</button>
+        <button type="button" id="tagAlignRight" class="tag-mode-btn">Right</button>
+      </div>
+    </div>
   </details>
 </div>
 <div id="status"></div>
@@ -4205,6 +4213,7 @@ import {
   tagKey,
   removeTag,
   tagGlowColor,
+  tagRowStartX,
   TAG_COLOR_PALETTE,
   TAGS_MAX_PER_ITEM,
 } from './scripts/tags.mjs';
@@ -6060,6 +6069,8 @@ const SETTINGS_DEFAULTS = {
   gridStyle: 'dots',
   // How long tag labels stay up: 'always' | 'selected' | 'never'.
   tagLabels: 'always',
+  // Where the label row sits under its item: 'left' | 'center' | 'right'.
+  tagLabelAlign: 'left',
 };
 let appSettings = { ...SETTINGS_DEFAULTS };
 let applyingRemoteSettings = false;
@@ -6084,6 +6095,10 @@ function normalizeToolbarMode(v) {
 
 function normalizeTagLabels(v) {
   return v === 'selected' || v === 'never' ? v : 'always';
+}
+
+function normalizeTagLabelAlign(v) {
+  return v === 'center' || v === 'right' ? v : 'left';
 }
 
 const IMAGE_MEMORY_CHOICES = [256, 512, 1024, 2048];
@@ -6123,6 +6138,7 @@ function loadAppSettings() {
   appSettings.autosaveIntervalMin = normalizeAutosaveInterval(appSettings.autosaveIntervalMin);
   appSettings.landingLayout = normalizeLandingLayout(appSettings.landingLayout);
   appSettings.tagLabels = normalizeTagLabels(appSettings.tagLabels);
+  appSettings.tagLabelAlign = normalizeTagLabelAlign(appSettings.tagLabelAlign);
   appSettings.toolbarMode = normalizeToolbarMode(appSettings.toolbarMode);
   appSettings.imageMemoryMB = normalizeImageMemory(appSettings.imageMemoryMB);
   appSettings.splitRatio = clampSplitRatioSetting(appSettings.splitRatio);
@@ -6150,6 +6166,7 @@ function adoptSharedSettings(payload) {
       appSettings.autosaveIntervalMin = normalizeAutosaveInterval(appSettings.autosaveIntervalMin);
       appSettings.landingLayout = normalizeLandingLayout(appSettings.landingLayout);
       appSettings.tagLabels = normalizeTagLabels(appSettings.tagLabels);
+      appSettings.tagLabelAlign = normalizeTagLabelAlign(appSettings.tagLabelAlign);
       appSettings.toolbarMode = normalizeToolbarMode(appSettings.toolbarMode);
       appSettings.imageMemoryMB = normalizeImageMemory(appSettings.imageMemoryMB);
       appSettings.splitRatio = clampSplitRatioSetting(appSettings.splitRatio);
@@ -21028,6 +21045,7 @@ const TAG_DOT_GAP = 3;
 const TAG_DOT_MAX = 4;
 
 const tagLabelMode = () => normalizeTagLabels(appSettings.tagLabels);
+const tagLabelAlign = () => normalizeTagLabelAlign(appSettings.tagLabelAlign);
 
 /* measureText is the expensive part of a label pass and a tag's width never
    changes, so each string is measured once for the life of the session. */
@@ -21077,6 +21095,7 @@ function drawTagLabels() {
   const mode = tagLabelMode();
   if (mode === 'never') return;
   const onlySelected = mode === 'selected';
+  const align = tagLabelAlign();
 
   ctx.save();
   ctx.font = TAG_LABEL_FONT;
@@ -21096,18 +21115,31 @@ function drawTagLabels() {
     ctx.globalAlpha = itemPassesTagFilter(it) ? 1 : TAG_DIM_ALPHA;
 
     if (itemPx < TAG_LABEL_MIN_ITEM_PX) {
-      drawTagDots(tags, x1, y2 + 4, itemPx);
+      drawTagDots(tags, x1, x2, y2 + 4, align);
       continue;
     }
 
     const shown = tags.slice(0, TAG_LABEL_MAX);
     const hidden = tags.length - shown.length;
-    let x = x1;
     const y = y2 + 6 + TAG_LABEL_H / 2;
 
+    // Measured before it is painted: centring or right-aligning the row needs
+    // its width, and the fit rule is the same whichever edge it starts from.
+    const chips = [];
+    let rowW = 0;
     for (const tag of shown) {
       const w = tagLabelWidth(ctx, tag) + TAG_LABEL_PAD * 2;
-      if (x + w > x2 + 40) break;          // never run far past the item
+      const nextW = rowW + (chips.length ? TAG_LABEL_GAP : 0) + w;
+      if (nextW > itemPx + 40) break;      // never run far past the item
+      chips.push({ tag, w });
+      rowW = nextW;
+    }
+    const more = hidden > 0 ? '+' + hidden : '';
+    const moreW = more ? tagLabelWidth(ctx, more) + TAG_LABEL_PAD * 2 : 0;
+    if (more) rowW += (chips.length ? TAG_LABEL_GAP : 0) + moreW;
+    let x = tagRowStartX(x1, x2, rowW, align);
+
+    for (const { tag, w } of chips) {
       const color = state.tagColors[tag.toLowerCase()] || '';
       ctx.beginPath();
       if (ctx.roundRect) ctx.roundRect(x, y - TAG_LABEL_H / 2, w, TAG_LABEL_H, TAG_LABEL_H / 2);
@@ -21125,12 +21157,10 @@ function drawTagLabels() {
       x += w + TAG_LABEL_GAP;
     }
 
-    if (hidden > 0) {
-      const more = '+' + hidden;
-      const w = tagLabelWidth(ctx, more) + TAG_LABEL_PAD * 2;
+    if (more) {
       ctx.beginPath();
-      if (ctx.roundRect) ctx.roundRect(x, y - TAG_LABEL_H / 2, w, TAG_LABEL_H, TAG_LABEL_H / 2);
-      else ctx.rect(x, y - TAG_LABEL_H / 2, w, TAG_LABEL_H);
+      if (ctx.roundRect) ctx.roundRect(x, y - TAG_LABEL_H / 2, moreW, TAG_LABEL_H, TAG_LABEL_H / 2);
+      else ctx.rect(x, y - TAG_LABEL_H / 2, moreW, TAG_LABEL_H);
       ctx.fillStyle = 'rgba(20,22,28,.82)';
       ctx.fill();
       ctx.fillStyle = '#8b90a0';
@@ -21142,11 +21172,12 @@ function drawTagLabels() {
 }
 
 /** What a tag row shrinks to when the item is too small to caption. */
-function drawTagDots(tags, x, y, itemPx) {
+function drawTagDots(tags, x1, x2, y, align) {
   // Never wider than the thing it marks: a four-dot row beside an eight-pixel
   // image would collide with its neighbours and mark nothing clearly.
-  const fits = Math.max(1, Math.floor(itemPx / (TAG_DOT_SIZE + TAG_DOT_GAP)));
+  const fits = Math.max(1, Math.floor((x2 - x1) / (TAG_DOT_SIZE + TAG_DOT_GAP)));
   const shown = Math.min(tags.length, TAG_DOT_MAX, fits);
+  const x = tagRowStartX(x1, x2, shown * TAG_DOT_SIZE + (shown - 1) * TAG_DOT_GAP, align);
   for (let i = 0; i < shown; i++) {
     const color = state.tagColors[tags[i].toLowerCase()] || '';
     ctx.beginPath();
@@ -21254,6 +21285,13 @@ function renderTagPanel() {
     btn.classList.toggle('on', mode === value);
     btn.setAttribute('aria-pressed', String(mode === value));
   }
+  const align = tagLabelAlign();
+  for (const [id, value] of [['#tagAlignLeft', 'left'], ['#tagAlignCenter', 'center'], ['#tagAlignRight', 'right']]) {
+    const btn = $(id);
+    if (!btn) continue;
+    btn.classList.toggle('on', align === value);
+    btn.setAttribute('aria-pressed', String(align === value));
+  }
   const badge = $('#tagMoreBadge');
   if (badge) badge.textContent = tagFilter.length ? String(tagFilter.length) : '';
   const more = $('#tagMore');
@@ -21263,6 +21301,13 @@ function renderTagPanel() {
 
 function setTagLabelMode(mode) {
   appSettings.tagLabels = normalizeTagLabels(mode);
+  saveAppSettings();
+  renderTagPanel();
+  invalidate();
+}
+
+function setTagLabelAlign(align) {
+  appSettings.tagLabelAlign = normalizeTagLabelAlign(align);
   saveAppSettings();
   renderTagPanel();
   invalidate();
@@ -21524,6 +21569,9 @@ $('#tagModeAll')?.addEventListener('click', () => setTagFilter(tagFilter, { mode
 $('#tagLabelsAlways')?.addEventListener('click', () => setTagLabelMode('always'));
 $('#tagLabelsSelected')?.addEventListener('click', () => setTagLabelMode('selected'));
 $('#tagLabelsNever')?.addEventListener('click', () => setTagLabelMode('never'));
+$('#tagAlignLeft')?.addEventListener('click', () => setTagLabelAlign('left'));
+$('#tagAlignCenter')?.addEventListener('click', () => setTagLabelAlign('center'));
+$('#tagAlignRight')?.addEventListener('click', () => setTagLabelAlign('right'));
 $('#tagColorNone')?.addEventListener('click', () => { setTagColor(tagColorTarget, ''); closeTagColorPop(); });
 tagPopInputEl?.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.isComposing) return;

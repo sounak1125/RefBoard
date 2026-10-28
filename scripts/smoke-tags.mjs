@@ -335,6 +335,74 @@ const smokeExpression = `(async()=>{
     labelModes.push(RB.appSettings.tagLabels);
   }
 
+  /* The three label alignments, through the panel's own buttons, measured on
+     the canvas the way the glow is: on a board of one, the difference between
+     a frame with labels and the same frame without them is the label row. Both
+     rows are measured, the chips and the dots they shrink to on a small item. */
+  const labelRow=async(align,itemPx)=>{
+    const btn=document.querySelector('#tagAlign'+align[0].toUpperCase()+align.slice(1));
+    if(btn)press(btn); else RB.appSettings.tagLabelAlign=align;
+    await wait(100);
+    const board=document.getElementById('board');
+    const bctx=board.getContext('2d');
+    const dpr=devicePixelRatio||1;
+    const it=added[0];
+    const zoom=itemPx/it.w;
+    RB.state.view.s=zoom;
+    RB.state.view.tx=board.clientWidth/2-(it.x+it.w/2)*zoom;
+    RB.state.view.ty=board.clientHeight/2-(it.y+it.h/2)*zoom;
+    const left=it.x*zoom+RB.state.view.tx, right=(it.x+it.w)*zoom+RB.state.view.tx;
+    const bottom=(it.y+it.h)*zoom+RB.state.view.ty;
+    // Through the middle of the row: chips are 17px tall 6px under the item,
+    // dots are 5px across 4px under it.
+    const rowY=itemPx>=44 ? bottom+6+8.5 : bottom+4+2.5;
+    const strip=async labels=>{
+      RB.appSettings.tagLabels=labels?'always':'never';
+      RB.invalidate();
+      await wait(300);
+      const x0=Math.max(0,Math.floor((left-80)*dpr));
+      const w=Math.min(board.width-x0,Math.ceil((right-left+160)*dpr));
+      return {data:bctx.getImageData(x0,Math.round(rowY*dpr),w,1).data,x0,w};
+    };
+    const on=await strip(true), off=await strip(false);
+    RB.appSettings.tagLabels='always';
+    let first=-1,last=-1;
+    for(let d=0;d<on.w;d++){
+      const i=d*4;
+      const diff=Math.abs(on.data[i]-off.data[i])+Math.abs(on.data[i+1]-off.data[i+1])+Math.abs(on.data[i+2]-off.data[i+2]);
+      if(diff>24){ if(first<0)first=d; last=d; }
+    }
+    const row={align,itemPx,button:!!btn,pressed:btn?btn.getAttribute('aria-pressed'):null,
+      stored:RB.appSettings.tagLabelAlign,found:first>=0};
+    if(!row.found)return row;
+    const rowLeft=(on.x0+first)/dpr, rowRight=(on.x0+last+1)/dpr;
+    const round=v=>Math.round(v*10)/10;
+    return {...row,
+      leftGap:round(rowLeft-left), rightGap:round(right-rowRight),
+      centerOffset:round((rowLeft+rowRight)/2-(left+right)/2), rowWidth:round(rowRight-rowLeft)};
+  };
+  const itemsBeforeAlign=RB.state.items.slice();
+  const selBeforeAlign=new Set(RB.state.sel);
+  const tagsBeforeAlign=[...(added[0].tags||[])];
+  RB.state.items=[added[0]];
+  RB.state.sel=new Set();
+  added[0].tags=['Mood','lighting'];
+  const labelRows=[];
+  for(const itemPx of [200,30]){
+    for(const align of ['left','center','right'])labelRows.push(await labelRow(align,itemPx));
+  }
+  let storedAlign='unreadable';
+  try{ storedAlign=JSON.parse(localStorage.getItem('refboard.settings')||'{}').tagLabelAlign; }catch(e){}
+  const leftBtn=document.querySelector('#tagAlignLeft');
+  if(leftBtn)press(leftBtn); else RB.appSettings.tagLabelAlign='left';
+  added[0].tags=tagsBeforeAlign;
+  RB.state.items=itemsBeforeAlign;
+  RB.state.sel=selBeforeAlign;
+  RB.state.view.s=1;
+  RB.updateSelBarForTest();
+  RB.invalidate();
+  await wait(250);
+
   // Ctrl+F must find an image by a tag its filename does not contain.
   const searchHits=RB.searchHitsForTest('lighting');
 
@@ -420,7 +488,7 @@ const smokeExpression = `(async()=>{
     freshSuggestion,reusedLabel,noSelectionHidden,noSelectionAddDisabled,beforeFilters,afterFilters,
     afterTagging, afterDuplicate, selbarOffersTags, panelOpen, chipLabels,
     stillOpenBeforeToggle, openAfterSecondPress, clearedItemTags,
-    colorPopOpen, chosen, colorsAfterPick, colorsAfterUndo, colorsBeforeSave, labelModes,
+    colorPopOpen, chosen, colorsAfterPick, colorsAfterUndo, colorsBeforeSave, labelModes, labelRows, storedAlign,
     panelSurvivedColorPick, glowNear, glowMid, glowFar,
     filtered, countText, anyMode, allMode, cleared, moreOpened, moreBadge,
     searchHits, noteTagsBefore, reloaded, reloadedBoardTags, reloadedColors, sessionColors, otherBoardColors,
@@ -527,6 +595,24 @@ try {
   assert.deepEqual(r.labelModes, ['never', 'selected', 'always'],
     'all three label modes must be reachable from the panel');
 
+  /* ---- label alignment ---- */
+  // Where the row is drawn first: that is what a user sees, and what an older
+  // build gets wrong even when the setting is forced on it.
+  const measured = `\nmeasured rows: ${JSON.stringify(r.labelRows)}`;
+  for (const row of r.labelRows) {
+    const what = `${row.itemPx >= 44 ? 'label chips' : 'label dots'} aligned ${row.align} under a ${row.itemPx}px item`;
+    assert.ok(row.found, `${what}: nothing was drawn under the item${measured}`);
+    if (row.align === 'left') assert.ok(Math.abs(row.leftGap) <= 2, `${what} should start at its left edge, ${row.leftGap}px off${measured}`);
+    if (row.align === 'center') assert.ok(Math.abs(row.centerOffset) <= 2, `${what} should sit centred, ${row.centerOffset}px off${measured}`);
+    if (row.align === 'right') assert.ok(Math.abs(row.rightGap) <= 2, `${what} should end at its right edge, ${row.rightGap}px off${measured}`);
+  }
+  for (const row of r.labelRows) {
+    assert.equal(row.button, true, `the Display section must offer a ${row.align} button`);
+    assert.equal(row.pressed, 'true', `the ${row.align} button must show as pressed once chosen`);
+    assert.equal(row.stored, row.align, `pressing ${row.align} must set the alignment`);
+  }
+  assert.equal(r.storedAlign, 'right', 'the alignment is an app setting, so it must be saved with the others');
+
   /* ---- search ---- */
   assert.ok(
     r.searchHits.some(hit => hit.kind === 'image'),
@@ -558,6 +644,8 @@ try {
     `tags Electron smoke passed — tagged through the panel, filtered to `
     + `${r.filtered.passIds.length} of ${r.reloaded.length}, `
     + `glow reach ${r.glowNear}/${r.glowMid}/${r.glowFar}px at 100/25/5% zoom, `
+    + `label rows aligned within ${Math.max(...r.labelRows.map(row => Math.abs(
+      row.align === 'left' ? row.leftGap : row.align === 'right' ? row.rightGap : row.centerOffset)))}px, `
     + `and survived a save and reopen`,
   );
 } catch (err) {
