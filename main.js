@@ -2263,7 +2263,9 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (installUpdateWhenAllClosed && app.isPackaged) {
     installUpdateWhenAllClosed = false;
-    try { autoUpdater.quitAndInstall(); return; }
+    // Silent with force-run: the assisted installer only relaunches the app on
+    // its own when silent, so the default (windowed) install left RefBoard closed.
+    try { autoUpdater.quitAndInstall(true, true); return; }
     catch (err) { console.warn('RefBoard update install failed; quitting normally:', err?.message || err); }
   }
   app.quit();
