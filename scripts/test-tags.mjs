@@ -28,6 +28,7 @@ import {
   suggestTagColor,
   tagGlowColor,
   tagKey,
+  tagRowStartX,
 } from './tags.mjs';
 
 /* ================= one tag ================= */
@@ -199,6 +200,38 @@ assert.deepEqual(
 );
 assert.deepEqual(pruneTagColors({ mood: '#5aa2ff' }, []), {});
 
+/* A label row hangs from the item's left edge, its centre or its right edge.
+   Chips may run up to 40px wider than the item, and a centred row that does
+   overhangs both sides evenly instead of only the right. */
+assert.equal(tagRowStartX(100, 300, 80), 100, 'left is the default, where rows always sat');
+assert.equal(tagRowStartX(100, 300, 80, 'left'), 100);
+assert.equal(tagRowStartX(100, 300, 80, 'center'), 160);
+assert.equal(tagRowStartX(100, 300, 80, 'right'), 220);
+assert.equal(tagRowStartX(100, 140, 80, 'center'), 80, 'a row wider than its item overhangs both sides evenly');
+assert.equal(tagRowStartX(100, 140, 80, 'right'), 60);
+assert.equal(tagRowStartX(100, 300, 80, 'justify'), 100, 'an unknown alignment keeps the left edge');
+
+/* Alignment is an app setting like the label mode, so both ways a setting
+   arrives (this window's storage, another window's broadcast) must clean it,
+   and both rows a label can shrink to must follow it. The smoke measures the
+   rows on a real canvas; this pins the wiring it cannot reach. */
+{
+  const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(html, /tagLabelAlign: 'left',/, 'labels start out on the left edge, as before');
+  assert.equal(
+    (html.match(/appSettings\.tagLabelAlign = normalizeTagLabelAlign\(appSettings\.tagLabelAlign\);/g) || []).length, 2,
+    'stored and broadcast settings must both normalize the alignment',
+  );
+  const chips = html.match(/function drawTagLabels\(\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(chips, /let x = tagRowStartX\(x1, x2, rowW, align\);/, 'the chip row starts where the alignment puts it');
+  const dots = html.match(/function drawTagDots\([^)]*\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(dots, /tagRowStartX\(x1, x2, [^;]*, align\)/, 'the dot row follows the same alignment');
+  for (const [id, align] of [['tagAlignLeft', 'left'], ['tagAlignCenter', 'center'], ['tagAlignRight', 'right']]) {
+    assert.match(html, new RegExp(`id="${id}" class="tag-mode-btn"`), `the Display section offers ${align}`);
+    assert.ok(html.includes(`$('#${id}')?.addEventListener('click', () => setTagLabelAlign('${align}'));`), `${id} sets ${align}`);
+  }
+}
+
 /* The suggestions must stay ordinary DOM: updating an open native datalist
    previously crashed Chromium. The interactive smoke covers live refresh. */
 {
@@ -207,4 +240,4 @@ assert.deepEqual(pruneTagColors({ mood: '#5aa2ff' }, []), {});
   assert.doesNotMatch(html, /list="tagPopSuggest"/, 'the input must not use a native suggestion popup');
 }
 
-console.log('tags ok — values, board collection, filter modes, pruning and safe suggestions');
+console.log('tags ok — values, board collection, filter modes, pruning, label alignment and safe suggestions');
