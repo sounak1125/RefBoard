@@ -9,6 +9,19 @@
 !macroend
 
 !macro customFinishPage
+  ; A custom finish page replaces electron-builder's, and with it the "Run RefBoard"
+  ; checkbox. The assisted installer ignores --force-run unless silent, so without
+  ; this a "Restart to update" install closes RefBoard and never brings it back.
+  Function StartApp
+    ${if} ${isUpdated}
+      StrCpy $1 "--updated"
+    ${else}
+      StrCpy $1 ""
+    ${endif}
+    ${StdUtils.ExecShellAsUser} $0 "$launchLink" "open" "$1"
+  FunctionEnd
+  !define MUI_FINISHPAGE_RUN
+  !define MUI_FINISHPAGE_RUN_FUNCTION "StartApp"
   !define MUI_FINISHPAGE_TITLE "RefBoard is ready"
   !define MUI_FINISHPAGE_TEXT "Thank you for installing RefBoard.$\r$\n$\r$\nPress Ctrl+V on the board to paste your first reference.$\r$\n$\r$\nMade by Sounak - enjoy, and share it with your friends!"
   !insertmacro MUI_PAGE_FINISH

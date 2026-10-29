@@ -37,7 +37,7 @@ assert.match(main, /const closingWindows = new WeakSet\(\);/, 'closing state mus
 assert.match(main, /win\.on\('close', \(e\) => \{\s*if \(closingWindows\.has\(win\)\) return;/, 'a window may only skip the close handshake when it confirmed its own close');
 assert.match(main, /ipcMain\.handle\('install-update', \(\) => \{[\s\S]*?installUpdateWhenAllClosed = true;[\s\S]*?for \(const candidate of windows\)[\s\S]*?requestWindowClose\(candidate\)/, 'Restart to update must ask every window to close through the handshake');
 assert.doesNotMatch(main, /ipcMain\.handle\('install-update'[\s\S]{0,600}?autoUpdater\.quitAndInstall\(/, 'the installer must not be spawned while a window can still veto the quit');
-assert.match(main, /app\.on\('window-all-closed', \(\) => \{[\s\S]*?installUpdateWhenAllClosed[\s\S]*?quitAndInstall\(\)[\s\S]*?app\.quit\(\);/, 'the update installs once the last window has closed');
+assert.match(main, /app\.on\('window-all-closed', \(\) => \{[\s\S]*?installUpdateWhenAllClosed[\s\S]*?quitAndInstall\(true, true\)[\s\S]*?app\.quit\(\);/, 'the update installs once the last window has closed');
 assert.match(main, /ipcMain\.on\('window-minimize', event => \{[\s\S]*?windowForEvent\(event\)/, 'minimize must target its own window');
 assert.match(main, /ipcMain\.on\('window-maximize', event => \{[\s\S]*?windowForEvent\(event\)/, 'maximize must target its own window');
 assert.match(main, /ipcMain\.handle\('window-is-maximized', event => \{[\s\S]*?windowForEvent\(event\)/, 'maximized state must be read per window');
