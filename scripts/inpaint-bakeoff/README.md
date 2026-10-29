@@ -68,13 +68,14 @@ its own 5 px growth.
 | Engine | Time per fill | Best or tied (of 16) | How it fails |
 |---|---|---|---|
 | LaMa | ~1.1 s CPU, plus 7-10 s model load once | 12 | Soft inside very large holes (512 input) |
-| Photoshop 2026 | 0.4-1.5 s | 4 | Clones visible chunks from elsewhere in the picture |
+| Photoshop 2026 | 0.4-1.5 s | 6 (2 wins, 4 ties) | Clones visible chunks from elsewhere in the picture |
 | MI-GAN | 0.3-2 s | 0 | Invents objects nearly every time |
 | Old engine | 11-307 s (median 35 s) | 0 | Mosaics, pasted copies of nearby subjects |
 
-- Ground truth, mean error inside the hole (0-255): door frame LaMa 6.1,
-  Photoshop 6.3 (5 px masks) / 41.5 (grown), old engine 19.1, MI-GAN 19.0;
-  grass LaMa 23.4, MI-GAN 28.1, Photoshop 31.1-35.0, old engine 33.1.
+- Ground truth, mean error inside the hole (0-255), 5 px / grown masks: door
+  frame LaMa 5.3 / 6.1, Photoshop 6.3 / 41.5, MI-GAN 19.0 / 19.2, old engine
+  19.1; grass LaMa 22.9 / 23.4, MI-GAN 28.1 / 33.9, Photoshop 31.1 / 35.0, old
+  engine 33.1.
 - No engine handled the 45% hole or the bottle wedged between two others.
 - The old engine's own verdict is not a quality signal: it rejected 9 of its 16
   fills and rated visibly broken ones `OK`.
