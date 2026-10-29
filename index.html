@@ -3494,6 +3494,15 @@ try {
       <rect x="7.75" y="16" width="11" height="4.5" rx="1.25"/>
     </svg>
   </button>
+  <button class="tb sel-multi-only" id="sAlignLeft" data-tip="Align left">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
+  </button>
+  <button class="tb sel-multi-only" id="sAlignCenter" data-tip="Align center">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M5 18h14"/></svg>
+  </button>
+  <button class="tb sel-multi-only" id="sAlignRight" data-tip="Align right">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M10 12h10M6 18h14"/></svg>
+  </button>
   <button class="tb sel-images-multi-only" id="sNormScale" data-tip="Normalize scale">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <rect x="7" y="7" width="10" height="10" rx="2"/>
@@ -4179,6 +4188,7 @@ import {
   paddedSequence,
   reconcileSelectionOrder,
   resolveExportItems,
+  rowAlignShifts,
   sortItemsForExport,
 } from './scripts/export-order.mjs';
 import { buildDragOutNames, dragOutStem } from './scripts/drag-out.mjs';
@@ -12528,6 +12538,38 @@ function alignSelectionVertical() {
   invalidate();
 }
 
+/* Rows line up like lines of text: each visual row of the selection slides
+   sideways as one block to the selection's left edge, centre or right edge,
+   keeping its own spacing. A column of single items simply lines up. */
+function alignSelectionRows(align) {
+  const picked = selectedItems();
+  const pickedIds = new Set(picked.map(it => it.id));
+  // A child whose group is selected too moves with that group, not twice.
+  const roots = picked.filter(it => !(it.groupId && pickedIds.has(it.groupId)));
+  if (roots.length < 2) return;
+  if (idsIncludeLockedGroupItems(expandMoveIds(new Set(roots.map(it => it.id))))) {
+    toast('Group is locked');
+    return;
+  }
+  const { rows, shifts } = rowAlignShifts(roots, align, boundsOf, isAnnotationItem);
+  if (rows < 2) {
+    toast('Select two or more rows to align');
+    return;
+  }
+  if (shifts.every(({ dx }) => Math.abs(dx) < 1e-6)) {
+    toast('Already aligned');
+    return;
+  }
+  pushUndo();
+  for (const { item, dx } of shifts) {
+    if (dx) translateAlignedItem(item, dx, 0);
+  }
+  syncGroupFramesForItems(roots);
+  invalidateWorkspaceBBox();
+  scheduleSave();
+  invalidate();
+}
+
 const selectedImages = () => selectedItems().filter(isImageItem);
 
 function resizeImagePreserveCenter(it, nw, nh) {
@@ -18559,6 +18601,10 @@ function showMenu(x, y, hitItem) {
           items: [
             { l: 'Align horizontal', f: alignSelectionHorizontal },
             { l: 'Align vertical', f: alignSelectionVertical },
+            { sep: true },
+            { l: 'Align left', f: () => alignSelectionRows('left') },
+            { l: 'Align center', f: () => alignSelectionRows('center') },
+            { l: 'Align right', f: () => alignSelectionRows('right') },
           ],
         });
       });
@@ -19995,6 +20041,9 @@ if (dragOutBtn) {
 }
 $('#sAlignH').addEventListener('click', alignSelectionHorizontal);
 $('#sAlignV').addEventListener('click', alignSelectionVertical);
+$('#sAlignLeft').addEventListener('click', () => alignSelectionRows('left'));
+$('#sAlignCenter').addEventListener('click', () => alignSelectionRows('center'));
+$('#sAlignRight').addEventListener('click', () => alignSelectionRows('right'));
 $('#sNormScale').addEventListener('click', normalizeImagesByScale);
 $('#sNormWidth').addEventListener('click', normalizeImagesByWidth);
 $('#sNormHeight').addEventListener('click', normalizeImagesByHeight);

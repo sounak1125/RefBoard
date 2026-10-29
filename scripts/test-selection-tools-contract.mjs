@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
+import { rowAlignShifts } from './export-order.mjs';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -16,7 +17,7 @@ function extractFunction(name) {
   assert.fail(`${name} should have a complete body`);
 }
 
-const controlIds = ['sAlignH', 'sAlignV', 'sNormScale', 'sNormWidth', 'sNormHeight'];
+const controlIds = ['sAlignH', 'sAlignV', 'sAlignLeft', 'sAlignCenter', 'sAlignRight', 'sNormScale', 'sNormWidth', 'sNormHeight'];
 for (const id of controlIds) {
   const match = html.match(new RegExp(`<button[^>]*id=["']${id}["'][\\s\\S]*?<\\/button>`));
   assert.ok(match, `${id} should remain in the selection bar`);
@@ -174,6 +175,97 @@ for (const bounds of verticalBounds) closeTo(bounds.x, verticalBounds[0].x, 'ver
 closeTo(verticalBounds[2].y - (verticalBounds[0].y + verticalBounds[0].h), 5, 'first vertical visual gap');
 closeTo(verticalBounds[1].y - (verticalBounds[2].y + verticalBounds[2].h), 5, 'second vertical visual gap');
 assert.deepEqual(Object.values(alignCalls), [1, 1, 1, 1, 1], 'alignment should remain one undoable saved operation');
+
+/* Align left / center / right move whole rows, so a board of scenes lines up
+   at the start of each row while every row keeps its own spacing. Groups move
+   with their children, and nothing moves up or down. */
+const rowCalls = { undo: 0, sync: 0, save: 0, invalidate: 0, toasts: [] };
+const rowState = { items: [], sel: new Set() };
+const rowContext = {
+  state: rowState,
+  selectedItems: () => rowState.items.filter(item => rowState.sel.has(item.id)),
+  byId: id => rowState.items.find(item => item.id === id),
+  boundsOf: rotatedBounds,
+  isArrowItem: item => item.kind === 'arrow',
+  isGroupItem: item => item.kind === 'group',
+  isGroupableItem: item => item.kind === 'image' || item.kind === 'note',
+  isAnnotationItem: item => item.kind === 'arrow' || item.kind === 'ink',
+  childrenOfGroup: id => rowState.items.filter(item => item.groupId === id),
+  rowAlignShifts,
+  pushUndo: () => rowCalls.undo++,
+  syncGroupFramesForItems: () => rowCalls.sync++,
+  invalidateWorkspaceBBox: () => {},
+  scheduleSave: () => rowCalls.save++,
+  invalidate: () => rowCalls.invalidate++,
+  toast: message => rowCalls.toasts.push(message),
+};
+vm.runInNewContext(`
+  ${extractFunction('translateAlignedItem')}
+  ${extractFunction('expandMoveIds')}
+  ${extractFunction('isInLockedGroup')}
+  ${extractFunction('idsIncludeLockedGroupItems')}
+  ${extractFunction('alignSelectionRows')}
+  this.alignSelectionRows = alignSelectionRows;
+`, rowContext);
+
+const sceneBoard = [
+  { id: 'sc1', kind: 'group', x: 60, y: 0, w: 200, h: 120 },
+  { id: 'sc1-a', kind: 'image', groupId: 'sc1', x: 70, y: 10, w: 80, h: 100 },
+  { id: 'sc1-b', kind: 'image', groupId: 'sc1', x: 170, y: 10, w: 80, h: 100 },
+  { id: 'sc2', kind: 'image', x: 280, y: 0, w: 200, h: 120 },
+  { id: 'sc6', kind: 'group', x: 0, y: 160, w: 180, h: 120 },
+  { id: 'sc6-a', kind: 'image', groupId: 'sc6', x: 10, y: 170, w: 160, h: 100 },
+  { id: 'sc7', kind: 'image', x: 200, y: 160, w: 300, h: 120 },
+];
+const allScenes = ['sc1', 'sc2', 'sc6', 'sc7'];
+let board = [];
+const xOf = (...ids) => ids.map(id => board.find(item => item.id === id).x);
+function resetRows(selected, items = sceneBoard) {
+  board = rowState.items = structuredClone(items);
+  rowState.sel = new Set(selected);
+  rowCalls.undo = rowCalls.sync = rowCalls.save = rowCalls.invalidate = 0;
+  rowCalls.toasts.length = 0;
+}
+
+resetRows(allScenes);
+rowContext.alignSelectionRows('left');
+assert.deepEqual(xOf('sc1', 'sc1-a', 'sc1-b', 'sc2'), [0, 10, 110, 220], 'left: the first row slides as one block, children with their group');
+assert.deepEqual(xOf('sc6', 'sc6-a', 'sc7'), [0, 10, 200], 'left: the row already at the edge stays');
+assert.ok(board.every(item => item.y === sceneBoard.find(start => start.id === item.id).y), 'row alignment never moves anything up or down');
+assert.deepEqual([rowCalls.undo, rowCalls.sync, rowCalls.save, rowCalls.invalidate], [1, 1, 1, 1], 'row alignment is one undoable saved step');
+
+rowCalls.undo = 0;
+rowContext.alignSelectionRows('left');
+assert.deepEqual(rowCalls.toasts, ['Already aligned']);
+assert.equal(rowCalls.undo, 0, 'aligning rows that already line up must not cost an undo step');
+
+resetRows(allScenes);
+rowContext.alignSelectionRows('right');
+assert.deepEqual(xOf('sc1', 'sc1-a', 'sc2', 'sc6', 'sc7'), [80, 90, 300, 0, 200], 'right: the shorter row slides to the shared right edge');
+
+resetRows(allScenes);
+rowContext.alignSelectionRows('center');
+assert.deepEqual(xOf('sc1', 'sc2', 'sc6', 'sc7'), [40, 260, 0, 200], 'center: rows centre on the middle of the selection');
+
+resetRows(['sc1', 'sc1-a', ...allScenes.slice(1)]);
+rowContext.alignSelectionRows('left');
+assert.deepEqual(xOf('sc1', 'sc1-a'), [0, 10], 'a child selected along with its group moves once, with the group');
+
+resetRows(allScenes, sceneBoard.map(item => (item.id === 'sc6' ? { ...item, locked: true } : item)));
+rowContext.alignSelectionRows('right');
+assert.deepEqual(rowCalls.toasts, ['Group is locked']);
+assert.deepEqual([rowCalls.undo, ...xOf('sc1', 'sc2')], [0, 60, 280], 'nothing moves while a locked group is selected');
+
+resetRows(['sc1', 'sc2']);
+rowContext.alignSelectionRows('left');
+assert.deepEqual(rowCalls.toasts, ['Select two or more rows to align']);
+assert.equal(rowCalls.undo, 0, 'a single row has nothing to line up with');
+
+for (const align of ['left', 'center', 'right']) {
+  const id = `sAlign${align[0].toUpperCase()}${align.slice(1)}`;
+  assert.ok(html.includes(`{ l: 'Align ${align}', f: () => alignSelectionRows('${align}') }`), `the Alignment submenu offers Align ${align}`);
+  assert.ok(html.includes(`$('#${id}').addEventListener('click', () => alignSelectionRows('${align}'));`), `#${id} aligns rows ${align}`);
+}
 
 const cursorContext = {};
 vm.runInNewContext(`

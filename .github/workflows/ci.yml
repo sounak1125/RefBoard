@@ -120,3 +120,6 @@ jobs:
 
       - name: Pan zoom smoke
         run: npm run test:pan-zoom-smoke
+
+      - name: Align rows smoke
+        run: npm run test:align-rows-smoke

@@ -5,6 +5,7 @@ import {
   paddedSequence,
   reconcileSelectionOrder,
   resolveExportItems,
+  rowAlignShifts,
   sortItemsForExport,
 } from './export-order.mjs';
 
@@ -54,6 +55,47 @@ assert.deepEqual(
   ['r1c1', 'r1c2', 'r2c1', 'r2c2'],
   'top-to-bottom override should use y as the primary axis',
 );
+
+/* Row alignment moves whole rows like lines of text, so each row keeps its own
+   spacing. The case it exists for: two rows of scenes whose first items start
+   at different x. */
+const dxOf = result => Object.fromEntries(result.shifts.map(({ item, dx }) => [item.id, dx]));
+const scenes = [
+  { id: 'sc1', x: 60, y: 0, w: 200, h: 120 },
+  { id: 'sc2', x: 280, y: 0, w: 200, h: 120 },
+  { id: 'sc6', x: 0, y: 160, w: 180, h: 120 },
+  { id: 'sc7', x: 200, y: 160, w: 300, h: 120 },
+];
+assert.equal(rowAlignShifts(scenes, 'left', rect).rows, 2, 'two bands of items are two rows');
+assert.deepEqual(dxOf(rowAlignShifts(scenes, 'left', rect)), { sc1: -60, sc2: -60, sc6: 0, sc7: 0 },
+  'left: the row that starts further right slides left as one block');
+assert.deepEqual(dxOf(rowAlignShifts(scenes, 'right', rect)), { sc1: 20, sc2: 20, sc6: 0, sc7: 0 },
+  'right: every row ends at the selection right edge');
+assert.deepEqual(dxOf(rowAlignShifts(scenes, 'center', rect)), { sc1: -20, sc2: -20, sc6: 0, sc7: 0 },
+  'center: every row centres on the middle of the selection');
+
+const column = [
+  { id: 'top', x: 40, y: 0, w: 100, h: 80 },
+  { id: 'mid', x: 0, y: 100, w: 60, h: 80 },
+  { id: 'low', x: 25, y: 200, w: 200, h: 80 },
+];
+assert.deepEqual(dxOf(rowAlignShifts(column, 'left', rect)), { top: -40, mid: 0, low: -25 },
+  'items alone in their rows simply line up their left edges');
+assert.deepEqual(dxOf(rowAlignShifts(column, 'right', rect)), { top: 85, mid: 165, low: 0 });
+assert.deepEqual(dxOf(rowAlignShifts(column, 'center', rect)), { top: 22.5, mid: 82.5, low: -12.5 });
+
+assert.equal(rowAlignShifts(horizontal, 'left', rect).rows, 1,
+  'items side by side are one row, which has nothing to line up with');
+
+const marked = [
+  ...scenes,
+  { id: 'arrow', kind: 'arrow', x: -100, y: 20, w: 40, h: 60 },
+  { id: 'between', kind: 'ink', x: 100, y: 125, w: 50, h: 30 },
+];
+const annotated = rowAlignShifts(marked, 'left', rect, item => item.kind === 'arrow' || item.kind === 'ink');
+assert.equal(annotated.rows, 2, 'annotations never make a row of their own');
+assert.deepEqual(dxOf(annotated), { sc1: -60, sc2: -60, sc6: 0, sc7: 0, arrow: -60, between: 0 },
+  'an annotation rides with the row it sits on, never sets an edge, and stays put between rows');
 
 assert.deepEqual(
   reconcileSelectionOrder(['third', 'first'], horizontal, rect),
