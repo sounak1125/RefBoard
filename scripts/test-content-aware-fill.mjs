@@ -1,9 +1,16 @@
-/* Contract test for content-aware fill removal from the product.
+/* Contract test for the old PatchMatch content-aware fill, removed from the
+ * product in 2.0.7.
  *
  * The PatchMatch engine stays in the repo for developer tests; users must not
- * see the tool, launch the worker, or receive the engine in installers.
+ * see its tool, launch its worker, or receive the engine in installers.
  * Engine behaviour is covered by test-content-aware-{mask,sampling,patchmatch,
  * blend,composite,regressions,scenes}.mjs.
+ *
+ * Content-aware fill came back as a LaMa model that downloads on first use
+ * (scripts/inpaint-*.js, pinned by test-inpaint-contract.mjs), so this no
+ * longer forbids a fill tool or a model runtime outright: it forbids the old
+ * engine, its UI and its model plumbing coming back, and a model shipping
+ * inside the installer.
  */
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
@@ -30,16 +37,16 @@ const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url
   }
 
   for (const [label, source] of [['index.html', html], ['main.js', main], ['preload.js', preload]]) {
-    assert.doesNotMatch(source, /onnxruntime|ContentAwareInferenceQueue|ContentAwareModelManager/,
+    assert.doesNotMatch(source, /ContentAwareInferenceQueue|ContentAwareModelManager/,
       `${label} must not reference the removed model runtime`);
     assert.doesNotMatch(source, /content-aware-model-(status|reconcile|retry)|content-aware-analysis-(run|cancel)/,
       `${label} must not reference the removed model IPC`);
   }
   assert.ok(!pkg.dependencies['onnxruntime-node'], 'onnxruntime-node must not be a dependency');
   assert.ok(!Object.keys(pkg.dependencies).some(d => /onnx|torch|diffus/i.test(d)),
-    'no inference runtime may be a dependency');
-  assert.doesNotMatch(JSON.stringify(pkg.build), /onnxruntime|content-aware-model/,
-    'no model asset may be packaged');
+    'no inference runtime may be a dependency; the fill runtime ships as three extraResources files');
+  assert.doesNotMatch(JSON.stringify(pkg.build), /\.onnx\b|content-aware-model/,
+    'no model may be packaged: the fill model downloads on first use');
 }
 
 /* --- module set and load order (§30) ------------------------------------ */
@@ -69,19 +76,18 @@ const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url
   assert.match(worker, /timeBudgetMs/, 'a time budget bounds the run');
 }
 
-/* --- fill UI is gone from the product ----------------------------------- */
+/* --- the old fill UI stays gone from the product ------------------------ */
 {
-  assert.doesNotMatch(html, /id="btnFill"/, 'the fill toolbar button must be removed');
-  assert.doesNotMatch(html, /id="fillPreviewBar"/, 'the fill preview bar must be removed');
-  for (const id of ['fillApply', 'fillRetry', 'fillCancel', 'fillAutoFeather', 'fillFeather',
-    'fillQuality', 'fillSampling']) {
+  assert.doesNotMatch(html, /id="btnFill"/, 'the old fill toolbar button must be removed');
+  assert.doesNotMatch(html, /id="fillPreviewBar"/, 'the old fill preview bar must be removed');
+  // fillApply and fillCancel belong to the new tool's bar; the old bar's other controls stay gone.
+  for (const id of ['fillRetry', 'fillAutoFeather', 'fillFeather', 'fillQuality', 'fillSampling']) {
     assert.doesNotMatch(html, new RegExp(`id="${id}"`), `${id} must not exist`);
   }
-  assert.doesNotMatch(html, /CONTENT_AWARE_WORKER_URL/, 'the renderer must not wire a fill worker');
-  assert.doesNotMatch(html, /new Worker\([^)]*fill-worker/, 'fill must not spawn a worker');
+  assert.doesNotMatch(html, /CONTENT_AWARE_WORKER_URL/, 'the renderer must not wire the PatchMatch worker');
+  assert.doesNotMatch(html, /new Worker\([^)]*fill-worker/, 'the PatchMatch worker must not be spawned');
   assert.doesNotMatch(html, /toggleFillActive|setFillActive|startContentAwareFill|startContentAwareExpand/,
-    'fill session helpers must not remain in the renderer');
-  assert.doesNotMatch(html, /Content-aware fill/, 'help and shortcuts must not advertise fill');
+    'the old fill session helpers must not remain in the renderer');
   assert.doesNotMatch(html, /else if \(k === 'c' && !mod/, 'bare C must not toggle fill');
   assert.doesNotMatch(html, /else if \(k === 'c' && !e\.shiftKey\)/, 'bare C must not toggle fill');
   assert.match(html, /if \(mod && k === 'c'\)/, 'Ctrl+C copy must remain');

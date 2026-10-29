@@ -435,6 +435,7 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 #sDragOut:active{ cursor:grabbing; transform:none; }
 .tb[hidden]{ display:none; }
 #selbar:not(.has-images) .sel-images-only{ display:none; }
+#selbar:not(.one-image) .sel-one-image-only{ display:none; }
 #selbar:not(.has-taggable) .sel-taggable-only{ display:none; }
 #sTags.on{ background:color-mix(in srgb, var(--acc) 22%, transparent); color:#fff; }
 
@@ -2114,6 +2115,18 @@ body.board-active #whatsNewNotice{ display:none; }
   display:flex; align-items:center; gap:10px; max-width:min(92vw, 480px);
 }
 #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+/* ---------- content-aware fill ---------- */
+/* Above the toast's line, so a notice never covers Apply. */
+#fillBar{
+  position:fixed; left:50%; bottom:72px; transform:translateX(-50%);
+  display:none; gap:6px; padding:5px 5px 5px 14px;
+  font-size:12.5px; color:var(--txt); z-index:94;
+}
+#fillBar.show{ display:flex; }
+#fillBar .fill-status{ margin-right:8px; white-space:nowrap; }
+#fillBar .btn{ padding:5px 12px; }
+#fillBar .btn[disabled]{ opacity:.45; pointer-events:none; }
 #toast.actionable{ pointer-events:auto; }
 #toast .toast-action{
   flex-shrink:0; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06);
@@ -3477,6 +3490,9 @@ try {
   <button class="tb sel-taggable-only" id="sTags" data-tip="Labels" aria-label="Edit labels for selected items" aria-expanded="false" aria-controls="tagPanel">
     <svg viewBox="0 0 24 24"><path d="M3.5 11.2V5.5a2 2 0 0 1 2-2h5.7a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-5.7 5.7a2 2 0 0 1-2.8 0L4.1 12.6a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.5"/></svg>
   </button>
+  <button class="tb sel-one-image-only" id="sFill" data-tip="Remove object  (content-aware fill)" aria-label="Remove an object with content-aware fill">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="13" rx="7" ry="5" stroke-dasharray="2.6 2.4"/><path d="M6.5 17.6 5 21"/><path d="M18.5 2.5v4.5M16.25 4.75h4.5"/></svg>
+  </button>
   <span class="sep sel-multi-only"></span>
   <button class="tb sel-multi-only" id="sAlignH" data-tip="Align in a row">
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3626,6 +3642,11 @@ try {
 </button>
 <div id="splitDivider" aria-hidden="true"></div>
 <div id="toast"></div>
+<div id="fillBar" class="pill" role="status" aria-live="polite">
+  <span class="fill-status" id="fillStatus"></span>
+  <button type="button" class="btn" id="fillCancel">Cancel</button>
+  <button type="button" class="btn primary" id="fillApply" disabled>Apply</button>
+</div>
 <div id="ctxmenu"></div>
 <div id="ctxSub"></div>
 <div id="titlebarPinMenu" role="menu" aria-labelledby="titlebarPin">
@@ -4193,6 +4214,7 @@ import {
 } from './scripts/export-order.mjs';
 import { buildDragOutNames, dragOutStem } from './scripts/drag-out.mjs';
 import { exportEncoding } from './scripts/export-encoding.mjs';
+import { inpaintGrowPx, isUsableLasso, lassoBounds, cropRegion, appendLassoPoint } from './scripts/inpaint-geometry.mjs';
 import {
   annotationHaloColor,
   arrowBounds,
@@ -7918,6 +7940,8 @@ async function applyUndoEntry(entry, direction) {
   const gen = ++historyApplySeq;
   discardNoteEditForBoardHistory();
   cancelDrawSession();
+  // Board history moving underneath an open fill would preview stale pixels.
+  cancelFill();
   applyBoardDelta(entry, direction);
   const ref = entry.bitmap ? entry.bitmap[direction] : null;
   if (ref) {
@@ -8423,6 +8447,399 @@ function cancelDrawSession() {
   releaseDrawSessionCanvases();
 }
 
+/* ================= content-aware fill ================= */
+/* Remove an object from one image: lasso it, LaMa repaints the hole in a worker
+   (scripts/inpaint-worker.mjs, WebGPU), the result previews in place, and Apply
+   commits it as one pixel edit and one undo step. Several lassos can stack
+   before Apply, each filling on top of the last; Ctrl+Z steps back one. The
+   model downloads once on first use (main process, scripts/inpaint-model.js). */
+let fillSession = null;
+let inpaintWorker = null;
+let inpaintWorkerLoad = null;
+let inpaintIdleTimer = 0;
+let inpaintSeq = 0;
+const inpaintPending = new Map();
+let webGpuCheck = null;
+// A loaded model holds about 1 GB; give it back once the tool sits unused.
+const INPAINT_IDLE_RELEASE_MS = 90000;
+
+function inpaintCall(message, transfer = []) {
+  const id = ++inpaintSeq;
+  return new Promise((resolve, reject) => {
+    inpaintPending.set(id, { resolve, reject });
+    inpaintWorker.postMessage({ ...message, id }, transfer);
+  });
+}
+
+function releaseInpaintWorker(reason = 'The fill model was released') {
+  clearTimeout(inpaintIdleTimer);
+  inpaintIdleTimer = 0;
+  inpaintWorker?.terminate();
+  inpaintWorker = null;
+  inpaintWorkerLoad = null;
+  for (const { reject } of inpaintPending.values()) reject(new Error(reason));
+  inpaintPending.clear();
+}
+
+function ensureInpaintWorker(status) {
+  clearTimeout(inpaintIdleTimer);
+  inpaintIdleTimer = 0;
+  if (!inpaintWorkerLoad) {
+    inpaintWorker = new Worker('./scripts/inpaint-worker.mjs', { type: 'module' });
+    inpaintWorker.onmessage = ({ data }) => {
+      const pending = inpaintPending.get(data?.id);
+      if (!pending) return;
+      inpaintPending.delete(data.id);
+      if (data.type === 'error') pending.reject(new Error(data.message));
+      else pending.resolve(data);
+    };
+    inpaintWorker.onerror = e => releaseInpaintWorker(e?.message || 'The fill worker stopped');
+    const load = inpaintCall({ type: 'load', runtimeUrl: status.runtimeUrl, modelUrl: status.modelUrl });
+    inpaintWorkerLoad = load;
+    load.catch(() => { if (inpaintWorkerLoad === load) releaseInpaintWorker(); });
+  }
+  return inpaintWorkerLoad;
+}
+
+function scheduleInpaintRelease() {
+  clearTimeout(inpaintIdleTimer);
+  inpaintIdleTimer = inpaintWorker ? setTimeout(() => releaseInpaintWorker(), INPAINT_IDLE_RELEASE_MS) : 0;
+}
+
+function hasWebGpu() {
+  webGpuCheck ||= (async () => {
+    try { return !!(navigator.gpu && await navigator.gpu.requestAdapter()); } catch { return false; }
+  })();
+  return webGpuCheck;
+}
+
+function syncFillBar() {
+  const s = fillSession;
+  $('#fillBar').classList.toggle('show', !!s);
+  if (!s) return;
+  $('#fillStatus').textContent = s.status;
+  $('#fillApply').disabled = !s.history.length || s.busy || s.applying;
+}
+
+function setFillStatus(s, status) {
+  s.status = status;
+  if (fillSession === s) syncFillBar();
+}
+
+const fillIdleStatus = s => (s.history.length
+  ? 'Lasso more to remove, or Apply  ·  Ctrl+Z steps back'
+  : 'Draw around what to remove');
+
+async function startFill(it) {
+  if (!it || !isImageItem(it) || fillSession) return;
+  const api = window.RefBoardAPI;
+  if (!api?.inpaintModelStatus) { toast('Content-aware fill needs the RefBoard desktop app'); return; }
+  if (!await hasWebGpu()) {
+    toast('Content-aware fill needs a graphics card with WebGPU, which this computer does not offer', { duration: 6000 });
+    return;
+  }
+  let status = await api.inpaintModelStatus();
+  if (!status.ready && !status.downloading) {
+    const ok = await showConfirm({
+      title: 'Download content-aware fill',
+      message: `Removing objects uses a ${Math.round(status.bytes / 1e6)} MB model. It downloads once and stays on this computer.`,
+      confirmLabel: 'Download',
+      danger: false,
+    });
+    if (!ok) return;
+  }
+  // The board may have moved on while the dialog was open.
+  if (!state.items.includes(it) || fillSession) return;
+
+  // One tool at a time, the way draw and annotate hand over to each other.
+  if (drawActive) setDrawActive(false);
+  if (arrowTool) setArrowTool(arrowTool);
+  boardTool = 'select';
+  syncBoardToolUi();
+  tool = null;
+  exitCropMode();
+  finishNoteEdit();
+  const s = {
+    itemId: it.id, imgId: it.imgId, w: 0, h: 0, work: null, lasso: null,
+    history: [], version: 0, busy: false, applying: false, model: null, status: '',
+  };
+  fillSession = s;
+  state.sel = new Set([it.id]);
+  updateSelBar();
+  canvas.style.cursor = 'crosshair';
+  invalidate();
+
+  if (!status.ready) {
+    setFillStatus(s, 'Downloading the fill model…');
+    const result = await api.downloadInpaintModel();
+    if (fillSession !== s) return;
+    if (!result.ok) {
+      endFill();
+      toast(result.cancelled ? 'Download canceled' : `The fill model did not download: ${result.error}`, { duration: 6000 });
+      return;
+    }
+    status = await api.inpaintModelStatus();
+    if (fillSession !== s) return;
+  }
+  s.model = status;
+  setFillStatus(s, 'Loading the fill model…');
+  ensureInpaintWorker(status).then(() => {
+    if (fillSession === s && !s.busy) setFillStatus(s, fillIdleStatus(s));
+  }, err => {
+    if (fillSession !== s) return;
+    endFill();
+    toast(`Content-aware fill could not start: ${err.message}`, { duration: 6000 });
+  });
+}
+
+window.RefBoardAPI?.onInpaintModelProgress?.(p => {
+  const s = fillSession;
+  if (!s || s.model || !p?.total) return;
+  const mb = n => Math.round(n / 1e6);
+  setFillStatus(s, `Downloading the fill model… ${Math.floor((p.received / p.total) * 100)}%  (${mb(p.received)} of ${mb(p.total)} MB)`);
+});
+
+/* Like boardPointToBitmap, without rejecting points off the item: a lasso may
+   start or wander past the image's edge. */
+function boardPointToSource(it, bx, by) {
+  const im = images.get(it.imgId);
+  let [lx, ly] = boardToItemLocal(it, bx, by);
+  if (it.flipX) lx = it.w - lx;
+  if (it.flipY) ly = it.h - ly;
+  const cr = cropOf(it);
+  return [cr.l * im.w + (lx / it.w) * (cr.r - cr.l) * im.w, cr.t * im.h + (ly / it.h) * (cr.b - cr.t) * im.h];
+}
+
+/* The hole, white on transparent, in the region's own pixels: the lasso filled
+   and stroked twice `grow` wide (the same as growing it by `grow`), and kept to
+   the part of the image the item shows, so a cropped-away edge never changes. */
+function fillMaskBitmap(it, points, grow, region) {
+  const im = images.get(it.imgId);
+  const cr = cropOf(it);
+  const g = new OffscreenCanvas(region.w, region.h).getContext('2d');
+  g.translate(-region.x, -region.y);
+  g.beginPath();
+  g.rect(cr.l * im.w, cr.t * im.h, (cr.r - cr.l) * im.w, (cr.b - cr.t) * im.h);
+  g.clip();
+  g.beginPath();
+  points.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+  g.closePath();
+  g.fillStyle = '#fff';
+  g.strokeStyle = '#fff';
+  g.lineJoin = 'round';
+  g.lineWidth = grow * 2;
+  g.fill();
+  g.stroke();
+  return g.canvas.transferToImageBitmap();
+}
+
+function beginFillLasso(sx, sy) {
+  const s = fillSession;
+  if (!s || s.busy || s.applying || !s.model) return false;
+  s.lasso = [toBoard(sx, sy)];
+  mode = { type: 'fillLasso', sx, sy };
+  invalidate();
+  return true;
+}
+
+function extendFillLasso(sx, sy) {
+  if (fillSession?.lasso && appendLassoPoint(fillSession.lasso, toBoard(sx, sy), 2 / state.view.s)) invalidate();
+}
+
+async function runFill(s) {
+  const lasso = s.lasso;
+  const it = byId(s.itemId);
+  const im = it && images.get(it.imgId);
+  if (!im || it.imgId !== s.imgId) { cancelFill(); return; }
+  const points = lasso.map(([bx, by]) => boardPointToSource(it, bx, by));
+  if (!isUsableLasso(points)) { s.lasso = null; invalidate(); return; }
+  s.busy = true;
+  setFillStatus(s, 'Removing…');
+  updateCursor(mouse.x, mouse.y);
+  try {
+    await ensureInpaintWorker(s.model);
+    if (fillSession !== s) return;
+    if (!s.work) {
+      await ensureFullBitmap(im);
+      if (fillSession !== s) return;
+      if (!im.bitmap) throw new Error('the image could not be read');
+      s.w = im.w;
+      s.h = im.h;
+      s.work = document.createElement('canvas');
+      s.work.width = s.w;
+      s.work.height = s.h;
+      s.work.getContext('2d').drawImage(im.bitmap, 0, 0);
+    }
+    const grow = inpaintGrowPx(s.w, s.h);
+    const bounds = lassoBounds(points, grow, s.w, s.h);
+    if (!bounds) return;
+    const region = cropRegion(bounds, s.w, s.h);
+    const before = await createImageBitmap(s.work, region.x, region.y, region.w, region.h);
+    const crop = await createImageBitmap(s.work, region.x, region.y, region.w, region.h);
+    const mask = fillMaskBitmap(it, points, grow, region);
+    let result;
+    try {
+      result = await inpaintCall({ type: 'fill', crop, mask }, [crop, mask]);
+    } catch (err) {
+      before.close();
+      throw err;
+    }
+    if (fillSession !== s) { result.bitmap.close(); before.close(); return; }
+    s.work.getContext('2d').drawImage(result.bitmap, region.x, region.y);
+    result.bitmap.close();
+    s.history.push({ region, before });
+    s.version++;
+  } catch (err) {
+    if (fillSession === s) toast(`Content-aware fill failed: ${err.message}`, { duration: 6000 });
+  } finally {
+    if (fillSession === s) {
+      s.busy = false;
+      s.lasso = null;
+      setFillStatus(s, fillIdleStatus(s));
+      updateCursor(mouse.x, mouse.y);
+      invalidate();
+    }
+  }
+}
+
+function finishFillLasso() {
+  const s = fillSession;
+  if (s?.lasso) void runFill(s);
+}
+
+/* Ctrl+Z inside the tool takes back the last fill, not the last board edit. */
+function stepBackFill() {
+  const s = fillSession;
+  const last = s && !s.busy && !s.applying ? s.history.pop() : null;
+  if (!last) return false;
+  s.work.getContext('2d').drawImage(last.before, last.region.x, last.region.y);
+  last.before.close();
+  s.version++;
+  setFillStatus(s, fillIdleStatus(s));
+  invalidate();
+  return true;
+}
+
+/* The same hand-off as commitDrawSession: new bytes published before the pixel
+   version moves, so no detail job can cache the old pixels under the new one. */
+async function commitFillPixels(im, source) {
+  im.pixelUpdateInProgress = true;
+  imageResidency.pin(im);
+  let nextBitmap = null;
+  try {
+    const blob = await new Promise(res => source.toBlob(res, im.type || 'image/png'));
+    if (!blob) throw new Error('the filled image could not be encoded');
+    nextBitmap = await createImageBitmap(source);
+    if (im.bitmap?.close) im.bitmap.close();
+    im.decodePromise = null;
+    im.decodeFailed = false;
+    im.bitmap = nextBitmap;
+    nextBitmap = null;
+    touchFullBitmap(im);
+    im.blob = blob;
+    im.blobSize = blob.size;
+    im.type = blob.type || im.type || 'image/png';
+    im.diskStored = false;
+    invalidateImageLods(im, { bumpVersion: true });
+    markImagePixelsChanged(im);
+    await replaceStableImageProxy(im, blob);
+    await persistImageBlob(im, blob);
+  } finally {
+    try { nextBitmap?.close?.(); } catch (e) {}
+    im.pixelUpdateInProgress = false;
+    imageResidency.unpin(im);
+    scheduleFullBitmapEviction();
+    invalidate();
+  }
+}
+
+async function applyFill() {
+  const s = fillSession;
+  if (!s || s.busy || s.applying || !s.history.length) return;
+  s.applying = true;
+  setFillStatus(s, 'Applying…');
+  const it = byId(s.itemId);
+  let prepared = null;
+  try {
+    if (!it || it.imgId !== s.imgId) throw new Error('the image changed while it was being edited');
+    prepared = await prepareExclusiveImageEdit(it);
+    if (!prepared) throw new Error('the image is not available');
+    const undoBlob = await getImageBlob(prepared.im);
+    if (!undoBlob) throw new Error('the image could not be read');
+    if (fillSession !== s || !state.items.includes(it)) {
+      await discardDetachedImageEdit(prepared);
+      return;
+    }
+    // A duplicate shares its source pixels; the edited one gets its own copy first.
+    if (prepared.detached) it.imgId = prepared.detachedImgId;
+    pushUndo({ imgId: it.imgId, blob: undoBlob });
+    await commitFillPixels(prepared.im, s.work);
+    scheduleSave();
+    const areas = s.history.length;
+    endFill();
+    toast(areas > 1 ? `Removed ${areas} areas` : 'Removed');
+  } catch (err) {
+    console.error('[fill] apply failed:', err);
+    if (prepared?.detached && it?.imgId === prepared.sourceImgId) await discardDetachedImageEdit(prepared);
+    if (fillSession === s) {
+      s.applying = false;
+      setFillStatus(s, 'The fill could not be applied — try Apply again, or Cancel');
+    }
+    toast(`Could not apply the fill: ${err.message}`, { duration: 6000 });
+  }
+}
+
+function endFill() {
+  const s = fillSession;
+  if (!s) return;
+  fillSession = null;
+  if (mode?.type === 'fillLasso') mode = null;
+  for (const step of s.history) step.before.close();
+  s.history = [];
+  s.work = null;
+  syncFillBar();
+  scheduleInpaintRelease();
+  updateCursor(mouse.x, mouse.y);
+  invalidate();
+}
+
+function cancelFill() {
+  const s = fillSession;
+  if (!s) return;
+  if (!s.model) window.RefBoardAPI?.cancelInpaintModelDownload?.();
+  endFill();
+}
+
+/* The lasso, in screen space over everything: closed and dashed while the fill
+   it started is running. */
+function drawFillLasso() {
+  const pts = fillSession?.lasso;
+  if (!pts || pts.length < 2) return;
+  const { tx, ty, s } = state.view;
+  const drawing = mode?.type === 'fillLasso';
+  ctx.save();
+  ctx.beginPath();
+  pts.forEach(([bx, by], i) => (i ? ctx.lineTo(bx * s + tx, by * s + ty) : ctx.moveTo(bx * s + tx, by * s + ty)));
+  if (!drawing) {
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(90,162,255,.16)';
+    ctx.fill();
+  }
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,.55)';
+  ctx.stroke();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = ACC;
+  if (!drawing) ctx.setLineDash([5, 4]);
+  ctx.stroke();
+  ctx.restore();
+}
+
+$('#sFill').addEventListener('click', () => void startFill(selectedImages()[0]));
+$('#fillCancel').addEventListener('click', cancelFill);
+$('#fillApply').addEventListener('click', () => void applyFill());
+
 async function addBlankCanvas(ratio, atBoardPos) {
   const size = BLANK_CANVAS_SIZES[ratio];
   if (!size) return;
@@ -8784,6 +9201,7 @@ function setArrowTool(style) {
     closeBrushDrawer();
     tool = null;
     exitCropMode();
+    cancelFill();
     finishNoteEdit();
   }
   syncToolbarEdgeIcon();
@@ -8808,6 +9226,7 @@ function setDrawActive(on) {
     arrowTool = null;
     tool = null;
     exitCropMode();
+    cancelFill();
     finishNoteEdit();
   } else {
     drawPrepareSeq++;
@@ -12712,6 +13131,7 @@ function toggleBoardGray() {
 
 function enterCropMode(it) {
   if (!it || !isImageItem(it)) { toast('Select one image to crop'); return; }
+  cancelFill();
   state.sel = new Set([it.id]);
   cropItemId = it.id;
   tool = null;
@@ -12734,10 +13154,11 @@ function syncCropWithSelection() {
 function activateSelectMode() {
   boardTool = 'select';
   syncBoardToolUi();
-  const was = !!(arrowTool || drawActive || tool === 'eyedropper' || cropItemId);
+  const was = !!(arrowTool || drawActive || tool === 'eyedropper' || cropItemId || fillSession);
   arrowTool = null;
   tool = null;
   exitCropMode();
+  cancelFill();
   if (drawActive) setDrawActive(false);
   else syncDrawUi();
   if (was) {
@@ -16289,6 +16710,17 @@ function drawBoardItem(g, it, opts = {}) {
       extent: Math.max(im.w, im.h),
       im,
     };
+  } else if (fillSession?.itemId === it.id && fillSession.work && !opts.pickSurface) {
+    // The content-aware fill preview, until Apply or Cancel.
+    surface = {
+      key: `fill:${it.id}:${fillSession.version}`,
+      kind: 'draw',
+      bitmap: fillSession.work,
+      sourceScaleX: 1,
+      sourceScaleY: 1,
+      extent: Math.max(im.w, im.h),
+      im,
+    };
   } else if (opts.pickSurface) {
     // Composites choose their own surface (previewSurfaceFor). They must not
     // go through the display pipeline, which would queue decodes for the view.
@@ -16662,6 +17094,7 @@ function draw() {
     ctx.setLineDash([]);
   }
   drawSnapGuides();
+  drawFillLasso();
 
 
   // Replacement surfaces are installed atomically during drawing. Once the
@@ -16677,6 +17110,7 @@ function draw() {
   if (cropItemId) bits.push('crop mode');
   if (tool === 'eyedropper') bits.push('eyedropper');
   if (drawActive) bits.push('draw');
+  if (fillSession) bits.push('remove object');
   if (arrowTool) bits.push(ANNOT_TOOL_LABELS[arrowTool] || 'annotate');
   drawMinimap();
 
@@ -17700,6 +18134,12 @@ canvas.addEventListener('pointerdown', async e => {
     }
   }
 
+  if (fillSession && e.button === 0 && !(spaceDown || altDown || e.altKey)) {
+    // In the fill tool a left drag is always a lasso; panning stays on Space, Alt and the other buttons.
+    beginFillLasso(sx, sy);
+    return;
+  }
+
   if (drawActive && e.button === 0 && !(spaceDown || altDown || e.altKey)) {
     const hit = itemAt(sx, sy);
     if (hit && isImageItem(hit)) {
@@ -18153,6 +18593,8 @@ window.addEventListener('pointermove', e => {
     }
     scheduleSave();
     invalidate();
+  } else if (mode.type === 'fillLasso') {
+    extendFillLasso(sx, sy);
   }
 });
 
@@ -18162,6 +18604,8 @@ window.addEventListener('pointercancel', () => {
   else cancelDrawSession();
   // A pen lifted out of range still leaves what it wrote.
   if (mode?.type === 'inkDraw') commitInkStroke(mode);
+  // A lasso cut short is dropped, not filled.
+  if (mode?.type === 'fillLasso' && fillSession) fillSession.lasso = null;
   mode = null;
   marquee = null;
   dropTargetGroupId = null;
@@ -18236,6 +18680,8 @@ window.addEventListener('pointerup', e => {
     commitInkStroke(mode);
   } else if (mode.type === 'draw') {
     commitDrawSessionAndSave();
+  } else if (mode.type === 'fillLasso') {
+    finishFillLasso();
   }
   const restoreIdleSelectionUi = mode.type === 'rotate';
   // Whatever the gesture changed, the index and workspace bounds catch up now.
@@ -18255,6 +18701,7 @@ window.addEventListener('blur', () => {
   if (drawSession) commitDrawSessionAndSave();
   else cancelDrawSession();
   if (mode?.type === 'inkDraw') commitInkStroke(mode);
+  if (mode?.type === 'fillLasso' && fillSession) fillSession.lasso = null;
   mode = null; marquee = null; dropTargetGroupId = null; releaseSnapSession(); invalidate();
 });
 
@@ -18323,6 +18770,7 @@ function inkCursorCss() {
 }
 
 function updateCursor(sx, sy) {
+  if (fillSession) { canvas.style.cursor = fillSession.busy ? 'progress' : 'crosshair'; return; }
   if (drawActive) { canvas.style.cursor = drawModeCursor(); return; }
   if (isInkTool(arrowTool)) { canvas.style.cursor = inkCursorCss(); return; }
   if (arrowTool) { canvas.style.cursor = 'crosshair'; return; }
@@ -18538,6 +18986,7 @@ function showMenu(x, y, hitItem) {
     }
     if (sel === 1 && isImageItem(selItems[0])) {
       entries.push({ l: 'Extract palette', f: () => void extractPaletteFromItem(selItems[0]) });
+      entries.push({ l: 'Remove object…', f: () => void startFill(selItems[0]) });
     }
     const sourceUrl = sel === 1 ? itemSourceUrl(selItems[0]) : '';
     if (sourceUrl) {
@@ -19157,6 +19606,18 @@ window.addEventListener('keydown', e => {
     else if (e.key === 'F2') { e.preventDefault(); renameFocusedLandingCard(); }
     else if (k === 'escape' && recentSearchQuery) { e.preventDefault(); setLandingSearchQuery('', { immediate: true }); }
     return;
+  }
+
+  if (fillSession) {
+    if (k === 'escape') {
+      e.preventDefault();
+      // Esc mid-lasso drops the lasso; otherwise it leaves the tool, discarding the preview.
+      if (mode?.type === 'fillLasso') { mode = null; fillSession.lasso = null; invalidate(); }
+      else cancelFill();
+      return;
+    }
+    if (k === 'enter' && !mod) { e.preventDefault(); void applyFill(); return; }
+    if (mod && k === 'z' && !e.shiftKey) { e.preventDefault(); stepBackFill(); return; }
   }
 
   if (k === 'escape') {
@@ -19824,6 +20285,9 @@ function updateSelBar() {
   bar.classList.toggle('images-multi', selectedImages().length >= 2);
   bar.classList.toggle('has-images', n > 0 && selectionHasDragOutImages());
   bar.classList.toggle('has-taggable', n > 0 && selectedTaggableItems().length > 0);
+  bar.classList.toggle('one-image', n === 1 && selectedImages().length === 1);
+  // The fill tool works on one image; selecting anything else leaves it.
+  if (fillSession && !(n === 1 && state.sel.has(fillSession.itemId))) cancelFill();
   // The panel's selection half follows whatever is selected, including nothing.
   if (tagPanelEl?.classList.contains('open')) renderTagSelection();
   bar.classList.toggle('group-sel', !!grp);
@@ -21836,6 +22300,18 @@ window.RefBoard = {
   getImageBlobForTest: getImageBlob,
   // A getter, because loadAppSettings() reassigns the object wholesale.
   get appSettings() { return appSettings; },
+  /* Content-aware fill hooks: the tool is a state machine and a preview canvas,
+     neither of which a harness can read off the screen. */
+  fillStateForTest: () => fillSession && {
+    itemId: fillSession.itemId,
+    status: fillSession.status,
+    busy: fillSession.busy,
+    applying: fillSession.applying,
+    ready: !!fillSession.model,
+    fills: fillSession.history.length,
+    lasso: fillSession.lasso?.length || 0,
+  },
+  get inpaintWorkerLoadedForTest() { return !!inpaintWorker; },
   /* Geometry hooks: a harness aiming at a resize handle has to use the same
      rect handleAt() does, or it misses. A group's presented rect is padded
      chrome, not its stored one. */

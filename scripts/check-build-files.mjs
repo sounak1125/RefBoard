@@ -20,6 +20,9 @@ function extractLocalSpecifiers(source) {
     // renderer's ESM graph and nothing else, which is how 2.0.11 shipped an
     // asar with no scripts/recent-works.js in it and every test still green.
     /\brequire\s*\(\s*(['"])(\.\.?\/[^'"]+)\1\s*\)/g,
+    // A worker script is loaded by URL, not imported, so neither pattern above
+    // sees it; without this the content-aware fill worker could go unpackaged.
+    /\bnew\s+(?:Shared)?Worker\s*\(\s*(['"])(\.\.?\/[^'"]+)\1/g,
   ];
   for (const pattern of patterns) {
     for (const match of source.matchAll(pattern)) found.add(match[2]);
