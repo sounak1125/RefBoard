@@ -1,13 +1,31 @@
 {
-  "headline": "Steady panning when zoomed in",
-  "summary": "The board stays under your cursor while you drag it, even if you zoom at the same time.",
+  "headline": "Remove objects from images",
+  "summary": "Draw around anything in an image and RefBoard paints it out from what is around it. Plus new alignment options, and updates that reopen the app.",
   "sections": {
-    "new": [],
-    "improved": [],
+    "new": [
+      {
+        "title": "Remove object",
+        "description": "Select an image, choose Remove object in the selection bar or the right-click menu, and draw around what should go. Remove as many things as you like, then press Enter to apply or Esc to cancel. The first use downloads a 208 MB model once, and it needs a graphics card with WebGPU."
+      },
+      {
+        "title": "Align rows left, center or right",
+        "description": "Select rows of items and line up their starts, middles or ends on one vertical line."
+      },
+      {
+        "title": "Label alignment",
+        "description": "Labels under items can sit on the left, in the center or on the right. Choose it in Labels, under Display."
+      }
+    ],
+    "improved": [
+      {
+        "title": "Security update",
+        "description": "RefBoard now runs on Electron 44.9.3, which no longer trusts a compromised certificate authority."
+      }
+    ],
     "fixed": [
       {
-        "title": "Board no longer jumps while panning",
-        "description": "Scrolling to zoom while you drag the board no longer throws it off to one side. This was most noticeable when zoomed in a lot, or when panning with the middle mouse button."
+        "title": "RefBoard reopens after an update",
+        "description": "After Restart to update, the update installs and RefBoard comes back on its own."
       }
     ]
   }
