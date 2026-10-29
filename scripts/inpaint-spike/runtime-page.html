@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>LaMa runtime spike</title>
+<script type="module">
+  // Runs one onnxruntime-web variant in a module worker and reports back.
+  const params = new URLSearchParams(location.search);
+  const worker = new Worker(new URL('./runtime-worker.mjs', location.href), { type: 'module' });
+  worker.onmessage = ({ data }) => {
+    if (data.type === 'log') console.log(data.text);
+    else if (data.type === 'done') window.spike.report({ ...data.result, pageCrossOriginIsolated: self.crossOriginIsolated });
+  };
+  worker.onerror = e => window.spike.report({ variant: params.get('variant'), error: `worker error: ${e.message}` });
+  worker.postMessage(Object.fromEntries(params));
+</script>

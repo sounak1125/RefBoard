@@ -17,3 +17,4 @@ probe-*.json
 stress-out/
 stress-out-smoke/
 content-aware-out/
+inpaint-lab/

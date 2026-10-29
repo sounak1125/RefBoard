@@ -84,8 +84,10 @@
     "@resvg/resvg-js": "^2.6.2",
     "electron": "^44.9.3",
     "electron-builder": "^26.15.3",
-    "sharp": "^0.35.5",
-    "png-to-ico": "^3.0.2"
+    "onnxruntime-node": "^1.31.1",
+    "onnxruntime-web": "^1.31.1",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.5"
   },
   "build": {
     "appId": "com.sounak.refboard",
