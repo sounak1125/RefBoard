@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, shell, nativeImage, WebContentsView, View, screen } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, shell, nativeImage, WebContentsView, View, screen, net } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const { replaceBoardFile, recoverBoardFileIfMissing, cleanupBoardBackup } = require('./scripts/board-file-replace');
@@ -8,6 +8,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const {
   sidecarStorePath, readSidecarIndex, writeSidecarIndex, openSidecarStore, readSidecarImage,
@@ -21,6 +22,7 @@ const zorder = require('./scripts/win32-zorder');
 const { refreshShellIcons } = require('./scripts/win32-shell-notify');
 const { capRecentWorks, pinsRemaining, sortRecentWorks } = require('./scripts/recent-works');
 const { writeJsonAtomic } = require('./scripts/atomic-json');
+const { INPAINT_MODEL, findModel, downloadModel } = require('./scripts/inpaint-model');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -717,6 +719,22 @@ async function saveRecentWorks(list) {
 function whatsNewStorePath() {
   return path.join(app.getPath('userData'), 'whats-new.json');
 }
+
+/* The three onnxruntime-web files the content-aware fill worker loads ship as
+   extraResources, outside the asar; a dev run reads them from node_modules. */
+function inpaintRuntimeDir() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'onnxruntime-web')
+    : path.join(__dirname, 'node_modules', 'onnxruntime-web', 'dist');
+}
+
+/* A dev run also accepts the bake-off's copy of the model, so the tool can be
+   tried before the model is published to a release. */
+function inpaintDevModelCandidates() {
+  return app.isPackaged ? [] : [path.join(__dirname, 'inpaint-lab', 'models', 'lama-carve', INPAINT_MODEL.file)];
+}
+
+let inpaintDownload = null;
 
 function changelogPath() {
   return path.join(__dirname, 'changelog.json');
@@ -1999,6 +2017,55 @@ function setupIpc() {
     productName: app.getName(),
     isPackaged: app.isPackaged,
   }));
+
+  /* Content-aware fill. The renderer's worker loads the onnxruntime-web files
+     and the model straight from disk, so all main hands it is where they are,
+     and the one-time model download. */
+  ipcMain.handle('inpaint-model-status', async () => {
+    const found = await findModel({ userDataDir: app.getPath('userData'), extraCandidates: inpaintDevModelCandidates() });
+    return {
+      ready: !!found,
+      modelUrl: found ? pathToFileURL(found).href : null,
+      runtimeUrl: pathToFileURL(inpaintRuntimeDir() + path.sep).href,
+      bytes: INPAINT_MODEL.bytes,
+      downloading: !!inpaintDownload,
+    };
+  });
+
+  ipcMain.handle('inpaint-model-download', async event => {
+    if (!inpaintDownload) {
+      const controller = new AbortController();
+      const listeners = new Set();
+      let lastSent = 0;
+      const promise = downloadModel({
+        userDataDir: app.getPath('userData'),
+        fetchImpl: (url, init) => net.fetch(url, init),
+        signal: controller.signal,
+        onProgress: progress => {
+          const now = Date.now();
+          if (now - lastSent < 100 && progress.received < progress.total) return;
+          lastSent = now;
+          for (const wc of listeners) {
+            if (!wc.isDestroyed()) wc.send('inpaint-model-progress', progress);
+          }
+        },
+      }).finally(() => { inpaintDownload = null; });
+      inpaintDownload = { promise, controller, listeners };
+    }
+    // A second window asking while one download runs joins it.
+    inpaintDownload.listeners.add(event.sender);
+    try {
+      const file = await inpaintDownload.promise;
+      return { ok: true, modelUrl: pathToFileURL(file).href };
+    } catch (err) {
+      return { ok: false, cancelled: err?.name === 'AbortError', error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('inpaint-model-cancel', () => {
+    inpaintDownload?.controller.abort();
+    return { ok: true };
+  });
 
   ipcMain.handle('whats-new-check', () => evaluateWhatsNew());
   ipcMain.handle('whats-new-current', () => getCurrentWhatsNew());

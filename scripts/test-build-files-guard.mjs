@@ -38,12 +38,17 @@ assert.match(
 // guard skipping them would defeat the point of matching require() at all.
 assert.match(guard, /function resolveModuleFile/, 'the guard must resolve extensionless CommonJS specifiers');
 
+// Worker scripts are loaded by URL. A guard blind to `new Worker('./...')` would
+// pass a build whose content-aware fill worker was never packaged.
+assert.match(guard, /new\\s\+\(\?:Shared\)\?Worker/, 'the guard must follow new Worker() script URLs');
+
 function localSpecifiers(source) {
   const found = new Set();
   const patterns = [
     /\b(?:import|export)\s+[^;]*?\s+from\s*(['"])(\.\.?\/[^'"]+)\1/g,
     /\bimport\s*\(\s*(['"])(\.\.?\/[^'"]+)\1\s*\)/g,
     /\brequire\s*\(\s*(['"])(\.\.?\/[^'"]+)\1\s*\)/g,
+    /\bnew\s+(?:Shared)?Worker\s*\(\s*(['"])(\.\.?\/[^'"]+)\1/g,
   ];
   for (const pattern of patterns) {
     for (const match of source.matchAll(pattern)) found.add(match[2]);

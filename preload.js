@@ -78,4 +78,8 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   reportPaneClick: () => ipcRenderer.send('pane-select'),
   updaterInit: (opts) => ipcRenderer.invoke('updater-init', opts),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  inpaintModelStatus: () => ipcRenderer.invoke('inpaint-model-status'),
+  downloadInpaintModel: () => ipcRenderer.invoke('inpaint-model-download'),
+  cancelInpaintModelDownload: () => ipcRenderer.invoke('inpaint-model-cancel'),
+  onInpaintModelProgress: (cb) => ipcRenderer.on('inpaint-model-progress', (_e, progress) => cb(progress)),
 });
