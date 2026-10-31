@@ -104,7 +104,7 @@ async function drawStroke(win, itemId, {
       const debug = await win.webContents.executeJavaScript(`(() => ({
         pointer: window.__imageEditIsolationSmoke.lastPointer,
         report: window.__imageEditIsolationSmoke.report(),
-        drawActive: document.querySelector('#drawModeBtn').classList.contains('on'),
+        drawActive: (document.querySelector('#drawPen').classList.contains('on') || document.querySelector('#drawEraser').classList.contains('on')),
         visibility: document.visibilityState,
         boardClass: document.querySelector('#board').className,
         boardPointerEvents: getComputedStyle(document.querySelector('#board')).pointerEvents,
@@ -338,12 +338,13 @@ async function run() {
       },
     };
 
-    document.querySelector('#drawModeBtn').click();
+    // Pen turns drawing on by itself; there is no separate Draw button.
+    document.querySelector('#drawPen').click();
     return {
       ids: window.__imageEditIsolationSmoke.ids,
       sourceImgId: original.imgId,
       initialImgIds: RefBoard.state.items.map(item => item.imgId),
-      drawActive: document.querySelector('#drawModeBtn').classList.contains('on'),
+      drawActive: (document.querySelector('#drawPen').classList.contains('on') || document.querySelector('#drawEraser').classList.contains('on')),
     };
   })()`);
 
@@ -437,10 +438,20 @@ async function run() {
     })}`);
   }
 
-  await win.webContents.executeJavaScript('document.querySelector("#drawModeBtn").click()');
+  // Esc turns drawing off so E can be checked from inactive drawing.
+  await win.webContents.executeJavaScript(`document.body.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'Escape',
+    code: 'Escape',
+    bubbles: true,
+    cancelable: true,
+  }))`);
+  const afterEscape = await win.webContents.executeJavaScript(
+    "document.querySelector('#drawPen').classList.contains('on') || document.querySelector('#drawEraser').classList.contains('on')",
+  );
+  if (afterEscape) throw new Error('Esc did not turn drawing off');
   await dispatchToolShortcut(win, 'e');
   const afterInactiveE = await win.webContents.executeJavaScript(`({
-    drawActive: document.querySelector('#drawModeBtn').classList.contains('on'),
+    drawActive: (document.querySelector('#drawPen').classList.contains('on') || document.querySelector('#drawEraser').classList.contains('on')),
     penActive: document.querySelector('#drawPen').classList.contains('on'),
     eraserActive: document.querySelector('#drawEraser').classList.contains('on'),
   })`);
@@ -451,7 +462,7 @@ async function run() {
   await dispatchToolShortcut(win, 'd');
   await dispatchToolShortcut(win, 'd');
   const afterRepeatedD = await win.webContents.executeJavaScript(`({
-    drawActive: document.querySelector('#drawModeBtn').classList.contains('on'),
+    drawActive: (document.querySelector('#drawPen').classList.contains('on') || document.querySelector('#drawEraser').classList.contains('on')),
     penActive: document.querySelector('#drawPen').classList.contains('on'),
     eraserActive: document.querySelector('#drawEraser').classList.contains('on'),
   })`);
@@ -521,7 +532,7 @@ async function run() {
       widthLabel: document.querySelector('#drawWidthVal').textContent,
       viewScale: RefBoard.state.view.s,
       arrowActive: document.querySelector('#arrowSolidBtn').classList.contains('on'),
-      drawActive: document.querySelector('#drawModeBtn').classList.contains('on'),
+      drawActive: (document.querySelector('#drawPen').classList.contains('on') || document.querySelector('#drawEraser').classList.contains('on')),
     };
   })()`);
   if (!arrowResult.arrow

@@ -124,5 +124,8 @@ jobs:
       - name: Align rows smoke
         run: npm run test:align-rows-smoke
 
+      - name: Draw pen arms smoke
+        run: npm run test:draw-pen-arms-smoke
+
       - name: Arrange lock smoke
         run: npm run test:arrange-lock-smoke
