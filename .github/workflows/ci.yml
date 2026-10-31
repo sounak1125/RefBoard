@@ -126,3 +126,12 @@ jobs:
 
       - name: Selection bar smoke
         run: npm run test:selection-bar-smoke
+
+      - name: Draw strokes smoke
+        run: npm run test:draw-strokes-smoke
+
+      - name: Draw pen arms smoke
+        run: npm run test:draw-pen-arms-smoke
+
+      - name: Arrange lock smoke
+        run: npm run test:arrange-lock-smoke
