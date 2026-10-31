@@ -126,3 +126,6 @@ jobs:
 
       - name: Zoom stalls smoke
         run: npm run test:zoom-stalls-smoke
+
+      - name: Arrange lock smoke
+        run: npm run test:arrange-lock-smoke
