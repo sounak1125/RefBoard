@@ -123,3 +123,6 @@ jobs:
 
       - name: Align rows smoke
         run: npm run test:align-rows-smoke
+
+      - name: Draw pen arms smoke
+        run: npm run test:draw-pen-arms-smoke

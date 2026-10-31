@@ -231,7 +231,7 @@ async function run() {
     'initial unpainted LOD',
   );
 
-  await win.webContents.executeJavaScript('document.querySelector("#drawModeBtn").click()');
+  await win.webContents.executeJavaScript('document.querySelector("#drawPen").click()');
   const beforeVersion = await win.webContents.executeJavaScript(
     `Number(RefBoard.images.get(${JSON.stringify(fixture.imgId)})?.version) || 0`,
   );
