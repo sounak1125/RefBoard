@@ -3378,11 +3378,7 @@ try {
 <div id="drawPanelWrap" aria-hidden="true">
 <div id="drawPanel">
   <span class="draw-lbl">Draw</span>
-  <button class="tb" id="drawModeBtn" data-tip-title="Draw" data-tip-sub="D">
-    <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-  </button>
-  <span class="draw-sep"></span>
-  <button class="tb on" id="drawPen" data-tip-title="Pen" aria-expanded="false" aria-controls="drawBrushDrawer">
+  <button class="tb" id="drawPen" data-tip-title="Pen" aria-expanded="false" aria-controls="drawBrushDrawer">
     <svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
   </button>
   <button class="tb" id="drawEraser" data-tip-title="Eraser" data-tip-sub="E">
@@ -8987,6 +8983,20 @@ function activateDrawShortcut(tool) {
   invalidate();
 }
 
+// Pen and Eraser are the panel's way into drawing, so picking either one turns
+// drawing on with that tool. The first pick says how to stop, because a drag on
+// an image now paints it instead of moving it. Closing the panel deliberately
+// leaves drawing on: split view collapses panels on its own and must not cut a
+// stroke off.
+function armDrawTool(tool) {
+  if (!(tool in drawToolWidths)) return;
+  const wasActive = drawActive;
+  if (!wasActive) setDrawActive(true);
+  setDrawTool(tool);
+  invalidate();
+  if (!wasActive) toast('Draw on · Esc to stop');
+}
+
 function setDrawBrush(type) {
   if (!DRAW_BRUSHES[type]) return;
   drawBrushType = type;
@@ -9234,8 +9244,6 @@ function setAnnotateExpanded(on) {
 function syncDrawUi() {
   const panel = $('#drawPanel');
   if (panel) panel.classList.toggle('active', drawActive || !!arrowTool);
-  const modeBtn = $('#drawModeBtn');
-  if (modeBtn) modeBtn.classList.toggle('on', drawActive);
   $('#drawPen')?.classList.toggle('on', drawActive && drawTool === 'pen');
   $('#drawEraser')?.classList.toggle('on', drawActive && drawTool === 'eraser');
   $('#drawBrushDrawer')?.classList.toggle('pen-active', drawActive && drawTool === 'pen');
@@ -9311,11 +9319,6 @@ function setDrawActive(on) {
   syncToolbarEdgeIcon();
   syncDrawUi();
   invalidate();
-}
-
-function toggleDrawActive() {
-  setDrawActive(!drawActive);
-  toast(drawActive ? 'Draw mode — paint on images' : 'Draw mode off');
 }
 
 function closeDrawCanvasPop() {
@@ -12986,10 +12989,18 @@ function translateAlignedItem(it, dx, dy) {
 }
 
 function alignSelectionHorizontal() {
-  const items = selectedItems();
+  const picked = selectedItems();
+  const pickedIds = new Set(picked.map(it => it.id));
+  // A child whose group is selected too moves with that group, not twice.
+  const items = picked.filter(it => !(it.groupId && pickedIds.has(it.groupId)));
   if (items.length < 2) return;
+  if (idsIncludeLockedGroupItems(expandMoveIds(new Set(items.map(it => it.id))))) {
+    toast('Group is locked');
+    return;
+  }
   pushUndo();
-  let anchor = (state.anchorId && state.sel.has(state.anchorId)) ? byId(state.anchorId) : null;
+  // A remembered anchor inside a selected group gives way to the group's edge.
+  let anchor = items.find(it => it.id === state.anchorId) || null;
   if (!anchor) anchor = items.reduce((a, b) => (boundsOf(b).x < boundsOf(a).x ? b : a));
   const rest = items.filter(it => it !== anchor).sort((a, b) => boundsOf(a).x - boundsOf(b).x);
   const gap = ALIGN_GAP;
@@ -13007,10 +13018,18 @@ function alignSelectionHorizontal() {
 }
 
 function alignSelectionVertical() {
-  const items = selectedItems();
+  const picked = selectedItems();
+  const pickedIds = new Set(picked.map(it => it.id));
+  // A child whose group is selected too moves with that group, not twice.
+  const items = picked.filter(it => !(it.groupId && pickedIds.has(it.groupId)));
   if (items.length < 2) return;
+  if (idsIncludeLockedGroupItems(expandMoveIds(new Set(items.map(it => it.id))))) {
+    toast('Group is locked');
+    return;
+  }
   pushUndo();
-  let anchor = (state.anchorId && state.sel.has(state.anchorId)) ? byId(state.anchorId) : null;
+  // A remembered anchor inside a selected group gives way to the group's edge.
+  let anchor = items.find(it => it.id === state.anchorId) || null;
   if (!anchor) anchor = items.reduce((a, b) => (boundsOf(b).y < boundsOf(a).y ? b : a));
   const rest = items.filter(it => it !== anchor).sort((a, b) => boundsOf(a).y - boundsOf(b).y);
   const gap = ALIGN_GAP;
@@ -19695,9 +19714,11 @@ window.addEventListener('keydown', e => {
   if (k === 'escape') {
     if (noteEditId) { finishNoteEdit(); return; }
     if (addFeaturesOpen) { closeAddFeatures(); return; }
+    // Stopping drawing comes before closing the Draw panel, so the one Esc that
+    // the 'Esc to stop' toast promises really stops it while the panel is open.
+    if (drawActive) { setDrawActive(false); toast('Draw mode off'); return; }
     if (drawFeaturesOpen) { closeDrawFeatures(); return; }
     if (arrowTool) { arrowTool = null; syncDrawUi(); toast('Annotate tool off'); invalidate(); return; }
-    if (drawActive) { setDrawActive(false); toast('Draw mode off'); return; }
     if (toolbarIsFloating() && document.body.classList.contains('toolbar-revealed')) {
       setToolbarRevealed(false);
       $('#toolbarEdgeHandle')?.focus({ preventScroll: true });
@@ -20491,21 +20512,23 @@ $('#btnSave').addEventListener('click', () => manualSaveBoardFile(() => saveBoar
 $('#btnOpen').addEventListener('click', () => openBoardFromDialog());
 $('#btnClear').addEventListener('click', clearBoard);
 $('#sidebarHome').addEventListener('click', () => goHome());
-$('#drawModeBtn').addEventListener('click', toggleDrawActive);
 $('#drawPen').addEventListener('click', () => {
   const wasPen = drawActive && drawTool === 'pen';
-  setDrawTool('pen');
+  armDrawTool('pen');
   if (wasPen) setBrushDrawerOpen(!brushDrawerOpen);
   else setBrushDrawerOpen(true);
 });
 $('#drawEraser').addEventListener('click', () => {
   closeBrushDrawer();
-  setDrawTool('eraser');
+  armDrawTool('eraser');
 });
 $('#drawBrushDrawer')?.addEventListener('click', e => {
   const btn = e.target.closest('[data-brush]');
   if (!btn) return;
   setDrawBrush(btn.dataset.brush);
+  // The drawer only opens from Pen, but a brush pick should never leave the
+  // user holding a brush with drawing off.
+  if (!drawActive) armDrawTool('pen');
 });
 $('#drawWidthDown').addEventListener('click', () => {
   adjustDrawWidth(-1);
