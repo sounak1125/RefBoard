@@ -1,6 +1,6 @@
 /**
- * Align left / center / right, driven through the real selection bar and the
- * right-click Alignment menu.
+ * Line up rows left / center / right, driven through the real selection bar
+ * and the right-click Arrange menu.
  *
  * Two rows like a storyboard: a scene group and a loose image in each, the
  * second row starting further left than the first. Aligning must line the rows
@@ -140,9 +140,9 @@ const smokeExpression = `(async()=>{
   const viaMenu=async align=>{
     board.dispatchEvent(new MouseEvent('contextmenu',{clientX:menuPoint.x,clientY:menuPoint.y,bubbles:true,cancelable:true}));
     await wait(220);
-    const row=[...document.querySelectorAll('#ctxmenu .mi')].find(r=>r.textContent.startsWith('Alignment'));
+    const row=[...document.querySelectorAll('#ctxmenu .mi')].find(r=>r.textContent.startsWith('Arrange'));
     if(row){ press(row); await wait(250); }
-    const label='Align '+align;
+    const label='Line up rows: '+align;
     const entry=[...document.querySelectorAll('#ctxSub .mi')].find(r=>r.textContent.trim()===label);
     menuEntries[align]=!!entry;
     if(entry)press(entry);
@@ -164,11 +164,14 @@ const smokeExpression = `(async()=>{
     results[align].undone=same(positions(),before);
   }
 
-  // One row on its own has nothing to line up with.
+  // One row on its own has nothing to line up with: the buttons dim and say
+  // why, and a click does nothing.
   RB.state.sel=new Set(rows[0]); RB.updateSelBarForTest();
   clearToast();
+  const leftBtn=document.querySelector('#sAlignLeft');
+  const singleRowState={disabled:leftBtn.getAttribute('aria-disabled'),tip:leftBtn.dataset.tip};
   await viaButton('left');
-  const singleRow={toast:toastText(),unchanged:same(positions(),before)};
+  const singleRow={...singleRowState,toast:toastText(),unchanged:same(positions(),before)};
 
   // A locked scene refuses, the way dragging it does.
   live(g2.id).locked=true;
@@ -202,7 +205,7 @@ try {
   for (const align of ['left', 'right', 'center']) {
     const edges = r.results[align].edges;
     for (const [i, row] of edges.entries()) {
-      near(row[align], target[align], `Align ${align}: row ${i + 1} should ${align === 'center' ? 'centre on' : `meet the ${align} edge at`} ${target[align]}${ragged}\nrows after: ${JSON.stringify(edges)}`);
+      near(row[align], target[align], `Line up ${align}: row ${i + 1} should ${align === 'center' ? 'centre on' : `meet the ${align} edge at`} ${target[align]}${ragged}\nrows after: ${JSON.stringify(edges)}`);
     }
   }
 
@@ -210,19 +213,21 @@ try {
     const { positions } = r.results[align];
     const moved = id => positions[id].x - r.before[id].x;
     // Each row moved as one block: every item in it by the same amount.
-    near(moved(r.ids.a), moved(r.ids.c), `Align ${align}: row 1 must keep its spacing`);
-    near(moved(r.ids.b), moved(r.ids.c), `Align ${align}: a group's children move with the row`);
-    near(moved(r.ids.d), moved(r.ids.f), `Align ${align}: row 2 must keep its spacing`);
-    near(moved(r.ids.e), moved(r.ids.f), `Align ${align}: a group's children move with the row`);
+    near(moved(r.ids.a), moved(r.ids.c), `Line up ${align}: row 1 must keep its spacing`);
+    near(moved(r.ids.b), moved(r.ids.c), `Line up ${align}: a group's children move with the row`);
+    near(moved(r.ids.d), moved(r.ids.f), `Line up ${align}: row 2 must keep its spacing`);
+    near(moved(r.ids.e), moved(r.ids.f), `Line up ${align}: a group's children move with the row`);
     for (const id of Object.keys(positions)) {
-      near(positions[id].y, r.before[id].y, `Align ${align} must not move anything up or down`);
+      near(positions[id].y, r.before[id].y, `Line up ${align} must not move anything up or down`);
     }
-    assert.equal(r.results[align].undone, true, `one undo must put Align ${align} back`);
+    assert.equal(r.results[align].undone, true, `one undo must put Line up ${align} back`);
   }
 
-  assert.deepEqual(r.buttons, { left: true, right: true }, 'the selection bar offers Align left and Align right');
-  assert.equal(r.menuEntries.center, true, 'the Alignment menu offers Align center');
-  assert.equal(r.singleRow.toast, 'Select two or more rows to align');
+  assert.deepEqual(r.buttons, { left: true, right: true }, 'the selection bar offers Line up left and right');
+  assert.equal(r.menuEntries.center, true, 'the Arrange menu offers Line up rows: center');
+  assert.equal(r.singleRow.disabled, 'true', 'with one row the Line up buttons are dimmed');
+  assert.equal(r.singleRow.tip, 'Line up rows: select two or more rows', 'a dimmed Line up button says why');
+  assert.equal(r.singleRow.toast, '', 'a dimmed Line up button does nothing when clicked');
   assert.equal(r.singleRow.unchanged, true, 'a single row has nothing to line up with');
   assert.equal(r.locked.toast, 'Group is locked');
   assert.equal(r.locked.unchanged, true, 'nothing moves while a locked scene is selected');
