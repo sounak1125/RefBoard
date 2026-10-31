@@ -124,6 +124,9 @@ jobs:
       - name: Align rows smoke
         run: npm run test:align-rows-smoke
 
+      - name: Zoom stalls smoke
+        run: npm run test:zoom-stalls-smoke
+
       - name: Selection bar smoke
         run: npm run test:selection-bar-smoke
 

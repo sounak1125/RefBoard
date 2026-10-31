@@ -4240,6 +4240,7 @@ import {
   normalizeBoardQuery,
 } from './scripts/landing-search.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
+import { createImageResizePool } from './scripts/image-resize-pool.mjs';
 import { drawGridDots } from './scripts/grid-dots.mjs';
 import { createItemIndex } from './scripts/item-index.mjs';
 import { createSpatialIndex } from './scripts/spatial-index.mjs';
@@ -6376,6 +6377,21 @@ let imageLodActiveJobs = 0;
 let imageLodPumpScheduled = false;
 const imageLodQueue = [];
 
+/* Resize-on-decode runs its resize on the calling thread, so on the page every
+   LOD tier and stable proxy froze drawing for tens of milliseconds while the
+   board zoomed. The pool runs those calls in workers; the page only receives
+   the finished bitmap. A full-resolution decode (decodeToBitmap) never had
+   that cost and stays here. */
+const imageResizePool = createImageResizePool({
+  createWorker: () => new Worker('./scripts/image-resize-worker.mjs', { type: 'module' }),
+  fallback: (blob, options) => createImageBitmap(blob, options),
+});
+
+/** createImageBitmap(blob, resize to w x h), off the drawing thread. */
+function resizeImageBlob(blob, w, h) {
+  return imageResizePool.resize(blob, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+}
+
 /** Cap simultaneous createImageBitmap work (display + high-priority share slots). */
 const IMAGE_DECODE_MAX_CONCURRENT = 3;
 const IMAGE_DECODE_PRI_HIGH = 2;
@@ -6656,11 +6672,7 @@ async function createStableImageProxy(blob, sourceW, sourceH) {
   if (!(blob instanceof Blob) || !blob.size) return null;
   const d = stableProxyDims(sourceW, sourceH);
   try {
-    return await createImageBitmap(blob, {
-      resizeWidth: d.w,
-      resizeHeight: d.h,
-      resizeQuality: 'high',
-    });
+    return await resizeImageBlob(blob, d.w, d.h);
   } catch {
     let source = null;
     try {
@@ -7206,11 +7218,7 @@ async function runImageLodJob(job) {
       // Ask Chromium's image decoder for the display-sized result directly.
       // This avoids creating a full-resolution GPU bitmap merely to render a
       // thumbnail while retaining the original compressed bytes on disk.
-      bitmap = await createImageBitmap(sourceBlob, {
-        resizeWidth: d.w,
-        resizeHeight: d.h,
-        resizeQuality: 'high',
-      });
+      bitmap = await resizeImageBlob(sourceBlob, d.w, d.h);
     } catch (directResizeError) {
       // Some older Chromium/codecs do not support resize-on-decode. Keep the
       // proven progressive canvas path as a compatibility fallback.
@@ -9632,11 +9640,9 @@ async function clipboardImageData(blob, w, h) {
       && CLIPBOARD_RECOMPRESSIBLE_TYPES.has(String(blob?.type || '').toLowerCase())) {
     try {
       const scale = CLIPBOARD_IMAGE_DIM_LIMIT / maxDim;
-      const bitmap = await createImageBitmap(blob, {
-        resizeWidth: Math.max(1, Math.round((Number(w) || maxDim) * scale)),
-        resizeHeight: Math.max(1, Math.round((Number(h) || maxDim) * scale)),
-        resizeQuality: 'high',
-      });
+      const bitmap = await resizeImageBlob(blob,
+        Math.max(1, Math.round((Number(w) || maxDim) * scale)),
+        Math.max(1, Math.round((Number(h) || maxDim) * scale)));
       try {
         const c = document.createElement('canvas');
         c.width = bitmap.width;
@@ -22561,6 +22567,9 @@ window.RefBoard = {
   get spatialIndexStats() { return layout.stats(); },
   invalidateLayout: invalidateWorkspaceBBox,
   imageRenderState: imageRenderDiagnostics,
+  /* Resize hook: a smoke has to tell a worker resize from a page fallback,
+     which the pixels alone cannot show. */
+  imageResizeStats: () => imageResizePool.stats(),
   get mode() { return mode; },
   invalidate,
   runAutosaveTick,
