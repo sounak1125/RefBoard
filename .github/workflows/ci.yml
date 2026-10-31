@@ -123,3 +123,6 @@ jobs:
 
       - name: Align rows smoke
         run: npm run test:align-rows-smoke
+
+      - name: Arrange lock smoke
+        run: npm run test:arrange-lock-smoke
