@@ -12919,10 +12919,18 @@ function translateAlignedItem(it, dx, dy) {
 }
 
 function alignSelectionHorizontal() {
-  const items = selectedItems();
+  const picked = selectedItems();
+  const pickedIds = new Set(picked.map(it => it.id));
+  // A child whose group is selected too moves with that group, not twice.
+  const items = picked.filter(it => !(it.groupId && pickedIds.has(it.groupId)));
   if (items.length < 2) return;
+  if (idsIncludeLockedGroupItems(expandMoveIds(new Set(items.map(it => it.id))))) {
+    toast('Group is locked');
+    return;
+  }
   pushUndo();
-  let anchor = (state.anchorId && state.sel.has(state.anchorId)) ? byId(state.anchorId) : null;
+  // A remembered anchor inside a selected group gives way to the group's edge.
+  let anchor = items.find(it => it.id === state.anchorId) || null;
   if (!anchor) anchor = items.reduce((a, b) => (boundsOf(b).x < boundsOf(a).x ? b : a));
   const rest = items.filter(it => it !== anchor).sort((a, b) => boundsOf(a).x - boundsOf(b).x);
   const gap = ALIGN_GAP;
@@ -12940,10 +12948,18 @@ function alignSelectionHorizontal() {
 }
 
 function alignSelectionVertical() {
-  const items = selectedItems();
+  const picked = selectedItems();
+  const pickedIds = new Set(picked.map(it => it.id));
+  // A child whose group is selected too moves with that group, not twice.
+  const items = picked.filter(it => !(it.groupId && pickedIds.has(it.groupId)));
   if (items.length < 2) return;
+  if (idsIncludeLockedGroupItems(expandMoveIds(new Set(items.map(it => it.id))))) {
+    toast('Group is locked');
+    return;
+  }
   pushUndo();
-  let anchor = (state.anchorId && state.sel.has(state.anchorId)) ? byId(state.anchorId) : null;
+  // A remembered anchor inside a selected group gives way to the group's edge.
+  let anchor = items.find(it => it.id === state.anchorId) || null;
   if (!anchor) anchor = items.reduce((a, b) => (boundsOf(b).y < boundsOf(a).y ? b : a));
   const rest = items.filter(it => it !== anchor).sort((a, b) => boundsOf(a).y - boundsOf(b).y);
   const gap = ALIGN_GAP;
