@@ -127,6 +127,9 @@ jobs:
       - name: Zoom stalls smoke
         run: npm run test:zoom-stalls-smoke
 
+      - name: Draw strokes smoke
+        run: npm run test:draw-strokes-smoke
+
       - name: Draw pen arms smoke
         run: npm run test:draw-pen-arms-smoke
 
