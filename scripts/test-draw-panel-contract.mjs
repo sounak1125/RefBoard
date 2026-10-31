@@ -17,7 +17,6 @@ assert.equal((html.match(/id=["']addCanvasBtn["']/g) ?? []).length, 1, 'Add Canv
 assert.equal((html.match(/class=["'][^"']*draw-ratio-btn[^"']*["']/g) ?? []).length, 3, 'Canvas menu should retain all three aspect ratios');
 
 const controls = [
-  'drawModeBtn',
   'drawPen',
   'drawEraser',
   'drawColorBtn',
@@ -35,8 +34,41 @@ for (const id of controls) {
   assert.equal((drawPanel.match(new RegExp(`id=["']${id}["']`, 'g')) ?? []).length, 1, `${id} should remain present exactly once`);
 }
 
+// Pen and Eraser turn drawing on themselves, so the separate Draw on/off button is gone.
+assert.doesNotMatch(html, /drawModeBtn/, 'the separate Draw on/off button and its wiring must stay removed');
+assert.doesNotMatch(html, /function toggleDrawActive\(/, 'the toggle that only served the removed Draw button must stay removed');
+assert.match(
+  html,
+  /function armDrawTool\(tool\)[\s\S]*?if \(!wasActive\) setDrawActive\(true\);[\s\S]*?setDrawTool\(tool\);[\s\S]*?if \(!wasActive\) toast\('Draw on · Esc to stop'\);/,
+  'picking a draw tool should turn drawing on and say how to stop',
+);
+assert.match(
+  html,
+  /\$\(['"]#drawPen['"]\)\.addEventListener\(['"]click['"], \(\) => \{[\s\S]*?armDrawTool\('pen'\);[\s\S]*?setBrushDrawerOpen\(/,
+  'Pen should turn drawing on and still open the brush drawer',
+);
+assert.match(
+  html,
+  /\$\(['"]#drawEraser['"]\)\.addEventListener\(['"]click['"], \(\) => \{[\s\S]*?armDrawTool\('eraser'\);/,
+  'Eraser should turn drawing on',
+);
+assert.match(
+  html,
+  /setDrawBrush\(btn\.dataset\.brush\);[\s\S]*?if \(!drawActive\) armDrawTool\('pen'\);/,
+  'picking a brush type should leave drawing on',
+);
+assert.match(
+  html,
+  /if \(k === 'escape'\) \{[\s\S]*?if \(drawActive\) \{ setDrawActive\(false\);[\s\S]*?if \(drawFeaturesOpen\) \{ closeDrawFeatures\(\); return; \}/,
+  'one Esc should stop drawing even while the Draw panel is open',
+);
+assert.doesNotMatch(
+  html,
+  /function closeDrawFeatures\([^)]*\)\s*\{[^}]*setDrawActive\(false\)/,
+  'closing the Draw panel must not turn drawing off',
+);
+
 const handlerContracts = [
-  /\$\(['"]#drawModeBtn['"]\)\.addEventListener\(['"]click['"], toggleDrawActive\)/,
   /\$\(['"]#drawPen['"]\)\.addEventListener\(['"]click['"]/,
   /\$\(['"]#drawEraser['"]\)\.addEventListener\(['"]click['"]/,
   /\$\(['"]#drawColorBtn['"]\)\?\.addEventListener\(['"]pointerdown['"]/,
