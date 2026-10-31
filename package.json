@@ -60,6 +60,7 @@
     "test:tags-menu-smoke": "node scripts/smoke-tags-menu.mjs",
     "test:focus-dock-smoke": "electron scripts/smoke-focus-flow.mjs",
     "test:pinned-smoke": "node scripts/smoke-pinned-boards.mjs",
+    "test:selection-bar-smoke": "node scripts/smoke-selection-bar.mjs",
     "test:align-rows-smoke": "node scripts/smoke-align-rows.mjs",
     "test:inpaint-smoke": "node scripts/smoke-inpaint-fill.mjs",
     "test:pan-zoom-smoke": "node scripts/smoke-pan-zoom.mjs",

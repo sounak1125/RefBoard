@@ -144,7 +144,7 @@ const smokeExpression = `(async()=>{
 
   // All submenus shared the same obsolete appearance-menu call.
   const otherSubmenus=[];
-  for(const name of ['Alignment','Normalize','Blank canvas']){
+  for(const name of ['Arrange','Match size','Blank canvas']){
     await openCtx();
     press([...document.querySelectorAll('#ctxmenu .mi')].find(row=>row.textContent.startsWith(name)));
     otherSubmenus.push(document.querySelector('#ctxSub').classList.contains('show')&&document.querySelector('#ctxSub .mcat').textContent===name);

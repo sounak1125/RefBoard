@@ -123,3 +123,6 @@ jobs:
 
       - name: Align rows smoke
         run: npm run test:align-rows-smoke
+
+      - name: Selection bar smoke
+        run: npm run test:selection-bar-smoke
