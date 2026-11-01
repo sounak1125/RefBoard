@@ -118,8 +118,8 @@ async function run() {
     })(),
     settingsSelects: document.querySelectorAll('.settings2-content select').length,
     settingsUpgraded: document.querySelectorAll('.settings2-content .ui-select').length,
-    exportSelects: document.querySelectorAll('#exportImagesModal select').length,
-    exportUpgraded: document.querySelectorAll('#exportImagesModal .ui-select').length
+    exportSelects: document.querySelectorAll('#exportModal select').length,
+    exportUpgraded: document.querySelectorAll('#exportModal .ui-select').length
   })`);
   if (!focusState.focusClass || !focusState.flowVisible || !focusState.gridHidden
       || focusState.activeTitle !== 'Latest concepts' || focusState.cardCount !== 9
@@ -478,7 +478,9 @@ async function run() {
   await waitFor(win, "!document.querySelector('#searchModal').classList.contains('show')", 'Search modal close');
   await clickElement(win, '#btnExport');
   await waitFor(win, "document.querySelector('#exportModal').classList.contains('show')", 'Export toolbar button');
-  await clickElement(win, '#expCancel');
+  // The close button is on both tabs; each tab's Cancel is only on its own.
+  await clickElement(win, '#expClose');
+  await waitFor(win, "!document.querySelector('#exportModal').classList.contains('show')", 'Export modal close');
   await revealToolbarForSmoke(win);
   await clickElement(win, '#btnSave');
   await delay(100);

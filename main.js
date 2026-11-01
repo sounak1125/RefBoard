@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, shell, nativeImage, WebContentsView, View, screen, net, globalShortcut, desktopCapturer } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, shell, nativeImage, WebContentsView, View, screen, net, globalShortcut, desktopCapturer, session: electronSession } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const { replaceBoardFile, recoverBoardFileIfMissing, cleanupBoardBackup } = require('./scripts/board-file-replace');
@@ -26,6 +26,7 @@ const { INPAINT_MODEL, findModel, downloadModel } = require('./scripts/inpaint-m
 const snipGeometry = require('./scripts/snip-geometry');
 const { normalizeAccelerator, normalizeSnipShortcut, acceleratorLabel } = require('./scripts/snip-shortcut');
 const { snipFileName } = require('./scripts/snip-name');
+const { registerBoardExportIpc } = require('./scripts/board-export-main');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -1087,6 +1088,13 @@ function setupIpc() {
     session.appended.set(id, { ...entry, type: image?.type, name: image?.name, w: image?.w, h: image?.h, size: entry.length });
     return entry;
   }
+
+  // Board export as a Viewer (.html) or a PDF: see scripts/board-export-main.js.
+  registerBoardExportIpc({
+    ipcMain, dialog, app, BrowserWindow, session: electronSession, windowForEvent,
+    runtimePath: path.join(__dirname, 'scripts', 'board-viewer-runtime.js'),
+    templatePath: path.join(__dirname, 'scripts', 'board-viewer-template.html'),
+  });
 
   ipcMain.handle('choose-folder', async event => {
     const r = await dialog.showOpenDialog(windowForEvent(event), {

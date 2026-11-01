@@ -111,8 +111,8 @@ assert.match(
 );
 assert.match(
   source,
-  /querySelectorAll\('\.settings2-content select, #exportImagesModal select'\)/,
-  'the standard image export dialog should share the Settings dropdown component',
+  /querySelectorAll\('\.settings2-content select, #exportModal select'\)/,
+  'the Export dialog should share the Settings dropdown component',
 );
 assert.match(
   source,
