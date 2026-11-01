@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, shell, nativeImage, WebContentsView, View, screen, net } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, shell, nativeImage, WebContentsView, View, screen, net, globalShortcut, desktopCapturer } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const { replaceBoardFile, recoverBoardFileIfMissing, cleanupBoardBackup } = require('./scripts/board-file-replace');
@@ -21,8 +21,11 @@ const { isInstalledWindowsBuild } = require('./scripts/shell-integration');
 const zorder = require('./scripts/win32-zorder');
 const { refreshShellIcons } = require('./scripts/win32-shell-notify');
 const { capRecentWorks, pinsRemaining, sortRecentWorks } = require('./scripts/recent-works');
-const { writeJsonAtomic } = require('./scripts/atomic-json');
+const { writeJsonAtomic, writeJsonAtomicSync } = require('./scripts/atomic-json');
 const { INPAINT_MODEL, findModel, downloadModel } = require('./scripts/inpaint-model');
+const snipGeometry = require('./scripts/snip-geometry');
+const { normalizeAccelerator, normalizeSnipShortcut, acceleratorLabel } = require('./scripts/snip-shortcut');
+const { snipFileName } = require('./scripts/snip-name');
 
 if (!app.requestSingleInstanceLock()) app.quit();
 
@@ -45,6 +48,9 @@ const senderWindows = new WeakMap();
 let installUpdateWhenAllClosed = false;
 let pendingOpenPath = null;
 let appDownloadStatus = { phase: 'idle', percent: 0 };
+// The board window used last. While the user is in another app none is
+// focused, so a snip needs this to know where to go.
+let lastBoardWindow = null;
 
 function focusedWindow() {
   const focused = BrowserWindow.getFocusedWindow();
@@ -447,6 +453,8 @@ function attachWebContentsSafety(win, wc, { windowId, role }) {
   wc.setWindowOpenHandler(() => ({ action: 'deny' }));
   wc.on('before-input-event', (e, input) => {
     if (input.type !== 'keydown') return;
+    // Recording a snip shortcut: every key belongs to the recorder.
+    if (snipRecorder === wc) return;
     const key = String(input.key || '').toLowerCase();
     if (input.control && !input.alt && !input.shift && key === 't') {
       e.preventDefault();
@@ -2199,6 +2207,548 @@ function registerFileTypeIntegration() {
   });
 }
 
+/* ---------- Snip to board ----------
+   Ctrl+Alt+S (or the user's own combination), from any app: freeze every display, drag a box on one of them
+   (or click for the whole display) and the crop lands on the RefBoard window
+   used last, in its active pane. The crop comes from the frozen capture, so it
+   is pixel-exact at the display's real resolution. */
+const SNIP_READY_TIMEOUT_MS = 4000;
+const SNIP_TEST = process.env.REFBOARD_SNIP_TEST === '1';
+let snipSession = null;
+
+/* The shortcut is the user's to change or turn off, in Settings → Shortcuts:
+   Windows reports AltGr as Ctrl+Alt, so a global Ctrl+Alt+S also takes
+   AltGr+S (ś on a Polish keyboard) from every app while RefBoard runs, and no
+   one combination is safe on every layout. main.js owns the setting because
+   it registers the shortcut at startup, before any page is ready. */
+const snipShortcut = {
+  ...normalizeSnipShortcut(null),
+  registered: '', // the accelerator actually held right now, if any
+  error: null, // { code: 'in-use' | 'invalid', accelerator }
+};
+// The page recording a new combination. The current one is let go meanwhile,
+// so pressing it records it instead of starting a snip. However the recording
+// ends (done, cancelled, Settings closed, the page reloading, crashing or
+// closing, or the backstop timer) the stored combination is taken back.
+let snipRecorder = null;
+let snipRecorderRelease = null;
+let snipRecordingTimeoutMs = 30000;
+// A save still on its way to disk; flushed synchronously on quit.
+let snipShortcutPendingSave = null;
+let snipSaveDelayMsForTest = 0;
+
+function snipShortcutPath() {
+  return path.join(app.getPath('userData'), 'snip-shortcut.json');
+}
+
+function loadSnipShortcut() {
+  let stored = null;
+  try { stored = JSON.parse(fsSync.readFileSync(snipShortcutPath(), 'utf8')); }
+  catch { /* missing or corrupt: the defaults */ }
+  Object.assign(snipShortcut, normalizeSnipShortcut(stored));
+}
+
+async function saveSnipShortcut() {
+  const value = { enabled: snipShortcut.enabled, accelerator: snipShortcut.accelerator };
+  const pending = { value };
+  snipShortcutPendingSave = pending;
+  try {
+    if (snipSaveDelayMsForTest) await new Promise(resolve => setTimeout(resolve, snipSaveDelayMsForTest));
+    if (snipShortcutPendingSave !== pending) return; // a later change, or the quit flush, wrote it
+    await writeJsonAtomic(snipShortcutPath(), value);
+  } catch (err) {
+    console.warn('RefBoard could not save the snip shortcut:', err?.message || err);
+  } finally {
+    if (snipShortcutPendingSave === pending) snipShortcutPendingSave = null;
+  }
+}
+
+/* Quitting right after a change can end the process before the async write
+   lands; write what is still pending now, synchronously. */
+function flushSnipShortcutSave() {
+  const pending = snipShortcutPendingSave;
+  if (!pending) return;
+  snipShortcutPendingSave = null;
+  try { writeJsonAtomicSync(snipShortcutPath(), pending.value); }
+  catch (err) { console.warn('RefBoard could not save the snip shortcut on quit:', err?.message || err); }
+}
+
+function onSnipShortcut() {
+  startSnip().catch(err => console.warn('RefBoard snip failed:', err?.message || err));
+}
+
+function registerSnipAccelerator(accelerator) {
+  try {
+    if (!globalShortcut.register(accelerator, onSnipShortcut)) return false;
+  } catch (err) {
+    console.warn('RefBoard snip shortcut failed:', err?.message || err);
+    return false;
+  }
+  snipShortcut.registered = accelerator;
+  return true;
+}
+
+function releaseSnipAccelerator() {
+  if (!snipShortcut.registered) return;
+  try { globalShortcut.unregister(snipShortcut.registered); } catch { /* already gone */ }
+  snipShortcut.registered = '';
+}
+
+function snipShortcutSnapshot() {
+  return {
+    enabled: snipShortcut.enabled,
+    accelerator: snipShortcut.accelerator,
+    registered: !!snipShortcut.registered && snipShortcut.registered === snipShortcut.accelerator,
+    error: snipShortcut.error ? { ...snipShortcut.error } : null,
+  };
+}
+
+function broadcastSnipShortcut() {
+  const state = snipShortcutSnapshot();
+  for (const win of windows) sendToPanes(win, 'snip-shortcut-changed', state);
+  return state;
+}
+
+/* Hold the stored combination if it is on and not held yet; the outcome lands
+   in snipShortcut.error. Used at startup and when a recording ends. */
+function applySnipShortcut() {
+  if (!snipShortcut.enabled || snipRecorder) {
+    releaseSnipAccelerator();
+    return;
+  }
+  if (snipShortcut.registered === snipShortcut.accelerator) return;
+  releaseSnipAccelerator();
+  snipShortcut.error = registerSnipAccelerator(snipShortcut.accelerator)
+    ? null
+    : { code: 'in-use', accelerator: snipShortcut.accelerator };
+}
+
+function endSnipRecording(sender) {
+  if (!snipRecorder || (sender && snipRecorder !== sender)) return;
+  snipRecorderRelease?.();
+  snipRecorderRelease = null;
+  snipRecorder = null;
+  applySnipShortcut();
+}
+
+function setSnipRecording(sender, on) {
+  if (!on) {
+    endSnipRecording(sender);
+    return;
+  }
+  if (snipRecorder === sender) return;
+  endSnipRecording(null);
+  snipRecorder = sender;
+  const end = () => endSnipRecording(sender);
+  const timer = setTimeout(end, snipRecordingTimeoutMs);
+  sender.once('destroyed', end);
+  sender.once('render-process-gone', end);
+  sender.once('did-start-loading', end);
+  snipRecorderRelease = () => {
+    clearTimeout(timer);
+    if (sender.isDestroyed()) return;
+    sender.removeListener('destroyed', end);
+    sender.removeListener('render-process-gone', end);
+    sender.removeListener('did-start-loading', end);
+  };
+  applySnipShortcut();
+}
+
+/* The page's request is checked here, never trusted: a bad accelerator is
+   refused, and a combination that cannot be held leaves the old one held and
+   saved. Turning the shortcut off always works. */
+async function setSnipShortcut(sender, request = {}) {
+  if (snipRecorder === sender) {
+    snipRecorderRelease?.();
+    snipRecorderRelease = null;
+    snipRecorder = null;
+  }
+  const enabled = typeof request?.enabled === 'boolean' ? request.enabled : snipShortcut.enabled;
+  const accelerator = request?.accelerator == null
+    ? snipShortcut.accelerator
+    : normalizeAccelerator(request.accelerator);
+  if (!accelerator) {
+    applySnipShortcut();
+    snipShortcut.error = { code: 'invalid', accelerator: String(request.accelerator).slice(0, 40) };
+    return broadcastSnipShortcut();
+  }
+  if (!enabled) {
+    releaseSnipAccelerator();
+    Object.assign(snipShortcut, { enabled: false, accelerator, error: null });
+    broadcastSnipShortcut();
+    await saveSnipShortcut();
+    return snipShortcutSnapshot();
+  }
+  if (snipShortcut.registered !== accelerator) {
+    releaseSnipAccelerator();
+    if (!registerSnipAccelerator(accelerator)) {
+      // Put back what was there. While recording that was let go, so this
+      // goes by the stored setting rather than by what was held.
+      applySnipShortcut();
+      snipShortcut.error = { code: 'in-use', accelerator };
+      return broadcastSnipShortcut();
+    }
+  }
+  Object.assign(snipShortcut, { enabled: true, accelerator, error: null });
+  // Show it now, save after; the reply is read after the save, so a later
+  // change made while this one was saving is not undone by a stale answer.
+  broadcastSnipShortcut();
+  await saveSnipShortcut();
+  return snipShortcutSnapshot();
+}
+
+function snipShortcutToast() {
+  const err = snipShortcut.error;
+  if (err?.code !== 'in-use') return '';
+  return `${acceleratorLabel(err.accelerator)} is in use by another app, so Snip is off. Change it in Settings → Shortcuts.`;
+}
+
+
+function snipTargetWindow() {
+  if (lastBoardWindow && windows.has(lastBoardWindow) && !lastBoardWindow.isDestroyed()) return lastBoardWindow;
+  return focusedWindow();
+}
+
+function snipTargetWebContents(win) {
+  const st = paneState(win);
+  const secondary = st?.secondaryView?.webContents;
+  if (st?.activePane === 'secondary' && !st.secondaryLoading && secondary && !secondary.isDestroyed()) return secondary;
+  return primaryWebContents(win);
+}
+
+/* The destination's name for the hint. The renderer may be busy; a hint
+   without a name is better than an overlay that waits for one. */
+async function snipTargetInfo(wc) {
+  if (!wc || wc.isDestroyed()) return null;
+  const read = wc.executeJavaScript('window.__snipTargetInfo ? window.__snipTargetInfo() : null').catch(() => null);
+  const timeout = new Promise(resolve => setTimeout(() => resolve(null), 300));
+  return Promise.race([read, timeout]);
+}
+
+function snipPhysicalSize(display) {
+  return {
+    width: Math.round(display.bounds.width * display.scaleFactor),
+    height: Math.round(display.bounds.height * display.scaleFactor),
+  };
+}
+
+/* desktopCapturer fits each thumbnail inside the size asked for, so one request
+   sized for the biggest display upscales a smaller one (a 1920x1080 display
+   came back 2560x1440 beside a 3440x1440 one). Ask once per distinct physical
+   size and keep each display's own answer. */
+async function captureDisplays(displays) {
+  const bySize = new Map();
+  for (const display of displays) {
+    const size = snipPhysicalSize(display);
+    const key = `${size.width}x${size.height}`;
+    if (!bySize.has(key)) bySize.set(key, { size, displays: [] });
+    bySize.get(key).displays.push(display);
+  }
+  const captures = new Map();
+  await Promise.all([...bySize.values()].map(async ({ size, displays: group }) => {
+    const t0 = performance.now();
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size });
+    const ms = performance.now() - t0;
+    for (const display of group) {
+      let source = sources.find(s => String(s.display_id) === String(display.id));
+      if (!source && sources.length === displays.length) source = sources[displays.indexOf(display)];
+      const image = source?.thumbnail;
+      if (!image || image.isEmpty()) continue;
+      captures.set(display.id, { image, imageSize: image.getSize(), requested: size, ms });
+    }
+  }));
+  return captures;
+}
+
+function snipOverlayFor(sender) {
+  if (!snipSession) return null;
+  for (const overlay of snipSession.overlays) {
+    if (overlay.win && !overlay.win.isDestroyed() && overlay.win.webContents === sender) return overlay;
+  }
+  return null;
+}
+
+function createSnipOverlay(display) {
+  const overlayWin = new BrowserWindow({
+    ...display.bounds,
+    show: false,
+    frame: false,
+    backgroundColor: '#000000',
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    thickFrame: false,
+    roundedCorners: false,
+    enableLargerThanScreen: true,
+    alwaysOnTop: true,
+    title: 'Snip to RefBoard',
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      spellcheck: false,
+      backgroundThrottling: false,
+      preload: path.join(__dirname, 'scripts', 'snip-preload.js'),
+    },
+  });
+  overlayWin.setAlwaysOnTop(true, 'screen-saver');
+  overlayWin.setMenu(null);
+  overlayWin.webContents.on('will-navigate', e => e.preventDefault());
+  overlayWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  overlayWin.loadFile(path.join(__dirname, 'scripts', 'snip-overlay.html'), { query: { display: String(display.id) } }).catch(() => {});
+  return overlayWin;
+}
+
+/* An overlay losing focus to another app ends the snip: a topmost overlay the
+   user can no longer reach with Esc would otherwise sit over the screen. Focus
+   moving between two overlays is not that, hence the short wait. */
+function watchSnipOverlayBlur(session, win) {
+  win.on('blur', () => {
+    setTimeout(() => {
+      if (snipSession !== session || session.done) return;
+      const focused = BrowserWindow.getFocusedWindow();
+      if (!session.overlays.some(o => o.win === focused)) endSnip(session, null, 'blur');
+    }, 150);
+  });
+}
+
+function showSnipOverlays(session) {
+  if (session.shown || session.done) return;
+  session.shown = true;
+  clearTimeout(session.readyTimer);
+  for (const { win, display } of session.overlays) {
+    if (win.isDestroyed()) continue;
+    // Again now: a window created on a display with another scale factor can
+    // come out the wrong size until it sits on its own display.
+    win.setBounds(display.bounds);
+    if (display.id === session.cursorDisplayId) {
+      win.show();
+      win.focus();
+    } else {
+      win.showInactive();
+    }
+    win.setAlwaysOnTop(true, 'screen-saver');
+  }
+  session.stats.visibleMs = performance.now() - session.t0;
+  session.resolveShown?.({ ok: true, stats: session.stats });
+}
+
+/* Close every overlay, hand the foreground back to the app the user was in,
+   and, for a finished snip, deliver the crop to the destination pane. */
+function endSnip(session, result, reason = 'cancel') {
+  if (!session || session.done) return;
+  session.done = true;
+  session.stats.endedAt = Date.now();
+  session.stats.endReason = result ? 'finish' : reason;
+  clearTimeout(session.readyTimer);
+  if (session.foregroundId && process.platform === 'win32') {
+    // Before the overlays go, while this process still owns the foreground.
+    try { zorder.focusWindow(session.foregroundId); } catch { /* best-effort */ }
+  }
+  for (const overlay of session.overlays) {
+    if (overlay.win && !overlay.win.isDestroyed()) overlay.win.destroy();
+  }
+  if (snipSession === session) snipSession = null;
+  if (SNIP_TEST && process.platform === 'win32') {
+    session.stats.foregroundBefore = session.foregroundId;
+    session.stats.foregroundAfter = zorder.foregroundWindow()?.id || '';
+  }
+  session.resolveShown?.({ ok: false, reason: 'ended', stats: session.stats });
+  if (!result) {
+    session.stats.outcome = 'cancelled';
+    return;
+  }
+  const { overlay, crop } = result;
+  const t0 = performance.now();
+  const png = overlay.capture.image.crop(crop).toPNG();
+  session.stats.cropMs = performance.now() - t0;
+  session.stats.pngBytes = png.length;
+  session.stats.crop = { ...crop, displayId: overlay.display.id };
+  session.stats.outcome = 'added';
+  session.stats.deliveredAt = Date.now();
+  const target = session.target;
+  if (!target || target.isDestroyed()) return;
+  const wc = snipTargetWebContents(target);
+  if (!wc || wc.isDestroyed()) return;
+  wc.send('snip-image', { data: png, name: session.name, width: crop.width, height: crop.height });
+}
+
+async function startSnip({ title } = {}) {
+  if (snipSession) return { ok: false, reason: 'busy' };
+  const target = snipTargetWindow();
+  if (!target) return { ok: false, reason: 'no-window' };
+  const session = {
+    t0: performance.now(),
+    target,
+    overlays: [],
+    shown: false,
+    done: false,
+    stats: { startedAt: Date.now() },
+  };
+  snipSession = session;
+  if (SNIP_TEST) snipTestState.lastSession = session;
+
+  // Read the window in front before the overlay takes the foreground.
+  const foreground = process.platform === 'win32' ? zorder.foregroundWindow() : null;
+  const ownIds = new Set([...windows].filter(w => w && !w.isDestroyed()).map(nativeHwndId));
+  const fromRefBoard = !!(foreground && ownIds.has(foreground.id));
+  session.foregroundId = foreground?.id || '';
+  session.name = snipFileName(title ?? (fromRefBoard ? '' : foreground?.title || ''));
+
+  const displays = screen.getAllDisplays();
+  session.cursorDisplayId = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id;
+  // The overlays load while the screens are captured: making a window costs
+  // about as much as a capture, and hidden they are not in the picture.
+  for (const display of displays) {
+    const win = createSnipOverlay(display);
+    session.overlays.push({ win, display, capture: null, ready: false, hint: null });
+    watchSnipOverlayBlur(session, win);
+    win.on('closed', () => {
+      if (snipSession === session && !session.done && session.overlays.some(o => o.win === win)) endSnip(session, null, 'closed');
+    });
+  }
+  let finishPrepare;
+  session.prepared = new Promise(resolve => { finishPrepare = resolve; });
+  const shown = new Promise(resolve => { session.resolveShown = resolve; });
+  session.readyTimer = setTimeout(() => endSnip(session, null, 'timeout'), SNIP_READY_TIMEOUT_MS);
+
+  let captures;
+  let targetInfo;
+  try {
+    [captures, targetInfo] = await Promise.all([
+      captureDisplays(displays),
+      snipTargetInfo(snipTargetWebContents(target)),
+    ]);
+  } catch (err) {
+    console.warn('RefBoard snip capture failed:', err?.message || err);
+    captures = new Map();
+  }
+  session.stats.captureMs = performance.now() - session.t0;
+  session.stats.displays = displays.map(d => ({
+    id: d.id,
+    bounds: { ...d.bounds },
+    scaleFactor: d.scaleFactor,
+    requested: captures.get(d.id)?.requested || null,
+    captured: captures.get(d.id)?.imageSize || null,
+    ms: captures.get(d.id)?.ms ?? null,
+  }));
+  if (SNIP_TEST) snipTestState.captures = captures;
+  if (!session.done && !captures.size) {
+    endSnip(session, null, 'capture-failed');
+    toastPin(target, 'Could not capture the screen');
+  }
+  if (session.done) {
+    finishPrepare();
+    return shown;
+  }
+
+  // A display that could not be captured gets no overlay.
+  for (const overlay of [...session.overlays]) {
+    overlay.capture = captures.get(overlay.display.id) || null;
+    if (overlay.capture) continue;
+    session.overlays.splice(session.overlays.indexOf(overlay), 1);
+    overlay.win.destroy();
+  }
+  const hintTarget = targetInfo?.onLanding ? 'New board' : (targetInfo?.board || '');
+  // On the display under the cursor, or the first captured one if that failed.
+  const hinted = session.overlays.find(o => o.display.id === session.cursorDisplayId) || session.overlays[0];
+  hinted.hint = { target: hintTarget };
+  finishPrepare();
+  return shown;
+}
+
+function setupSnip() {
+  ipcMain.handle('snip-overlay-init', async event => {
+    const session = snipSession;
+    if (!snipOverlayFor(event.sender)) return null;
+    await session.prepared;
+    const overlay = snipSession === session ? snipOverlayFor(event.sender) : null;
+    if (!overlay?.capture) return null;
+    const { image, imageSize } = overlay.capture;
+    // Raw BGRA: no encode here and no decode there. A PNG of the same frame
+    // takes over 100 ms just to encode.
+    return {
+      frame: { width: imageSize.width, height: imageSize.height, data: image.toBitmap() },
+      bounds: { width: overlay.display.bounds.width, height: overlay.display.bounds.height },
+      hint: overlay.hint,
+    };
+  });
+  ipcMain.on('snip-overlay-ready', event => {
+    const overlay = snipOverlayFor(event.sender);
+    if (!overlay) return;
+    overlay.ready = true;
+    if (snipSession.overlays.every(o => o.ready)) showSnipOverlays(snipSession);
+  });
+  ipcMain.on('snip-overlay-finish', (event, points = {}) => {
+    const overlay = snipOverlayFor(event.sender);
+    if (!overlay) return;
+    // The crop is worked out here from the points, not taken from the page.
+    const crop = snipGeometry.cropForDrag({
+      start: points?.start,
+      end: points?.end,
+      bounds: overlay.display.bounds,
+      imageSize: overlay.capture.imageSize,
+    });
+    endSnip(snipSession, crop ? { overlay, crop } : null);
+  });
+  ipcMain.on('snip-overlay-cancel', event => {
+    if (!snipOverlayFor(event.sender)) return;
+    endSnip(snipSession, null);
+  });
+
+  ipcMain.handle('snip-shortcut-get', () => snipShortcutSnapshot());
+  ipcMain.handle('snip-shortcut-set', (event, request) => setSnipShortcut(event.sender, request));
+  ipcMain.on('snip-shortcut-recording', (event, on) => setSnipRecording(event.sender, !!on));
+
+  // Before the first window loads, so its first question gets the real answer.
+  loadSnipShortcut();
+  applySnipShortcut();
+}
+
+/* Test hook, only with REFBOARD_SNIP_TEST=1. A harness cannot press a global
+   shortcut, so the smoke reaches this through the main-process inspector. No
+   renderer can reach it, and without the variable it does not exist. */
+const snipTestState = { captures: null, lastSession: null };
+if (SNIP_TEST) {
+  globalThis.__refboardSnipTest = {
+    start: opts => startSnip(opts),
+    get active() { return !!snipSession; },
+    get registered() { return snipShortcutSnapshot().registered; },
+    shortcut: () => snipShortcutSnapshot(),
+    isRegistered: accelerator => globalShortcut.isRegistered(accelerator),
+    get recording() { return !!snipRecorder; },
+    /* Stretch the shortcut's save so a quit lands while it is in flight, and
+       shorten the recording backstop so a smoke can wait it out. */
+    set saveDelayMs(ms) { snipSaveDelayMsForTest = Number(ms) || 0; },
+    set recordingTimeoutMs(ms) { snipRecordingTimeoutMs = Number(ms) || 30000; },
+    quit: () => app.quit(),
+    stats: () => snipTestState.lastSession?.stats || null,
+    overlays: () => (snipSession?.overlays || []).map(o => ({
+      displayId: o.display.id,
+      bounds: o.win.isDestroyed() ? null : o.win.getBounds(),
+      visible: !o.win.isDestroyed() && o.win.isVisible(),
+      hint: !!o.hint,
+    })),
+    /* RGBA of the frozen capture at physical pixel points, to compare with
+       what lands on the board. */
+    sample: (displayId, points) => {
+      const capture = [...(snipTestState.captures || new Map())]
+        .find(([id]) => String(id) === String(displayId))?.[1];
+      if (!capture) return null;
+      const { width } = capture.imageSize;
+      const bitmap = capture.image.toBitmap();
+      return points.map(([x, y]) => {
+        const i = (y * width + x) * 4;
+        return [bitmap[i + 2], bitmap[i + 1], bitmap[i], bitmap[i + 3]];
+      });
+    },
+  };
+}
+
 async function createWindow(startupFilePath = null) {
   // Keep the first window on the legacy "main" session slot so existing
   // autosave/restore state continues to load after the multi-window change.
@@ -2216,6 +2766,8 @@ async function createWindow(startupFilePath = null) {
     webPreferences: boardWebPreferences(windowId),
   });
   windows.add(win);
+  if (!lastBoardWindow) lastBoardWindow = win;
+  win.on('focus', () => { lastBoardWindow = win; });
 
   const layout = new View();
   layout.setBackgroundColor('#141519');
@@ -2269,6 +2821,7 @@ async function createWindow(startupFilePath = null) {
     destroySecondary(win);
     unpinWindow(win, { silent: true });
     windows.delete(win);
+    if (lastBoardWindow === win) lastBoardWindow = null;
   });
 
   const sendMaximizeState = () => {
@@ -2323,9 +2876,17 @@ app.whenReady().then(async () => {
   if (argvPath) pendingOpenPath = argvPath;
   sweepDragOutStaging();
   setupIpc();
+  setupSnip();
   await createWindow();
+  // A taken combination is reported once, when there is a window to say it in.
+  const snipToast = snipShortcutToast();
+  if (snipToast) for (const win of windows) toastPin(win, snipToast);
   registerFileTypeIntegration();
   setupAutoUpdate();
+});
+app.on('will-quit', () => {
+  flushSnipShortcutSave();
+  globalShortcut.unregisterAll();
 });
 app.on('window-all-closed', () => {
   if (installUpdateWhenAllClosed && app.isPackaged) {

@@ -27,6 +27,20 @@ function extractLocalSpecifiers(source) {
   for (const pattern of patterns) {
     for (const match of source.matchAll(pattern)) found.add(match[2]);
   }
+  // main.js loads the snip overlay's page and preload by path, not require():
+  // path.join(__dirname, 'scripts', 'snip-overlay.html').
+  for (const match of source.matchAll(/\bpath\.join\(\s*__dirname\s*,\s*'scripts'\s*,\s*'([^'/\\]+\.(?:mjs|cjs|js|html))'\s*\)/g)) {
+    found.add(`./scripts/${match[1]}`);
+  }
+  return [...found];
+}
+
+// A page reached that way pulls its scripts in by <script src>, relative to it.
+function extractHtmlScriptSources(source) {
+  const found = new Set();
+  for (const match of source.matchAll(/<script\b[^>]*\bsrc\s*=\s*(['"])(?![a-z][a-z0-9+.-]*:|\/)([^'"]+)\1/gi)) {
+    found.add(match[2].startsWith('.') ? match[2] : `./${match[2]}`);
+  }
   return [...found];
 }
 
@@ -34,7 +48,7 @@ function extractLocalSpecifiers(source) {
 // it the way Node would; falling back to .js rather than giving up keeps a
 // genuinely absent module visible as MISSING instead of being skipped silently.
 function resolveModuleFile(absolutePath) {
-  if (/\.(?:mjs|cjs|js)$/i.test(absolutePath)) return absolutePath;
+  if (/\.(?:mjs|cjs|js|html)$/i.test(absolutePath)) return absolutePath;
   const candidates = [
     `${absolutePath}.js`,
     `${absolutePath}.mjs`,
@@ -83,7 +97,10 @@ async function main() {
 
   const queue = [];
   for (const [index, entryFile] of entryFiles.entries()) {
-    for (const specifier of extractLocalSpecifiers(entrySources[index])) {
+    const source = entrySources[index];
+    // index.html also loads one classic script (snip-shortcut.js) by <script src>.
+    const specifiers = [...extractLocalSpecifiers(source), ...(/\.html$/i.test(entryFile) ? extractHtmlScriptSources(source) : [])];
+    for (const specifier of specifiers) {
       if (!normalizePath(specifier).startsWith('scripts/')) continue;
       queue.push({
         absolutePath: path.resolve(rootDir, specifier),
@@ -99,7 +116,7 @@ async function main() {
     const absolutePath = resolveModuleFile(current.absolutePath);
     const relativePath = relativeRuntimePath(absolutePath);
     if (!relativePath || resolvedModules.has(relativePath)) continue;
-    if (!/\.(?:mjs|cjs|js)$/i.test(relativePath)) continue;
+    if (!/\.(?:mjs|cjs|js|html)$/i.test(relativePath)) continue;
     resolvedModules.set(relativePath, {
       absolutePath,
       importedBy: current.importedBy,
@@ -112,7 +129,8 @@ async function main() {
       unresolved.push({ relativePath, importedBy: current.importedBy, error });
       continue;
     }
-    for (const specifier of extractLocalSpecifiers(source)) {
+    const specifiers = /\.html$/i.test(relativePath) ? extractHtmlScriptSources(source) : extractLocalSpecifiers(source);
+    for (const specifier of specifiers) {
       queue.push({
         absolutePath: path.resolve(path.dirname(absolutePath), specifier),
         importedBy: relativePath,
