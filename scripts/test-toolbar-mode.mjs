@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const source = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const source = (await readFile(new URL('../index.html', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 
 assert.match(source, /toolbarMode:\s*['"]floating['"]/, 'Floating Compact should be the default toolbar mode');
 assert.match(
@@ -32,12 +32,42 @@ assert.match(
 );
 
 const buttons = [
-  'sidebarHome', 'btnAdd', 'btnSelectTool', 'btnHandTool', 'btnDraw', 'btnPaste', 'btnNote',
-  'btnArrange', 'btnFit', 'btnSearch', 'btnExport', 'btnSave', 'btnOpen', 'btnClear',
+  'sidebarHome', 'btnAdd', 'btnSelectTool', 'btnHandTool', 'btnDraw', 'btnNote',
+  'btnArrange', 'btnSearch', 'btnExport', 'btnClear',
 ];
 for (const id of buttons) {
   assert.match(source, new RegExp(`id=["']${id}["']`), `${id} should remain in the toolbar`);
   assert.match(source, new RegExp(`\\$\\(['"]#${id}['"]\\)\\.addEventListener\\('click'`), `${id} should retain its click handler`);
+}
+
+// Paste, Save, Open and Fit left the toolbar; each must still have a shortcut,
+// a right-click entry and a line in the ? help.
+const removed = {
+  btnPaste: {
+    key: /window\.addEventListener\('paste', async e => \{/,
+    menu: /\{ l: 'Paste', k: 'Ctrl\+V', f: \(\) => menuPaste\(pos\) \}/,
+    help: /\{ cat:'Editing', label:'Paste', keys:\['Ctrl','V'\] \}/,
+  },
+  btnSave: {
+    key: /else if \(mod && k === 's'\) \{ e\.preventDefault\(\); manualSaveBoardFile\(\(\) => saveBoardFile\(/,
+    menu: /\{ l: 'Save board file', k: 'Ctrl\+S', f: \(\) => manualSaveBoardFile\(\(\) => saveBoardFile\(\)\) \}/,
+    help: /\{ cat:'Files', label:'Save board', keys:\['Ctrl','S'\] \}/,
+  },
+  btnOpen: {
+    key: /else if \(mod && k === 'o'\) \{ e\.preventDefault\(\); openBoardFromDialog\(\); \}/,
+    menu: /\{ l: 'Open board file', k: 'Ctrl\+O', f: \(\) => openBoardFromDialog\(\) \}/,
+    help: /\{ cat:'Files', label:'Open board', keys:\['Ctrl','O'\] \}/,
+  },
+  btnFit: {
+    key: /else if \(k === 'f'\) fitTo\(/,
+    menu: /\{ l: 'Fit view', k: 'F', f: \(\) => fitTo\(/,
+    help: /\{ cat:'View', label:'Fit view', keys:\['F'\] \}/,
+  },
+};
+for (const [id, paths] of Object.entries(removed)) {
+  assert.doesNotMatch(source, new RegExp(`id=["']${id}["']`), `${id} should no longer be in the toolbar`);
+  assert.doesNotMatch(source, new RegExp(`#${id}\\b`), `nothing should still look up #${id}`);
+  for (const [via, re] of Object.entries(paths)) assert.match(source, re, `${id}'s action should stay reachable by ${via}`);
 }
 
 console.log('toolbar mode contract tests passed');

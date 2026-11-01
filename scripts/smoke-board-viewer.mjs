@@ -507,8 +507,12 @@ try {
   await vshot(v, 'viewer-fitted.png');
   const B = view2048.payload.bounds;
   const vp = await v.run(`({w:innerWidth,h:innerHeight})`);
-  assert.ok(B.w * fitted.s <= vp.w + 0.5 && B.h * fitted.s <= vp.h + 0.5, 'Fit shows the whole board');
-  assert.ok(Math.abs(B.w * fitted.s - (vp.w - 96)) < 1 || Math.abs(B.h * fitted.s - (vp.h - 96)) < 1, 'and fills the window on one side');
+  // The runtime's fit margin: 48 px, or 6% of the shorter side once the window is
+  // under 800 px, which happens when the screen is too small for 1280x800 (CI).
+  const margin2 = 2 * Math.min(48, Math.min(vp.w, vp.h) * 0.06);
+  const fitInfo = JSON.stringify({ vp, margin2, s: fitted.s, bw: B.w, bh: B.h });
+  assert.ok(B.w * fitted.s <= vp.w + 0.5 && B.h * fitted.s <= vp.h + 0.5, `Fit shows the whole board (${fitInfo})`);
+  assert.ok(Math.abs(B.w * fitted.s - (vp.w - margin2)) < 1 || Math.abs(B.h * fitted.s - (vp.h - margin2)) < 1, `and fills the window on one side (${fitInfo})`);
   await v.run(`(window.__refboardViewer.setView(3,-400,-300),true)`);
   const keyF = { key: 'f', code: 'KeyF', windowsVirtualKeyCode: 70, nativeVirtualKeyCode: 70, text: 'f' };
   await v.send('Input.dispatchKeyEvent', { type: 'keyDown', ...keyF });
@@ -533,10 +537,11 @@ try {
   assert.equal(await v.run(`document.querySelector('#rb-zpct').textContent`), `${Math.round(z0 / 1.25 * 100)}%`, 'the % shows the zoom');
   // Drag pans.
   const p0 = await v.run(`window.__refboardViewer.view()`);
-  await vmouse(v, 'mouseMoved', 640, 760);
-  await vmouse(v, 'mousePressed', 640, 760);
-  await vmouse(v, 'mouseMoved', 700, 720, { buttons: 1 });
-  await vmouse(v, 'mouseReleased', 700, 720);
+  const dx = vp.w / 2, dy = vp.h - 40;   // empty bottom-centre, clear of the zoom bar
+  await vmouse(v, 'mouseMoved', dx, dy);
+  await vmouse(v, 'mousePressed', dx, dy);
+  await vmouse(v, 'mouseMoved', dx + 60, dy - 40, { buttons: 1 });
+  await vmouse(v, 'mouseReleased', dx + 60, dy - 40);
   const p1 = await v.run(`window.__refboardViewer.view()`);
   assert.ok(Math.abs(p1.tx - p0.tx - 60) < 0.5 && Math.abs(p1.ty - p0.ty + 40) < 0.5, 'a drag pans the board');
   // Double-click an image zooms to it; again returns.
@@ -555,7 +560,7 @@ try {
   const zoomed = await v.run(`window.__refboardViewer.view()`);
   const largeRect = await v.run(`(()=>{const r=document.querySelector('[data-rb-id="${ids.large}"]').getBoundingClientRect();return [r.width,r.height];})()`);
   assert.ok(zoomed.s > home.s * 1.5, 'double-click zooms to the image');
-  assert.ok(Math.abs(largeRect[0] - (vp.w - 96)) < 2 || Math.abs(largeRect[1] - (vp.h - 96)) < 2, `the image fills the window (${largeRect})`);
+  assert.ok(Math.abs(largeRect[0] - (vp.w - margin2)) < 2 || Math.abs(largeRect[1] - (vp.h - margin2)) < 2, `the image fills the window (${largeRect}, ${fitInfo})`);
   for (const clickCount of [1, 2]) {
     await vmouse(v, 'mousePressed', vp.w / 2, vp.h / 2, { clickCount });
     await vmouse(v, 'mouseReleased', vp.w / 2, vp.h / 2, { clickCount });
