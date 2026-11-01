@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Snip to RefBoard</title>
+<style>
+html, body {
+  margin: 0; width: 100%; height: 100%; overflow: hidden;
+  background: #000; cursor: crosshair; user-select: none;
+  font: 12.5px/1.3 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+/* The frozen frame, drawn at the display's real pixel size and shown 1:1. */
+#frame { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#tint { position: fixed; inset: 0; background: rgba(0, 0, 0, .45); }
+/* The selection cuts the tint out with its own shadow, so the area inside it
+   shows the frame untouched. */
+#sel {
+  position: fixed; display: none; box-sizing: border-box;
+  box-shadow: 0 0 0 100000px rgba(0, 0, 0, .45);
+  outline: 1.5px solid #6eabff;
+}
+body.selecting #tint { display: none; }
+body.selecting #sel { display: block; }
+#size {
+  position: fixed; display: none; padding: 3px 7px; border-radius: 6px;
+  background: rgba(14, 17, 24, .92); color: #f3f6fb;
+  font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none;
+}
+body.selecting #size { display: block; }
+#hint {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  display: none; align-items: center; gap: 10px; max-width: calc(100vw - 48px);
+  padding: 8px 14px; border-radius: 999px;
+  background: rgba(14, 17, 24, .92); color: #b2bbc8;
+  border: 1px solid rgba(255, 255, 255, .10);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .4);
+  white-space: nowrap; pointer-events: none;
+}
+#hint.show { display: flex; }
+body.selecting #hint { opacity: 0; }
+#hint b { color: #f3f6fb; font-weight: 600; }
+#hintTarget { color: #6eabff; overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+<canvas id="frame"></canvas>
+<div id="tint"></div>
+<div id="sel"></div>
+<div id="size"></div>
+<div id="hint"><span><b>Snip to RefBoard</b> · drag a region, click for the whole screen · Esc to cancel</span><span id="hintTarget"></span></div>
+<script src="snip-geometry.js"></script>
+<script src="snip-overlay.js"></script>
+</body>
+</html>

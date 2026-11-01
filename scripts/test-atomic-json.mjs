@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { writeJsonAtomic } = require('./atomic-json.js');
+const { writeJsonAtomic, writeJsonAtomicSync } = require('./atomic-json.js');
 
 const dir = await mkdtemp(path.join(os.tmpdir(), 'refboard-atomic-json-'));
 try {
@@ -38,6 +38,14 @@ try {
   // Indentation matches what the stores wrote before, so diffs stay readable.
   await writeJsonAtomic(target, { a: 1 });
   assert.equal(await readFile(target, 'utf8'), JSON.stringify({ a: 1 }, null, 2), 'two-space indentation is preserved');
+
+  // The synchronous twin, used on quit: same document, same cleanup.
+  writeJsonAtomicSync(target, { quit: true });
+  assert.equal(await readFile(target, 'utf8'), JSON.stringify({ quit: true }, null, 2));
+  assert.throws(() => writeJsonAtomicSync(target, cyclic), /circular|Converting circular structure/i);
+  assert.deepEqual(JSON.parse(await readFile(target, 'utf8')), { quit: true }, 'a failed sync write keeps the previous document');
+  assert.throws(() => writeJsonAtomicSync(blocked, { x: 1 }));
+  assert.deepEqual((await readdir(dir)).filter(n => n.includes('.tmp-')), [], 'a failed sync write leaves no temp file');
 
   console.log('atomic json tests passed');
 } finally {

@@ -44,6 +44,8 @@ function load() {
     impl = {
       ok: true,
       GetDesktopWindow: user32.func('uintptr __stdcall GetDesktopWindow()'),
+      GetForegroundWindow: user32.func('uintptr __stdcall GetForegroundWindow()'),
+      SetForegroundWindow: user32.func('bool __stdcall SetForegroundWindow(uintptr hwnd)'),
       GetWindow: user32.func('uintptr __stdcall GetWindow(uintptr hwnd, uint cmd)'),
       GetWindowTextLengthW: user32.func('int __stdcall GetWindowTextLengthW(uintptr hwnd)'),
       GetWindowTextW: user32.func('int __stdcall GetWindowTextW(uintptr hwnd, _Out_ uint16 *text, int max)'),
@@ -141,6 +143,25 @@ function windowInfo(id) {
   return { id: hwndId(hwnd), title: windowTitle(api, hwnd) || 'Window' };
 }
 
+/* The window the user is in right now, for naming a snip after it. Read
+   before the snip overlay takes the foreground. */
+function foregroundWindow() {
+  const api = load();
+  if (!api) return null;
+  const hwnd = api.GetForegroundWindow();
+  if (!hwnd || hwnd === 0 || hwnd === 0n) return null;
+  return { id: hwndId(hwnd), title: windowTitle(api, hwnd) };
+}
+
+/* Hand the foreground back after the snip overlay closes. Windows allows it
+   because this process owned the foreground (the overlay) until now. */
+function focusWindow(id) {
+  const api = load();
+  const hwnd = toHwnd(id);
+  if (!api || !hwnd || !api.IsWindow(hwnd)) return false;
+  return !!api.SetForegroundWindow(hwnd);
+}
+
 function isWindow(id) {
   const api = load();
   const hwnd = toHwnd(id);
@@ -182,6 +203,8 @@ function restack(ourId, targetId) {
 module.exports = {
   listWindows,
   windowInfo,
+  foregroundWindow,
+  focusWindow,
   isWindow,
   attach,
   detach,

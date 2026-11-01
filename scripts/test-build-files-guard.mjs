@@ -103,4 +103,12 @@ assert.ok(
   'scripts/recent-works.js must stay in build.files - leaving it out is what broke 2.0.11',
 );
 
+// The snip overlay is a page and a preload that main.js loads by path, and the
+// page loads its scripts by <script src>; none of that is a require().
+assert.match(guard, /path\\\.join\\\(\\s\*__dirname/, 'the guard must follow path.join(__dirname, \'scripts\', ...) loads');
+assert.match(guard, /function extractHtmlScriptSources/, 'the guard must follow <script src> in a page it reaches');
+for (const file of ['scripts/snip-overlay.html', 'scripts/snip-overlay.js', 'scripts/snip-preload.js', 'scripts/snip-geometry.js']) {
+  assert.ok(coveredByBuildFiles(file, patterns), `${file} must be in build.files, or Ctrl+Alt+S opens a blank overlay`);
+}
+
 console.log(`build-files guard contract ok - ${checked} entry-point modules packaged, require() and main.js both covered`);
