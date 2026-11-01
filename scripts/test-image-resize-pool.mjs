@@ -138,7 +138,8 @@ function harness({ size = 2, failCreate = false } = {}) {
 
 /* --- the page does no resize-on-decode of its own --- */
 {
-  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  // Windows checkouts (core.autocrlf) are CRLF; the body lookup below needs '\n'.
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
   const script = html.slice(html.indexOf('<script type="module">'));
   // Every createImageBitmap call on the page, with its argument list.
   const calls = [...script.matchAll(/createImageBitmap\(([^;]*?)\)\s*[;,)]/gs)].map(m => m[1]);
@@ -152,7 +153,9 @@ function harness({ size = 2, failCreate = false } = {}) {
   for (const caller of ['createStableImageProxy', 'runImageLodJob', 'clipboardImageData']) {
     const start = script.indexOf(`function ${caller}(`);
     assert.ok(start > 0, `${caller} exists`);
-    const body = script.slice(start, script.indexOf('\n}\n', start));
+    const end = script.indexOf('\n}\n', start);
+    assert.ok(end > start, `found the end of ${caller}`);
+    const body = script.slice(start, end);
     assert.match(body, /resizeImageBlob\(/, `${caller} resizes through the pool`);
   }
   await tick();
