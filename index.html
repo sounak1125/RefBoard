@@ -436,6 +436,7 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 .tb[hidden]{ display:none; }
 #selbar:not(.has-images) .sel-images-only{ display:none; }
 #selbar:not(.one-image) .sel-one-image-only{ display:none; }
+#selbar:not(.two-images) .sel-two-images-only{ display:none; }
 #selbar:not(.has-taggable) .sel-taggable-only{ display:none; }
 #sTags.on{ background:color-mix(in srgb, var(--acc) 22%, transparent); color:#fff; }
 /* Line up rows needs two rows. With fewer the buttons stay in place but dim,
@@ -2157,6 +2158,86 @@ body.board-active #whatsNewNotice{ display:none; }
 #fillBar .fill-status{ margin-right:8px; white-space:nowrap; }
 #fillBar .btn{ padding:5px 12px; }
 #fillBar .btn[disabled]{ opacity:.45; pointer-events:none; }
+
+/* ---------- compare ---------- */
+/* Two selected images over each other, in place over the board. It sits over
+   the board's own chrome (toolbar, selection bar, minimap) and under the title
+   bar, toasts and dialogs. */
+#compareView{
+  position:fixed; top:0; left:0; right:0; bottom:0; z-index:88;
+  display:none; background:var(--scrim); outline:none;
+  touch-action:none; user-select:none;
+}
+/* In split view the left pane's title bar stays up and the right pane covers
+   its right part, as for #board. */
+body.split-active:not(.pane-secondary) #compareView{ top:var(--titlebar-h); right:var(--split-inset-right); }
+#compareView.show{ display:block; }
+/* The selection bar sits right behind Compare's own bar; through the scrim it
+   would read as part of it. */
+body.compare-open #selbar{ visibility:hidden; }
+#compareCanvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+#compareBar{
+  position:absolute; top:var(--float-gap); left:50%; transform:translateX(-50%);
+  white-space:nowrap; max-width:calc(100% - 32px);
+  transition:top .32s cubic-bezier(.22,1,.36,1);
+}
+/* Moves down with the title bar when it is revealed, as #selbar does. */
+body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var(--titlebar-h) + var(--float-gap)); }
+#compareBar .cmp-name{
+  display:flex; align-items:center; gap:7px; min-width:0; max-width:220px;
+  padding:0 8px; height:34px; color:var(--txt); font-size:12.5px;
+}
+#compareBar .cmp-file{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cmp-chip{
+  flex:none; display:inline-flex; align-items:center; justify-content:center;
+  min-width:20px; height:20px; padding:0 5px; border-radius:6px;
+  font-size:11px; font-weight:600; color:var(--txt);
+  background:var(--surface-3); border:1px solid var(--line-strong);
+}
+#compareBar .tb::after,
+#compareBar .cmp-seg button::after{
+  content:attr(data-tip);
+  position:absolute; top:calc(100% + 9px); left:50%; transform:translateX(-50%) scale(.96);
+  background:#0d0e12; color:#cfd3dd; font-size:11.5px; font-weight:400; white-space:nowrap;
+  padding:4px 9px; border-radius:7px; border:1px solid var(--line);
+  opacity:0; pointer-events:none; transition:opacity .12s .25s, transform .12s .25s;
+}
+#compareBar .tb:hover::after,
+#compareBar .cmp-seg button:hover::after{ opacity:1; transform:translateX(-50%) scale(1); }
+.cmp-seg{ display:flex; gap:2px; padding:2px; border-radius:9px; background:color-mix(in srgb, var(--txt) 5%, transparent); }
+.cmp-seg button{
+  position:relative; height:30px; padding:0 11px; border:0; border-radius:7px;
+  background:transparent; color:var(--mut); font:inherit; font-size:12.5px; cursor:pointer;
+}
+.cmp-seg button:hover{ color:var(--txt); }
+.cmp-seg button.on{ background:var(--surface-3); color:var(--txt); box-shadow:0 1px 0 rgba(255,255,255,.06) inset; }
+#compareBar button:focus-visible{ outline:2px solid var(--acc); outline-offset:1px; }
+.cmp-opacity{ display:none; align-items:center; gap:8px; padding:0 6px 0 10px; color:var(--mut); font-size:12px; }
+#compareView.mode-onion .cmp-opacity{ display:flex; }
+.cmp-opacity input{ width:110px; accent-color:var(--acc); }
+.cmp-opacity output{ min-width:34px; text-align:right; color:var(--txt); font-variant-numeric:tabular-nums; }
+#compareBar .cmp-done{ padding:6px 16px; margin-left:2px; color:var(--acc-contrast); }
+/* A pill of its own, so it stays legible when a zoomed image runs under it. */
+#compareInfo{
+  position:absolute; left:50%; bottom:8px; transform:translateX(-50%);
+  display:flex; align-items:center; gap:10px; max-width:calc(100% - 32px);
+  padding:4px 12px; border-radius:9px; background:var(--panel); border:1px solid var(--line);
+  color:var(--mut); font-size:12.5px; white-space:nowrap;
+}
+#compareInfo:has(#cmpReset:not([hidden])){ padding-right:4px; }
+#compareInfo span{ overflow:hidden; text-overflow:ellipsis; }
+#cmpReset{
+  border:1px solid var(--line); background:var(--surface-2); color:var(--txt);
+  border-radius:7px; padding:3px 10px; font:inherit; font-size:12px; cursor:pointer;
+}
+#cmpReset:hover{ background:var(--surface-3); }
+#cmpReset[hidden]{ display:none; }
+#compareLoading{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  display:none; padding:8px 16px; border-radius:10px;
+  background:var(--panel); border:1px solid var(--line); color:var(--mut); font-size:12.5px;
+}
+#compareView.loading #compareLoading{ display:block; }
 #toast.actionable{ pointer-events:auto; }
 #toast .toast-action{
   flex-shrink:0; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06);
@@ -3538,6 +3619,9 @@ try {
   <button class="tb sel-one-image-only" id="sFill" data-tip="Remove object  (content-aware fill)" aria-label="Remove an object with content-aware fill">
     <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="13" rx="7" ry="5" stroke-dasharray="2.6 2.4"/><path d="M6.5 17.6 5 21"/><path d="M18.5 2.5v4.5M16.25 4.75h4.5"/></svg>
   </button>
+  <button class="tb sel-two-images-only" id="sCompare" data-tip="Compare" aria-label="Compare the two selected images">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 2.5v19"/><path d="m8.5 10-2 2 2 2M15.5 10l2 2-2 2"/></svg>
+  </button>
   <span class="sep sel-multi-only"></span>
   <button class="tb sel-multi-only" id="sAlignH" data-tip="Arrange in a row" aria-label="Arrange in a row">
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3701,6 +3785,27 @@ try {
   <span class="fill-status" id="fillStatus"></span>
   <button type="button" class="btn" id="fillCancel">Cancel</button>
   <button type="button" class="btn primary" id="fillApply" disabled>Apply</button>
+</div>
+<div id="compareView" role="dialog" aria-label="Compare two images" tabindex="-1">
+  <canvas id="compareCanvas"></canvas>
+  <div id="compareBar" class="pill">
+    <span class="cmp-name"><span class="cmp-chip">A</span><span class="cmp-file" id="cmpFileA"></span></span>
+    <button type="button" class="tb" id="cmpSwap" data-tip="Swap A and B  (X)" aria-label="Swap A and B">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h15M15.5 4.5 19 8l-3.5 3.5"/><path d="M20 16H5M8.5 12.5 5 16l3.5 3.5"/></svg>
+    </button>
+    <span class="cmp-name"><span class="cmp-chip">B</span><span class="cmp-file" id="cmpFileB"></span></span>
+    <span class="sep"></span>
+    <div class="cmp-seg" id="cmpModes" role="radiogroup" aria-label="Compare mode">
+      <button type="button" role="radio" data-mode="wipe" data-tip="Wipe  (W)">Wipe</button>
+      <button type="button" role="radio" data-mode="onion" data-tip="Onion skin  (O)">Onion</button>
+      <button type="button" role="radio" data-mode="difference" data-tip="Difference  (D)">Difference</button>
+    </div>
+    <label class="cmp-opacity" for="cmpOpacity">B <input type="range" id="cmpOpacity" min="0" max="100" step="1" value="50" aria-label="Opacity of B"><output id="cmpOpacityVal" for="cmpOpacity">50%</output></label>
+    <span class="sep"></span>
+    <button type="button" class="btn primary cmp-done" id="cmpDone">Done</button>
+  </div>
+  <div id="compareLoading">Loading full resolution…</div>
+  <div id="compareInfo"><span id="cmpInfoText"></span><button type="button" id="cmpReset" hidden>Reset nudge</button></div>
 </div>
 <div id="ctxmenu"></div>
 <div id="ctxSub"></div>
@@ -3984,6 +4089,12 @@ try {
       <span class="ks">Labels → colour dot</span><span class="d">Give a label a colour and every item wearing it gets a soft glow</span>
       <span class="ks">Labels → Filter board</span><span class="d">Matching items stay lit; Reset filters restores the full board</span>
       <span class="ks">Labels → Display</span><span class="d">Show labels on canvas always, only on selected items, or turn them off</span>
+      <span class="ks">Two images → Compare</span><span class="d">Wipe, onion skin or difference between the two selected images, from the selection bar</span>
+      <span class="ks">In Compare: <kbd>W</kbd> / <kbd>O</kbd> / <kbd>D</kbd></span><span class="d">Wipe / onion skin / difference</span>
+      <span class="ks">In Compare: <kbd>X</kbd></span><span class="d">Swap A and B</span>
+      <span class="ks">In Compare: drag, <kbd>Arrows</kbd></span><span class="d">Nudge B by a pixel (Shift = 10)</span>
+      <span class="ks">In Compare: <kbd>F</kbd> / <kbd>Ctrl</kbd><kbd>0</kbd></span><span class="d">Fit / 100% (one image pixel per screen pixel); wheel zooms, Space or middle drag pans</span>
+      <span class="ks">In Compare: <kbd>Esc</kbd></span><span class="d">Close Compare</span>
       <span class="ks"><kbd>Del</kbd></span><span class="d">Delete selection</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>Z</kbd> / <kbd>Y</kbd></span><span class="d">Undo / redo</span>
       <span class="ks"><kbd>Wheel</kbd></span><span class="d">Zoom at cursor</span>
@@ -4222,6 +4333,7 @@ try {
 <input type="file" id="boardPick" accept=".refboard,application/json" hidden>
 
 <script src="./scripts/snip-shortcut.js"></script>
+<script src="./scripts/compare-geometry.js"></script>
 <script type="module">
 import { hydrateNoteDom, serializeNoteDom } from './scripts/note-dom.mjs';
 import {
@@ -8016,6 +8128,7 @@ async function applyUndoEntry(entry, direction) {
   cancelDrawSession();
   // Board history moving underneath an open fill would preview stale pixels.
   cancelFill();
+  closeCompare();
   applyBoardDelta(entry, direction);
   const ref = entry.bitmap ? entry.bitmap[direction] : null;
   if (ref) {
@@ -8975,6 +9088,625 @@ function drawFillLasso() {
 $('#sFill').addEventListener('click', () => void startFill(selectedImages()[0]));
 $('#fillCancel').addEventListener('click', cancelFill);
 $('#fillApply').addEventListener('click', () => void applyFill());
+
+/* ================= compare ================= */
+/* Two selected images over each other, in place over the board: a wipe, an
+   onion skin or a difference. Compare is a view. It changes no board data,
+   pushes no undo and never marks the board dirty; nudge, mode and zoom are
+   dropped on close. Both images' full bitmaps stay pinned while it is open, so
+   the eviction scheduler cannot close one under it, and every frame draws
+   straight from them with source rects (no full-size copies). It draws from
+   tick(), on rAF, and only when something changed. The maths is in
+   scripts/compare-geometry.js. */
+const CompareGeo = window.CompareGeometry;
+const compareView = $('#compareView');
+const compareCanvas = $('#compareCanvas');
+const compareCtx = compareCanvas.getContext('2d');
+const COMPARE_MODES = ['wipe', 'onion', 'difference'];
+const COMPARE_WIPE_GRAB = 10;   // CSS px either side of the wipe line that grab it
+const COMPARE_HANDLE_R = 17;    // the wipe handle's radius, CSS px
+const COMPARE_FIT_PAD = 24;
+let compareSession = null;
+let compareHatch = null;        // { dpr, pattern }
+
+const compareEligible = () => state.sel.size === 2 && selectedImages().length === 2;
+
+/** One side as the board shows it, kept upright: crop, flips and grayscale. */
+function compareSide(it) {
+  const im = images.get(it.imgId);
+  return {
+    it, id: it.id, imgId: it.imgId, im,
+    src: sourcePixelRect(im, it, true),
+    flipX: !!it.flipX, flipY: !!it.flipY,
+    gray: !!(it.gray || state.boardGray),
+    name: it.name || im?.name || 'Untitled',
+  };
+}
+
+const compareFrameOf = s => ({ w: s.a.src.w, h: s.a.src.h });
+const compareBSize = s => ({ w: s.b.src.w, h: s.b.src.h });
+
+function openCompare() {
+  if (compareSession || onLanding || !compareEligible()) return false;
+  const picked = selectedImages().map(it => {
+    const b = boundsOf(it);
+    return { it, cx: b.x + b.w / 2, cy: b.y + b.h / 2 };
+  });
+  const [a, b] = CompareGeo.orderAB(picked[0], picked[1]).map(p => p.it);
+  if (!images.get(a.imgId) || !images.get(b.imgId)) { toast('Compare needs both images'); return false; }
+  closeMenu();
+  closeMatchSizePop();
+  const s = {
+    a: compareSide(a), b: compareSide(b),
+    mode: 'wipe', wipe: 0.5, opacity: 0.5, nudge: { x: 0, y: 0 },
+    view: null, fitted: true, stage: { w: 0, h: 0 }, box: null, dpr: devicePixelRatio || 1,
+    dirty: true, loading: true, drag: null, space: false, alt: false, handle: null,
+    split: !!splitActive,
+    base: getComputedStyle(document.documentElement).getPropertyValue('--workspace').trim() || '#141a24',
+    prevFocus: document.activeElement,
+    openedAt: performance.now(), firstFrameMs: null, firstPaintMs: null,
+    stats: { frames: 0, drawMs: 0, maxDrawMs: 0 },
+  };
+  for (const side of [s.a, s.b]) {
+    prepareImageRecord(side.im);
+    imageResidency.pin(side.im);
+  }
+  compareSession = s;
+  s.loading = !(s.a.im.bitmap && s.b.im.bitmap);
+  compareView.classList.add('show');
+  document.body.classList.add('compare-open');
+  syncCompareUi();
+  layoutCompare();
+  compareView.focus({ preventScroll: true });
+  if (s.loading) {
+    const load = side => Promise.resolve(ensureFullBitmap(side.im, { itemId: side.id })).catch(() => null);
+    void Promise.all([load(s.a), load(s.b)]).then(([ba, bb]) => {
+      if (compareSession !== s) return;
+      if (!ba || !bb) {
+        closeCompare();
+        toast('Compare could not load the full-resolution images');
+        return;
+      }
+      s.loading = false;
+      s.dirty = true;
+      syncCompareUi();
+    });
+  }
+  return true;
+}
+
+function closeCompare() {
+  const s = compareSession;
+  if (!s) return;
+  compareSession = null;
+  for (const side of [s.a, s.b]) imageResidency.unpin(side.im);
+  scheduleFullBitmapEviction();
+  compareView.classList.remove('show', 'loading', ...COMPARE_MODES.map(m => `mode-${m}`));
+  document.body.classList.remove('compare-open');
+  // Give the canvas's backing store back; it is the size of the window.
+  compareCanvas.width = 0;
+  compareCanvas.height = 0;
+  compareCanvas.style.cursor = '';
+  const back = s.prevFocus;
+  if (back && back !== document.body && back.isConnected && typeof back.focus === 'function') back.focus({ preventScroll: true });
+  else compareView.blur();
+  invalidate();
+}
+
+/* The board moved on underneath (switched, closed, an image removed or
+   replaced): Compare closes rather than show something that is not there. */
+function compareBoardStillValid(s) {
+  if (onLanding) return false;
+  for (const side of [s.a, s.b]) {
+    const it = byId(side.id);
+    if (it !== side.it || it.imgId !== side.imgId || images.get(side.imgId) !== side.im) return false;
+  }
+  return true;
+}
+
+const compareSigned = v => {
+  const r = Math.round(v * 100) / 100;
+  return r < 0 ? `−${-r}` : `${r}`;
+};
+
+function syncCompareUi() {
+  const s = compareSession;
+  if (!s) return;
+  $('#cmpFileA').textContent = s.a.name;
+  $('#cmpFileA').title = s.a.name;
+  $('#cmpFileB').textContent = s.b.name;
+  $('#cmpFileB').title = s.b.name;
+  for (const m of COMPARE_MODES) compareView.classList.toggle(`mode-${m}`, s.mode === m);
+  for (const btn of document.querySelectorAll('#cmpModes button')) {
+    const on = btn.dataset.mode === s.mode;
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-checked', String(on));
+  }
+  const pct = Math.round(s.opacity * 100);
+  const slider = $('#cmpOpacity');
+  if (Number(slider.value) !== pct) slider.value = String(pct);
+  $('#cmpOpacityVal').textContent = `${pct}%`;
+  compareView.classList.toggle('loading', s.loading);
+  const fit = CompareGeo.fitB(compareFrameOf(s), compareBSize(s));
+  $('#cmpInfoText').textContent = CompareGeo.infoText({
+    a: compareFrameOf(s), b: compareBSize(s), sameShape: fit.sameShape, mode: s.mode,
+  });
+  const reset = $('#cmpReset');
+  const nudged = CompareGeo.isNudged(s.nudge);
+  reset.hidden = !nudged;
+  reset.textContent = nudged ? `Reset nudge (${compareSigned(s.nudge.x)}, ${compareSigned(s.nudge.y)})` : 'Reset nudge';
+}
+
+/** The part of the stage a fitted view fills: under the bar, over the info line. */
+function compareStageBox(w, h) {
+  const view = compareView.getBoundingClientRect();
+  const bar = $('#compareBar').getBoundingClientRect();
+  const top = Math.max(0, bar.bottom - view.top) + 10;
+  const bottom = 40;
+  return { x: 0, y: top, w, h: Math.max(40, h - top - bottom) };
+}
+
+function compareFitView(s) {
+  const v = CompareGeo.fitView(compareFrameOf(s), s.box, COMPARE_FIT_PAD);
+  return { s: v.s, tx: v.tx + s.box.x, ty: v.ty + s.box.y };
+}
+
+function compareZoomLimits(s) {
+  return CompareGeo.zoomLimits(compareFitView(s).s, s.dpr);
+}
+
+function layoutCompare() {
+  const s = compareSession;
+  if (!s) return;
+  const r = compareView.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+  const old = s.stage;
+  s.stage = { w, h };
+  s.dpr = devicePixelRatio || 1;
+  s.box = compareStageBox(w, h);
+  const cw = Math.max(1, Math.round(w * s.dpr)), ch = Math.max(1, Math.round(h * s.dpr));
+  if (compareCanvas.width !== cw || compareCanvas.height !== ch) {
+    compareCanvas.width = cw;
+    compareCanvas.height = ch;
+  }
+  if (!s.view || s.fitted) s.view = compareFitView(s);
+  else if (old.w && old.h) s.view = { ...s.view, tx: s.view.tx + (w - old.w) / 2, ty: s.view.ty + (h - old.h) / 2 };
+  s.dirty = true;
+}
+
+function compareHatchPattern(g, dpr) {
+  if (compareHatch?.dpr === dpr) return compareHatch.pattern;
+  const n = Math.max(4, Math.round(9 * dpr));
+  const c = document.createElement('canvas');
+  c.width = n;
+  c.height = n;
+  const p = c.getContext('2d');
+  p.strokeStyle = 'rgba(255,255,255,.2)';
+  p.lineWidth = Math.max(1, 1.4 * dpr);
+  p.beginPath();
+  for (const o of [-n, 0, n]) { p.moveTo(o, n); p.lineTo(o + n, 0); }
+  p.stroke();
+  compareHatch = { dpr, pattern: g.createPattern(c, 'repeat') };
+  return compareHatch.pattern;
+}
+
+/* One side into `rect` (frame pixels), as the board shows it. The fitted view
+   is smoothed like the board, so a small image opened large does not look
+   blocky; zoomed in past two device pixels per source pixel, the pixels are
+   shown as they are. */
+function drawCompareSide(g, side, rect, devPerSrc, fitted) {
+  const bitmap = side.im.bitmap;
+  if (!bitmap) return;
+  const src = side.src;
+  g.save();
+  g.translate(rect.x + rect.w / 2, rect.y + rect.h / 2);
+  if (side.flipX || side.flipY) g.scale(side.flipX ? -1 : 1, side.flipY ? -1 : 1);
+  g.imageSmoothingEnabled = renderQuality !== 'fast' && (fitted || devPerSrc < 2);
+  g.imageSmoothingQuality = renderQuality === 'high' ? 'high' : 'medium';
+  if (side.gray) g.filter = 'grayscale(1)';
+  g.drawImage(bitmap, src.x, src.y, src.w, src.h, -rect.w / 2, -rect.h / 2, rect.w, rect.h);
+  g.restore();
+}
+
+/* Where only A has pixels (B letterboxed or nudged away) nothing is compared,
+   so it must read as neither a match nor a difference: dimmed and hatched.
+   Over a difference it is opaque, since A alone would read as a difference. */
+function drawCompareGaps(g, s, gaps, opaque) {
+  if (!gaps.length) return;
+  g.save();
+  g.beginPath();
+  for (const r of gaps) g.rect(r.x, r.y, r.w, r.h);
+  // The path is already in device pixels; the hatch stays the same on screen at any zoom.
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = opaque ? '#1b1f27' : 'rgba(6,8,12,.74)';
+  g.fill();
+  g.fillStyle = compareHatchPattern(g, s.dpr);
+  g.fill();
+  g.restore();
+}
+
+function compareClip(g, r) {
+  g.beginPath();
+  g.rect(r.x, r.y, r.w, r.h);
+  g.clip();
+}
+
+function drawCompareChip(g, label, x, y, dpr, alignRight) {
+  const h = 22 * dpr, w = 22 * dpr, r = 6 * dpr;
+  const left = alignRight ? x - w : x;
+  g.save();
+  g.fillStyle = 'rgba(8,11,17,.78)';
+  g.strokeStyle = 'rgba(255,255,255,.16)';
+  g.lineWidth = Math.max(1, dpr);
+  g.beginPath();
+  g.roundRect(left, y, w, h, r);
+  g.fill();
+  g.stroke();
+  g.fillStyle = '#f3f6fb';
+  g.font = `600 ${Math.round(11.5 * dpr)}px "Segoe UI", system-ui, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(label, left + w / 2, y + h / 2 + 0.5 * dpr);
+  g.restore();
+}
+
+/* The wipe line, its handle and the A/B corner chips, in device pixels. */
+function drawCompareWipeChrome(g, s, frame, split) {
+  const { dpr, view: v } = s;
+  const W = compareCanvas.width, H = compareCanvas.height;
+  const x = dpr * (v.tx + split.x * v.s);
+  const top = Math.max(0, dpr * v.ty), bottom = Math.min(H, dpr * (v.ty + frame.h * v.s));
+  s.handle = null;
+  if (bottom <= top) return;
+  const left = Math.max(0, dpr * v.tx), right = Math.min(W, dpr * (v.tx + frame.w * v.s));
+  if (right - left > 80 * dpr) {
+    drawCompareChip(g, 'A', left + 10 * dpr, top + 10 * dpr, dpr, false);
+    drawCompareChip(g, 'B', right - 10 * dpr, top + 10 * dpr, dpr, true);
+  }
+  if (x < -COMPARE_HANDLE_R * dpr || x > W + COMPARE_HANDLE_R * dpr) return;
+  const cy = (top + bottom) / 2;
+  g.save();
+  g.shadowColor = 'rgba(0,0,0,.5)';
+  g.shadowBlur = 8 * dpr;
+  g.fillStyle = '#fff';
+  const lw = Math.max(1, Math.round(2 * dpr));
+  g.fillRect(Math.round(x - lw / 2), top, lw, bottom - top);
+  g.shadowBlur = 10 * dpr;
+  g.shadowOffsetY = 2 * dpr;
+  g.beginPath();
+  g.arc(x, cy, COMPARE_HANDLE_R * dpr, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+  g.save();
+  g.strokeStyle = '#0e1118';
+  g.lineWidth = 1.8 * dpr;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  const a = 3.2 * dpr, o = 7.5 * dpr;
+  g.beginPath();
+  g.moveTo(x - o + a, cy - a * 1.4); g.lineTo(x - o, cy); g.lineTo(x - o + a, cy + a * 1.4);
+  g.moveTo(x + o - a, cy - a * 1.4); g.lineTo(x + o, cy); g.lineTo(x + o - a, cy + a * 1.4);
+  g.stroke();
+  g.restore();
+  s.handle = { x: x / dpr, y: cy / dpr };
+}
+
+function drawCompare(s) {
+  const g = compareCtx;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
+  g.filter = 'none';
+  g.clearRect(0, 0, compareCanvas.width, compareCanvas.height);
+  s.handle = null;
+  if (s.loading || !s.view) return false;
+  const A = s.a, B = s.b, v = s.view, dpr = s.dpr;
+  if (!A.im.bitmap || !B.im.bitmap) return false;
+  const frame = compareFrameOf(s);
+  const frameRect = { x: 0, y: 0, w: frame.w, h: frame.h };
+  const bRect = CompareGeo.placeB(frame, compareBSize(s), s.nudge);
+  const overlap = CompareGeo.intersect(frameRect, bRect);
+  const gaps = CompareGeo.uncoveredRects(frame, bRect);
+  const k = dpr * v.s;          // device pixels per A pixel
+  const kB = k * bRect.scale;   // device pixels per B pixel
+  g.setTransform(k, 0, 0, k, dpr * v.tx, dpr * v.ty);
+
+  // A's frame, lifted off the scrim. A transparent pixel shows this base; in
+  // Difference the base is black so it never reads as a difference by itself.
+  g.save();
+  g.shadowColor = 'rgba(0,0,0,.55)';
+  g.shadowBlur = 40 * dpr;
+  g.shadowOffsetY = 14 * dpr;
+  g.fillStyle = s.mode === 'difference' ? '#000' : s.base;
+  g.fillRect(0, 0, frame.w, frame.h);
+  g.restore();
+
+  g.save();
+  compareClip(g, frameRect);
+  if (s.mode === 'wipe') {
+    const split = CompareGeo.wipeSplit(frame, s.wipe);
+    if (split.left.w > 0) {
+      g.save();
+      compareClip(g, split.left);
+      drawCompareSide(g, A, frameRect, k, s.fitted);
+      g.restore();
+    }
+    if (split.right.w > 0) {
+      g.save();
+      compareClip(g, split.right);
+      if (gaps.length) drawCompareSide(g, A, frameRect, k, s.fitted);
+      if (overlap) drawCompareSide(g, B, bRect, kB, s.fitted);
+      drawCompareGaps(g, s, gaps, false);
+      g.restore();
+    }
+    g.restore();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    drawCompareWipeChrome(g, s, frame, split);
+    return true;
+  }
+  drawCompareSide(g, A, frameRect, k, s.fitted);
+  if (overlap) {
+    if (s.mode === 'onion') g.globalAlpha = s.opacity;
+    else g.globalCompositeOperation = 'difference';
+    drawCompareSide(g, B, bRect, kB, s.fitted);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+  }
+  drawCompareGaps(g, s, gaps, s.mode === 'difference');
+  g.restore();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  return true;
+}
+
+/* Called from tick() every frame while Compare is open. */
+function compareFrame() {
+  const s = compareSession;
+  if (!compareBoardStillValid(s)) { closeCompare(); return; }
+  if (!s.dirty) return;
+  s.dirty = false;
+  const t0 = performance.now();
+  const drew = drawCompare(s);
+  const t1 = performance.now();
+  if (!drew) return;
+  s.stats.frames++;
+  s.stats.drawMs += t1 - t0;
+  s.stats.maxDrawMs = Math.max(s.stats.maxDrawMs, t1 - t0);
+  if (s.firstFrameMs == null) {
+    s.firstFrameMs = t1 - s.openedAt;
+    requestAnimationFrame(() => { if (s.firstPaintMs == null) s.firstPaintMs = performance.now() - s.openedAt; });
+  }
+}
+
+function setCompareMode(mode) {
+  const s = compareSession;
+  if (!s || !COMPARE_MODES.includes(mode) || s.mode === mode) return;
+  s.mode = mode;
+  s.drag = null;
+  s.dirty = true;
+  syncCompareUi();
+}
+
+function setCompareNudge(nudge) {
+  const s = compareSession;
+  if (!s) return;
+  if (nudge.x === s.nudge.x && nudge.y === s.nudge.y) return;
+  s.nudge = { x: nudge.x, y: nudge.y };
+  s.dirty = true;
+  syncCompareUi();
+}
+
+function swapCompare() {
+  const s = compareSession;
+  if (!s) return;
+  const before = compareFrameOf(s);
+  s.nudge = CompareGeo.swapNudge(before, compareBSize(s), s.nudge);
+  [s.a, s.b] = [s.b, s.a];
+  const after = compareFrameOf(s);
+  // A new frame size makes the old view meaningless; the same size keeps it.
+  if (s.fitted || after.w !== before.w || after.h !== before.h) {
+    s.view = compareFitView(s);
+    s.fitted = true;
+  }
+  s.drag = null;
+  s.dirty = true;
+  syncCompareUi();
+}
+
+function fitCompareView() {
+  const s = compareSession;
+  if (!s) return;
+  s.view = compareFitView(s);
+  s.fitted = true;
+  s.dirty = true;
+}
+
+function compareActualPixels() {
+  const s = compareSession;
+  if (!s?.view) return;
+  const c = s.box ? [s.box.x + s.box.w / 2, s.box.y + s.box.h / 2] : [s.stage.w / 2, s.stage.h / 2];
+  s.view = CompareGeo.actualPixelsView(s.view, c[0], c[1], s.dpr);
+  s.fitted = false;
+  s.dirty = true;
+}
+
+function compareZoomAt(cx, cy, scale) {
+  const s = compareSession;
+  if (!s?.view) return;
+  s.view = CompareGeo.zoomAbout(s.view, cx, cy, scale, compareZoomLimits(s));
+  s.fitted = false;
+  s.dirty = true;
+}
+
+function compareLocal(e) {
+  const r = compareCanvas.getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+
+function compareNearWipe(s, x, y) {
+  if (s.mode !== 'wipe' || !s.view) return false;
+  const h = s.handle;
+  if (h && Math.hypot(x - h.x, y - h.y) <= COMPARE_HANDLE_R + 3) return true;
+  const frame = compareFrameOf(s);
+  const lx = s.view.tx + CompareGeo.wipeSplit(frame, s.wipe).x * s.view.s;
+  const top = s.view.ty, bottom = s.view.ty + frame.h * s.view.s;
+  return Math.abs(x - lx) <= COMPARE_WIPE_GRAB && y >= top && y <= bottom;
+}
+
+function compareCursor(s, x, y) {
+  let cursor = 'move';
+  if (s.drag?.type === 'pan') cursor = 'grabbing';
+  else if (s.drag?.type === 'wipe') cursor = 'ew-resize';
+  else if (s.space || s.alt) cursor = 'grab';
+  else if (!s.drag && compareNearWipe(s, x, y)) cursor = 'ew-resize';
+  if (compareCanvas.style.cursor !== cursor) compareCanvas.style.cursor = cursor;
+}
+
+compareCanvas.addEventListener('pointerdown', e => {
+  const s = compareSession;
+  if (!s?.view || s.drag) return;
+  e.preventDefault();
+  const [x, y] = compareLocal(e);
+  const pan = e.button === 1 || e.button === 2 || (e.button === 0 && (s.space || s.alt || e.altKey));
+  if (pan) s.drag = { type: 'pan', id: e.pointerId, x, y, tx: s.view.tx, ty: s.view.ty };
+  else if (e.button !== 0 || s.loading) return;
+  else if (compareNearWipe(s, x, y)) {
+    s.drag = { type: 'wipe', id: e.pointerId };
+    s.wipe = CompareGeo.wipeAt(s.view, compareFrameOf(s), x);
+    s.dirty = true;
+  } else s.drag = { type: 'nudge', id: e.pointerId, x, y, start: { ...s.nudge } };
+  compareCanvas.setPointerCapture?.(e.pointerId);
+  compareCursor(s, x, y);
+});
+
+compareCanvas.addEventListener('pointermove', e => {
+  const s = compareSession;
+  if (!s?.view) return;
+  const [x, y] = compareLocal(e);
+  const d = s.drag;
+  if (!d || d.id !== e.pointerId) { compareCursor(s, x, y); return; }
+  if (d.type === 'pan') {
+    s.view = { ...s.view, tx: d.tx + (x - d.x), ty: d.ty + (y - d.y) };
+    s.fitted = false;
+    s.dirty = true;
+  } else if (d.type === 'wipe') {
+    const wipe = CompareGeo.wipeAt(s.view, compareFrameOf(s), x);
+    if (wipe !== s.wipe) { s.wipe = wipe; s.dirty = true; }
+  } else {
+    setCompareNudge(CompareGeo.dragNudge(d.start, x - d.x, y - d.y, s.view.s));
+  }
+});
+
+function endCompareDrag(e) {
+  const s = compareSession;
+  if (!s?.drag || s.drag.id !== e.pointerId) return;
+  s.drag = null;
+  if (compareCanvas.hasPointerCapture?.(e.pointerId)) compareCanvas.releasePointerCapture(e.pointerId);
+  compareCursor(s, ...compareLocal(e));
+}
+compareCanvas.addEventListener('pointerup', endCompareDrag);
+compareCanvas.addEventListener('pointercancel', endCompareDrag);
+compareCanvas.addEventListener('lostpointercapture', e => {
+  const s = compareSession;
+  if (s?.drag?.id === e.pointerId) s.drag = null;
+});
+
+// The board's window-level pointer, wheel and menu handlers must not see input
+// meant for Compare.
+for (const type of ['pointerdown', 'pointermove', 'pointerup', 'click', 'dblclick']) {
+  compareView.addEventListener(type, e => e.stopPropagation());
+}
+compareView.addEventListener('mousedown', e => {
+  if (e.button === 1) e.preventDefault(); // no autoscroll
+  // Bar buttons keep the focus off themselves, so Space and Enter never press them.
+  if (e.target.closest('#compareBar button')) e.preventDefault();
+});
+compareView.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); });
+compareView.addEventListener('wheel', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  const s = compareSession;
+  if (!s?.view || e.target.closest('#compareBar')) return;
+  const [cx, cy] = compareLocal(e);
+  compareZoomAt(cx, cy, s.view.s * Math.exp(-e.deltaY * (e.ctrlKey ? 0.004 : 0.0016)));
+}, { passive: false });
+
+$('#cmpSwap').addEventListener('click', swapCompare);
+$('#cmpDone').addEventListener('click', closeCompare);
+$('#cmpReset').addEventListener('click', () => setCompareNudge({ x: 0, y: 0 }));
+for (const btn of document.querySelectorAll('#cmpModes button')) {
+  btn.addEventListener('click', () => setCompareMode(btn.dataset.mode));
+}
+$('#cmpOpacity').addEventListener('input', e => {
+  const s = compareSession;
+  if (!s) return;
+  s.opacity = clamp(Number(e.target.value) / 100, 0, 1);
+  s.dirty = true;
+  syncCompareUi();
+});
+$('#sCompare').addEventListener('click', () => void openCompare());
+new ResizeObserver(() => { if (compareSession) layoutCompare(); }).observe(compareView);
+window.addEventListener('resize', () => { if (compareSession) layoutCompare(); });
+window.addEventListener('blur', () => {
+  if (!compareSession) return;
+  compareSession.space = false;
+  compareSession.alt = false;
+});
+
+/* Keys. This runs first, in the capture phase on window, and while Compare is
+   open no other key handler sees the event at all: no board shortcut (Delete,
+   Ctrl+Z, Ctrl+V and the rest), no capture-phase recorder, no menu. */
+window.addEventListener('keydown', e => {
+  const s = compareSession;
+  if (!s) return;
+  // A dialog raised over Compare (they all close it first, but just in case)
+  // keeps its own keys: the board's handler deals with dialogs before anything else.
+  if (document.querySelector('.modal.show')) return;
+  e.stopImmediatePropagation();
+  const k = String(e.key || '').toLowerCase();
+  const mod = e.ctrlKey || e.metaKey;
+  // The opacity slider keeps its own arrow keys while it has focus.
+  if (e.target?.id === 'cmpOpacity' && /^(arrow|home$|end$|page)/.test(k)) return;
+  // Keyboard users can still press a focused bar button and move between them.
+  if (k === 'tab' || ((k === 'enter' || k === ' ') && e.target?.closest?.('#compareBar button'))) return;
+  e.preventDefault();
+  if (k === 'escape') { closeCompare(); return; }
+  if (e.code === 'Space') { s.space = true; compareCursor(s, -1e6, -1e6); return; }
+  if (k === 'alt') { s.alt = true; compareCursor(s, -1e6, -1e6); return; }
+  if (mod) {
+    if (k === '0') compareActualPixels();
+    return;
+  }
+  if (e.altKey) return;
+  if (k === 'w') setCompareMode('wipe');
+  else if (k === 'o') setCompareMode('onion');
+  else if (k === 'd') setCompareMode('difference');
+  else if (k === 'x') swapCompare();
+  else if (k === 'f') fitCompareView();
+  else if (k.startsWith('arrow')) {
+    const step = e.shiftKey ? 10 : 1;
+    const dx = k === 'arrowleft' ? -step : k === 'arrowright' ? step : 0;
+    const dy = k === 'arrowup' ? -step : k === 'arrowdown' ? step : 0;
+    setCompareNudge(CompareGeo.stepNudge(s.nudge, dx, dy));
+  }
+}, true);
+// Key-ups pass through, so the board lets go of a Space or Alt held before opening.
+window.addEventListener('keyup', e => {
+  const s = compareSession;
+  if (!s) return;
+  if (e.code === 'Space') s.space = false;
+  if (String(e.key).toLowerCase() === 'alt') { s.alt = false; e.preventDefault(); }
+}, true);
+// Clipboard and file drops would add to or read the board under Compare.
+for (const type of ['paste', 'copy', 'cut', 'drop']) {
+  window.addEventListener(type, e => {
+    if (!compareSession) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+}
+window.addEventListener('dragover', e => {
+  if (compareSession) e.stopImmediatePropagation(); // and no preventDefault: no drop
+}, true);
 
 async function addBlankCanvas(ratio, atBoardPos) {
   const size = BLANK_CANVAS_SIZES[ratio];
@@ -13554,6 +14286,7 @@ function applyTargetView(v) {
 }
 
 async function prepareBoardOpen(opts = {}) {
+  closeCompare();
   const v = computeOpenTargetView(opts);
   if (v) applyTargetView(v);
   const board = $('#board');
@@ -13593,6 +14326,7 @@ async function transitionToBoard(opts = {}) {
 }
 
 async function transitionToLanding() {
+  closeCompare();
   onLanding = true;
   publishBoardSession(false);
   setToolbarRevealed(false);
@@ -16229,6 +16963,7 @@ async function openBoardPayloadFromDesktop(filePath) {
 
 async function openBoardFromPathImpl(filePath) {
   if (!filePath) return;
+  closeCompare();
   if (rejectBlockedBoard(filePath)) return;
   if (await returnToCurrentBoardForPath(filePath)) return;
   if (window.RefBoardAPI?.readBoardFile) {
@@ -17478,6 +18213,7 @@ function tick() {
         }
       }
       if (noteEditId) positionNoteEditor();
+      if (compareSession) compareFrame();
     }
   } catch (err) {
     lastBoardRenderError = err?.stack || err?.message || String(err);
@@ -19662,6 +20398,14 @@ const SHORTCUTS = [
   { cat:'View', label:'Always on top', keys:['Ctrl','T'] },
   { cat:'View', label:'Always on top of…', keys:['Ctrl','Alt','Shift','A'] },
   { cat:'View', label:'Shortcuts help', keys:['?'] },
+  { cat:'Compare', label:'Wipe', keys:['W'] },
+  { cat:'Compare', label:'Onion skin', keys:['O'] },
+  { cat:'Compare', label:'Difference', keys:['D'] },
+  { cat:'Compare', label:'Swap A and B', keys:['X'] },
+  { cat:'Compare', label:'Nudge B (Shift = 10 px)', keys:['Arrows'] },
+  { cat:'Compare', label:'Fit', keys:['F'] },
+  { cat:'Compare', label:'100%', keys:['Ctrl','0'] },
+  { cat:'Compare', label:'Close', keys:['Esc'] },
   { cat:'Files', label:'Save board', keys:['Ctrl','S'] },
   { cat:'Files', label:'Save board as', keys:['Ctrl','Shift','S'] },
   { cat:'Files', label:'Open board', keys:['Ctrl','O'] },
@@ -20403,6 +21147,8 @@ async function saveForNavigation() {
 }
 
 function resolveUnsavedChanges(action = 'close') {
+  // Every way off this board comes through here, and it may ask over the board.
+  closeCompare();
   return unsavedResolutionFlight.run(() => resolveUnsavedChangesImpl(action));
 }
 
@@ -20433,6 +21179,8 @@ function confirmAppClose() {
 }
 
 function handleAppCloseRequest(payload = {}) {
+  // Closing (or leaving split) may ask about unsaved changes over the board.
+  closeCompare();
   return closeRequestFlight.run(async () => {
     const action = payload?.reason === 'split-exit' ? 'split' : 'close';
     const result = await resolveUnsavedChanges(action);
@@ -20633,7 +21381,7 @@ if (window.RefBoardAPI?.onCloseRequest) {
 
   api.pinGetState().then(applyPinState).catch(() => {});
   api.onPinStateChange(applyPinState);
-  api.onPinOpenAbove(() => openPinMenu({ showWindows: true }));
+  api.onPinOpenAbove(() => { closeCompare(); openPinMenu({ showWindows: true }); });
   api.onSplitPinMenu?.(state => {
     if (BOARD_PANE === 'secondary') {
       if (state?.open) openPinMenu();
@@ -20734,6 +21482,7 @@ function updateSelBar() {
   bar.classList.toggle('has-images', n > 0 && selectionHasDragOutImages());
   bar.classList.toggle('has-taggable', n > 0 && selectedTaggableItems().length > 0);
   bar.classList.toggle('one-image', n === 1 && selectedImages().length === 1);
+  bar.classList.toggle('two-images', compareEligible());
   // The fill tool works on one image; selecting anything else leaves it.
   if (fillSession && !(n === 1 && state.sel.has(fillSession.itemId))) cancelFill();
   // The panel's selection half follows whatever is selected, including nothing.
@@ -21080,7 +21829,8 @@ async function addSnipImage(snip) {
   toast('Snip added');
 }
 
-window.RefBoardAPI?.onSnipImage?.(snip => snipQueue.run(() => addSnipImage(snip)));
+// A snip lands on the board, so the board has to be showing.
+window.RefBoardAPI?.onSnipImage?.(snip => { closeCompare(); snipQueue.run(() => addSnipImage(snip)); });
 
 for (const seg of [$('#expScale'), $('#expBg')]) {
   seg.addEventListener('click', e => {
@@ -21804,6 +22554,8 @@ splitToggleEl?.addEventListener('click', async () => {
 });
 
 window.RefBoardAPI?.onSplitStateChange?.(state => {
+  // Entering or leaving split view rebuilds the panes; a divider drag only resizes.
+  if (compareSession && !!state?.split !== compareSession.split) closeCompare();
   applySplitChrome(state);
   if (!splitDragging && state && Number.isFinite(state.ratio)) persistSplitRatio(state.ratio);
 });
@@ -22774,6 +23526,56 @@ window.RefBoard = {
   get lastSnipForTest() { return lastSnipForTest; },
   // Snip shortcut hook: a recorded Ctrl+S must not save or dirty the board.
   get boardFileDirtyForTest() { return boardFileDirty; },
+  // Compare hooks: every change counts, not just the dirty flag.
+  get boardChangeVersionForTest() { return boardChangeVersion; },
+  compareStateForTest: () => compareSession && {
+    a: compareSession.a.id, b: compareSession.b.id,
+    mode: compareSession.mode, wipe: compareSession.wipe, opacity: compareSession.opacity,
+    nudge: { ...compareSession.nudge }, view: compareSession.view && { ...compareSession.view },
+    fitted: compareSession.fitted, loading: compareSession.loading, dpr: compareSession.dpr,
+    frame: { w: compareSession.a.src.w, h: compareSession.a.src.h },
+    bRect: CompareGeo.placeB({ w: compareSession.a.src.w, h: compareSession.a.src.h }, { w: compareSession.b.src.w, h: compareSession.b.src.h }, compareSession.nudge),
+    handle: compareSession.handle && { ...compareSession.handle },
+    firstFrameMs: compareSession.firstFrameMs, firstPaintMs: compareSession.firstPaintMs,
+    stats: { ...compareSession.stats }, dirty: compareSession.dirty,
+  },
+  /* A pixel of the Compare canvas, under A's frame pixel (fx, fy), and that
+     point in client coordinates for a real mouse event. */
+  comparePixelForTest(fx, fy) {
+    const s = compareSession;
+    if (!s?.view) return null;
+    const x = Math.floor(s.dpr * (s.view.tx + fx * s.view.s)), y = Math.floor(s.dpr * (s.view.ty + fy * s.view.s));
+    return [...compareCtx.getImageData(x, y, 1, 1).data];
+  },
+  compareClientPointForTest(fx, fy) {
+    const s = compareSession;
+    if (!s?.view) return null;
+    const r = compareCanvas.getBoundingClientRect();
+    return [r.left + s.view.tx + fx * s.view.s, r.top + s.view.ty + fy * s.view.s];
+  },
+  /* Draws the current Compare frame `times` times and waits for the GPU each
+     time (a 1 px readback), so the number includes the work, not just its
+     submission. */
+  compareBenchForTest(times = 20) {
+    const s = compareSession;
+    if (!s) return null;
+    const runs = [];
+    for (let i = 0; i < times; i++) {
+      const t0 = performance.now();
+      drawCompare(s);
+      compareCtx.getImageData(0, 0, 1, 1);
+      runs.push(performance.now() - t0);
+    }
+    runs.sort((x, y) => x - y);
+    return { median: runs[Math.floor(runs.length / 2)], max: runs[runs.length - 1], min: runs[0] };
+  },
+  setCompareViewForTest(view) {
+    const s = compareSession;
+    if (!s) return false;
+    if (view === 'fit') fitCompareView();
+    else { s.view = { ...view }; s.fitted = false; s.dirty = true; }
+    return true;
+  },
   extractPaletteForTest: extractPaletteFromItem,
   /* Drag-out hooks: a harness cannot run a native OS drag, so it drives the
      staging half directly and reads the files that land on disk. */

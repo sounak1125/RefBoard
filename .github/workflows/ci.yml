@@ -144,3 +144,6 @@ jobs:
 
       - name: Snip shortcut setting smoke
         run: npm run test:snip-shortcut-smoke
+
+      - name: Compare smoke
+        run: npm run test:compare-smoke
