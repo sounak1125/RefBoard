@@ -69,6 +69,8 @@ assert.match(sync, /\$\$\('setSnap'\)\?\.classList\.toggle\('on', appSettings\.s
 assert.match(html, /\$\('#settingsClose'\)\.addEventListener\('click', closeSettings\);/, 'the close button closes Settings');
 assert.match(system, /startupTog\.classList\.toggle\('on', !!appSettings\.checkUpdatesOnStartup\)/, '#setCheckOnStartup shows its setting');
 assert.equal((markup.match(/class="theme-swatch" data-theme="/g) || []).length, 6, 'six themes');
+assert.match(markup, /<img class="s2-logo" id="setAboutIcon" alt="" aria-hidden="true">/, 'About has an icon slot');
+assert.match(wire, /getElementById\('setAboutIcon'\)\.src = document\.getElementById\('landingBrandIcon'\)\.src;/, 'About shows the official icon, the one Home shows');
 assert.match(wire, /querySelectorAll\('\.theme-swatch'\)\.forEach\(b => b\.addEventListener\('click', \(\) => applyTheme\(b\.dataset\.theme\)\)\)/, 'themes apply on click');
 
 /* Five selects, all upgraded to .ui-select (smoke-landing-layout counts them). */

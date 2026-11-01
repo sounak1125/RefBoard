@@ -2586,10 +2586,9 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 .s2-about{ justify-content:flex-start; gap:14px; padding:16px 2px; }
 .s2-about .s2-control{ margin-left:auto; }
 .s2-logo{
-  width:44px; height:44px; flex:0 0 auto; display:grid; place-items:center; border-radius:12px; color:var(--acc-contrast);
-  background:linear-gradient(145deg, color-mix(in srgb, var(--acc) 85%, #fff 15%), color-mix(in srgb, var(--acc) 55%, #000 45%));
+  width:44px; height:44px; flex:0 0 auto; display:block; object-fit:cover; border-radius:12px; user-select:none;
+  box-shadow:0 1px 0 rgba(255,255,255,.14) inset, 0 6px 18px rgba(0,0,0,.3);
 }
-.s2-logo svg{ width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .s2-row .s2-label.s2-version{ font:650 16px/1.25 var(--font-display); font-variant-numeric:tabular-nums; }
 /* Shortcuts */
 .s2-sc{ min-height:40px; gap:14px; padding:7px 2px; }
@@ -4257,7 +4256,7 @@ try {
         <div class="s2-pane" data-pane="system" data-desc="Version, what's new and updates." hidden>
           <div class="s2-sec">
           <div class="s2-row s2-about" data-search="version about">
-            <div class="s2-logo" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg></div>
+            <img class="s2-logo" id="setAboutIcon" alt="" aria-hidden="true">
             <div class="s2-text"><div class="s2-label s2-version" id="setVersionText">RefBoard</div><div class="s2-sub" id="setVersionSub">—</div></div>
             <div class="s2-control"><button type="button" class="s2-btn" id="settingsWhatsNew">What's New</button></div>
           </div>
@@ -21337,6 +21336,8 @@ function wireSettingsControls() {
     }
   });
   $('#settingsWhatsNew').addEventListener('click', () => { void openCurrentWhatsNew(); });
+  // The official icon, the one Home shows (scripts/gen-icon.js writes it there).
+  document.getElementById('setAboutIcon').src = document.getElementById('landingBrandIcon').src;
   document.querySelectorAll('.s2-pane').forEach(addSettingsPaneTitle);
   document.querySelectorAll('.s2-tab').forEach(t => t.addEventListener('click', () => showSettingsPane(t.dataset.pane)));
   const search = document.getElementById('settingsSearch');

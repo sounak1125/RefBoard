@@ -220,6 +220,7 @@ try {
   await click(page, '.s2-tab[data-pane="system"]');
   assert.equal(await page.run(`document.getElementById('settingsTitle').textContent`), 'About');
   assert.match(await page.run(`document.getElementById('setVersionText').textContent`), /^RefBoard \d+\.\d+\.\d+/, 'the version shows');
+  assert.deepEqual(await page.run(`(()=>{const a=document.getElementById('setAboutIcon'),h=document.getElementById('landingBrandIcon');return [a.src===h.src,a.complete&&a.naturalWidth>0];})()`), [true, true], 'About shows the official icon, loaded');
   assert.equal(await page.run(`document.getElementById('setCheckUpdates').disabled`), true, 'no update check in a development build');
   const startup = await setting(page, 'checkUpdatesOnStartup');
   await click(page, '#setCheckOnStartup');
