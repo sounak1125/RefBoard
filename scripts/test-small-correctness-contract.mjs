@@ -51,7 +51,7 @@ assert.match(del, /if \(state\.anchorId && \(toDelete\.has\(state\.anchorId\) \|
   'an emptied group cannot remain the selection anchor');
 
 /* --- 4. the two JSON stores are written atomically --- */
-assert.match(main, /const \{ writeJsonAtomic \} = require\('\.\/scripts\/atomic-json'\);/, 'main.js uses the atomic writer');
+assert.match(main, /const \{ writeJsonAtomic(?:, writeJsonAtomicSync)? \} = require\('\.\/scripts\/atomic-json'\);/, 'main.js uses the atomic writer');
 assert.match(main, /async function saveRecentWorks\(list\) \{\s*await writeJsonAtomic\(recentWorksPath\(\), list\);\s*\}/, 'recent works are written atomically');
 assert.match(main, /async function saveWhatsNewStore\(data\) \{\s*await writeJsonAtomic\(whatsNewStorePath\(\), data\);\s*\}/, 'the what\'s-new store is written atomically');
 assert.doesNotMatch(main, /fs\.writeFile\((?:recentWorksPath|whatsNewStorePath)\(\)/, 'neither store uses a truncating write');

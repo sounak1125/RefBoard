@@ -2574,6 +2574,10 @@ body.board-active #whatsNewNotice{ display:none; }
 .s2-btn.subtle:hover{ color:var(--txt); border-color:rgba(255,255,255,.18); }
 .s2-version{ font-size:13px; color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap; }
 .s2-row-sub{ padding-left:18px; }
+.s2-row .s2-sub.s2-warn{ color:var(--danger); }
+.s2-snip-recording{ font-size:12px; color:var(--acc); }
+/* The AltGr note is long; let it wrap beside the keys instead of pushing them under it. */
+#s2SnipBlock .s2-row > div:first-child{ flex:1 1 240px; min-width:0; }
 .s2-row-sub .s2-label{ font-size:12.5px; color:var(--mut); }
 .card.autosave-interval-card{ width:440px; padding:22px 26px 20px; position:relative; }
 .card.autosave-interval-card h3{ text-align:center; margin-bottom:10px; }
@@ -3964,6 +3968,7 @@ try {
     <h3>Keyboard shortcuts</h3>
     <div class="shortcuts">
       <span class="ks"><kbd>Ctrl</kbd><kbd>V</kbd></span><span class="d">Paste image(s) from clipboard</span>
+      <span class="ks" id="helpSnipKeys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>S</kbd></span><span class="d" id="helpSnipDesc">Snip a part of the screen to the board, from any app (desktop app)</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>C</kbd></span><span class="d">Copy selection to clipboard (high resolution)</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>D</kbd></span><span class="d">Duplicate selection</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>G</kbd></span><span class="d">Group selected images or notes</span>
@@ -4216,6 +4221,7 @@ try {
 <input type="file" id="filePick" multiple accept="image/*" hidden>
 <input type="file" id="boardPick" accept=".refboard,application/json" hidden>
 
+<script src="./scripts/snip-shortcut.js"></script>
 <script type="module">
 import { hydrateNoteDom, serializeNoteDom } from './scripts/note-dom.mjs';
 import {
@@ -4267,6 +4273,7 @@ import { buildDragOutNames, dragOutStem } from './scripts/drag-out.mjs';
 import { exportEncoding } from './scripts/export-encoding.mjs';
 import { inpaintGrowPx, isUsableLasso, lassoBounds, cropRegion, appendLassoPoint } from './scripts/inpaint-geometry.mjs';
 import { drawCropWindow, growRect, segmentDirtyRect, shadowReach } from './scripts/draw-stroke.mjs';
+import { snipRowPosition } from './scripts/snip-placement.mjs';
 import {
   annotationHaloColor,
   arrowBounds,
@@ -19661,6 +19668,13 @@ function renderShortcutsList(){
   const pane = document.querySelector('.s2-pane[data-pane="shortcuts"]');
   if (!pane) return;
   pane.innerHTML = '';
+  // Snip to board's own block comes first; it is drawn from main's state.
+  if (snipShortcutApi) {
+    const block = document.createElement('div');
+    block.id = 's2SnipBlock';
+    pane.appendChild(block);
+    renderSnipShortcutBlock();
+  }
   let lastCat = '';
   for (const s of SHORTCUTS){
     if (s.cat !== lastCat){ lastCat = s.cat; const h=document.createElement('div'); h.className='s2-cat'; h.textContent=s.cat; pane.appendChild(h); }
@@ -19670,6 +19684,146 @@ function renderShortcutsList(){
     keys.innerHTML = s.keys.map(k=>`<kbd>${k}</kbd>`).join('<span class="s2-plus">+</span>');
     row.append(l, keys); pane.appendChild(row);
   }
+}
+
+/* Snip to board's shortcut, at the top of Settings → Shortcuts. main.js holds
+   the setting and the registration; this shows them and records a new combo.
+   window.SnipShortcut (scripts/snip-shortcut.js) is the same parser main.js
+   checks every request with. */
+const snipShortcutApi = window.RefBoardAPI?.getSnipShortcut ? window.RefBoardAPI : null;
+let snipShortcutState = {
+  enabled: true, accelerator: window.SnipShortcut?.DEFAULT_ACCELERATOR || 'Control+Alt+S', registered: false, error: null,
+};
+let snipRecording = null;
+const snipEscape = str => String(str ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const snipCapsHtml = accelerator => window.SnipShortcut.acceleratorCaps(accelerator)
+  .map(k => `<kbd>${snipEscape(k)}</kbd>`).join('<span class="s2-plus">+</span>');
+
+function snipStatusText(st) {
+  if (!st.enabled) return 'Off';
+  if (!st.registered && st.error?.code === 'in-use' && st.error.accelerator === st.accelerator) {
+    return `${window.SnipShortcut.acceleratorLabel(st.accelerator)} is in use by another app`;
+  }
+  return 'Works in every app while RefBoard is open';
+}
+
+function renderSnipShortcutBlock() {
+  const block = document.getElementById('s2SnipBlock');
+  if (!block || !snipShortcutApi || !window.SnipShortcut) return;
+  const S = window.SnipShortcut;
+  const st = snipShortcutState;
+  const subs = [];
+  if (snipRecording?.hint) subs.push(`<div class="s2-sub s2-warn">${snipEscape(snipRecording.hint)}</div>`);
+  // A combination that could not be held; the old one is still in place.
+  if (st.error?.code === 'in-use' && st.error.accelerator !== st.accelerator) {
+    subs.push(`<div class="s2-sub s2-warn">${snipEscape(S.acceleratorLabel(st.error.accelerator))} is in use by another app</div>`);
+  }
+  if (S.blocksAltGr(st.accelerator)) {
+    const key = S.acceleratorCaps(st.accelerator).at(-1);
+    subs.push(`<div class="s2-sub">On keyboards with AltGr, this also blocks AltGr+${snipEscape(key)}, which may type a letter.</div>`);
+  }
+  const keys = snipRecording
+    ? '<span class="s2-snip-recording">Press a shortcut…</span>'
+    : snipCapsHtml(st.accelerator);
+  const isDefault = st.accelerator === S.DEFAULT_ACCELERATOR;
+  block.innerHTML = `
+    <div class="s2-cat">Snip to board</div>
+    <div class="s2-row"><div><div class="s2-label">Snip from any app</div><div class="s2-sub" id="setSnipStatus">${snipEscape(snipStatusText(st))}</div></div>
+      <div class="s2-control"><button class="s2-toggle${st.enabled ? ' on' : ''}" id="setSnipEnabled" role="switch" aria-checked="${st.enabled}"></button></div></div>
+    <div class="s2-row"><div><div class="s2-label">Shortcut</div>${subs.join('')}</div>
+      <div class="s2-control"><div class="s2-keys" id="setSnipKeys">${keys}</div>
+        <button type="button" class="s2-btn subtle" id="setSnipChange">${snipRecording ? 'Cancel' : 'Change'}</button>
+        <button type="button" class="s2-btn subtle" id="setSnipReset"${isDefault || snipRecording ? ' hidden' : ''}>Reset</button></div></div>`;
+  block.querySelector('#setSnipEnabled').addEventListener('click', () => {
+    if (snipRecording) stopSnipRecording();
+    void updateSnipShortcut({ enabled: !snipShortcutState.enabled });
+  });
+  block.querySelector('#setSnipChange').addEventListener('click', () => {
+    if (snipRecording) stopSnipRecording();
+    else startSnipRecording();
+  });
+  block.querySelector('#setSnipReset').addEventListener('click', () => {
+    void updateSnipShortcut({ accelerator: S.DEFAULT_ACCELERATOR });
+  });
+  // Keep a settings search applied across re-renders.
+  const q = (document.getElementById('settingsSearch')?.value || '').trim().toLowerCase();
+  if (q) block.querySelectorAll('.s2-row').forEach(r => { r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+}
+
+/* Everywhere else the shortcut appears: the ? panel. */
+function syncSnipShortcutMentions() {
+  const keys = document.getElementById('helpSnipKeys');
+  const desc = document.getElementById('helpSnipDesc');
+  if (!keys || !window.SnipShortcut) return;
+  keys.innerHTML = snipCapsHtml(snipShortcutState.accelerator).replaceAll('<span class="s2-plus">+</span>', '');
+  if (desc) desc.textContent = snipShortcutState.enabled
+    ? 'Snip a part of the screen to the board, from any app (desktop app)'
+    : 'Snip to board is off; turn it on in Settings → Shortcuts';
+}
+
+function applySnipShortcutState(st) {
+  if (!st || typeof st.accelerator !== 'string') return;
+  snipShortcutState = st;
+  renderSnipShortcutBlock();
+  syncSnipShortcutMentions();
+}
+
+async function updateSnipShortcut(change) {
+  if (!snipShortcutApi) return;
+  try {
+    applySnipShortcutState(await snipShortcutApi.setSnipShortcut(change));
+  } catch {
+    toast('Could not change the snip shortcut');
+  }
+}
+
+/* While recording, every key press belongs to the recorder: this runs in the
+   capture phase on window, ahead of the board's own handlers, so a recorded
+   Ctrl+S does not also save the board. main.js lets go of the current combo
+   meanwhile, so it can be recorded too, and skips its own Ctrl+T. Ending the
+   recording first gives main the old combo back, which a failed change keeps. */
+function onSnipRecordKey(e) {
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (!snipRecording || e.repeat) return;
+  if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+    stopSnipRecording();
+    return;
+  }
+  const result = window.SnipShortcut.acceleratorFromEvent(e);
+  if (result.ignore) return;
+  if (result.reason) {
+    snipRecording.hint = window.SnipShortcut.hintFor(result.reason);
+    renderSnipShortcutBlock();
+    return;
+  }
+  stopSnipRecording();
+  void updateSnipShortcut({ enabled: snipShortcutState.enabled, accelerator: result.accelerator });
+}
+
+function startSnipRecording() {
+  if (snipRecording || !snipShortcutApi) return;
+  // main.js gives up on a recording after 30 s; stop showing one by then too.
+  snipRecording = { hint: '', timer: setTimeout(() => stopSnipRecording(), 30000) };
+  window.addEventListener('keydown', onSnipRecordKey, true);
+  snipShortcutApi.setSnipShortcutRecording(true);
+  renderSnipShortcutBlock();
+}
+
+function stopSnipRecording() {
+  if (!snipRecording) return;
+  clearTimeout(snipRecording.timer);
+  snipRecording = null;
+  window.removeEventListener('keydown', onSnipRecordKey, true);
+  snipShortcutApi?.setSnipShortcutRecording(false);
+  renderSnipShortcutBlock();
+}
+
+if (snipShortcutApi) {
+  snipShortcutApi.onSnipShortcutChange?.(applySnipShortcutState);
+  snipShortcutApi.getSnipShortcut().then(applySnipShortcutState).catch(() => {});
 }
 
 function restoreSettingsDefaults() {
@@ -19692,6 +19846,8 @@ function restoreSettingsDefaults() {
   }
   syncSettingsUi();
   syncSystemUi();
+  stopSnipRecording();
+  void updateSnipShortcut({ enabled: true, accelerator: window.SnipShortcut?.DEFAULT_ACCELERATOR || 'Control+Alt+S' });
   if (onLanding) void renderRecentWorks();
 }
 
@@ -19785,6 +19941,7 @@ function wireSettingsControls() {
 function openSettings() {
   syncSettingsUi();
   syncSystemUi();
+  snipShortcutApi?.getSnipShortcut().then(applySnipShortcutState).catch(() => {});
   const activePane = document.querySelector('.s2-tab.active')?.dataset.pane || 'performance';
   document.querySelectorAll('.s2-pane').forEach(p => { p.hidden = p.dataset.pane !== activePane; });
   settingsModal.classList.add('show');
@@ -19792,6 +19949,7 @@ function openSettings() {
 
 function closeSettings() {
   closeSettingsSelectMenus();
+  stopSnipRecording();
   settingsModal.classList.remove('show');
 }
 
@@ -20880,6 +21038,43 @@ $('#rwNewWindow').addEventListener('click', async () => {
 if (window.RefBoardAPI?.onOpenBoardPath) {
   window.RefBoardAPI.onOpenBoardPath(filePath => openBoardFromPath(filePath));
 }
+
+/* ================= snip to board =================
+   Ctrl+Alt+S is caught in main.js, which freezes the screens, crops the box
+   the user drags and sends the PNG to the pane used last. On Home that starts
+   a new board first. Snips taken one after another line up left to right,
+   top-aligned, for as long as the previous one is still on the board. */
+let lastSnipItemId = null;
+let lastSnipForTest = null;
+const snipQueue = createAsyncQueue();
+
+// Read by main.js for the overlay's "→ board" hint.
+window.__snipTargetInfo = () => ({
+  onLanding,
+  board: currentBoardTitle || boardTitleFromPath(currentBoardPath) || 'Untitled board',
+});
+
+async function addSnipImage(snip) {
+  if (!snip?.data) return;
+  if (onLanding) await openNewBoard();
+  if (onLanding) return;
+  const file = new File([snip.data], snip.name || 'Snip.png', { type: 'image/png' });
+  const [it] = await addImages([file], null);
+  if (!it) return;
+  const previous = lastSnipItemId ? state.items.find(item => item.id === lastSnipItemId) : null;
+  const pos = snipRowPosition(previous ? bboxOf([previous]) : null, it);
+  if (pos) {
+    it.x = pos.x;
+    it.y = pos.y;
+    invalidateWorkspaceBBox();
+    invalidate();
+  }
+  lastSnipItemId = it.id;
+  lastSnipForTest = { itemId: it.id, name: it.name, addedAt: Date.now() };
+  toast('Snip added');
+}
+
+window.RefBoardAPI?.onSnipImage?.(snip => snipQueue.run(() => addSnipImage(snip)));
 
 for (const seg of [$('#expScale'), $('#expBg')]) {
   seg.addEventListener('click', e => {
@@ -22565,6 +22760,11 @@ window.RefBoard = {
   invalidate,
   runAutosaveTick,
   get startupComplete() { return appStartupComplete; },
+  get onLanding() { return onLanding; },
+  // Snip hook: which item the last Ctrl+Alt+S snip became, and when.
+  get lastSnipForTest() { return lastSnipForTest; },
+  // Snip shortcut hook: a recorded Ctrl+S must not save or dirty the board.
+  get boardFileDirtyForTest() { return boardFileDirty; },
   extractPaletteForTest: extractPaletteFromItem,
   /* Drag-out hooks: a harness cannot run a native OS drag, so it drives the
      staging half directly and reads the files that land on disk. */

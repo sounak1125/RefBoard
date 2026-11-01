@@ -37,4 +37,31 @@ async function writeJsonAtomic(filePath, value, { indent = 2 } = {}) {
   return { path: target, bytes: Buffer.byteLength(text, 'utf8') };
 }
 
-module.exports = { writeJsonAtomic };
+/**
+ * The same write, synchronously, for the one place an async write cannot be
+ * awaited: on quit, where the process may be gone before a promise settles.
+ */
+function writeJsonAtomicSync(filePath, value, { indent = 2 } = {}) {
+  const fsSync = require('fs');
+  const target = path.resolve(String(filePath));
+  const dir = path.dirname(target);
+  fsSync.mkdirSync(dir, { recursive: true });
+  const tempPath = path.join(dir, `.${path.basename(target)}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`);
+  const text = JSON.stringify(value, null, indent);
+  let fd = null;
+  try {
+    fd = fsSync.openSync(tempPath, 'wx');
+    fsSync.writeFileSync(fd, text, 'utf8');
+    fsSync.fsyncSync(fd);
+    fsSync.closeSync(fd);
+    fd = null;
+    fsSync.renameSync(tempPath, target);
+  } catch (err) {
+    if (fd !== null) { try { fsSync.closeSync(fd); } catch { /* already closed */ } }
+    try { fsSync.unlinkSync(tempPath); } catch { /* never created */ }
+    throw err;
+  }
+  return { path: target, bytes: Buffer.byteLength(text, 'utf8') };
+}
+
+module.exports = { writeJsonAtomic, writeJsonAtomicSync };
