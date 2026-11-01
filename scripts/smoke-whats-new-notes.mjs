@@ -1,9 +1,15 @@
 /**
- * What's New shows where to find a change and its caveat, driven through the
- * real UI on a fresh profile that last saw 2.1.6: Home offers the notes, the
- * notice opens them, and each 2.2.0 change shows its title, its one-line
- * description, and its where and note lines exactly when changelog.json has
- * them. An item's details never shows in the app; it is for the GitHub release.
+ * What's New, driven through the real UI on a fresh profile that last saw
+ * 2.1.6:
+ * - Home's card names the update's headline and its first changes, and counts
+ *   the rest.
+ * - The window leads with the first new feature, gives the next few tiles and
+ *   folds everything else into one row that opens in place. Every change in
+ *   the update is in the window exactly once with its one-line description,
+ *   and with its where and note lines exactly when the notes have them. An
+ *   item's details never shows: it is for the GitHub release.
+ * - With the rest folded, the window fits without scrolling.
+ * - Got it closes the window and records the version as seen.
  *
  * Set REFBOARD_SMOKE_SHOTS=<folder> to keep a screenshot of each step.
  */
@@ -27,7 +33,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // version is running.
 await writeFile(path.join(profile, 'whats-new.json'), JSON.stringify({ lastSeenVersion: '2.1.6' }));
 const changelog = JSON.parse(await readFile(path.join(root, 'changelog.json'), 'utf8'));
-const expected = ['new', 'improved', 'fixed'].flatMap(section => changelog['2.2.0'].sections[section].map(item => ({ section, ...item })));
+const KEYS = ['new', 'improved', 'fixed'];
 
 async function cdp(url) {
   const socket = new WebSocket(url);
@@ -114,6 +120,19 @@ async function shot(page, name) {
   await writeFile(path.join(shots, `${String(++shotN).padStart(2, '0')}-${name}.png`), Buffer.from(s.data, 'base64'));
 }
 
+// Every change the window shows, read back from the page: its title (without
+// any version tag), description, where and note lines, and where it sits.
+const READ_WINDOW = `[...document.querySelectorAll('#whatsNewSections .wn-lead, #whatsNewSections .wn-tile, #whatsNewSections .wn-row')].map(el=>{
+  const kind=el.classList.contains('wn-lead')?'lead':el.classList.contains('wn-tile')?'tile':'row';
+  const titleEl=el.querySelector('.wn-lead-title, .wn-tile-title, .wn-row-title');
+  const title=titleEl?.firstChild?.textContent??null;
+  let description=el.querySelector('.wn-lead-text, .wn-tile-text')?.textContent??null;
+  if(kind==='row'){const text=el.querySelector('.wn-row-text').textContent;const at=text.indexOf(' — ');description=at===-1?null:text.slice(at+3);}
+  const line=sel=>el.querySelector(sel)?.textContent??null;
+  const shown=sel=>{const n=el.querySelector(sel);return !!n&&n.getClientRects().length>0;};
+  return {kind,title,description,where:line('.wn-item-where'),note:line('.wn-item-note'),whereShown:shown('.wn-item-where'),noteShown:shown('.wn-item-note'),text:el.textContent};
+})`;
+
 let step = 'launch';
 const report = {};
 let page = null;
@@ -123,39 +142,77 @@ try {
   await page.send('Page.enable');
   await page.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
   await waitFor(() => page.run('!!(window.RefBoard && window.RefBoard.startupComplete)').catch(() => false), 'startup', 300);
+  const payload = await page.run('window.RefBoardAPI.checkWhatsNew()');
+  assert.equal(payload?.show, true, 'this profile has an update to show');
+  const items = KEYS.flatMap(key => payload.sections[key].map(item => ({ key, ...item })));
+  const named = [...payload.sections.new, ...payload.sections.improved];
 
-  step = 'the notice on Home';
-  await waitFor(() => page.run(`(()=>{const n=document.getElementById('whatsNewNotice');return !!n&&!n.classList.contains('hide')&&n.getClientRects().length>0;})()`), "the What's New notice on Home");
-  await shot(page, 'home-notice');
+  step = 'the card on Home';
+  await waitFor(() => page.run(`(()=>{const n=document.getElementById('whatsNewNotice');return !!n&&!n.classList.contains('hide')&&n.getClientRects().length>0;})()`), "the What's New card on Home");
+  const card = await page.run(`(()=>{const q=s=>document.querySelector(s);return {kicker:q('#whatsNewNoticeKicker').textContent,title:q('#whatsNewNoticeTitle').textContent,lines:[...document.querySelectorAll('#whatsNewNoticeList .wn-notice-line')].map(l=>l.lastChild.textContent),more:q('#whatsNewNoticeMore').textContent,cta:q('#whatsNewNoticeCta').getClientRects().length>0,fixes:q('#whatsNewNotice').classList.contains('wn-notice-fixes')};})()`);
+  assert.equal(card.kicker, `What's new · ${payload.version}`);
+  assert.equal(card.title, payload.headline, 'the card leads with the headline');
+  assert.deepEqual(card.lines, named.slice(0, 3).map(item => item.title), 'and names the first changes');
+  assert.equal(card.lines.length + Number(/\+ (\d+)/.exec(card.more)?.[1] || 0), items.length, 'and counts the rest');
+  assert.equal(card.cta, true, 'with a way in');
+  assert.equal(card.fixes, false, 'a feature release is not shown as fixes');
+  report.card = card;
+  await shot(page, 'home-card');
 
-  step = 'open the notes';
+  step = 'open the window';
   await click(page, '#whatsNewOpen');
   await waitFor(() => page.run(`document.getElementById('whatsNewModal').classList.contains('show')`), "What's New to open");
-  await delay(900); // let the cards' entrance animation settle before reading positions
-  await shot(page, 'whats-new');
+  await delay(900); // let the entrance animation settle before reading positions
+  assert.equal(await page.run(`document.getElementById('whatsNewKicker').textContent`), `What's new in ${payload.version}`);
+  assert.equal(await page.run(`document.getElementById('whatsNewHeadline').textContent`), payload.headline);
+  await shot(page, 'window');
 
-  step = 'each 2.2.0 change';
-  const cards = await page.run(`[...document.querySelectorAll('#whatsNewSections .wn-section')].flatMap(section=>[...section.querySelectorAll('.wn-item')].map(card=>{
-    const text=sel=>card.querySelector(sel)?.textContent??null;
-    const shown=sel=>{const el=card.querySelector(sel);if(!el)return false;const r=el.getBoundingClientRect(),c=card.getBoundingClientRect();return r.width>0&&r.height>0&&r.left>=c.left-0.5&&r.right<=c.right+0.5&&r.bottom<=c.bottom+0.5&&getComputedStyle(el).visibility!=='hidden';};
-    return {section:section.dataset.section,title:text('.wn-item-title'),version:text('.wn-item-version'),description:text('.wn-item-description'),where:text('.wn-item-where'),note:text('.wn-item-note'),whereShown:shown('.wn-item-where'),noteShown:shown('.wn-item-note'),text:card.textContent};
-  }))`);
-  report.cards = cards.length;
+  step = 'every change, once';
+  const shown = await page.run(READ_WINDOW);
+  assert.deepEqual(shown.map(entry => entry.title).sort(), items.map(item => item.title).sort(), 'every change is in the window exactly once');
+  assert.equal(shown.find(entry => entry.kind === 'lead')?.title, (payload.sections.new[0] || payload.sections.improved[0]).title, 'the first new feature leads');
   let withWhere = 0;
   let withNote = 0;
-  for (const item of expected) {
-    const card = cards.find(c => c.section === item.section && c.title === item.title && (c.version === null || c.version === 'v2.2.0'));
-    assert.ok(card, `"${item.title}" is listed under ${item.section}`);
-    assert.equal(card.description, item.description, `"${item.title}" shows its one-line description`);
-    assert.equal(card.where, item.where ?? null, `"${item.title}" shows where to find it exactly when the notes say`);
-    assert.equal(card.note, item.note ?? null, `"${item.title}" shows its caveat exactly when the notes have one`);
-    if (item.where) { assert.equal(card.whereShown, true, `"${item.title}": the where line is drawn inside its card`); withWhere++; }
-    if (item.note) { assert.equal(card.noteShown, true, `"${item.title}": the note line is drawn inside its card`); withNote++; }
-    if (item.details) assert.ok(!card.text.includes(item.details), `"${item.title}": details stays out of the app`);
+  for (const item of items) {
+    const entry = shown.find(e => e.title === item.title);
+    assert.equal(entry.description, item.description, `"${item.title}" shows its one-line description`);
+    assert.equal(entry.where, item.where ?? null, `"${item.title}" shows where to find it exactly when the notes say`);
+    assert.equal(entry.note, item.note ?? null, `"${item.title}" shows its caveat exactly when the notes have one`);
+    const details = changelog[item.version]?.sections[item.key].find(source => source.title === item.title)?.details;
+    if (details) assert.ok(!entry.text.includes(details), `"${item.title}": details stays out of the app`);
+    if (entry.kind !== 'row') {
+      if (item.where) { assert.equal(entry.whereShown, true, `"${item.title}": the where line is drawn`); withWhere++; }
+      if (item.note) { assert.equal(entry.noteShown, true, `"${item.title}": the note line is drawn`); withNote++; }
+    }
   }
-  // Without these the loop above would pass while checking no where or note line.
-  assert.ok(withWhere > 0 && withNote > 0, '2.2.0 has at least one where and one note to check');
-  Object.assign(report, { withWhere, withNote });
+  // Without these the loop would pass while checking no where or note line.
+  assert.ok(withWhere > 0 && withNote > 0, '2.2.0 has at least one where and one note on show');
+  Object.assign(report, { lead: 1, tiles: shown.filter(e => e.kind === 'tile').length, folded: shown.filter(e => e.kind === 'row').length, withWhere, withNote });
+
+  step = 'the rest is folded';
+  const folded = await page.run(`(()=>{const t=document.querySelector('.wn-more-toggle');const l=document.getElementById('whatsNewMoreList');return {expanded:t?.getAttribute('aria-expanded'),count:t?.querySelector('.wn-more-count')?.textContent,label:t?.querySelector('.wn-more-label')?.textContent,hidden:!!l&&l.hidden&&l.getClientRects().length===0,rows:l?.children.length};})()`);
+  assert.equal(folded.expanded, 'false');
+  assert.equal(folded.hidden, true, 'the folded changes start hidden');
+  assert.equal(Number(folded.count), folded.rows, 'the row counts what it holds');
+  report.folded = folded;
+
+  step = 'fits without scrolling';
+  const fit = await page.run(`(()=>{const s=document.getElementById('whatsNewScroll');return {scroll:s.scrollHeight,box:s.clientHeight,inner:innerHeight};})()`);
+  report.fit = fit;
+  // Smaller screens get less room; the window may scroll there and that is fine.
+  if (fit.inner >= 760) assert.ok(fit.scroll <= fit.box + 1, `with the rest folded the window fits (${fit.scroll} content in ${fit.box})`);
+
+  step = 'open the folded row';
+  await click(page, '.wn-more-toggle');
+  assert.equal(await page.run(`document.querySelector('.wn-more-toggle').getAttribute('aria-expanded')`), 'true');
+  assert.equal(await page.run(`[...document.querySelectorAll('#whatsNewMoreList .wn-row')].every(r=>r.getClientRects().length>0)`), true, 'its changes show in place');
+  await shot(page, 'window-open');
+
+  step = 'Got it';
+  await click(page, '#whatsNewGotIt');
+  await waitFor(() => page.run(`!document.getElementById('whatsNewModal').classList.contains('show')`), 'the window to close');
+  await waitFor(async () => JSON.parse(await readFile(path.join(profile, 'whats-new.json'), 'utf8')).lastSeenVersion === payload.version, 'the version to be recorded as seen');
+  assert.equal(await page.run(`document.getElementById('whatsNewNotice').classList.contains('hide')`), true, 'and the card goes away');
 
   console.log('whats new smoke ok', JSON.stringify(report));
 } catch (error) {

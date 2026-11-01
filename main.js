@@ -749,6 +749,8 @@ function changelogPath() {
   return path.join(__dirname, 'changelog.json');
 }
 
+const RELEASES_PAGE = 'https://github.com/sounak1125/RefBoard/releases';
+
 function parseSemver(v) {
   const m = String(v || '').trim().match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!m) return [0, 0, 0];
@@ -895,6 +897,8 @@ async function buildWhatsNewPayload({ current, lastSeen = null, currentOnly = fa
     sections,
     releaseCount: releases.length,
     totalChanges,
+    // "Full release notes": this release's page, or the list when there are several.
+    notesUrl: multipleReleases ? RELEASES_PAGE : `${RELEASES_PAGE}/tag/v${latest.version}`,
   };
 }
 
