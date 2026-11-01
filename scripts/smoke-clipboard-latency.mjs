@@ -178,8 +178,12 @@ const ROUND_TRIP = `(async()=>{
   const copy=await H.timeCopy();
   await wait(400);
   const before=RB.state.items.length;
+  // Paste from the board's right-click menu, which runs the same menuPaste the toolbar button did.
+  document.getElementById('board').dispatchEvent(new MouseEvent('contextmenu',{clientX:6,clientY:window.innerHeight-6,bubbles:true,cancelable:true}));
+  const pasteRow=[...document.querySelectorAll('#ctxmenu .mi')].find(r=>r.firstElementChild?.textContent==='Paste');
+  if(!pasteRow)throw new Error('no Paste entry in the board menu');
   const t0=performance.now();
-  document.querySelector('#btnPaste').click();
+  pasteRow.click();
   for(let i=0;i<600&&RB.state.items.length===before;i++)await wait(5);
   const pasteMs=Math.round(performance.now()-t0);
   const pasted=RB.state.items[RB.state.items.length-1];
