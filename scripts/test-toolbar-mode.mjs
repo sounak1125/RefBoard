@@ -61,7 +61,7 @@ const removed = {
   btnFit: {
     key: /else if \(k === 'f'\) fitTo\(/,
     menu: /\{ l: 'Fit view', k: 'F', f: \(\) => fitTo\(/,
-    help: /\{ cat:'View', label:'Fit view', keys:\['F'\] \}/,
+    help: /\{ cat:'View', label:'Fit view', keys:\['F'\](, note:'[^']*')? \}/,
   },
 };
 for (const [id, paths] of Object.entries(removed)) {
