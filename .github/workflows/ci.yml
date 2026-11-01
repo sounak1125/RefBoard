@@ -147,3 +147,9 @@ jobs:
 
       - name: Compare smoke
         run: npm run test:compare-smoke
+
+      - name: Export dialog smoke
+        run: npm run test:export-dialog-smoke
+
+      - name: Board Viewer and PDF export smoke
+        run: npm run test:board-viewer-smoke

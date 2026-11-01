@@ -68,7 +68,10 @@ export function createImageResizePool({
       const job = slot.job;
       if (!job || data?.id !== job.id) return;
       slot.job = null;
-      if (data.bitmap) { counts.completed++; job.resolve(data.bitmap); }
+      // `result` lets a worker with another job (the board export encoder)
+      // reuse the pool; the resize worker answers with `bitmap`.
+      const value = data.bitmap ?? data.result;
+      if (value) { counts.completed++; job.resolve(value); }
       else { counts.failed++; job.reject(new Error(data.error || 'Image resize failed')); }
       pump();
     };

@@ -91,7 +91,7 @@ Keep the thinking alongside the references. Add text notes, lists, drawings, and
 ### Take your references into your work
 
 - **Copy at full resolution.** Copy a reference back to another app; copying several selected items creates a combined image.
-- **Export the board.** Save a PNG at 1×, 2×, or 4× with a transparent, dark, or white background.
+- **Export the board.** As a **Viewer**: one `.html` file anyone can open in a browser, on a computer or a phone, to pan, zoom and filter by label, with no network access. As a **PNG** at 1×, 2×, or 4× with a transparent, dark, or white background. Or as a one-page **PDF** shaped like the board, with real, selectable note text.
 - **Export individual images.** Keep the original format or choose PNG, JPEG, or WebP, with optional cropping and export order controls.
 - **Work beside other apps.** Use the title-bar pin controls to keep references visible, and open up to four RefBoard windows.
 - **Keep making changes.** Undo and redo edits, and use configurable autosave while you work.
@@ -124,7 +124,7 @@ Boards saved by 2.1.2 or later need **RefBoard 2.1.2 or later**. See [board file
 | Search / labels | **Ctrl+F** / **Ctrl+Shift+T** |
 | Toggle the minimap | **M** |
 | Undo / redo | **Ctrl+Z** / **Ctrl+Shift+Z** |
-| Export board / images | **Ctrl+E** / **Ctrl+Shift+I** |
+| Export (images if selected, otherwise the board) | **Ctrl+E** |
 
 Press **?** on a board for the full shortcut reference.
 

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const main = await readFile(new URL('../main.js', import.meta.url), 'utf8');
+const mainJs = await readFile(new URL('../main.js', import.meta.url), 'utf8');
+// Board export (Viewer / PDF) registers its handlers from its own module,
+// handed ipcMain by main.js; its channels count as main's.
+const boardExportMain = await readFile(new URL('./board-export-main.js', import.meta.url), 'utf8');
+const main = `${mainJs}
+${boardExportMain}`;
 const preload = await readFile(new URL('../preload.js', import.meta.url), 'utf8');
 
 const channels = src => pattern => {
@@ -88,5 +93,19 @@ for (const setting of [/contextIsolation:\s*true/, /sandbox:\s*true/, /nodeInteg
 }
 assert.match(overlayWindow, /will-navigate/, 'the snip overlay must refuse navigation');
 assert.match(overlayWindow, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/, 'the snip overlay must refuse new windows');
+
+// Board export as a Viewer or PDF: the four channels, registered by main.js,
+// and the hidden PDF window locked down (sandboxed, no preload, its own
+// in-memory partition, nothing but its own file and data:/blob: URLs).
+assert.match(mainJs, /registerBoardExportIpc\(\{[\s\S]*?ipcMain[\s\S]*?\}\)/, 'main.js must register the board export handlers');
+for (const channel of ['board-export-begin', 'board-export-images', 'board-export-finish', 'board-export-abort']) {
+  assert.ok(invoked.has(channel) && handled.has(channel), `'${channel}' must be bridged and handled`);
+}
+const pdfWindow = boardExportMain.slice(boardExportMain.indexOf('async function renderPdf'), boardExportMain.indexOf('function registerBoardExportIpc'));
+for (const setting of [/sandbox:\s*true/, /contextIsolation:\s*true/, /nodeIntegration:\s*false/, /show:\s*false/, /partition,/, /onBeforeRequest/, /cancel:\s*true/, /will-navigate/, /setWindowOpenHandler\(\(\) => \(\{ action: 'deny' \}\)\)/, /win\.destroy\(\)/]) {
+  assert.match(pdfWindow, setting, `the hidden PDF window must use ${setting}`);
+}
+assert.doesNotMatch(pdfWindow, /preload/, 'the hidden PDF window must not load a preload');
+assert.doesNotMatch(pdfWindow, /persist:/, 'the hidden PDF window partition must be in memory');
 
 console.log(`ipc bridge contract ok — ${invoked.size} invoke, ${sent.size} send, ${listened.size} listen channels all wired`);

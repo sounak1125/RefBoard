@@ -2738,6 +2738,13 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 }
 .card.export-images-card .modal-x:hover{ background:#2a2e3a; color:#fff; }
 .export-images-card .row-btns{ justify-content:space-between; }
+/* One Export card for both tabs: fixed width (460px above) and a fixed top, so
+   switching tabs moves neither the card's sides nor its tab bar. */
+#exportModal{ align-items:flex-start; }
+.card.export-card{ margin-top:max(24px, calc(50vh - 290px)); }
+.export-tabs{ margin-bottom:16px; }
+.export-pane[hidden], .export-fields[hidden], .export-format-opts[hidden]{ display:none; }
+#exportModal .btn[disabled]{ opacity:.45; pointer-events:none; }
 .form-row{
   display:grid; grid-template-columns:108px 1fr; gap:10px 14px;
   align-items:center; margin-bottom:12px;
@@ -2786,6 +2793,13 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 .export-count{
   font-size:11.5px; color:var(--mut); margin-bottom:14px; text-align:center;
 }
+.export-formats{ margin-bottom:12px; }
+.export-check-row{ margin-bottom:8px; }
+.export-check-row[hidden]{ display:none; }
+.export-check-row .check-row{ justify-content:flex-start; cursor:pointer; }
+.export-foot{ margin-top:14px; font-size:11.5px; color:var(--dim); text-align:center; }
+.export-est{ margin-left:4px; color:var(--mut); font-variant-numeric:tabular-nums; }
+.export-est.warn{ color:#f0b24a; }
 .fmt-color{
   width:28px; height:28px; padding:0; border:1px solid var(--line);
   border-radius:6px; cursor:pointer; background:transparent;
@@ -3607,7 +3621,7 @@ try {
   <button class="tb" id="sDup" data-tip="Duplicate  (Ctrl+D)">
     <svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 4H6a2 2 0 0 0-2 2v10M14 11v6M11 14h6"/></svg>
   </button>
-  <button class="tb" id="sOrig" data-tip="Export images…  (Ctrl+Shift+I)">
+  <button class="tb" id="sOrig" data-tip="Export images…  (Ctrl+E)">
     <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6M12 11v6M9 14.5l3 3 3-3"/></svg>
   </button>
   <span class="tb sel-images-only" id="sDragOut" role="button" tabindex="0" draggable="true" data-tip="Drag out to another app" aria-label="Drag out to another app">
@@ -4117,8 +4131,7 @@ try {
       <span class="ks">Drag image</span><span class="d">Selection rises to the front as soon as you start dragging</span>
       <span class="ks"><kbd>Arrows</kbd></span><span class="d">Nudge selection (Shift = faster)</span>
       <span class="ks">2× click image</span><span class="d">Enter crop mode; drag edges, Esc to finish</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>E</kbd></span><span class="d">Export board as PNG</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>I</kbd></span><span class="d">Export selected images</span>
+      <span class="ks"><kbd>Ctrl</kbd><kbd>E</kbd></span><span class="d">Export — images if selected, otherwise the board</span>
       <span class="ks">Drag the selection-bar grip</span><span class="d">Drag selected images out as files, straight into another app</span>
       <span class="ks"><kbd>Ctrl</kbd><kbd>S</kbd> / <kbd>O</kbd></span><span class="d">Save / open board file</span>
       <span class="ks"><kbd>Alt</kbd>+<kbd>Arrows</kbd></span><span class="d">Pan the board view</span>
@@ -4243,89 +4256,151 @@ try {
   </div>
 </div>
 
-<div id="exportImagesModal" class="modal">
-  <div class="card export-images-card">
-    <button type="button" class="modal-x" id="expImgClose" title="Close">×</button>
-    <h3>Export images</h3>
-    <div class="export-count" id="expImgCount"></div>
-    <div class="form-row">
-      <label for="expImgDir">Save location</label>
-      <div class="field-with-btn">
-        <input type="text" id="expImgDir" class="text-in" readonly placeholder="Choose a folder…">
-        <button type="button" class="icon-btn" id="expImgBrowse" title="Browse folder">
-          <svg viewBox="0 0 24 24"><path d="M4 7h5l2-2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/></svg>
-        </button>
-      </div>
-    </div>
-    <div class="form-row">
-      <label for="expImgFormat">Format</label>
-      <select id="expImgFormat">
-        <option value="original">Original</option>
-        <option value="png">PNG</option>
-        <option value="jpeg">JPEG</option>
-        <option value="webp">WebP</option>
-      </select>
-    </div>
-    <div class="form-row">
-      <label>Export cropping</label>
-      <div class="check-row">
-        <input type="checkbox" id="expImgCrop">
-        <span>Use current crop</span>
-      </div>
-      <div class="export-crop-hint" id="expImgCropHint"></div>
-    </div>
-    <div class="form-row">
-      <label for="expImgOrder">Export order</label>
-      <select id="expImgOrder">
-        <option value="selection">As selected / arranged</option>
-        <option value="visual">Visual layout (row by row)</option>
-        <option value="horizontal">Left to right</option>
-        <option value="vertical">Top to bottom</option>
-      </select>
-      <div class="export-crop-hint">Shift-click follows click order; marquee follows the layout.</div>
-    </div>
-    <div class="form-row">
-      <label for="expImgName">Naming</label>
-      <div class="name-row">
-        <input type="text" id="expImgName" class="text-in" value="%N_%0" spellcheck="false"
-          title="%N = padded order, %n = number, %0 = original name">
-        <select id="expImgNamePreset" title="Naming presets">
-          <option value="%N_%0">%N_%0</option>
-          <option value="%n_%0">%n_%0</option>
-          <option value="%N">%N</option>
-          <option value="%0">%0</option>
-          <option value="Image_%n">Image_%n</option>
-          <option value="%n">%n</option>
-        </select>
-      </div>
-    </div>
-    <div class="name-preview" id="expImgPreview">01_image.png</div>
-    <div class="row-btns">
-      <button class="btn primary" id="expImgGo">Export</button>
-      <button class="btn" id="expImgCancel">Cancel</button>
-    </div>
-  </div>
-</div>
-
 <div id="exportModal" class="modal">
-  <div class="card">
-    <h3>Export board as PNG</h3>
-    <div class="lbl">Resolution</div>
-    <div class="seg" id="expScale">
-      <button data-v="1">1×</button>
-      <button data-v="2" class="on">2×</button>
-      <button data-v="4">4×</button>
+  <div class="card export-images-card export-card">
+    <button type="button" class="modal-x" id="expClose" title="Close">×</button>
+    <h3>Export</h3>
+    <div class="seg export-tabs" id="expTabs" role="tablist" aria-label="What to export">
+      <button type="button" role="tab" data-tab="images" id="expTabImages" aria-controls="expPaneImages">Images</button>
+      <button type="button" role="tab" data-tab="board" id="expTabBoard" aria-controls="expPaneBoard">Board</button>
     </div>
-    <div class="lbl">Background</div>
-    <div class="seg" id="expBg">
-      <button data-v="transparent" class="on">Transparent</button>
-      <button data-v="#141519">Dark</button>
-      <button data-v="#ffffff">White</button>
-    </div>
-    <div class="row-btns">
-      <button class="btn" id="expCancel">Cancel</button>
-      <button class="btn primary" id="expGo">Export</button>
-    </div>
+    <section class="export-pane" id="expPaneImages" data-pane="images" role="tabpanel" aria-labelledby="expTabImages">
+      <div class="export-count" id="expImgCount"></div>
+      <div class="export-fields" id="expImgFields">
+        <div class="form-row">
+          <label for="expImgDir">Save location</label>
+          <div class="field-with-btn">
+            <input type="text" id="expImgDir" class="text-in" readonly placeholder="Choose a folder…">
+            <button type="button" class="icon-btn" id="expImgBrowse" title="Browse folder">
+              <svg viewBox="0 0 24 24"><path d="M4 7h5l2-2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="expImgFormat">Format</label>
+          <select id="expImgFormat">
+            <option value="original">Original</option>
+            <option value="png">PNG</option>
+            <option value="jpeg">JPEG</option>
+            <option value="webp">WebP</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Export cropping</label>
+          <div class="check-row">
+            <input type="checkbox" id="expImgCrop">
+            <span>Use current crop</span>
+          </div>
+          <div class="export-crop-hint" id="expImgCropHint"></div>
+        </div>
+        <div class="form-row">
+          <label for="expImgOrder">Export order</label>
+          <select id="expImgOrder">
+            <option value="selection">As selected / arranged</option>
+            <option value="visual">Visual layout (row by row)</option>
+            <option value="horizontal">Left to right</option>
+            <option value="vertical">Top to bottom</option>
+          </select>
+          <div class="export-crop-hint">Shift-click follows click order; marquee follows the layout.</div>
+        </div>
+        <div class="form-row">
+          <label for="expImgName">Naming</label>
+          <div class="name-row">
+            <input type="text" id="expImgName" class="text-in" value="%N_%0" spellcheck="false"
+              title="%N = padded order, %n = number, %0 = original name">
+            <select id="expImgNamePreset" title="Naming presets">
+              <option value="%N_%0">%N_%0</option>
+              <option value="%n_%0">%n_%0</option>
+              <option value="%N">%N</option>
+              <option value="%0">%0</option>
+              <option value="Image_%n">Image_%n</option>
+              <option value="%n">%n</option>
+            </select>
+          </div>
+        </div>
+        <div class="name-preview" id="expImgPreview">01_image.png</div>
+      </div>
+      <div class="row-btns">
+        <button class="btn primary" id="expImgGo">Export</button>
+        <button class="btn" id="expImgCancel">Cancel</button>
+      </div>
+    </section>
+    <section class="export-pane" id="expPaneBoard" data-pane="board" role="tabpanel" aria-labelledby="expTabBoard" hidden>
+      <div class="seg export-formats" id="expBoardFormat" role="radiogroup" aria-label="Board format">
+        <button type="button" role="radio" data-format="viewer">Viewer</button>
+        <button type="button" role="radio" data-format="png">PNG</button>
+        <button type="button" role="radio" data-format="pdf">PDF</button>
+      </div>
+      <div class="export-count" id="expBoardDesc">Saves one PNG of the whole board.</div>
+      <!-- One block per board format; only the chosen format's block shows. -->
+      <div class="export-format-opts" data-format="viewer" id="expViewerOpts" hidden>
+        <div class="form-row">
+          <label>Image size</label>
+          <div class="seg" id="expViewerSize">
+            <button type="button" data-v="original">Original</button>
+            <button type="button" data-v="2048" class="on">2048 px</button>
+            <button type="button" data-v="1024">1024 px</button>
+          </div>
+        </div>
+        <div class="form-row export-check-row">
+          <label></label>
+          <label class="check-row"><input type="checkbox" id="expViewerNotes" checked><span>Include notes and annotations</span></label>
+        </div>
+        <div class="form-row export-check-row" id="expViewerLabelsRow">
+          <label></label>
+          <label class="check-row"><input type="checkbox" id="expViewerLabels" checked><span>Include labels</span></label>
+        </div>
+        <div class="form-row export-check-row">
+          <label></label>
+          <label class="check-row"><input type="checkbox" id="expViewerSave"><span>Let viewers save images</span></label>
+        </div>
+        <div class="export-foot" id="expViewerFoot">One .html file · opens in any browser <span class="export-est" id="expViewerEst"></span></div>
+      </div>
+      <div class="export-format-opts" data-format="pdf" id="expPdfOpts" hidden>
+        <div class="form-row">
+          <label>Image size</label>
+          <div class="seg" id="expPdfSize">
+            <button type="button" data-v="original">Original</button>
+            <button type="button" data-v="2048" class="on">2048 px</button>
+            <button type="button" data-v="1024">1024 px</button>
+          </div>
+        </div>
+        <div class="form-row export-check-row">
+          <label></label>
+          <label class="check-row"><input type="checkbox" id="expPdfNotes" checked><span>Include notes and annotations</span></label>
+        </div>
+        <div class="form-row">
+          <label>Background</label>
+          <div class="seg" id="expPdfBg">
+            <button type="button" data-v="board" class="on">Board</button>
+            <button type="button" data-v="white">White</button>
+          </div>
+        </div>
+        <div class="export-foot" id="expPdfFoot">One page, shaped like the board <span class="export-est" id="expPdfEst"></span></div>
+      </div>
+      <div class="export-format-opts" data-format="png" id="expPngOpts">
+        <div class="form-row">
+          <label>Resolution</label>
+          <div class="seg" id="expScale">
+            <button type="button" data-v="1">1×</button>
+            <button type="button" data-v="2" class="on">2×</button>
+            <button type="button" data-v="4">4×</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Background</label>
+          <div class="seg" id="expBg">
+            <button type="button" data-v="transparent" class="on">Transparent</button>
+            <button type="button" data-v="#141519">Dark</button>
+            <button type="button" data-v="#ffffff">White</button>
+          </div>
+        </div>
+      </div>
+      <div class="row-btns">
+        <button class="btn primary" id="expGo">Export</button>
+        <button class="btn" id="expCancel">Cancel</button>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -4384,6 +4459,19 @@ import {
 } from './scripts/export-order.mjs';
 import { buildDragOutNames, dragOutStem } from './scripts/drag-out.mjs';
 import { exportEncoding } from './scripts/export-encoding.mjs';
+import {
+  buildViewerPayload,
+  estimateExportBytes,
+  ESTIMATE_WARN_BYTES,
+  fitLongEdge,
+  formatBytes,
+  VIEWER_ALPHA_QUALITY,
+  VIEWER_JPEG_QUALITY,
+  VIEWER_LOSSY_MIMES,
+  VIEWER_ORIGINAL_QUALITY,
+  viewerLongEdge,
+} from './scripts/board-viewer-payload.mjs';
+import { encodeViewerImage } from './scripts/board-export-encode.mjs';
 import { inpaintGrowPx, isUsableLasso, lassoBounds, cropRegion, appendLassoPoint } from './scripts/inpaint-geometry.mjs';
 import { drawCropWindow, growRect, segmentDirtyRect, shadowReach } from './scripts/draw-stroke.mjs';
 import { snipRowPosition } from './scripts/snip-placement.mjs';
@@ -14535,8 +14623,40 @@ function rebuildExportImageOrder() {
   updateExportNamePreview();
 }
 
-async function openExportImagesDialog() {
-  if (state.sel.size) {
+/* The one Export dialog (Ctrl+E). Its Images tab exports image files, its
+   Board tab one file of the whole board. tab: 'images', 'board', or omitted to
+   pick Images when the selection holds an image and Board otherwise. */
+let exportTab = 'images';
+
+function selectedExportImages() {
+  if (!state.sel.size) return [];
+  return resolveExportItems({
+    selectedItems: selectedItems(),
+    preferredIds: orderedSelectedIds(),
+    order: 'selection',
+    isImage: isImageItem,
+    isGroup: isGroupItem,
+    childrenOfGroup,
+    getBounds: boundsOf,
+  });
+}
+
+function setExportTab(tab) {
+  exportTab = tab === 'board' ? 'board' : 'images';
+  for (const b of document.querySelectorAll('#expTabs button')) {
+    const on = b.dataset.tab === exportTab;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  }
+  for (const pane of document.querySelectorAll('#exportModal .export-pane')) {
+    pane.hidden = pane.dataset.pane !== exportTab;
+  }
+}
+
+async function openExportDialog(tab) {
+  if (!state.items.length) { toast('Board is empty'); return; }
+  const fromSelection = selectedExportImages().length > 0;
+  if (fromSelection) {
     exportSelectionItems = selectedItems();
     exportSelectionPreferredIds = orderedSelectedIds();
   } else {
@@ -14545,9 +14665,22 @@ async function openExportImagesDialog() {
   }
   $('#expImgOrder').value = 'selection';
   rebuildExportImageOrder();
+  await fillExportImagesPane();
+  syncBoardExportFormat();
+  void prefetchBoardExportBytes().then(updateBoardExportEstimate);
+  setExportTab(tab || (fromSelection ? 'images' : 'board'));
+  exportModal.classList.add('show');
+}
+
+async function fillExportImagesPane() {
   const items = exportImageItems;
-  if (!items.length) { toast('No images to export'); return; }
-  const croppedCount = items.filter(hasActiveCrop).length;
+  const goBtn = $('#expImgGo');
+  $('#expImgFields').hidden = !items.length;
+  goBtn.disabled = !items.length;
+  if (!items.length) {
+    $('#expImgCount').textContent = 'This board has no images to export.';
+    return;
+  }
   $('#expImgCount').textContent = `${items.length} image${items.length === 1 ? '' : 's'} will be exported`;
   const saved = localStorage.getItem('refboard.exportDir');
   if (saved) $('#expImgDir').value = saved;
@@ -14557,6 +14690,7 @@ async function openExportImagesDialog() {
   $('#expImgName').value = '%N_%0';
   $('#expImgNamePreset').value = '%N_%0';
   $('#expImgFormat').value = 'original';
+  const croppedCount = items.filter(hasActiveCrop).length;
   const cropCheck = $('#expImgCrop');
   cropCheck.disabled = croppedCount === 0;
   cropCheck.checked = croppedCount > 0;
@@ -14579,7 +14713,6 @@ async function openExportImagesDialog() {
   }
   updateExportNamePreview();
   syncSettingsSelectControls();
-  $('#exportImagesModal').classList.add('show');
 }
 
 async function browseExportDir() {
@@ -14635,10 +14768,10 @@ async function runExportImages() {
     if (useDesktop && files.length) {
       const r = await window.RefBoardAPI.writeExportFiles(dir, files);
       localStorage.setItem('refboard.exportDir', dir);
-      exportImagesModal.classList.remove('show');
+      exportModal.classList.remove('show');
       toast(`Exported ${r.count} image${r.count === 1 ? '' : 's'} to folder`);
     } else {
-      exportImagesModal.classList.remove('show');
+      exportModal.classList.remove('show');
       toast(useDesktop ? 'Nothing exported' : (n > 1 ? `Saved ${n} files to downloads` : 'Saved file to downloads'));
     }
   } catch (e) {
@@ -14649,14 +14782,14 @@ async function runExportImages() {
   }
 }
 
-function exportOriginals() {
-  openExportImagesDialog();
-}
-
 function stamp() {
   const d = new Date(), p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 }
+
+/* Test hook: when set, a board export hands its file here instead of to the
+   download (and so the native save dialog). Smokes only. */
+let boardExportSinkForTest = null;
 
 async function doExportPNG(mult, bg) {
   if (!state.items.length) { toast('Board is empty'); return; }
@@ -14690,8 +14823,286 @@ async function doExportPNG(mult, bg) {
   const b = await new Promise(r => c.toBlob(r, 'image/png'));
   c.width = 0; c.height = 0;
   if (!b) { toast('Export failed — try a lower resolution'); return; }
-  downloadBlob(b, `refboard-${stamp()}.png`);
+  const fileName = `refboard-${stamp()}.png`;
+  if (boardExportSinkForTest) await boardExportSinkForTest(b, fileName);
+  else downloadBlob(b, fileName);
   toast(`Exported ${outW}×${outH} PNG`);
+}
+
+/* ---------------- Viewer (.html) and PDF board export ----------------
+   The renderer plans and encodes the images (in workers) and builds the
+   payload; main.js assembles the page and writes the file
+   (scripts/board-export-main.js), and for a PDF prints that page. */
+
+/* Test hooks (smokes only). boardExportSaveTargetForTest(kind, name) returns
+   the path to save to, or null to act as a cancelled save dialog. */
+let boardExportSaveTargetForTest = null;
+let lastBoardExportForTest = null;
+let boardExportRunning = null;
+const VIEWER_PASSTHROUGH_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif', 'image/bmp', 'image/svg+xml']);
+
+const boardExportEncodePool = createImageResizePool({
+  createWorker: () => new Worker('./scripts/board-export-encode-worker.mjs', { type: 'module' }),
+  fallback: (blob, options) => encodeViewerImage({ ...options, blob }),
+  size: 3,
+});
+
+function boardExportName() {
+  return currentBoardTitle || boardTitleFromPath(currentBoardPath) || 'Untitled board';
+}
+
+/* Source file sizes for the estimate; filled in when the dialog opens. */
+const boardExportBlobBytes = new Map();
+async function prefetchBoardExportBytes() {
+  const ims = [...new Set(state.items.filter(isImageItem).map(it => it.imgId))].map(id => images.get(id)).filter(Boolean);
+  await Promise.all(ims.map(async im => {
+    if (boardExportBlobBytes.has(im.id)) return;
+    let bytes = Number(im.blobSize) || 0;
+    if (!bytes) {
+      try { bytes = (await getImageBlob(im))?.size || 0; } catch { bytes = 0; }
+    }
+    boardExportBlobBytes.set(im.id, bytes);
+  }));
+}
+
+/**
+ * Which images the export embeds and how. One entry per distinct output:
+ *   passthrough  the stored file, untouched: an uncropped image at Original,
+ *                or one already within the long edge (never upscaled, and
+ *                never re-encoded for nothing)
+ *   re-encode    the crop rect, resized to the long edge (crop baked in). At
+ *                Original the crop keeps every source pixel (`original`).
+ * A crop is always baked in, so the cut-away part is never in the file and a
+ * viewer who saves the image gets what the board shows.
+ * refs maps item id -> { key, crop:[l,t,r,b] } relative to the embedded image.
+ */
+function planViewerImages(maxEdge) {
+  const entries = new Map();
+  const refs = new Map();
+  for (const it of state.items) {
+    if (!isImageItem(it)) continue;
+    const im = images.get(it.imgId);
+    if (!im || !(im.w > 0) || !(im.h > 0)) continue;
+    const cr = cropOf(it);
+    const cropped = hasActiveCrop(it);
+    const mime = im.type || 'image/png';
+    const fitsWhole = !fitLongEdge(im.w, im.h, maxEdge).scaled;
+    if (!cropped && (!maxEdge || (fitsWhole && VIEWER_PASSTHROUGH_MIMES.has(mime)))) {
+      const key = `p:${im.id}`;
+      if (!entries.has(key)) {
+        entries.set(key, { key, im, passthrough: true, mime, outW: im.w, outH: im.h, srcPx: im.w * im.h, rectPx: im.w * im.h,
+          bytes: boardExportBlobBytes.get(im.id) || Number(im.blobSize) || 0 });
+      }
+      refs.set(it.id, { key, crop: [cr.l, cr.t, cr.r, cr.b] });
+      continue;
+    }
+    const rect = sourcePixelRect(im, it, cropped);
+    const out = fitLongEdge(rect.w, rect.h, maxEdge);
+    const key = `e:${im.id}:${rect.x},${rect.y},${rect.w},${rect.h}`;
+    if (!entries.has(key)) {
+      entries.set(key, { key, im, passthrough: false, original: !maxEdge, mime, rect, outW: out.w, outH: out.h, srcPx: im.w * im.h, rectPx: rect.w * rect.h,
+        bytes: boardExportBlobBytes.get(im.id) || Number(im.blobSize) || 0 });
+    }
+    // The crop rounds out to whole source pixels; keep the exact crop inside it.
+    const crop = cropped
+      ? [(cr.l * im.w - rect.x) / rect.w, (cr.t * im.h - rect.y) / rect.h, (cr.r * im.w - rect.x) / rect.w, (cr.b * im.h - rect.y) / rect.h]
+      : [0, 0, 1, 1];
+    refs.set(it.id, { key, crop: crop.map(v => clamp(v, 0, 1)) });
+  }
+  return { list: [...entries.values()], refs };
+}
+
+function viewerNoteMetrics(it) {
+  const g = getMeasureCtx();
+  const tcm = noteTextCanvasMetrics(it);
+  g.font = noteFontCanvasPx(it, tcm.font);
+  const { gutter } = layoutNoteLines(g, String(it.text || ''), it);
+  const pad = notePadFor(it);
+  return { eff: tcm.eff, lineH: noteLineHeight(it), padX: pad.x, padY: pad.y, gutter: gutter * tcm.coordScale };
+}
+
+function buildBoardViewerPayload(plan, opts, embedded) {
+  const index = new Map(plan.list.map((e, i) => [e.key, i]));
+  return buildViewerPayload({
+    items: state.items,
+    options: { notes: opts.notes, labels: opts.labels, allowSave: opts.allowSave },
+    board: { name: boardExportName(), background: BG_WORKSPACE, gray: !!state.boardGray, tagColors: state.tagColors },
+    helpers: {
+      imageRef: it => {
+        const ref = plan.refs.get(it.id);
+        return ref ? { img: index.get(ref.key), crop: ref.crop } : null;
+      },
+      images: embedded || plan.list.map(e => ({ mime: e.mime, w: e.outW, h: e.outH, name: e.im.name || 'image' })),
+      noteMetrics: viewerNoteMetrics,
+      groupBox: g => {
+        const kids = childrenOfGroup(g.id);
+        return kids.length ? bboxOf(kids) : null;
+      },
+      groupKids: g => childrenOfGroup(g.id).map(k => k.id),
+      boundsOf,
+      arrowGeometry, arrowBounds, smoothPolyline, inkStrokeOutline, highlighterWidth, annotationHaloColor,
+      parseNoteLine, parseNoteLinkSegments,
+    },
+  });
+}
+
+function boardHasLabels() {
+  return state.items.some(it => isTaggableItem(it) && it.tags?.length);
+}
+
+function readBoardExportOptions(kind) {
+  if (kind === 'pdf') {
+    return {
+      kind, maxEdge: viewerLongEdge($('#expPdfSize .on')?.dataset.v),
+      notes: $('#expPdfNotes').checked, labels: false, allowSave: false,
+      bg: $('#expPdfBg .on')?.dataset.v === 'white' ? 'white' : 'board',
+    };
+  }
+  return {
+    kind, maxEdge: viewerLongEdge($('#expViewerSize .on')?.dataset.v),
+    notes: $('#expViewerNotes').checked,
+    labels: boardHasLabels() && $('#expViewerLabels').checked,
+    allowSave: $('#expViewerSave').checked,
+  };
+}
+
+const boardExportPayloadBytes = new Map();
+function estimateBoardExport(kind) {
+  const opts = readBoardExportOptions(kind);
+  const plan = planViewerImages(opts.maxEdge);
+  const key = `${kind}|${opts.notes}|${opts.labels}`;
+  let payloadBytes = boardExportPayloadBytes.get(key);
+  if (payloadBytes == null) {
+    try { payloadBytes = JSON.stringify(buildBoardViewerPayload(plan, opts)).length; } catch { payloadBytes = 0; }
+    boardExportPayloadBytes.set(key, payloadBytes);
+  }
+  return estimateExportBytes({ plan: plan.list, kind, payloadBytes });
+}
+
+function updateBoardExportEstimate() {
+  for (const [kind, sel] of [['viewer', '#expViewerEst'], ['pdf', '#expPdfEst']]) {
+    const out = $(sel);
+    if (!out || boardExportFormat !== kind) continue;
+    const bytes = estimateBoardExport(kind);
+    out.textContent = `≈ ${formatBytes(bytes)}`;
+    out.dataset.bytes = String(bytes);
+    const warn = kind === 'viewer' && bytes > ESTIMATE_WARN_BYTES;
+    out.classList.toggle('warn', warn);
+    out.title = warn ? 'A large file: it may open slowly, especially on phones' : '';
+  }
+}
+
+function boardExportProgress(run, text) {
+  if (run.aborted) return;
+  toast(text, { sticky: true, actionLabel: 'Cancel', onAction: () => { void abortBoardExportRun(run); } });
+}
+
+async function abortBoardExportRun(run) {
+  if (run.aborted) return;
+  run.aborted = true;
+  try { await window.RefBoardAPI.abortBoardExport(run.token); } catch { /* already gone */ }
+  lastBoardExportForTest = { aborted: true, kind: run.kind };
+  toast('Export cancelled');
+}
+
+async function encodeViewerEntry(entry) {
+  const blob = await getImageBlob(entry.im);
+  if (!blob) throw new Error(`image ${entry.im.name || entry.im.id} is not available`);
+  if (entry.passthrough) {
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type || entry.mime, w: entry.outW, h: entry.outH };
+  }
+  const original = !!entry.original;
+  const out = await boardExportEncodePool.resize(blob, {
+    rect: entry.rect, w: entry.outW, h: entry.outH,
+    opaque: entry.mime === 'image/jpeg',
+    lossless: original && !VIEWER_LOSSY_MIMES.has(entry.mime),
+    jpegQuality: original ? VIEWER_ORIGINAL_QUALITY : VIEWER_JPEG_QUALITY,
+    alphaQuality: original ? VIEWER_ORIGINAL_QUALITY : VIEWER_ALPHA_QUALITY,
+  });
+  return { bytes: new Uint8Array(await out.blob.arrayBuffer()), mime: out.mime, w: out.w, h: out.h };
+}
+
+async function runViewerOrPdfExport(kind) {
+  const api = window.RefBoardAPI;
+  if (!api?.beginBoardExport) { toast('Viewer and PDF export work in the desktop app'); return; }
+  if (boardExportRunning) { toast('An export is already running'); return; }
+  if (!state.items.length) { toast('Board is empty'); return; }
+  const opts = readBoardExportOptions(kind);
+  const name = boardExportName();
+  let filePath = null;
+  if (boardExportSaveTargetForTest) {
+    filePath = await boardExportSaveTargetForTest(kind, name);
+    if (!filePath) { lastBoardExportForTest = { canceled: true, kind }; return; }
+  }
+  let begin;
+  try {
+    begin = await api.beginBoardExport(kind, name, name, filePath);
+  } catch (err) {
+    toast(`Export failed — ${err?.message || 'could not create the file'}`, { duration: 5000 });
+    return;
+  }
+  if (!begin?.started) { lastBoardExportForTest = { canceled: true, kind }; return; }
+  const run = { token: begin.token, aborted: false, kind };
+  boardExportRunning = run;
+  const t0 = performance.now();
+  try {
+    await prefetchBoardExportBytes();
+    const plan = planViewerImages(opts.maxEdge);
+    const total = plan.list.length;
+    boardExportProgress(run, `Exporting… 0 / ${total} images`);
+    // Up to three images encode at once (in workers); they reach main in order.
+    const done = new Array(total);
+    const embedded = new Array(total);
+    let next = 0, sent = 0, finished = 0;
+    let sending = Promise.resolve();
+    const flush = () => {
+      sending = sending.then(async () => {
+        while (sent < total && done[sent] && !run.aborted) {
+          const r = done[sent];
+          done[sent] = null;
+          await api.appendBoardExportImages(run.token, [{ index: sent, mime: r.mime, data: r.bytes }]);
+          sent++;
+        }
+      });
+      return sending;
+    };
+    const lane = async () => {
+      while (next < total && !run.aborted) {
+        const i = next++;
+        const entry = plan.list[i];
+        const r = await encodeViewerEntry(entry);
+        embedded[i] = { mime: r.mime, w: r.w, h: r.h, name: entry.im.name || 'image' };
+        done[i] = r;
+        finished++;
+        boardExportProgress(run, `Exporting… ${finished} / ${total} images`);
+        await flush();
+      }
+    };
+    await Promise.all([lane(), lane(), lane()]);
+    await flush();
+    if (run.aborted) return;
+    if (sent !== total) throw new Error('not every image was written');
+    const payload = buildBoardViewerPayload(plan, opts, embedded);
+    if (kind === 'pdf') {
+      payload.print = { bg: opts.bg };
+      boardExportProgress(run, 'Exporting… making the PDF');
+    }
+    const result = await api.finishBoardExport(run.token, payload);
+    if (run.aborted) return;
+    const ms = Math.round(performance.now() - t0);
+    lastBoardExportForTest = { ...result, kind, ms, images: total, estimate: estimateBoardExport(kind) };
+    const file = String(result.filePath || '').split(/[\\/]/).pop();
+    toast(`Exported ${file}`, { duration: 4000 });
+  } catch (err) {
+    if (!run.aborted) {
+      run.aborted = true;
+      try { await api.abortBoardExport(run.token); } catch { /* gone */ }
+      lastBoardExportForTest = { error: String(err?.message || err), kind };
+      toast(`Export failed — ${err?.message || 'unknown error'}`, { duration: 6000 });
+    }
+  } finally {
+    if (boardExportRunning === run) boardExportRunning = null;
+  }
 }
 
 const SAVE_DATA_URL_CACHE_MAX = 64 * 1024 * 1024;
@@ -20004,7 +20415,7 @@ function showMenu(x, y, hitItem) {
       );
     }
     entries.push(
-      { l: sel > 1 ? 'Export images' : 'Export image', k: 'Ctrl+Shift+I', f: exportOriginals },
+      { l: sel > 1 ? 'Export images' : 'Export image', k: 'Ctrl+E', f: () => openExportDialog('images') },
     );
     if (selectedTaggableItems().length) {
       entries.push({ l: 'Labels', sub: 'tags' });
@@ -20040,7 +20451,7 @@ function showMenu(x, y, hitItem) {
     { l: 'Fit view', k: 'F', f: () => fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i))) },
     { sep: true },
     { cat: 'Files' },
-    { l: 'Export board PNG', k: 'Ctrl+E', f: openExport },
+    { l: 'Export board…', k: 'Ctrl+E', f: () => openExportDialog('board') },
     { l: 'Save board file', k: 'Ctrl+S', f: () => manualSaveBoardFile(() => saveBoardFile()) },
     { l: 'Save board as…', k: 'Ctrl+Shift+S', f: () => manualSaveBoardFile(() => saveBoardFile({ saveAs: true })) },
     { l: 'Open board file', k: 'Ctrl+O', f: () => openBoardFromDialog() },
@@ -20182,7 +20593,7 @@ function openSettingsSelectMenu(control, focusSelected = false) {
 }
 
 function setupSettingsSelects() {
-  for (const select of document.querySelectorAll('.settings2-content select, #exportImagesModal select')) {
+  for (const select of document.querySelectorAll('.settings2-content select, #exportModal select')) {
     if (select.dataset.uiSelect === 'true') continue;
     select.dataset.uiSelect = 'true';
     const root = document.createElement('div');
@@ -20409,8 +20820,7 @@ const SHORTCUTS = [
   { cat:'Files', label:'Save board', keys:['Ctrl','S'] },
   { cat:'Files', label:'Save board as', keys:['Ctrl','Shift','S'] },
   { cat:'Files', label:'Open board', keys:['Ctrl','O'] },
-  { cat:'Files', label:'Export PNG', keys:['Ctrl','E'] },
-  { cat:'Files', label:'Export images', keys:['Ctrl','Shift','I'] },
+  { cat:'Files', label:'Export — images if selected, otherwise the board', keys:['Ctrl','E'] },
   { cat:'Home', label:'Search your boards', keys:['Ctrl','F'] },
   { cat:'Home', label:'Rename the selected board', keys:['F2'] },
 ];
@@ -20755,7 +21165,7 @@ window.addEventListener('keydown', e => {
   if (formControl || e.target.closest('#noteEditor')) return;
 
   if (helpModal.classList.contains('show') || exportModal.classList.contains('show')
-      || exportImagesModal.classList.contains('show') || settingsModal.classList.contains('show')
+      || settingsModal.classList.contains('show')
       || unsavedModal.classList.contains('show') || autosaveIntervalModal.classList.contains('show')
       || confirmModal.classList.contains('show') || whatsNewModal.classList.contains('show')
       || noteLinkModal.classList.contains('show')) {
@@ -20773,11 +21183,12 @@ window.addEventListener('keydown', e => {
       } else {
         helpModal.classList.remove('show');
         exportModal.classList.remove('show');
-        exportImagesModal.classList.remove('show');
         closeSettings();
       }
     }
-    if (k === 'enter' && exportModal.classList.contains('show')) $('#expGo').click();
+    // Enter exports from the Board tab only, as the old PNG dialog did; the
+    // Images tab never took Enter, so a stray Enter cannot write a folder of files.
+    if (k === 'enter' && exportModal.classList.contains('show') && exportTab === 'board') $('#expGo').click();
     if (k === 'enter' && noteLinkModal.classList.contains('show')) {
       e.preventDefault();
       const v = ($('#noteLinkUrl')?.value || '').trim();
@@ -20836,8 +21247,7 @@ window.addEventListener('keydown', e => {
   else if (mod && k === 'y') { e.preventDefault(); redo(); }
   else if (mod && k === 's') { e.preventDefault(); manualSaveBoardFile(() => saveBoardFile({ saveAs: e.shiftKey })); }
   else if (mod && k === 'o') { e.preventDefault(); openBoardFromDialog(); }
-  else if (mod && k === 'e') { e.preventDefault(); openExport(); }
-  else if (mod && e.shiftKey && k === 'i') { e.preventDefault(); exportOriginals(); }
+  else if (mod && k === 'e') { e.preventDefault(); openExportDialog(); }
   else if (mod && e.shiftKey && k === 't') { e.preventDefault(); toggleTagPanel(); }
   else if (mod && e.shiftKey && k === 'g') { e.preventDefault(); ungroupFromSelection(); }
   else if (mod && k === 'g') { e.preventDefault(); createGroupFromSelection(); }
@@ -20916,7 +21326,6 @@ const statusEl = $('#status');
 const toastEl = $('#toast');
 const helpModal = $('#helpModal');
 const exportModal = $('#exportModal');
-const exportImagesModal = $('#exportImagesModal');
 const settingsModal = $('#settingsModal');
 const autosaveIntervalModal = $('#autosaveIntervalModal');
 const confirmModal = $('#confirmModal');
@@ -21611,7 +22020,7 @@ $('#btnNote').addEventListener('click', () => createNote(mouseOnCanvas() ? toBoa
 $('#btnArrange').addEventListener('click', arrangeAll);
 $('#btnFit').addEventListener('click', () => fitTo(state.sel.size ? selectedItems() : state.items.filter(i => !isGroupItem(i))));
 $('#btnSearch').addEventListener('click', () => openBoardSearch());
-$('#btnExport').addEventListener('click', openExport);
+$('#btnExport').addEventListener('click', () => openExportDialog());
 $('#btnSave').addEventListener('click', () => manualSaveBoardFile(() => saveBoardFile()));
 $('#btnOpen').addEventListener('click', () => openBoardFromDialog());
 $('#btnClear').addEventListener('click', clearBoard);
@@ -21692,7 +22101,7 @@ $('#unsavedClose').addEventListener('click', () => hideUnsavedModal('cancel'));
 
 $('#sCopy').addEventListener('click', copySelection);
 $('#sDup').addEventListener('click', duplicateSelection);
-$('#sOrig').addEventListener('click', exportOriginals);
+$('#sOrig').addEventListener('click', () => openExportDialog('images'));
 const dragOutBtn = $('#sDragOut');
 if (dragOutBtn) {
   // Browser builds have no main process to stage files into.
@@ -21840,20 +22249,69 @@ for (const seg of [$('#expScale'), $('#expBg')]) {
     b.classList.add('on');
   });
 }
-function openExport() {
-  if (!state.items.length) { toast('Board is empty'); return; }
-  exportModal.classList.add('show');
-}
-$('#expCancel').addEventListener('click', () => exportModal.classList.remove('show'));
-$('#expGo').addEventListener('click', () => {
-  const scale = parseFloat($('#expScale .on').dataset.v);
-  const bg = $('#expBg .on').dataset.v;
-  exportModal.classList.remove('show');
-  doExportPNG(scale, bg);
+$('#expTabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-tab]');
+  if (b) setExportTab(b.dataset.tab);
 });
+/* Board formats. Each one has its options block in #expPaneBoard
+   (data-format) and a run(). The chosen format lasts for the session. */
+for (const seg of [$('#expViewerSize'), $('#expPdfSize'), $('#expPdfBg')]) {
+  seg.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    for (const x of seg.querySelectorAll('button')) x.classList.remove('on');
+    b.classList.add('on');
+    updateBoardExportEstimate();
+  });
+}
+for (const id of ['#expViewerNotes', '#expViewerLabels', '#expPdfNotes']) {
+  $(id).addEventListener('change', updateBoardExportEstimate);
+}
+const BOARD_EXPORT_FORMATS = {
+  viewer: {
+    desc: 'Saves the board as one web page anyone can pan and zoom.',
+    run: () => runViewerOrPdfExport('viewer'),
+  },
+  png: {
+    desc: 'Saves one PNG of the whole board.',
+    run: () => doExportPNG(parseFloat($('#expScale .on').dataset.v), $('#expBg .on').dataset.v),
+  },
+  pdf: {
+    desc: 'Saves the whole board as a one-page PDF.',
+    run: () => runViewerOrPdfExport('pdf'),
+  },
+};
+let boardExportFormat = 'viewer';
+function syncBoardExportFormat() {
+  $('#expBoardDesc').textContent = BOARD_EXPORT_FORMATS[boardExportFormat].desc;
+  for (const b of document.querySelectorAll('#expBoardFormat button')) {
+    const on = b.dataset.format === boardExportFormat;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+  for (const block of document.querySelectorAll('#expPaneBoard .export-format-opts')) {
+    block.hidden = block.dataset.format !== boardExportFormat;
+  }
+  $('#expViewerLabelsRow').hidden = !boardHasLabels();
+  boardExportPayloadBytes.clear();
+  updateBoardExportEstimate();
+}
+$('#expBoardFormat').addEventListener('click', e => {
+  const b = e.target.closest('button[data-format]');
+  if (!b || !BOARD_EXPORT_FORMATS[b.dataset.format]) return;
+  boardExportFormat = b.dataset.format;
+  syncBoardExportFormat();
+});
+function runBoardExport() {
+  const fmt = BOARD_EXPORT_FORMATS[boardExportFormat];
+  exportModal.classList.remove('show');
+  return fmt.run();
+}
+$('#expGo').addEventListener('click', () => { void runBoardExport(); });
+$('#expCancel').addEventListener('click', () => exportModal.classList.remove('show'));
 $('#expImgBrowse').addEventListener('click', browseExportDir);
-$('#expImgClose').addEventListener('click', () => exportImagesModal.classList.remove('show'));
-$('#expImgCancel').addEventListener('click', () => exportImagesModal.classList.remove('show'));
+$('#expClose').addEventListener('click', () => exportModal.classList.remove('show'));
+$('#expImgCancel').addEventListener('click', () => exportModal.classList.remove('show'));
 $('#expImgGo').addEventListener('click', runExportImages);
 $('#expImgNamePreset').addEventListener('change', e => {
   $('#expImgName').value = e.target.value;
@@ -21887,7 +22345,7 @@ $('#whatsNewOpen').addEventListener('click', openWhatsNewModal);
 $('#whatsNewDismiss').addEventListener('click', () => { void dismissWhatsNewNotice(); });
 $('#whatsNewGotIt').addEventListener('click', () => { void closeWhatsNewModal(true); });
 $('#whatsNewModalClose').addEventListener('click', () => { void closeWhatsNewModal(true); });
-for (const m of [helpModal, exportModal, exportImagesModal, settingsModal, unsavedModal, autosaveIntervalModal, confirmModal, noteLinkModal, whatsNewModal])
+for (const m of [helpModal, exportModal, settingsModal, unsavedModal, autosaveIntervalModal, confirmModal, noteLinkModal, whatsNewModal])
   m.addEventListener('click', e => {
     if (e.target !== m) return;
     m.classList.remove('show');
@@ -23595,6 +24053,11 @@ window.RefBoard = {
   /* Encoding hooks: the lossless guarantee is about actual pixels, so a
      harness has to run the real encode and compare against the real source. */
   itemToExportBlobForTest: itemToExportBlob,
+  set boardExportSinkForTest(fn) { boardExportSinkForTest = typeof fn === 'function' ? fn : null; },
+  set boardExportSaveTargetForTest(fn) { boardExportSaveTargetForTest = typeof fn === 'function' ? fn : null; },
+  get lastBoardExportForTest() { return lastBoardExportForTest; },
+  get boardExportRunning() { return !!boardExportRunning; },
+  get exportTabForTest() { return exportTab; },
   sourcePixelRectForTest: sourcePixelRect,
   getImageBlobForTest: getImageBlob,
   // A getter, because loadAppSettings() reassigns the object wholesale.
