@@ -98,7 +98,7 @@ async function main() {
   const queue = [];
   for (const [index, entryFile] of entryFiles.entries()) {
     const source = entrySources[index];
-    // index.html also loads one classic script (snip-shortcut.js) by <script src>.
+    // index.html also loads classic scripts (snip-shortcut.js, compare-geometry.js) by <script src>.
     const specifiers = [...extractLocalSpecifiers(source), ...(/\.html$/i.test(entryFile) ? extractHtmlScriptSources(source) : [])];
     for (const specifier of specifiers) {
       if (!normalizePath(specifier).startsWith('scripts/')) continue;
