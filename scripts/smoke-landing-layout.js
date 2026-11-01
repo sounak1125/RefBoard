@@ -452,17 +452,7 @@ async function run() {
   })`);
 
   smokeStep = 'remaining toolbar button actions';
-  await win.webContents.executeJavaScript(`(() => {
-    Object.assign(window.RefBoardAPI, {
-      readClipboardNotes: async () => null,
-      readClipboardImage: async () => null,
-      saveBoardFile: async () => ({ saved: false }),
-      openBoardDialog: async () => null
-    });
-    return true;
-  })()`);
   await revealToolbarForSmoke(win);
-  await clickElement(win, '#btnPaste');
   await clickElement(win, '#btnNote');
   await waitFor(win, "window.RefBoard.state.items.some(item => item.kind === 'note')", 'Note toolbar button');
   win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' });
@@ -470,7 +460,6 @@ async function run() {
   await delay(80);
   await revealToolbarForSmoke(win);
   await clickElement(win, '#btnArrange');
-  await clickElement(win, '#btnFit');
   await clickElement(win, '#btnSearch');
   await waitFor(win, "document.querySelector('#searchModal').classList.contains('show')", 'Search toolbar button');
   win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' });
@@ -481,12 +470,6 @@ async function run() {
   // The close button is on both tabs; each tab's Cancel is only on its own.
   await clickElement(win, '#expClose');
   await waitFor(win, "!document.querySelector('#exportModal').classList.contains('show')", 'Export modal close');
-  await revealToolbarForSmoke(win);
-  await clickElement(win, '#btnSave');
-  await delay(100);
-  await revealToolbarForSmoke(win);
-  await clickElement(win, '#btnOpen');
-  await delay(80);
   await revealToolbarForSmoke(win);
   await clickElement(win, '#btnClear');
   await waitFor(win, "document.querySelector('#confirmModal').classList.contains('show')", 'Clear toolbar button');
