@@ -1,11 +1,14 @@
 {
   "headline": "Remove objects from images",
-  "summary": "Draw around anything in an image and RefBoard paints it out from what is around it. Plus new alignment options, and updates that reopen the app.",
+  "summary": "Draw around anything in an image and RefBoard paints it out. Plus new ways to align rows and labels.",
   "sections": {
     "new": [
       {
         "title": "Remove object",
-        "description": "Select an image, choose Remove object in the selection bar or the right-click menu, and draw around what should go. Remove as many things as you like, then press Enter to apply or Esc to cancel. The first use downloads a 208 MB model once, and it needs a graphics card with WebGPU."
+        "description": "Draw around anything in an image, and RefBoard paints it out from what is around it.",
+        "where": "Selection bar or right-click menu",
+        "note": "The first use downloads a 208 MB model once and needs a graphics card with WebGPU.",
+        "details": "Remove as many things as you like, then press Enter to apply or Esc to cancel."
       },
       {
         "title": "Align rows left, center or right",
@@ -13,13 +16,14 @@
       },
       {
         "title": "Label alignment",
-        "description": "Labels under items can sit on the left, in the center or on the right. Choose it in Labels, under Display."
+        "description": "Labels under items can sit on the left, in the center or on the right.",
+        "where": "Labels panel › Display"
       }
     ],
     "improved": [
       {
         "title": "Security update",
-        "description": "RefBoard now runs on Electron 44.9.3, which no longer trusts a compromised certificate authority."
+        "description": "Now runs on Electron 44.9.3, which no longer trusts a compromised certificate authority."
       }
     ],
     "fixed": [

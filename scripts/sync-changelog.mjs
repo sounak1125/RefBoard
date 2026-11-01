@@ -12,9 +12,9 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { SECTION_KEYS, isShortNotesRelease, releaseNoteProblems } from './release-notes-rules.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SECTION_KEYS = ['new', 'improved', 'fixed'];
 
 function readJson(filePath, fallback) {
   try {
@@ -57,10 +57,15 @@ function normalizeItem(value) {
     return title ? { title, description: '' } : null;
   }
   if (!value || typeof value !== 'object') return null;
-  const title = String(value.title || '').trim();
-  const description = String(value.description || '').trim();
+  const { title: rawTitle, description: rawDescription, ...rest } = value;
+  const title = String(rawTitle || '').trim();
+  const description = String(rawDescription || '').trim();
   if (!title && !description) return null;
-  return { title: title || description, description: title ? description : '' };
+  const item = { title: title || description, description: title ? description : '' };
+  // Every other field is kept as written (where, note, details), so a misspelt
+  // or empty one reaches assertReleaseReady and is refused, not dropped.
+  for (const [key, field] of Object.entries(rest)) item[key] = typeof field === 'string' ? field.trim() : field;
+  return item;
 }
 
 function normalizeRelease(value, version) {
@@ -101,7 +106,7 @@ function hasContent(release) {
   return SECTION_KEYS.some(key => release.sections[key].length > 0);
 }
 
-function assertReleaseReady(release) {
+function assertReleaseReady(release, version) {
   const problems = [];
   if (!release.headline.trim()) problems.push('headline is empty');
   if (!release.summary.trim()) problems.push('summary is empty');
@@ -112,10 +117,13 @@ function assertReleaseReady(release) {
       if (!item.description.trim()) problems.push(`sections.${key}[${index}].description is empty`);
     }
   }
+  // Tagged commits join the release here, after npm test has checked
+  // release-highlights.json, so the length limits are enforced again.
+  problems.push(...releaseNoteProblems(release, { short: isShortNotesRelease(version) }));
   if (!problems.length) return;
   console.error('sync-changelog: release notes do not match the structured format:');
   for (const problem of problems) console.error(`  - ${problem}`);
-  console.error('See the copy-ready release-highlights.json example in README.md.');
+  console.error('See the release-highlights.json format in docs/MAINTAINING.md.');
   process.exit(1);
 }
 
@@ -200,7 +208,7 @@ if (!hasContent(release)) {
   process.exit(0);
 }
 
-assertReleaseReady(release);
+assertReleaseReady(release, version);
 
 changelog[version] = release;
 const sorted = {};

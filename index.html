@@ -2108,6 +2108,20 @@ body.board-active #whatsNewNotice{ display:none; }
   margin-left:auto; color:var(--dim); font-size:9.5px; font-variant-numeric:tabular-nums; white-space:nowrap;
 }
 .wn-item-description{ margin-top:4px; color:var(--mut); font-size:12px; line-height:1.5; }
+/* Where to find a change and its caveat: one short line each, after an icon. */
+.wn-item-where,.wn-item-note{
+  display:flex; align-items:flex-start; gap:6px; margin:6px 0 0;
+  color:var(--dim); font-size:11px; line-height:1.45;
+}
+.wn-item-where + .wn-item-note{ margin-top:3px; }
+.wn-item-where::before,.wn-item-note::before{
+  content:''; flex:none; width:12px; height:12px; margin-top:2px;
+  background-color:currentColor;
+  -webkit-mask-image:var(--wn-line-icon); -webkit-mask-size:100% 100%; -webkit-mask-repeat:no-repeat;
+  mask-image:var(--wn-line-icon); mask-size:100% 100%; mask-repeat:no-repeat;
+}
+.wn-item-where{ --wn-line-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linejoin='round'%3E%3Cpath d='M5.5 3.5 11 19l2.3-6.2 6.2-2.3z'/%3E%3C/svg%3E"); }
+.wn-item-note{ --wn-line-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5.5M12 7.6v.4'/%3E%3C/svg%3E"); }
 .wn-card-foot{
   flex:none; display:flex; align-items:center; justify-content:space-between; gap:18px;
   padding:15px 22px 16px 34px;
@@ -16978,6 +16992,13 @@ function openWhatsNewModal() {
           description.className = 'wn-item-description';
           description.textContent = item.description;
           itemCard.appendChild(description);
+        }
+        for (const kind of ['where', 'note']) {
+          if (!item[kind]) continue;
+          const line = document.createElement('p');
+          line.className = `wn-item-${kind}`;
+          line.textContent = item[kind];
+          itemCard.appendChild(line);
         }
         itemList.appendChild(itemCard);
       }
