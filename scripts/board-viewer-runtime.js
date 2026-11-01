@@ -126,7 +126,7 @@
     if (it.rot) n.style.transform = 'rotate(' + it.rot + 'deg)';
     n.style.background = rgba(it.bg, it.op == null ? 1 : it.op);
     var sk = it.size / 15;
-    n.style.boxShadow = '0 calc(' + (6 * sk) + 'px * var(--px)) calc(' + (18 * sk) + 'px * var(--px)) rgba(0,0,0,.35)';
+    n.style.boxShadow = '0 calc(' + (3 * sk) + 'px * var(--px)) calc(' + (8 * sk) + 'px * var(--px)) rgba(0,0,0,.2)';
     if (P.gray) n.style.filter = 'grayscale(1)';
     if (it.underline) n.classList.add('u');
 
