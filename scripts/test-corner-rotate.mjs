@@ -121,7 +121,7 @@ assert.match(html, /resizeCursorForHandle\(h, h\.group \? selectionFrameRot\(\) 
 assert.match(html, /type: 'rotate'/);
 assert.match(html, /snapRotateDelta\(/);
 assert.match(html, /Drag outside a corner/);
-assert.match(html, /Rotate from a corner \(Shift snaps 90°\)/);
+assert.match(html, /\{ cat:'Mouse', label:'Rotate from a corner', keys:\['~Drag outside a corner'\], note:'Shift snaps to 90°' \}/, 'Settings and the ? panel list corner rotation');
 const multiSelDraw = html.match(/if \(selectedCount > 1 && !lightDrag\) \{[\s\S]*?\} else if \(selectedCount === 1\)/);
 assert.ok(multiSelDraw, 'multi-select drawing should remain a distinct branch');
 assert.match(multiSelDraw[0], /drawSelectionOutline\(it\)/, 'multi-select should still outline each item');

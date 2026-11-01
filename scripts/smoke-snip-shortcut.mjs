@@ -192,6 +192,12 @@ const block = page => page.run(`(()=>{const b=document.getElementById('s2SnipBlo
     change:b.querySelector('#setSnipChange')?.textContent,resetShown:!b.querySelector('#setSnipReset')?.hidden,
     subs:[...new Set(subs)],first:b.parentElement.firstElementChild===b};})()`);
 
+/* Change starts a recording; keys sent before it shows would go to Settings. */
+async function startRecording(page) {
+  await click(page, '#setSnipChange');
+  await waitFor(async () => (await block(page))?.recording === 'Press a shortcut…', 'the recording to start');
+}
+
 async function openShortcutSettings(page) {
   // Settings sits in the board's right-click menu.
   await page.run(`document.querySelectorAll('.modal.show').forEach(el=>el.classList.remove('show'))`);
@@ -280,7 +286,7 @@ try {
   assert.equal(await hook("return T.isRegistered('Control+S');"), false);
 
   step = 'record Ctrl+Shift+K';
-  await click(page, '#setSnipChange');
+  await startRecording(page);
   await key(page, 'KeyK', ['ctrl', 'shift']);
   const afterK = await waitFor(async () => { const x = await hook('return T.shortcut();'); return x.accelerator === 'Control+Shift+K' && x; }, 'Ctrl+Shift+K to be taken');
   assert.deepEqual(afterK, { enabled: true, accelerator: 'Control+Shift+K', registered: true, error: null });
@@ -291,14 +297,14 @@ try {
   assert.ok(!b.subs.some(t => /AltGr/.test(t)), 'no AltGr warning without Ctrl+Alt');
 
   step = 'record Ctrl+Alt+K, then Esc cancels a recording';
-  await click(page, '#setSnipChange');
+  await startRecording(page);
   await key(page, 'KeyK', ['ctrl', 'alt']);
   await waitFor(async () => (await hook('return T.shortcut();')).accelerator === 'Control+Alt+K', 'Ctrl+Alt+K to be taken');
   assert.equal(await hook("return T.isRegistered('Control+Alt+K');"), true);
   assert.equal(await hook("return T.isRegistered('Control+Shift+K');"), false);
   b = await waitFor(async () => { const x = await block(page); return x.keys.join('+') === 'Ctrl+Alt+K' && x; }, 'the pane to show Ctrl+Alt+K');
   assert.ok(b.subs.includes('On keyboards with AltGr, this also blocks AltGr+K, which may type a letter.'));
-  await click(page, '#setSnipChange');
+  await startRecording(page);
   await key(page, 'Escape');
   b = await block(page);
   assert.deepEqual(b.keys, ['Ctrl', 'Alt', 'K'], 'Esc ends the recording and keeps the combo');
@@ -309,7 +315,7 @@ try {
   step = 'a combo another app holds';
   holder = startHolder('Control+Alt+J');
   assert.equal(await holder.held, true, 'the holder app took Ctrl+Alt+J');
-  await click(page, '#setSnipChange');
+  await startRecording(page);
   await key(page, 'KeyJ', ['ctrl', 'alt']);
   const refused = await waitFor(async () => { const s = await hook('return T.shortcut();'); return s.error && s; }, 'the refusal');
   assert.deepEqual(refused, { enabled: true, accelerator: 'Control+Alt+K', registered: true, error: { code: 'in-use', accelerator: 'Control+Alt+J' } });
@@ -389,6 +395,9 @@ try {
   await delay(300);
   await openShortcutSettings(page);
   await click(page, '#settingsRestore');
+  // Restore defaults asks first.
+  await waitFor(() => page.run(`document.getElementById('confirmModal').classList.contains('show')`), 'the restore confirm');
+  await click(page, '#confirmOk');
   await waitFor(async () => (await hook('return T.shortcut();')).enabled, 'defaults to come back');
   assert.deepEqual(await hook('return T.shortcut();'), { enabled: true, accelerator: 'Control+Alt+S', registered: true, error: null });
   assert.equal(await hook("return T.isRegistered('Control+Alt+S');"), true);

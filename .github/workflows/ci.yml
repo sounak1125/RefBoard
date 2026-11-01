@@ -153,3 +153,6 @@ jobs:
 
       - name: Board Viewer and PDF export smoke
         run: npm run test:board-viewer-smoke
+
+      - name: Settings page smoke
+        run: npm run test:settings-smoke

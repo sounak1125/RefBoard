@@ -174,6 +174,12 @@ try {
   const toastText = () => cdp.run(`document.querySelector('#toast')?.textContent||''`);
   const clearToast = () => cdp.run(`(()=>{const t=document.querySelector('#toast');if(t)t.textContent='';return true;})()`);
 
+  // The page can still be swapping documents when its target appears (CI saw
+  // "Execution context was destroyed" here), so poll across that first.
+  for (let i = 0; i < 300; i++) {
+    if (await cdp.run('!!(window.RefBoard && window.RefBoard.startupComplete)').catch(() => false)) break;
+    await delay(50);
+  }
   await cdp.run(`(async()=>{
     const wait=ms=>new Promise(r=>setTimeout(r,ms));
     for(let i=0;i<300&&!(window.RefBoard&&window.RefBoard.startupComplete);i++)await wait(50);
