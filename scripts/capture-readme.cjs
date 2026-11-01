@@ -127,7 +127,47 @@ async function main() {
     })()`);
     assert.equal(scene.images, ids.length);
     await waitFor(`window.RefBoard.images.size === ${ids.length}`, 'sample imports');
+    // The "New board" toast is still up; wait for it to fade.
+    await waitFor(`!document.querySelector('#toast').classList.contains('show')`, 'toast to clear');
     await capture('board');
+
+    // Export opens on the Board tab because nothing is selected.
+    await run(`document.querySelector('#btnExport').click()`);
+    await waitFor(`document.querySelector('#exportModal').classList.contains('show')`, 'Export dialog');
+    await capture('export');
+    await run(`document.querySelector('#expClose').click()`);
+    await waitFor(`!document.querySelector('#exportModal').classList.contains('show')`, 'Export to close');
+
+    // Settings is opened the way a user does: right-click the board, then Settings.
+    await run(`(() => {
+      const board = document.querySelector('#board');
+      board.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 1560, clientY: 960, button: 2 }));
+    })()`);
+    await waitFor(`[...document.querySelectorAll('#ctxmenu .mi')].some(e => e.textContent.trim() === 'Settings')`, 'board menu');
+    await run(`[...document.querySelectorAll('#ctxmenu .mi')].find(e => e.textContent.trim() === 'Settings').click()`);
+    await waitFor(`document.querySelector('#settingsModal').classList.contains('show')`, 'Settings');
+    await run(`document.querySelector('.s2-tab[data-pane="appearance"]').click()`);
+    await capture('settings');
+    await run(`document.querySelector('#settingsClose').click()`);
+    await waitFor(`!document.querySelector('#settingsModal').classList.contains('show')`, 'Settings to close');
+
+    // Compare the misty highlands photo with a grayscale copy of itself.
+    await run(`(async () => {
+      const api = window.RefBoard;
+      const source = ${JSON.stringify(fixtures.find(f => f.id === 1018))};
+      const bytes = Uint8Array.from(atob(source.data), c => c.charCodeAt(0));
+      const [copy] = await api.addImages([new File([bytes], 'sample-landscape-1018-gray.jpg', { type: 'image/jpeg' })]);
+      const original = api.state.items.find(i => i.name === 'sample-landscape-1018.jpg' || (i.imgId && api.images.get(i.imgId)?.name === 'sample-landscape-1018.jpg'));
+      Object.assign(copy, { x: original.x + original.w + 60, y: original.y, w: original.w, h: original.h, gray: true });
+      api.state.sel = new Set([original.id, copy.id]);
+      api.invalidateLayout();
+      api.updateSelBarForTest();
+      api.invalidate();
+    })()`);
+    await waitFor(`getComputedStyle(document.querySelector('#sCompare')).display !== 'none'`, 'Compare button');
+    await run(`document.querySelector('#sCompare').click()`);
+    await waitFor(`window.RefBoard.compareStateForTest?.() && !window.RefBoard.compareStateForTest().loading`, 'Compare');
+    await capture('compare');
 
     // Home entries are fictional. Their thumbnails use only the downloaded samples.
     win.destroy();
@@ -159,7 +199,7 @@ async function main() {
     await waitFor(`document.querySelectorAll('.ff-card').length === 6`, 'Focus Flow');
     await capture('focus-flow');
     assert.deepEqual(errors, [], 'renderer should have no errors');
-    console.log(JSON.stringify({ profile: 'disposable', source: 'public Picsum samples only', ...scene, screenshots: 3 }));
+    console.log(JSON.stringify({ profile: 'disposable', source: 'public Picsum samples only', ...scene, screenshots: 6 }));
   } catch (error) {
     console.error(error);
     process.exitCode = 1;

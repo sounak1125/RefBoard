@@ -7,6 +7,9 @@ history, clipboard content, saved board, or thumbnail cache is read.
 | File | View |
 |---|---|
 | `board.png` | Sample landscape board with notes and color swatches |
+| `export.png` | The Export dialog on its Board tab |
+| `settings.png` | Settings open on Appearance |
+| `compare.png` | Compare wiping between a sample photo and a grayscale copy of it |
 | `library.png` | Classic Grid with six fictional recent boards |
 | `focus-flow.png` | Focus Flow browsing the same sample library |
 
@@ -24,9 +27,10 @@ The script downloads six fixed public sample photos from [Lorem Picsum](https://
 on its first run and caches them in the ignored `stress-out-smoke/readme/samples/`
 directory. It starts a hidden 1600 × 1000 Electron window with a new temporary
 profile and no desktop IPC preload. Home uses a separate in-memory session.
-It imports the sample photos into the real canvas, adds demo notes, and captures
-three PNGs. The app UI is not restyled or composited for the screenshots. PNG
-compression is lossless. No image-generation service is used.
+It imports the sample photos into the real canvas, adds demo notes, opens Export,
+Settings and Compare the way a user would, and captures six PNGs. The app UI is
+not restyled or composited for the screenshots. PNG compression is lossless. No
+image-generation service is used.
 
 The temporary profile is removed on completion where Windows has released its
 file handles; a locked profile is reported by the cleanup helper.
