@@ -188,7 +188,7 @@ body.board-active.titlebar-revealed #titlebar{
 #titlebarPinMenu, #titlebarPinWindows{
   position:fixed; z-index:120; display:none; min-width:208px;
   background:var(--card); border:1px solid rgba(255,255,255,.09); border-radius:11px;
-  padding:5px; box-shadow:0 14px 44px rgba(0,0,0,.55); backdrop-filter:blur(16px);
+  padding:5px; box-shadow:0 8px 22px rgba(0,0,0,.3); backdrop-filter:blur(16px);
   -webkit-app-region:no-drag;
 }
 #titlebarPinMenu.show, #titlebarPinWindows.show{ display:block; }
@@ -454,7 +454,7 @@ body.board-active:not(.titlebar-revealed) #selbar{ top:var(--float-gap); }
 #matchSizePop{
   position:fixed; z-index:25; display:none; min-width:248px;
   background:var(--card); border:1px solid var(--line); border-radius:11px;
-  padding:5px; box-shadow:0 14px 44px rgba(0,0,0,.55); backdrop-filter:blur(16px);
+  padding:5px; box-shadow:0 8px 22px rgba(0,0,0,.3); backdrop-filter:blur(16px);
 }
 #matchSizePop.open{ display:block; }
 #matchSizePop .mi{
@@ -2273,7 +2273,7 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 #ctxmenu{
   position:fixed; z-index:50; display:none; min-width:208px;
   background:var(--card); border:1px solid rgba(255,255,255,.09); border-radius:11px;
-  padding:5px; box-shadow:0 14px 44px rgba(0,0,0,.55); backdrop-filter:blur(16px);
+  padding:5px; box-shadow:0 8px 22px rgba(0,0,0,.3); backdrop-filter:blur(16px);
 }
 #ctxmenu.show{ display:block; }
 .mi{
@@ -2295,7 +2295,7 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 #ctxSub{
   position:fixed; z-index:51; display:none; min-width:188px;
   background:var(--card); border:1px solid var(--line); border-radius:11px;
-  padding:5px; box-shadow:0 14px 44px rgba(0,0,0,.55); backdrop-filter:blur(16px);
+  padding:5px; box-shadow:0 8px 22px rgba(0,0,0,.3); backdrop-filter:blur(16px);
 }
 #ctxSub.show{ display:block; }
 #ctxSub:has(.mi-tag){ max-height:min(70vh, 560px); overflow-y:auto; }
@@ -2963,11 +2963,11 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
   pointer-events:auto;
   border:none;
   outline:none;
-  box-shadow:0 12px 32px rgba(0,0,0,.4);
+  box-shadow:0 3px 8px rgba(0,0,0,.2);
   backdrop-filter:blur(4px);
 }
 .note-overlay.show .note-card{
-  box-shadow:0 14px 36px rgba(0,0,0,.45), 0 0 0 2px rgba(90,162,255,.55);
+  box-shadow:0 3px 8px rgba(0,0,0,.2), 0 0 0 2px rgba(90,162,255,.55);
 }
 /* Toolbar-only (single-click) selection: the note stays canvas-rendered and
    draggable underneath — only the format bar floats above it. Hiding the
@@ -18081,9 +18081,9 @@ function drawBoardItem(g, it, opts = {}) {
     const hw = nw / 2, hh = nh / 2;
     const op = it.opacity == null ? 1 : it.opacity;
     const sk = noteEffSize(it) / 15;
-    g.shadowColor = 'rgba(0,0,0,.35)';
-    g.shadowBlur = 18 * sk;
-    g.shadowOffsetY = 6 * sk;
+    g.shadowColor = 'rgba(0,0,0,.2)';
+    g.shadowBlur = 8 * sk;
+    g.shadowOffsetY = 3 * sk;
     g.fillStyle = hexToRgba(it.color || '#15161c', op);
     g.fillRect(-hw, -hh, nw, nh);
     g.shadowColor = 'transparent';
