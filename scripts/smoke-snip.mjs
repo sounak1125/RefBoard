@@ -135,8 +135,20 @@ async function drag(overlay, from, to) {
   }
 }
 
+/* Releasing the mouse, or pressing Esc, ends the snip, and main destroys the
+   overlay straight away. On a slow machine (the CI runner) that can close the
+   socket before the reply to this last event comes back. Whether the snip
+   landed, or for Esc that nothing did, is what the steps check. */
+async function lastInput(overlay, method, params) {
+  try {
+    await overlay.send(method, params);
+  } catch (error) {
+    if (error?.message !== 'CDP socket closed') throw error;
+  }
+}
+
 async function release(overlay, at) {
-  await overlay.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at[0], y: at[1], button: 'left', buttons: 0, clickCount: 1 });
+  await lastInput(overlay, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: at[0], y: at[1], button: 'left', buttons: 0, clickCount: 1 });
 }
 
 async function lastSnip(previousId) {
@@ -277,7 +289,7 @@ try {
   const ov4 = await overlayTarget(d1.id);
   await waitFor(() => ov4.run(`document.getElementById('frame').width>0`), 'the fourth overlay frame');
   await drag(ov4, [50, 50], [250, 250]);
-  await ov4.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
+  await lastInput(ov4, 'Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 });
   ov4.close();
   await waitFor(async () => !(await hook('return T.active;')), 'Esc to close the overlays');
   const overlaysLeft = await hook('return T.overlays().length;');
