@@ -21011,6 +21011,9 @@ function syncSnipShortcutMentions() {
 
 function applySnipShortcutState(st) {
   if (!st || typeof st.accelerator !== 'string') return;
+  // A change arrives twice (the request's answer and main's broadcast); a
+  // second, identical redraw would only swallow a click in progress.
+  if (JSON.stringify(st) === JSON.stringify(snipShortcutState)) return;
   snipShortcutState = st;
   renderSnipShortcutBlock();
   syncSnipShortcutMentions();
