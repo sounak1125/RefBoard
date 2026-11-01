@@ -904,9 +904,10 @@ body.board-active:not(.titlebar-revealed) #empty{ top:0; }
 }
 .chip b{ color:#a9aebb; font-weight:600; }
 kbd{
-  font:11px "Segoe UI",system-ui; background:#232630; color:#c3c8d4;
-  border:1px solid #333744; border-bottom-width:2px; border-radius:5px;
-  padding:1px 6px; white-space:nowrap;
+  display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 6px;
+  font:600 11px/1 "Segoe UI",system-ui; color:var(--txt);
+  background:color-mix(in srgb, var(--surface-3) 75%, var(--surface-1));
+  border:1px solid var(--line-strong); border-bottom-width:2px; border-radius:6px; white-space:nowrap;
 }
 
 /* ---------- recent works landing ---------- */
@@ -2324,7 +2325,7 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
   background:var(--scrim); backdrop-filter:blur(3px);
 }
 .modal.show{ display:flex; }
-#autosaveIntervalModal, #unsavedModal, #confirmModal, #noteLinkModal{ z-index:270; }
+#unsavedModal, #confirmModal, #noteLinkModal{ z-index:270; }
 .card{
   background:var(--card); border:1px solid rgba(255,255,255,.09); border-radius:16px;
   padding:22px 24px; width:430px; max-width:calc(100vw - 40px);
@@ -2448,47 +2449,34 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 .btn.primary{ background:var(--acc); border-color:var(--acc); color:#0b1524; font-weight:600; }
 .btn.primary:hover{ filter:brightness(1.1); }
 
-.shortcuts{ display:grid; grid-template-columns:auto 1fr; gap:8px 16px; align-items:center; }
+.shortcuts{ display:grid; grid-template-columns:fit-content(250px) 1fr; gap:8px 16px; align-items:center; }
 .shortcuts .d{ color:var(--mut); font-size:12.5px; }
-.shortcuts .ks{ display:flex; gap:4px; justify-content:flex-start; }
+.shortcuts .d small{ display:block; color:var(--dim); font-size:11.5px; }
+.shortcuts .ks{ display:flex; flex-wrap:wrap; align-items:center; gap:3px; justify-content:flex-start; }
+.shortcuts .help-cat{
+  grid-column:1 / -1; display:flex; align-items:center; gap:8px; margin-top:10px; padding-bottom:6px;
+  border-bottom:1px solid var(--line); font-size:10.5px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:var(--dim);
+}
+.shortcuts .help-cat:first-child{ margin-top:0; }
+.shortcuts .tk{ color:var(--txt); font-size:12px; }
+.help-tips{ margin-top:18px; }
+.card.help-card{ width:580px; max-height:calc(100% - 48px); overflow:auto; scrollbar-width:thin; }
 
 .mcat{
   padding:7px 11px 4px; font-size:10.5px; font-weight:600;
   text-transform:uppercase; letter-spacing:.65px; color:var(--dim);
   pointer-events:none;
 }
-.card.settings-card{
-  width:520px; max-height:min(84vh,680px); overflow:auto;
-  padding:20px 22px 18px;
-}
-.settings-card{ scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.16) transparent; }
-.settings-card::-webkit-scrollbar{ width:10px; }
-.settings-card::-webkit-scrollbar-track{ background:transparent; }
-.settings-card::-webkit-scrollbar-thumb{
-  background:rgba(255,255,255,.14); border-radius:6px;
-  border:2px solid transparent; background-clip:padding-box;
-}
-.settings-card::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.26); background-clip:padding-box; }
-.set-cat{ margin-top:18px; }
-.set-cat:first-of-type{ margin-top:4px; }
-.set-cat h4{
-  font-size:11px; font-weight:600; text-transform:uppercase;
-  letter-spacing:.65px; color:var(--mut); margin-bottom:10px;
-}
-.set-subhead{ font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:var(--dim); margin:14px 0 2px; }
-.theme-row{
-  width:min(336px, 100%); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
-}
+/* ---- Settings ---- */
+.theme-row{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:14px 0 4px; }
 .theme-swatch{
   --sw-bg:#0e1118; --sw-surface:#1e2532; --sw-acc:#6eabff;
-  position:relative; min-width:0; height:58px; padding:7px 9px 7px 7px;
-  display:grid; grid-template-columns:42px minmax(0,1fr) 16px; align-items:center; gap:9px;
-  border:1px solid var(--line); border-radius:11px;
-  color:var(--mut); background:color-mix(in srgb, var(--surface-1) 96%, #fff 4%);
+  position:relative; min-width:0; padding:0; overflow:hidden;
+  display:flex; flex-direction:column;
+  border:1px solid var(--line); border-radius:12px;
+  color:var(--mut); background:var(--surface-1);
   cursor:pointer; text-align:left;
-  box-shadow:0 1px 0 rgba(255,255,255,.035) inset;
-  transition:transform .16s cubic-bezier(.22,1,.36,1), border-color .16s ease,
-    background .16s ease, box-shadow .16s ease;
+  transition:transform .16s cubic-bezier(.22,1,.36,1), border-color .16s ease, box-shadow .16s ease;
 }
 .theme-swatch[data-theme="midnight"]{ --sw-bg:#0e1118; --sw-surface:#273141; --sw-acc:#6eabff; }
 .theme-swatch[data-theme="slate"]{ --sw-bg:#111315; --sw-surface:#293138; --sw-acc:#91b7dc; }
@@ -2496,73 +2484,143 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 .theme-swatch[data-theme="pine"]{ --sw-bg:#0d1411; --sw-surface:#24372e; --sw-acc:#78d6aa; }
 .theme-swatch[data-theme="ocean"]{ --sw-bg:#08141a; --sw-surface:#243a46; --sw-acc:#4fd4c8; }
 .theme-swatch[data-theme="dim"]{ --sw-bg:#242830; --sw-surface:#424a57; --sw-acc:#86bcff; }
+/* A tiny board: toolbar strip, two images, the theme's accent. */
 .theme-preview{
-  position:relative; width:42px; height:42px; overflow:hidden; border-radius:8px;
-  background:var(--sw-bg); box-shadow:0 0 0 1px rgba(255,255,255,.09) inset;
+  position:relative; display:block; height:58px; overflow:hidden;
+  border-bottom:1px solid rgba(255,255,255,.07);
+  background:
+    linear-gradient(var(--sw-surface), var(--sw-surface)) 8px 9px / 9px 40px no-repeat,
+    linear-gradient(var(--sw-surface), var(--sw-surface)) 68px 18px / 26px 31px no-repeat,
+    radial-gradient(rgba(255,255,255,.13) 1px, transparent 1.3px) 0 0 / 9px 9px,
+    var(--sw-bg);
 }
 .theme-preview::before{
-  content:""; position:absolute; left:7px; right:7px; top:8px; height:19px; border-radius:5px;
+  content:""; position:absolute; left:26px; top:11px; width:34px; height:26px; border-radius:4px;
   background:var(--sw-surface); border:1px solid rgba(255,255,255,.08);
 }
 .theme-preview::after{
-  content:""; position:absolute; left:11px; bottom:8px; width:20px; height:4px; border-radius:99px;
-  background:var(--sw-acc); box-shadow:0 0 9px color-mix(in srgb, var(--sw-acc) 42%, transparent);
+  content:""; position:absolute; left:26px; bottom:9px; width:22px; height:4px; border-radius:99px;
+  background:var(--sw-acc); box-shadow:0 0 9px color-mix(in srgb, var(--sw-acc) 50%, transparent);
 }
-.theme-copy{ min-width:0; display:flex; flex-direction:column; gap:3px; }
-.theme-copy strong{ overflow:hidden; padding-block:1px; color:var(--txt); font-size:11.5px; font-weight:650; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
-.theme-copy small{ overflow:hidden; padding-block:1px; color:var(--dim); font-size:9.5px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
-.theme-check{ width:15px; height:15px; opacity:0; color:var(--acc); fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; transform:scale(.72); transition:.16s; }
-.theme-swatch:hover{ transform:translateY(-1px); border-color:var(--line-strong); background:var(--surface-2); }
+.theme-copy{ min-width:0; display:flex; flex-direction:column; gap:2px; padding:8px 30px 9px 10px; }
+.theme-copy strong{ overflow:hidden; color:var(--txt); font-size:12px; font-weight:600; line-height:1.3; text-overflow:ellipsis; white-space:nowrap; }
+.theme-copy small{ overflow:hidden; color:var(--dim); font-size:11px; line-height:1.3; text-overflow:ellipsis; white-space:nowrap; }
+.theme-check{
+  position:absolute; right:9px; bottom:15px; width:16px; height:16px; padding:3px; border-radius:50%;
+  opacity:0; background:var(--acc); color:var(--acc-contrast); fill:none; stroke:currentColor; stroke-width:2.8;
+  stroke-linecap:round; stroke-linejoin:round; transform:scale(.72); transition:.16s;
+}
+.theme-swatch:hover{ transform:translateY(-1px); border-color:var(--line-strong); }
 .theme-swatch:focus-visible{ outline:none; border-color:var(--acc); box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 16%, transparent); }
-.theme-swatch.active{
-  border-color:color-mix(in srgb, var(--acc) 74%, #fff 8%);
-  background:color-mix(in srgb, var(--surface-2) 88%, var(--acc) 12%);
-  box-shadow:0 0 0 1px color-mix(in srgb, var(--acc) 20%, transparent) inset,
-    0 8px 22px color-mix(in srgb, var(--shadow) 82%, transparent);
-}
+.theme-swatch.active{ border-color:var(--acc); box-shadow:0 0 0 1px var(--acc) inset, 0 0 0 3px color-mix(in srgb, var(--acc) 16%, transparent); }
 .theme-swatch.active .theme-check{ opacity:1; transform:scale(1); }
-.set-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.set-btn{
-  display:flex; align-items:center; justify-content:space-between; gap:12px;
-  padding:10px 12px; border-radius:10px; border:1px solid var(--line);
-  background:var(--surface-2); color:var(--txt); font-size:12.5px; cursor:pointer; text-align:left;
+.settings2-card{ width:820px; max-width:calc(100vw - 48px); height:min(84vh,640px); padding:0; display:flex; overflow:hidden; }
+.settings2-body{ display:flex; flex:1; min-width:0; min-height:0; }
+.settings2-nav{
+  width:204px; flex:0 1 204px; min-width:150px; display:flex; flex-direction:column; gap:2px;
+  padding:16px 12px 12px; border-right:1px solid var(--line); overflow:auto;
+  background:color-mix(in srgb, var(--card) 72%, var(--void));
 }
-.set-btn:hover:not(:disabled){ background:var(--surface-3); border-color:var(--line-strong); }
-.set-btn.on{ background:color-mix(in srgb, var(--acc) 16%, var(--surface-1)); border-color:color-mix(in srgb, var(--acc) 64%, transparent); color:var(--txt); }
-.set-btn.on .k{ color:var(--acc); }
-.set-btn .k{ font-size:10.5px; color:var(--dim); white-space:nowrap; }
-.set-note{
-  margin-top:14px; padding:10px 12px; border-radius:10px;
-  background:color-mix(in srgb, var(--acc) 8%, transparent); border:1px solid color-mix(in srgb, var(--acc) 20%, transparent);
-  font-size:11.5px; color:var(--mut); line-height:1.5;
+.settings2-title{ padding:4px 8px 14px; font:650 15px/1.2 var(--font-display); color:var(--txt); }
+.settings2-search-wrap{ position:relative; flex:0 0 auto; margin-bottom:10px; }
+.settings2-search-wrap > svg{ position:absolute; left:10px; top:9px; width:14px; height:14px; stroke:var(--dim); fill:none; stroke-width:2; stroke-linecap:round; pointer-events:none; }
+.settings2-search{
+  width:100%; height:32px; padding:0 28px 0 31px; border-radius:9px; border:1px solid var(--line);
+  background:var(--surface-1); color:var(--txt); font-size:12.5px; outline:none; transition:border-color .15s, box-shadow .15s;
 }
-.settings2-card{ width:820px; max-width:calc(100vw - 48px); height:min(84vh,640px); padding:0; display:flex; flex-direction:column; overflow:hidden; }
-.settings2-head{ display:flex; align-items:center; justify-content:center; position:relative; padding:14px 18px; border-bottom:1px solid var(--line); }
-.settings2-head h3{ margin:0; }
-.settings2-head .modal-x{ position:absolute; right:12px; top:10px; width:28px; height:28px; border:none; border-radius:8px; background:transparent; color:var(--dim); font-size:18px; line-height:1; cursor:pointer; }
+.settings2-search::placeholder{ color:var(--dim); }
+.settings2-search:focus{ border-color:color-mix(in srgb, var(--acc) 62%, transparent); box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 14%, transparent); }
+.settings2-search-clear{ position:absolute; right:5px; top:5px; width:22px; height:22px; border:0; border-radius:6px; background:transparent; color:var(--dim); font-size:15px; line-height:1; cursor:pointer; }
+.settings2-search-clear:hover{ background:var(--surface-3); color:var(--txt); }
+.settings2-search-clear[hidden]{ display:none; }
+.s2-tab{ position:relative; width:100%; height:34px; flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:var(--mut); font-size:13px; text-align:left; cursor:pointer; }
+.s2-tab:hover{ background:color-mix(in srgb, var(--txt) 5%, transparent); color:var(--txt); }
+.s2-tab.active{ background:color-mix(in srgb, var(--acc) 13%, transparent); color:var(--txt); }
+.s2-tab.active::before{ content:""; position:absolute; left:-12px; top:9px; bottom:9px; width:3px; border-radius:0 3px 3px 0; background:var(--acc); }
+.s2-tab svg{ width:16px; height:16px; flex:0 0 auto; stroke:currentColor; fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.s2-tab.s2-zero{ opacity:.45; }
+.s2-searching .s2-tab.active{ background:transparent; }
+.s2-searching .s2-tab.active::before{ display:none; }
+.s2-count{ margin-left:auto; min-width:18px; padding:1px 6px; border-radius:99px; background:var(--surface-3); color:var(--txt); font-size:10.5px; text-align:center; }
+.s2-count:empty{ display:none; }
+.settings2-footer{ margin-top:auto; padding-top:10px; border-top:1px solid var(--line); }
+.s2-reset{ width:100%; height:32px; display:flex; align-items:center; gap:9px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:var(--dim); font-size:12.5px; cursor:pointer; }
+.s2-reset svg{ width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.s2-reset:hover{ color:var(--danger); background:color-mix(in srgb, var(--danger) 9%, transparent); }
+.settings2-main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.settings2-head{ display:flex; align-items:center; gap:12px; padding:18px 20px 14px 28px; border-bottom:1px solid transparent; transition:border-color .15s; }
+.settings2-head.scrolled{ border-bottom-color:var(--line); }
+.settings2-head h3{ margin:0; font:650 18px/1.25 var(--font-display); }
+.settings2-head p{ margin-top:3px; font-size:12px; color:var(--dim); }
+.settings2-head-acts{ margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.settings2-head .modal-x{ width:30px; height:30px; border:none; border-radius:8px; background:transparent; color:var(--dim); font-size:19px; line-height:1; cursor:pointer; }
 .settings2-head .modal-x:hover{ background:var(--surface-3); color:var(--txt); }
-.settings2-body{ display:flex; flex:1; min-height:0; }
-.settings2-nav{ width:210px; flex:0 1 210px; min-width:132px; border-right:1px solid var(--line); padding:12px; display:flex; flex-direction:column; gap:6px; overflow:auto; }
-.settings2-search{ height:34px; border-radius:9px; border:1px solid var(--line); background:var(--panel); color:var(--txt); padding:0 10px; font-size:13px; outline:none; margin-bottom:6px; }
-.s2-tab{ display:flex; align-items:center; gap:10px; padding:10px 12px; border:0; border-radius:9px; background:transparent; color:var(--mut); font-size:13px; text-align:left; cursor:pointer; }
-.s2-tab:hover{ background:rgba(255,255,255,.05); color:var(--txt); }
-.s2-tab.active{ background:rgba(255,255,255,.07); color:var(--txt); }
-.s2-tab svg{ width:17px; height:17px; stroke:currentColor; fill:none; stroke-width:1.7; }
-.settings2-content{ flex:1; min-width:0; padding:22px 26px; overflow:auto; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.16) transparent; }
+.settings2-content{ flex:1; min-height:0; padding:4px 28px 28px; overflow:auto; scrollbar-width:thin; scrollbar-color:color-mix(in srgb, var(--txt) 16%, transparent) transparent; }
 .settings2-content::-webkit-scrollbar{ width:10px; }
-.settings2-content::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.14); border-radius:6px; border:2px solid transparent; background-clip:padding-box; }
-.s2-pane{ display:none; flex-direction:column; gap:2px; }
+.settings2-content::-webkit-scrollbar-thumb{ background:color-mix(in srgb, var(--txt) 14%, transparent); border-radius:6px; border:2px solid transparent; background-clip:padding-box; }
+.s2-pane{ display:none; flex-direction:column; }
 .s2-pane:not([hidden]){ display:flex; }
-.s2-cat{ font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:var(--dim); margin:16px 0 4px; }
-.s2-cat:first-child{ margin-top:0; }
-.s2-keys{ display:flex; align-items:center; gap:4px; }
-.s2-plus{ color:var(--dim); font-size:10px; }
-.s2-row{ display:flex; align-items:center; justify-content:space-between; gap:24px; padding:11px 4px; border-bottom:1px solid var(--line); flex-wrap:wrap; min-width:0; }
-.s2-row:last-child{ border-bottom:0; }
+/* A pane's own name heads its results while searching. It is the pane's last
+   child (the Snip block must stay first in Shortcuts), drawn first by order. */
+.s2-pane-title{ display:none; }
+.s2-searching .s2-pane-title{ order:-1; display:flex; align-items:center; gap:7px; margin:22px 2px 0; font-size:12.5px; font-weight:600; color:var(--txt); }
+.s2-searching .s2-pane:first-child .s2-pane-title{ margin-top:6px; }
+.s2-pane-title svg{ width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.s2-sec{ margin-top:22px; }
+.s2-pane > .s2-sec:first-child{ margin-top:6px; }
+.s2-searching .s2-sec{ margin-top:12px; }
+.s2-row.s2-themes{ display:block; min-height:0; padding:0 0 14px; }
+.s2-chips + .s2-sec{ margin-top:8px; }
+.s2-cat{ display:flex; align-items:center; gap:8px; padding:0 2px 8px; border-bottom:1px solid var(--line-strong); font-size:11px; font-weight:600; letter-spacing:.55px; text-transform:uppercase; color:var(--dim); }
+.s2-ctx{ padding:1px 7px; border-radius:99px; border:1px solid var(--line); font-weight:500; letter-spacing:0; text-transform:none; }
+.s2-row{ display:flex; align-items:center; justify-content:space-between; gap:20px; min-width:0; min-height:56px; padding:11px 2px; border-bottom:1px solid var(--line); }
+.s2-row[hidden]{ display:none; }
+.s2-text{ flex:1 1 auto; min-width:0; }
 .s2-row .s2-label{ font-size:13px; color:var(--txt); }
-.s2-row .s2-sub{ font-size:11.5px; color:var(--dim); margin-top:2px; }
+.s2-row .s2-sub{ margin-top:2px; font-size:11.5px; line-height:1.45; color:var(--dim); }
 .s2-control{ flex-shrink:0; display:flex; align-items:center; gap:8px; }
-.s2-control input[type=number]{ width:84px; height:32px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--txt); padding:0 8px; font-size:13px; }
+.s2-row-sub{ min-height:46px; padding-left:18px; }
+.s2-row-sub .s2-label{ font-size:12.5px; color:var(--mut); }
+.s2-row-sub .s2-label::before{ content:"↳ "; color:var(--dim); }
+.s2-unit{ color:var(--dim); font-size:12px; }
+.s2-about{ justify-content:flex-start; gap:14px; padding:16px 2px; }
+.s2-about .s2-control{ margin-left:auto; }
+.s2-logo{
+  width:44px; height:44px; flex:0 0 auto; display:grid; place-items:center; border-radius:12px; color:var(--acc-contrast);
+  background:linear-gradient(145deg, color-mix(in srgb, var(--acc) 85%, #fff 15%), color-mix(in srgb, var(--acc) 55%, #000 45%));
+}
+.s2-logo svg{ width:24px; height:24px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.s2-row .s2-label.s2-version{ font:650 16px/1.25 var(--font-display); font-variant-numeric:tabular-nums; }
+/* Shortcuts */
+.s2-sc{ min-height:40px; gap:14px; padding:7px 2px; }
+.s2-sc .s2-label{ font-size:12.5px; }
+.s2-sc .s2-sub{ margin-top:1px; font-size:11px; }
+.s2-keys{ display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:3px; flex-shrink:0; }
+.s2-keys kbd.s2-hit{ border-color:var(--acc); color:var(--acc); }
+.s2-or{ margin:0 5px; color:var(--dim); font-size:11px; }
+.s2-gest{
+  display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px 0 7px; border-radius:99px;
+  border:1px dashed color-mix(in srgb, var(--txt) 26%, transparent); color:var(--mut); font-size:11px; white-space:nowrap;
+}
+.s2-gest svg{ width:12px; height:12px; stroke:currentColor; fill:none; stroke-width:1.8; }
+.s2-chips{ position:sticky; top:-4px; z-index:3; display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; padding:10px 0; background:var(--card); }
+.s2-chips button{ height:26px; padding:0 10px; border:1px solid var(--line); border-radius:99px; background:transparent; color:var(--mut); font-size:12px; cursor:pointer; }
+.s2-chips button:hover{ border-color:var(--line-strong); color:var(--txt); }
+.s2-searching .s2-chips, .s2-looking .s2-chips{ display:none; }
+.s2-lookup{
+  display:flex; align-items:center; gap:8px; margin-top:14px; padding:9px 12px; border-radius:10px;
+  border:1px solid color-mix(in srgb, var(--acc) 40%, transparent); background:color-mix(in srgb, var(--acc) 9%, transparent);
+  color:var(--txt); font-size:12.5px;
+}
+.s2-lookup[hidden]{ display:none; }
+.s2-lookup .s2-btn{ margin-left:auto; }
+.s2-lookup-rec{ color:var(--acc); font-weight:600; }
+.s2-lookup-rec::before{ content:""; display:inline-block; width:7px; height:7px; margin-right:7px; border-radius:50%; background:var(--acc); vertical-align:1px; animation:s2Pulse 1s ease-in-out infinite; }
+@keyframes s2Pulse{ 50%{ opacity:.25; } }
+.s2-empty{ margin-top:60px; text-align:center; color:var(--dim); font-size:13px; line-height:1.5; }
+.s2-empty[hidden]{ display:none; }
+.s2-empty b{ display:block; margin-bottom:4px; color:var(--txt); font:600 15px/1.3 var(--font-display); }
+.s2-empty .s2-btn{ margin-top:14px; }
 .settings2-content select{
   appearance:none; -webkit-appearance:none;
   height:32px; padding:0 30px 0 10px; font-size:13px; cursor:pointer;
@@ -2590,8 +2648,9 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
   text-align:left; cursor:pointer;
   transition:border-color .16s ease, background .16s ease, box-shadow .16s ease;
 }
+.settings2-content .ui-select-button{ height:32px; min-width:150px; }
 .ui-select-button:hover{
-  border-color:rgba(255,255,255,.17);
+  border-color:var(--line-strong);
   background:color-mix(in srgb, var(--panel) 92%, #fff 8%);
 }
 .ui-select-button:focus-visible,
@@ -2610,8 +2669,9 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
   position:fixed; z-index:280; display:none;
   min-width:142px; padding:5px; border-radius:11px;
   background:color-mix(in srgb, var(--card) 97%, #fff 3%);
-  border:1px solid rgba(255,255,255,.1);
-  box-shadow:0 18px 52px rgba(0,0,0,.56), 0 1px 0 rgba(255,255,255,.045) inset;
+  border:1px solid var(--line-strong);
+  /* Kept short: a long, dark shadow read as a smudge over the rows below. */
+  box-shadow:0 8px 22px rgba(0,0,0,.3), 0 1px 0 rgba(255,255,255,.045) inset;
 }
 .ui-select-menu.show{ display:flex; flex-direction:column; gap:2px; animation:uiSelectIn .14s cubic-bezier(.22,1,.36,1); }
 @keyframes uiSelectIn{
@@ -2638,38 +2698,40 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 .settings2-content input[type=number]{ appearance:textfield; -webkit-appearance:textfield; }
 .settings2-content input[type=number]::-webkit-inner-spin-button,
 .settings2-content input[type=number]::-webkit-outer-spin-button{ -webkit-appearance:none; margin:0; }
-.ui-num{ display:inline-flex; align-items:stretch; }
-.ui-num > input[type=number]{ border-top-right-radius:0; border-bottom-right-radius:0; border-right:0; }
-.ui-num-steps{ display:flex; flex-direction:column; width:20px; border:1px solid var(--line); border-left:0; border-radius:0 8px 8px 0; overflow:hidden; }
-.ui-num-steps button{ flex:1; border:0; background:var(--panel); color:var(--mut); cursor:pointer; padding:0; font-size:8px; line-height:1; display:flex; align-items:center; justify-content:center; }
-.ui-num-steps button:hover{ background:rgba(255,255,255,.08); color:var(--txt); }
-.ui-num-steps button + button{ border-top:1px solid var(--line); }
-.s2-toggle{ width:42px; height:24px; border-radius:12px; border:1px solid var(--line); background:var(--panel); position:relative; cursor:pointer; padding:0; }
-.s2-toggle::after{ content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:var(--mut); transition:transform .15s, background .15s; }
-.s2-toggle.on{ background:color-mix(in srgb, var(--acc) 30%, transparent); border-color:var(--acc); }
-.s2-toggle.on::after{ transform:translateX(18px); background:var(--acc); }
-.s2-btn.subtle{
-  padding:6px 10px; border-radius:8px; border:1px solid var(--line);
-  background:var(--panel); color:var(--mut); font-size:12px; cursor:pointer;
+.ui-num{ display:inline-flex; height:32px; overflow:hidden; border:1px solid var(--line); border-radius:9px; background:color-mix(in srgb, var(--panel) 96%, #fff 4%); }
+.ui-num:focus-within{ border-color:color-mix(in srgb, var(--acc) 62%, transparent); }
+.ui-num > button{ width:28px; padding:0; border:0; background:transparent; color:var(--mut); font-size:15px; line-height:1; cursor:pointer; }
+.ui-num > button:hover{ background:var(--surface-3); color:var(--txt); }
+.ui-num > input[type=number]{
+  width:56px; padding:0 4px; border:0; border-inline:1px solid var(--line); border-radius:0;
+  background:transparent; color:var(--txt); font-size:12.5px; font-variant-numeric:tabular-nums; text-align:center; outline:none;
 }
-.s2-btn.subtle:hover{ color:var(--txt); border-color:rgba(255,255,255,.18); }
-.s2-version{ font-size:13px; color:var(--mut); font-variant-numeric:tabular-nums; white-space:nowrap; }
-.s2-row-sub{ padding-left:18px; }
+.s2-toggle{ position:relative; width:38px; height:22px; flex:0 0 auto; padding:0; border-radius:99px; border:1px solid var(--line-strong); background:var(--surface-3); cursor:pointer; transition:background .16s, border-color .16s; }
+.s2-toggle::after{ content:''; position:absolute; top:3px; left:3px; width:14px; height:14px; border-radius:50%; background:var(--mut); transition:transform .18s cubic-bezier(.22,1,.36,1), background .16s; }
+.s2-toggle.on{ background:var(--acc); border-color:var(--acc); }
+.s2-toggle.on::after{ transform:translateX(16px); background:var(--acc-contrast); }
+.s2-toggle:focus-visible{ outline:none; box-shadow:0 0 0 3px color-mix(in srgb, var(--acc) 22%, transparent); }
+.s2-btn{
+  height:30px; display:inline-flex; align-items:center; gap:6px; padding:0 12px; border-radius:8px; border:1px solid var(--line);
+  background:var(--surface-2); color:var(--txt); font-size:12.5px; white-space:nowrap; cursor:pointer;
+}
+.s2-btn:hover:not(:disabled){ border-color:var(--line-strong); background:var(--surface-3); }
+.s2-btn:disabled{ opacity:.45; cursor:not-allowed; }
+.s2-btn:focus-visible, .s2-seg button:focus-visible, .s2-chips button:focus-visible, .s2-tab:focus-visible, .s2-reset:focus-visible{
+  outline:none; box-shadow:0 0 0 2px color-mix(in srgb, var(--acc) 55%, transparent);
+}
+.s2-btn[hidden]{ display:none; }
+.s2-btn svg{ width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.s2-btn.ghost{ border-color:transparent; background:transparent; color:var(--mut); }
+.s2-btn.ghost:hover:not(:disabled){ color:var(--txt); }
+.s2-seg{ display:inline-flex; gap:2px; padding:3px; border-radius:10px; border:1px solid var(--line); background:var(--surface-1); }
+.s2-seg button{ height:26px; padding:0 10px; border:0; border-radius:7px; background:transparent; color:var(--mut); font-size:12px; cursor:pointer; }
+.s2-seg button:hover{ color:var(--txt); }
+.s2-seg button.on{ background:var(--surface-3); color:var(--txt); box-shadow:0 1px 3px rgba(0,0,0,.3); }
 .s2-row .s2-sub.s2-warn{ color:var(--danger); }
-.s2-snip-recording{ font-size:12px; color:var(--acc); }
+.s2-snip-recording{ color:var(--acc); font-size:12px; font-weight:600; }
 /* The AltGr note is long; let it wrap beside the keys instead of pushing them under it. */
-#s2SnipBlock .s2-row > div:first-child{ flex:1 1 240px; min-width:0; }
-.s2-row-sub .s2-label{ font-size:12.5px; color:var(--mut); }
-.card.autosave-interval-card{ width:440px; padding:22px 26px 20px; position:relative; }
-.card.autosave-interval-card h3{ text-align:center; margin-bottom:10px; }
-.autosave-interval-sub{ color:var(--mut); font-size:13px; line-height:1.5; text-align:center; margin-bottom:16px; }
-.autosave-interval-card .seg{ flex-wrap:wrap; gap:8px; }
-.autosave-interval-card .seg button{ flex:1 1 calc(33% - 8px); min-width:72px; padding:10px 0; }
-.card.autosave-interval-card .modal-x{
-  position:absolute; top:14px; right:14px; width:28px; height:28px; border:none; border-radius:8px;
-  background:transparent; color:var(--dim); font-size:18px; line-height:1; cursor:pointer;
-}
-.card.autosave-interval-card .modal-x:hover{ background:#2a2e3a; color:#fff; }
+#s2SnipBlock .s2-row > .s2-text{ flex:1 1 240px; }
 .card.confirm-card{ width:440px; padding:22px 26px 20px; position:relative; }
 .card.confirm-card h3{ text-align:center; margin-bottom:14px; }
 .card.confirm-card .confirm-msg{ font-size:13px; line-height:1.55; color:var(--mut); text-align:center; margin:0; }
@@ -2726,8 +2788,6 @@ body.board-active.titlebar-revealed:not(.split-active) #compareBar{ top:calc(var
 .search-empty{ padding:14px 12px; color:var(--mut); font-size:12.5px; }
 .confirm-danger{ background:#c45c6a; border-color:#c45c6a; color:#fff; font-weight:600; }
 .confirm-danger:hover{ filter:brightness(1.08); }
-.settings2-footer{ margin-top:auto; padding-top:10px; border-top:1px solid var(--line); }
-.settings2-footer .btn{ width:100%; }
 .card.export-images-card{ width:460px; padding:20px 22px 18px; position:relative; }
 .card.export-images-card h3{ margin-bottom:18px; text-align:center; }
 .card.export-images-card .modal-x{
@@ -3962,25 +4022,6 @@ try {
   </div>
 </div>
 
-<div id="autosaveIntervalModal" class="modal">
-  <div class="card autosave-interval-card">
-    <button type="button" class="modal-x" id="autosaveIntervalClose" title="Close">×</button>
-    <h3>Autosave interval</h3>
-    <p class="autosave-interval-sub">How often should RefBoard try to save while you work?</p>
-    <div class="seg" id="autosaveIntervalSeg">
-      <button type="button" data-min="5">5 min</button>
-      <button type="button" data-min="10" class="on">10 min</button>
-      <button type="button" data-min="15">15 min</button>
-      <button type="button" data-min="20">20 min</button>
-      <button type="button" data-min="30">30 min</button>
-    </div>
-    <div class="row-btns">
-      <button type="button" class="btn" id="autosaveIntervalCancel">Cancel</button>
-      <button type="button" class="btn primary" id="autosaveIntervalConfirm">Confirm</button>
-    </div>
-  </div>
-</div>
-
 <div id="confirmModal" class="modal">
   <div class="card confirm-card">
     <button type="button" class="modal-x" id="confirmClose" title="Close">×</button>
@@ -4083,63 +4124,30 @@ try {
 </div>
 
 <div id="helpModal" class="modal">
-  <div class="card">
+  <div class="card help-card">
     <h3>Keyboard shortcuts</h3>
-    <div class="shortcuts">
-      <span class="ks"><kbd>Ctrl</kbd><kbd>V</kbd></span><span class="d">Paste image(s) from clipboard</span>
+    <!-- The list after the Snip row is drawn from SHORTCUTS (renderHelpShortcuts). -->
+    <div class="shortcuts" id="helpShortcuts">
+      <div class="help-cat">Snip to board</div>
       <span class="ks" id="helpSnipKeys"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>S</kbd></span><span class="d" id="helpSnipDesc">Snip a part of the screen to the board, from any app (desktop app)</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>C</kbd></span><span class="d">Copy selection to clipboard (high resolution)</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>D</kbd></span><span class="d">Duplicate selection</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>G</kbd></span><span class="d">Group selected images or notes</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>G</kbd></span><span class="d">Ungroup selection</span>
-      <span class="ks">Group selected → context / bar</span><span class="d">Name group, color, lock/unlock, pack items inside group</span>
-      <span class="ks">Locked group</span><span class="d">Select children individually; unlock to move, resize, or drop items in/out</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>A</kbd></span><span class="d">Select all</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>F</kbd></span><span class="d">Find on board</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Open Labels to edit selected items, filter the board, or change label display</span>
-      <span class="ks">Selection bar → Labels</span><span class="d">Choose an existing label or type a new one and press Add or Enter</span>
-      <span class="ks">Right-click → Labels</span><span class="d">Apply a label to all selected items; use × to remove it</span>
-      <span class="ks">Labels → Remove all labels</span><span class="d">Remove labels from selected items; use Undo to restore them</span>
-      <span class="ks">Labels → colour dot</span><span class="d">Give a label a colour and every item wearing it gets a soft glow</span>
-      <span class="ks">Labels → Filter board</span><span class="d">Matching items stay lit; Reset filters restores the full board</span>
-      <span class="ks">Labels → Display</span><span class="d">Show labels on canvas always, only on selected items, or turn them off</span>
-      <span class="ks">Two images → Compare</span><span class="d">Wipe, onion skin or difference between the two selected images, from the selection bar</span>
-      <span class="ks">In Compare: <kbd>W</kbd> / <kbd>O</kbd> / <kbd>D</kbd></span><span class="d">Wipe / onion skin / difference</span>
-      <span class="ks">In Compare: <kbd>X</kbd></span><span class="d">Swap A and B</span>
-      <span class="ks">In Compare: drag, <kbd>Arrows</kbd></span><span class="d">Nudge B by a pixel (Shift = 10)</span>
-      <span class="ks">In Compare: <kbd>F</kbd> / <kbd>Ctrl</kbd><kbd>0</kbd></span><span class="d">Fit / 100% (one image pixel per screen pixel); wheel zooms, Space or middle drag pans</span>
-      <span class="ks">In Compare: <kbd>Esc</kbd></span><span class="d">Close Compare</span>
-      <span class="ks"><kbd>Del</kbd></span><span class="d">Delete selection</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>Z</kbd> / <kbd>Y</kbd></span><span class="d">Undo / redo</span>
-      <span class="ks"><kbd>Wheel</kbd></span><span class="d">Zoom at cursor</span>
-      <span class="ks"><kbd>Space</kbd> / <kbd>Alt</kbd>+drag</span><span class="d">Pan (also middle or right drag)</span>
-      <span class="ks"><kbd>F</kbd></span><span class="d">Fit view (selection if any)</span>
-      <span class="ks"><kbd>P</kbd></span><span class="d">Pack all images neatly</span>
-      <span class="ks"><kbd>R</kbd> / <kbd>Shift</kbd><kbd>R</kbd></span><span class="d">Rotate selection clockwise / counter-clockwise</span>
-      <span class="ks">Drag outside a corner</span><span class="d">Rotate selected images or notes; hold Shift to snap 90°</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>H</kbd> / <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>V</kbd></span><span class="d">Flip selected images horizontally / vertically</span>
-      <span class="ks"><kbd>V</kbd></span><span class="d">Select tool — exit draw, arrow, crop, or eyedropper mode</span>
-      <span class="ks"><kbd>G</kbd> / <kbd>Shift</kbd><kbd>G</kbd></span><span class="d">Toggle selected image grayscale / whole-board grayscale</span>
-      <span class="ks"><kbd>Shift</kbd><kbd>T</kbd></span><span class="d">Add a text note — drag corners or edges to scale</span>
-      <span class="ks"><kbd>I</kbd></span><span class="d">Eyedropper: copy pixel color as hex and RGB</span>
-      <span class="ks"><kbd>D</kbd></span><span class="d">Activate draw mode with the pen</span>
-      <span class="ks"><kbd>E</kbd></span><span class="d">Activate draw mode with the eraser</span>
-      <span class="ks"><kbd>[</kbd> / <kbd>]</kbd></span><span class="d">Decrease / increase brush or eraser size; hold to resize continuously</span>
-      <span class="ks">Draw panel → Annotate</span><span class="d">Arrow or dotted arrow — drag to place, <kbd>Shift</kbd> locks the angle. Drag from one image or note onto another to link them like Blender nodes: the link stays attached when either moves. Drag a link's end to unplug or re-plug it</span>
-      <span class="ks">Annotate → Brush / Highlighter</span><span class="d">Write or mark on top of anything without touching the image; strokes written together stay one item</span>
-      <span class="ks">Select an annotation</span><span class="d">Recolor, resize the line, switch arrowheads or the contrast outline from the selection bar</span>
-      <span class="ks">Drag image</span><span class="d">Selection rises to the front as soon as you start dragging</span>
-      <span class="ks"><kbd>Arrows</kbd></span><span class="d">Nudge selection (Shift = faster)</span>
-      <span class="ks">2× click image</span><span class="d">Enter crop mode; drag edges, Esc to finish</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>E</kbd></span><span class="d">Export — images if selected, otherwise the board</span>
-      <span class="ks">Drag the selection-bar grip</span><span class="d">Drag selected images out as files, straight into another app</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>S</kbd> / <kbd>O</kbd></span><span class="d">Save / open board file</span>
-      <span class="ks"><kbd>Alt</kbd>+<kbd>Arrows</kbd></span><span class="d">Pan the board view</span>
-      <span class="ks">Right-click → Appearance</span><span class="d">None (plain) or Dots grid — the grid is visual only, it never snaps</span>
-      <span class="ks">Snapping</span><span class="d">On by default — edges pull flush and align as you drag or scale</span>
-      <span class="ks"><kbd>Ctrl</kbd> while drag</span><span class="d">Temporarily disable snapping when snap mode is on</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>T</kbd></span><span class="d">Keep window always on top (desktop app)</span>
-      <span class="ks"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>Shift</kbd><kbd>A</kbd></span><span class="d">Pin above a chosen window (desktop app)</span>
+    </div>
+    <div class="shortcuts help-tips">
+      <div class="help-cat">Tips</div>
+      <span class="tk">Group selected → context / bar</span><span class="d">Name group, color, lock/unlock, pack items inside group</span>
+      <span class="tk">Locked group</span><span class="d">Select children individually; unlock to move, resize, or drop items in/out</span>
+      <span class="tk">Selection bar → Labels</span><span class="d">Choose an existing label or type a new one and press Add or Enter</span>
+      <span class="tk">Right-click → Labels</span><span class="d">Apply a label to all selected items; use × to remove it</span>
+      <span class="tk">Labels → Remove all labels</span><span class="d">Remove labels from selected items; use Undo to restore them</span>
+      <span class="tk">Labels → colour dot</span><span class="d">Give a label a colour and every item wearing it gets a soft glow</span>
+      <span class="tk">Labels → Filter board</span><span class="d">Matching items stay lit; Reset filters restores the full board</span>
+      <span class="tk">Labels → Display</span><span class="d">Show labels on canvas always, only on selected items, or turn them off</span>
+      <span class="tk">Two images → Compare</span><span class="d">Wipe, onion skin or difference between the two selected images, from the selection bar</span>
+      <span class="tk">Draw panel → Annotate</span><span class="d">Arrow or dotted arrow — drag to place, <kbd>Shift</kbd> locks the angle. Drag from one image or note onto another to link them like Blender nodes: the link stays attached when either moves. Drag a link's end to unplug or re-plug it</span>
+      <span class="tk">Annotate → Brush / Highlighter</span><span class="d">Write or mark on top of anything without touching the image; strokes written together stay one item</span>
+      <span class="tk">Select an annotation</span><span class="d">Recolor, resize the line, switch arrowheads or the contrast outline from the selection bar</span>
+      <span class="tk">Drag image</span><span class="d">Selection rises to the front as soon as you start dragging</span>
+      <span class="tk">Right-click → Appearance</span><span class="d">None (plain) or Dots grid — the grid is visual only, it never snaps</span>
+      <span class="tk">Snapping</span><span class="d">On by default — edges pull flush and align as you drag or scale</span>
     </div>
     <div style="margin-top:16px;text-align:center;font-size:11.5px;color:var(--dim);">
       <span id="helpVersion">RefBoard</span> &nbsp;·&nbsp; made with care by <b style="color:var(--acc);">Sounak</b>
@@ -4152,105 +4160,119 @@ try {
 
 <div id="settingsModal" class="modal">
   <div class="card settings2-card">
-    <div class="settings2-head">
-      <h3>Settings</h3>
-      <button type="button" class="modal-x" id="settingsClose" title="Close">×</button>
-    </div>
     <div class="settings2-body">
       <aside class="settings2-nav">
-        <input type="text" id="settingsSearch" class="settings2-search" placeholder="Search settings…">
-        <button class="s2-tab active" data-pane="performance"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-2"/></svg>Performance</button>
-        <button class="s2-tab" data-pane="general"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>General</button>
-        <button class="s2-tab" data-pane="appearance"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9" r="1.3"/></svg>Appearance</button>
-        <button class="s2-tab" data-pane="system"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h4M7 12h6M7 15h3"/></svg>System</button>
-        <button class="s2-tab" data-pane="shortcuts"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/></svg>Shortcuts</button>
-        <div class="settings2-footer"><button type="button" class="btn" id="settingsRestore">Restore defaults</button></div>
+        <div class="settings2-title">Settings</div>
+        <div class="settings2-search-wrap">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+          <input type="text" id="settingsSearch" class="settings2-search" placeholder="Search settings" autocomplete="off" spellcheck="false" aria-label="Search settings and shortcuts">
+          <button type="button" class="settings2-search-clear" id="settingsSearchClear" title="Clear search" aria-label="Clear search" hidden>×</button>
+        </div>
+        <button class="s2-tab active" data-pane="general"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg>General<span class="s2-count"></span></button>
+        <button class="s2-tab" data-pane="appearance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4.1-4-7.4-9-7.4z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7.3" r="1"/><circle cx="14.5" cy="7.3" r="1"/></svg>Appearance<span class="s2-count"></span></button>
+        <button class="s2-tab" data-pane="performance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15a8 8 0 1 1 16 0"/><path d="M12 15l4-5"/><path d="M4 19h16"/></svg>Performance<span class="s2-count"></span></button>
+        <button class="s2-tab" data-pane="shortcuts"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10 10h1M13.5 10h1M17 10h.5M7 14h10"/></svg>Shortcuts<span class="s2-count"></span></button>
+        <button class="s2-tab" data-pane="system"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>About<span class="s2-count"></span></button>
+        <div class="settings2-footer"><button type="button" class="s2-reset" id="settingsRestore"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Restore defaults…</button></div>
       </aside>
-      <section class="settings2-content">
+      <section class="settings2-main">
+        <div class="settings2-head" id="settingsHead">
+          <div><h3 id="settingsTitle">General</h3><p id="settingsDesc"></p></div>
+          <div class="settings2-head-acts">
+            <button type="button" class="s2-btn" id="settingsLookup" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h1M10 10h1M13.5 10h1M17 10h.5M7 14h10"/></svg>Look up a key</button>
+            <button type="button" class="modal-x" id="settingsClose" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <div class="settings2-content">
 
-        <div class="s2-pane" data-pane="performance">
-          <div class="s2-row"><div><div class="s2-label">Undo history size</div><div class="s2-sub">More steps use more memory</div></div>
-            <div class="s2-control"><div class="ui-num"><input type="number" id="setUndoLimit" min="10" max="1000" step="10"><div class="ui-num-steps"><button type="button" class="ui-num-up" tabindex="-1" aria-label="Increase">▲</button><button type="button" class="ui-num-down" tabindex="-1" aria-label="Decrease">▼</button></div></div></div></div>
-          <div class="s2-row"><div><div class="s2-label">Image render quality</div><div class="s2-sub">Lower = smoother panning with many images</div></div>
+        <div class="s2-pane" data-pane="general" data-desc="Saving, importing and how items behave on the board.">
+          <div class="s2-sec"><div class="s2-cat">Saving</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Autosave</div><div class="s2-sub"><span id="setAutosaveSub">Every 10 minutes while editing</span></div></div>
+            <div class="s2-control"><button class="s2-toggle" id="setAutosave" role="switch" aria-label="Autosave"></button></div></div>
+          <div class="s2-row s2-row-sub" id="setAutosaveEveryRow"><div class="s2-text"><div class="s2-label">Save every</div></div>
+            <div class="s2-control"><div class="s2-seg" id="setAutosaveEvery" role="group" aria-label="Autosave interval"><button type="button" data-min="5">5 min</button><button type="button" data-min="10">10 min</button><button type="button" data-min="15">15 min</button><button type="button" data-min="20">20 min</button><button type="button" data-min="30">30 min</button></div></div></div>
+          </div>
+          <div class="s2-sec"><div class="s2-cat">Importing</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Warn on very large images</div><div class="s2-sub">Tells you when an imported image is bigger than the limit</div></div>
+            <div class="s2-control"><button class="s2-toggle" id="setWarnLarge" role="switch" aria-label="Warn on very large images"></button></div></div>
+          <div class="s2-row s2-row-sub" id="setLargeMPRow"><div class="s2-text"><div class="s2-label">Limit</div></div>
+            <div class="s2-control"><div class="ui-num"><button type="button" class="ui-num-down" tabindex="-1" aria-label="Decrease">−</button><input type="number" id="setLargeMP" min="5" max="200" step="5" aria-label="Large image limit in megapixels"><button type="button" class="ui-num-up" tabindex="-1" aria-label="Increase">+</button></div><span class="s2-unit">MP</span></div></div>
+          </div>
+          <div class="s2-sec"><div class="s2-cat">Board</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Object snapping</div><div class="s2-sub">Images butt flush against each other and align as you drag. Hold Ctrl while dragging to skip it.</div></div>
+            <div class="s2-control"><button class="s2-toggle" id="setSnap" role="switch" aria-label="Object snapping"></button></div></div>
+          </div>
+          <div class="s2-sec"><div class="s2-cat">Home</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Recent-board thumbnails</div><div class="s2-sub">Preview images on the Home screen</div></div>
+            <div class="s2-control"><button class="s2-toggle" id="setThumbs" role="switch" aria-label="Recent-board thumbnails"></button></div></div>
+          </div>
+        </div>
+
+        <div class="s2-pane" data-pane="appearance" data-desc="Colours, the board background and where the tools sit." hidden>
+          <div class="s2-sec"><div class="s2-cat">Theme</div>
+          <div class="s2-row s2-themes" data-search="theme colour color midnight carbon black forest tide studio">
+            <div class="theme-row" role="group" aria-label="Theme">
+            <button class="theme-swatch" data-theme="midnight" type="button" aria-label="Midnight theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Midnight</strong><small>Deep navy</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+            <button class="theme-swatch" data-theme="slate" type="button" aria-label="Carbon theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Carbon</strong><small>Neutral charcoal</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+            <button class="theme-swatch" data-theme="black" type="button" aria-label="Black theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Black</strong><small>True black</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+            <button class="theme-swatch" data-theme="pine" type="button" aria-label="Forest theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Forest</strong><small>Deep green</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+            <button class="theme-swatch" data-theme="ocean" type="button" aria-label="Tide theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Tide</strong><small>Ocean teal</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+            <button class="theme-swatch" data-theme="dim" type="button" aria-label="Studio theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Studio</strong><small>Lighter contrast</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
+            </div>
+          </div>
+          </div>
+          <div class="s2-sec"><div class="s2-cat">Board</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Grid style</div><div class="s2-sub">Board background pattern. Visual only — it never snaps.</div></div>
+            <div class="s2-control"><select id="setGridStyle"><option value="none">None</option><option value="dots">Dots</option></select></div></div>
+          </div>
+          <div class="s2-sec"><div class="s2-cat">Layout</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Left toolbar</div><div class="s2-sub">A compact edge reveal, or every tool always visible</div></div>
+            <div class="s2-control"><select id="setToolbarMode"><option value="floating">Floating Compact</option><option value="pinned">Always Visible</option></select></div></div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Home layout</div><div class="s2-sub">How recent boards appear on the Home screen</div></div>
+            <div class="s2-control"><select id="setLandingLayout"><option value="classic">Classic Grid</option><option value="focus">Focus Flow</option></select></div></div>
+          </div>
+        </div>
+
+        <div class="s2-pane" data-pane="performance" data-desc="Trade memory for speed on large boards." hidden>
+          <div class="s2-sec"><div class="s2-cat">Rendering</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Image render quality</div><div class="s2-sub">Lower makes panning smoother with many images</div></div>
             <div class="s2-control"><select id="setRenderQuality"><option value="high">High</option><option value="balanced">Balanced</option><option value="fast">Fast</option></select></div></div>
-          <div class="s2-row"><div><div class="s2-label">Decoded image memory</div><div class="s2-sub">Higher keeps more images sharp at once on large boards</div></div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Pause rendering when unfocused</div><div class="s2-sub">Stop redrawing the canvas while RefBoard is in the background</div></div>
+            <div class="s2-control"><button class="s2-toggle" id="setPauseHidden" role="switch" aria-label="Pause rendering when unfocused"></button></div></div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Hide grid while navigating</div><div class="s2-sub">Skip the dot grid during pan and zoom</div></div>
+            <div class="s2-control"><button class="s2-toggle" id="setHideGridNav" role="switch" aria-label="Hide grid while navigating"></button></div></div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Light drag preview</div><div class="s2-sub">Simpler selection outline while dragging many items</div></div>
+            <div class="s2-control"><button class="s2-toggle" id="setLightDrag" role="switch" aria-label="Light drag preview"></button></div></div>
+          </div>
+          <div class="s2-sec"><div class="s2-cat">Memory</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Decoded image memory</div><div class="s2-sub">Higher keeps more images sharp at once on large boards</div></div>
             <div class="s2-control"><select id="setImageMemory"><option value="auto">Auto</option><option value="256">256 MB</option><option value="512">512 MB</option><option value="1024">1 GB</option><option value="2048">2 GB</option></select></div></div>
-          <div class="s2-row"><div><div class="s2-label">Pause rendering when unfocused</div><div class="s2-sub">Stop redrawing the canvas while the app is in the background</div></div>
-            <div class="s2-control"><button class="s2-toggle" id="setPauseHidden" role="switch"></button></div></div>
-          <div class="s2-row"><div><div class="s2-label">Hide grid while navigating</div><div class="s2-sub">Skip dot grid during pan and zoom for smoother view moves</div></div>
-            <div class="s2-control"><button class="s2-toggle" id="setHideGridNav" role="switch"></button></div></div>
-          <div class="s2-row"><div><div class="s2-label">Light drag preview</div><div class="s2-sub">Simpler selection UI while dragging many items</div></div>
-            <div class="s2-control"><button class="s2-toggle" id="setLightDrag" role="switch"></button></div></div>
-        </div>
-
-        <div class="s2-pane" data-pane="general" hidden>
-          <div class="s2-row"><div><div class="s2-label">Autosave</div><div class="s2-sub" id="setAutosaveSub">Every 10 minutes while editing</div></div>
-            <div class="s2-control"><button type="button" class="s2-btn subtle" id="setAutosaveInterval" hidden>Change</button><button class="s2-toggle" id="setAutosave" role="switch"></button></div></div>
-          <div class="s2-row"><div><div class="s2-label">Warn on very large images</div><div class="s2-sub">Notify when an imported image is huge</div></div>
-            <div class="s2-control"><div class="ui-num"><input type="number" id="setLargeMP" min="5" max="200" step="5" style="width:64px"><div class="ui-num-steps"><button type="button" class="ui-num-up" tabindex="-1" aria-label="Increase">▲</button><button type="button" class="ui-num-down" tabindex="-1" aria-label="Decrease">▼</button></div></div><span style="color:var(--dim);font-size:12px">MP</span><button class="s2-toggle" id="setWarnLarge" role="switch"></button></div></div>
-          <div class="s2-row"><div><div class="s2-label">Generate recent-board thumbnails</div><div class="s2-sub">Preview images on the welcome screen</div></div>
-            <div class="s2-control"><button class="s2-toggle" id="setThumbs" role="switch"></button></div></div>
-          <div class="s2-row"><div><div class="s2-label">Object snapping</div><div class="s2-sub">Magnetic edges: images butt flush against each other and align as you drag</div></div>
-            <div class="s2-control"><button class="s2-toggle" id="setSnap" role="switch"></button></div></div>
-        </div>
-
-        <div class="s2-pane" data-pane="appearance" hidden>
-          <div class="s2-row">
-            <div><div class="s2-label">Theme</div><div class="s2-sub">App colour scheme</div></div>
-            <div class="s2-control">
-              <div class="theme-row" role="group" aria-label="Theme">
-                <button class="theme-swatch" data-theme="midnight" type="button" aria-label="Midnight theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Midnight</strong><small>Deep navy</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="slate" type="button" aria-label="Carbon theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Carbon</strong><small>Neutral charcoal</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="black" type="button" aria-label="Black theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Black</strong><small>True black</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="pine" type="button" aria-label="Forest theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Forest</strong><small>Deep green</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="ocean" type="button" aria-label="Tide theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Tide</strong><small>Ocean teal</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-                <button class="theme-swatch" data-theme="dim" type="button" aria-label="Studio theme" aria-pressed="false"><span class="theme-preview" aria-hidden="true"></span><span class="theme-copy"><strong>Studio</strong><small>Lighter contrast</small></span><svg class="theme-check" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3 3 7-7"/></svg></button>
-              </div>
-            </div>
-          </div>
-          <div class="s2-row">
-            <div><div class="s2-label">Grid style</div><div class="s2-sub">Board background pattern</div></div>
-            <div class="s2-control">
-              <select id="setGridStyle"><option value="none">None</option><option value="dots">Dots</option></select>
-            </div>
-          </div>
-          <div class="s2-row">
-            <div><div class="s2-label">Home layout</div><div class="s2-sub">Choose how recent boards appear on the Home screen</div></div>
-            <div class="s2-control">
-              <select id="setLandingLayout"><option value="classic">Classic Grid</option><option value="focus">Focus Flow</option></select>
-            </div>
-          </div>
-          <div class="s2-row">
-            <div><div class="s2-label">Left toolbar</div><div class="s2-sub">Choose a compact edge reveal or keep every tool visible</div></div>
-            <div class="s2-control">
-              <select id="setToolbarMode"><option value="floating">Floating Compact</option><option value="pinned">Always Visible</option></select>
-            </div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Undo history</div><div class="s2-sub">More steps use more memory</div></div>
+            <div class="s2-control"><div class="ui-num"><button type="button" class="ui-num-down" tabindex="-1" aria-label="Decrease">−</button><input type="number" id="setUndoLimit" min="10" max="1000" step="10" aria-label="Undo history steps"><button type="button" class="ui-num-up" tabindex="-1" aria-label="Increase">+</button></div><span class="s2-unit">steps</span></div></div>
           </div>
         </div>
 
-        <div class="s2-pane" data-pane="system" hidden>
-          <div class="s2-cat">System</div>
-          <div class="s2-row">
-            <div><div class="s2-label">Version</div><div class="s2-sub" id="setVersionSub">—</div></div>
-            <div class="s2-control"><span class="s2-version" id="setVersionText">—</span></div>
+        <div class="s2-pane" data-pane="shortcuts" data-desc="Every keyboard and mouse shortcut in RefBoard." hidden></div>
+
+        <div class="s2-pane" data-pane="system" data-desc="Version, what's new and updates." hidden>
+          <div class="s2-sec">
+          <div class="s2-row s2-about" data-search="version about">
+            <div class="s2-logo" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg></div>
+            <div class="s2-text"><div class="s2-label s2-version" id="setVersionText">RefBoard</div><div class="s2-sub" id="setVersionSub">—</div></div>
+            <div class="s2-control"><button type="button" class="s2-btn" id="settingsWhatsNew">What's New</button></div>
           </div>
-          <div class="s2-row">
-            <div><div class="s2-label">What's New</div><div class="s2-sub">See the latest features and changes in this version</div></div>
-            <div class="s2-control"><button type="button" class="s2-btn subtle" id="settingsWhatsNew">View changes</button></div>
           </div>
-          <div class="s2-cat">Updates</div>
-          <div class="s2-row">
-            <div><div class="s2-label">Check for updates</div><div class="s2-sub" id="setUpdateSub">—</div></div>
-            <div class="s2-control"><button type="button" class="s2-btn subtle" id="setCheckUpdates">Check now</button></div>
-          </div>
-          <div class="s2-row s2-row-sub">
-            <div><div class="s2-label">Check on startup</div></div>
-            <div class="s2-control"><button class="s2-toggle" id="setCheckOnStartup" role="switch"></button></div>
+          <div class="s2-sec"><div class="s2-cat">Updates</div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Check for updates</div><div class="s2-sub"><span id="setUpdateSub">—</span></div></div>
+            <div class="s2-control"><button type="button" class="s2-btn" id="setCheckUpdates">Check now</button></div></div>
+          <div class="s2-row"><div class="s2-text"><div class="s2-label">Check on startup</div><div class="s2-sub">Look for a new version each time RefBoard starts</div></div>
+            <div class="s2-control"><button class="s2-toggle" id="setCheckOnStartup" role="switch" aria-label="Check for updates on startup"></button></div></div>
           </div>
         </div>
 
-        <div class="s2-pane" data-pane="shortcuts" hidden></div>
+        <div class="s2-empty" id="settingsEmpty" hidden><b id="settingsEmptyTitle">No settings or shortcuts match</b>Try a shorter word, or keys like “ctrl g”.<br><button type="button" class="s2-btn" id="settingsEmptyClear">Clear search</button></div>
 
+        </div>
       </section>
     </div>
   </div>
@@ -16992,7 +17014,7 @@ async function openCurrentWhatsNew() {
     whatsNewOpenedManually = true;
     whatsNewPayload = payload;
     helpModal.classList.remove('show');
-    settingsModal.classList.remove('show');
+    closeSettings();
     openWhatsNewModal();
   } catch {
     toast("What's New couldn't be loaded");
@@ -20648,7 +20670,9 @@ function setupSettingsSelects() {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         openSettingsSelectMenu(control, true);
-      } else if (e.key === 'Escape') {
+      } else if (e.key === 'Escape' && menu.classList.contains('show')) {
+        // Esc closes the open menu only, not the dialog around it.
+        e.stopPropagation();
         closeSettingsSelectMenus();
       }
     });
@@ -20671,6 +20695,7 @@ function setupSettingsSelects() {
           optionButtons[e.key === 'Home' ? 0 : optionButtons.length - 1].focus();
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          e.stopPropagation();
           closeSettingsSelectMenus();
           button.focus({ preventScroll: true });
         }
@@ -20697,11 +20722,16 @@ function syncSettingsUi() {
   $$('setThumbs').classList.toggle('on', appSettings.generateThumbnails);
   $$('setSnap')?.classList.toggle('on', appSettings.snapEnabled);
   const sub = $$('setAutosaveSub');
-  const chg = $$('setAutosaveInterval');
   if (sub) sub.textContent = appSettings.autosave
-    ? `Every ${appSettings.autosaveIntervalMin} minutes while editing`
-    : 'Off';
-  if (chg) chg.hidden = !appSettings.autosave;
+    ? `Saves the board every ${appSettings.autosaveIntervalMin} minutes while you edit`
+    : 'Off — save with Ctrl+S';
+  // Each choice only shows while the setting it refines is on.
+  $$('setAutosaveEveryRow').hidden = !appSettings.autosave;
+  document.querySelectorAll('#setAutosaveEvery button').forEach(b => {
+    b.classList.toggle('on', parseInt(b.dataset.min, 10) === appSettings.autosaveIntervalMin);
+  });
+  $$('setLargeMPRow').hidden = !appSettings.warnLargeImages;
+  document.querySelectorAll('#settingsModal .s2-toggle').forEach(t => t.setAttribute('aria-checked', String(t.classList.contains('on'))));
   const curTheme = document.documentElement.getAttribute('data-theme') || 'midnight';
   document.querySelectorAll('.theme-swatch').forEach(x => {
     const active = x.dataset.theme === curTheme;
@@ -20733,45 +20763,16 @@ async function syncSystemUi() {
   if (info && vText) vText.textContent = `${info.productName} ${info.version}`;
   if (info && helpVersion) helpVersion.textContent = `${info.productName} v${info.version}`;
   if (info && vSub) vSub.textContent = info.isPackaged ? 'Installed build' : 'Development build';
-  if (checkBtn) {
-    checkBtn.disabled = !!(info && !info.isPackaged);
-    checkBtn.style.opacity = checkBtn.disabled ? '0.45' : '';
-    checkBtn.style.cursor = checkBtn.disabled ? 'not-allowed' : 'pointer';
+  if (checkBtn) checkBtn.disabled = !!(info && !info.isPackaged);
+  if (startupTog) {
+    startupTog.classList.toggle('on', !!appSettings.checkUpdatesOnStartup);
+    startupTog.setAttribute('aria-checked', String(!!appSettings.checkUpdatesOnStartup));
   }
-  if (startupTog) startupTog.classList.toggle('on', !!appSettings.checkUpdatesOnStartup);
   if (info && !info.isPackaged) setUpdateStatus('Updates in installed app only');
   else if (appSettings.checkUpdatesOnStartup) setUpdateStatus('Checks automatically when RefBoard starts');
   else setUpdateStatus('Automatic check on startup is off');
 }
 
-let autosaveIntervalResolve = null;
-
-function setAutosaveIntervalSegValue(min) {
-  document.querySelectorAll('#autosaveIntervalSeg button').forEach(b => {
-    b.classList.toggle('on', parseInt(b.dataset.min, 10) === min);
-  });
-}
-
-function openAutosaveIntervalModal(initialMin = appSettings.autosaveIntervalMin) {
-  const min = normalizeAutosaveInterval(initialMin);
-  setAutosaveIntervalSegValue(min);
-  return new Promise(resolve => {
-    autosaveIntervalResolve = resolve;
-    autosaveIntervalModal.classList.add('show');
-  });
-}
-
-function closeAutosaveIntervalModal(result) {
-  autosaveIntervalModal.classList.remove('show');
-  const resolve = autosaveIntervalResolve;
-  autosaveIntervalResolve = null;
-  if (resolve) resolve(result);
-}
-
-function selectedAutosaveIntervalMin() {
-  const on = document.querySelector('#autosaveIntervalSeg button.on');
-  return normalizeAutosaveInterval(on ? parseInt(on.dataset.min, 10) : 10);
-}
 document.addEventListener('click', e => {
   const btn = e.target.closest('.ui-num-up, .ui-num-down');
   if (!btn) return;
@@ -20780,50 +20781,95 @@ document.addEventListener('click', e => {
   if (btn.classList.contains('ui-num-up')) input.stepUp(); else input.stepDown();
   input.dispatchEvent(new Event('change', { bubbles: true }));
 });
+/* Every shortcut RefBoard handles, in the order Settings → Shortcuts and the
+   ? panel list them. scripts/test-shortcuts-list.mjs checks this list against
+   the key handlers both ways: a key that is handled but not listed, or listed
+   but not handled, fails npm test. keys is one combination, alt any others
+   that do the same; a key starting with ~ is a mouse action, not a key. */
 const SHORTCUTS = [
   { cat:'Editing', label:'Copy', keys:['Ctrl','C'] },
   { cat:'Editing', label:'Cut', keys:['Ctrl','X'] },
+  { cat:'Editing', label:'Paste', keys:['Ctrl','V'] },
   { cat:'Editing', label:'Duplicate', keys:['Ctrl','D'] },
   { cat:'Editing', label:'Select all', keys:['Ctrl','A'] },
   { cat:'Editing', label:'Undo', keys:['Ctrl','Z'] },
-  { cat:'Editing', label:'Redo', keys:['Ctrl','Y'] },
-  { cat:'Editing', label:'Delete', keys:['Del'] },
-  { cat:'Editing', label:'Nudge selection', keys:['Arrows'] },
+  { cat:'Editing', label:'Redo', keys:['Ctrl','Y'], alt:[['Ctrl','Shift','Z']] },
+  { cat:'Editing', label:'Delete', keys:['Del'], alt:[['Backspace']] },
+  { cat:'Editing', label:'Nudge selection', keys:['Arrows'], note:'Shift moves 10× further' },
+  { cat:'Editing', label:'Deselect', keys:['Esc'], note:'First leaves the tool or mode you are in' },
+  { cat:'Editing', label:'Group', keys:['Ctrl','G'] },
+  { cat:'Editing', label:'Ungroup', keys:['Ctrl','Shift','G'] },
+  { cat:'Tools', label:'Select tool', keys:['V'], note:'Leaves draw, annotate, crop and eyedropper' },
   { cat:'Tools', label:'Find on board', keys:['Ctrl','F'] },
-  { cat:'Tools', label:'Add text note', keys:['Shift','T'] },
+  { cat:'Tools', label:'Labels panel', keys:['Ctrl','Shift','T'] },
   { cat:'Tools', label:'Eyedropper', keys:['I'] },
   { cat:'Tools', label:'Activate draw pen', keys:['D'] },
   { cat:'Tools', label:'Activate draw eraser', keys:['E'] },
   { cat:'Tools', label:'Decrease draw size', keys:['['] },
   { cat:'Tools', label:'Increase draw size', keys:[']'] },
-  { cat:'Tools', label:'Rotate', keys:['R'] },
-  { cat:'Tools', label:'Rotate from a corner (Shift snaps 90°)', keys:['Drag'] },
-  { cat:'Tools', label:'Flip horizontal', keys:['Ctrl','Shift','H'] },
-  { cat:'Tools', label:'Flip vertical', keys:['Ctrl','Shift','V'] },
-  { cat:'Tools', label:'Toggle grayscale', keys:['G'] },
-  { cat:'View', label:'Fit view', keys:['F'] },
+  { cat:'Text notes', label:'Add text note', keys:['Shift','T'] },
+  { cat:'Text notes', label:'Edit the selected note', keys:['Enter'] },
+  { cat:'Text notes', label:'Finish editing', keys:['Esc'], note:'While a note is open' },
+  { cat:'Transform', label:'Rotate clockwise', keys:['R'], note:'15° a press' },
+  { cat:'Transform', label:'Rotate counter-clockwise', keys:['Shift','R'] },
+  { cat:'Transform', label:'Flip horizontal', keys:['Ctrl','Shift','H'] },
+  { cat:'Transform', label:'Flip vertical', keys:['Ctrl','Shift','V'] },
+  { cat:'Transform', label:'Toggle grayscale', keys:['G'] },
+  { cat:'Transform', label:'Grayscale the whole board', keys:['Shift','G'] },
+  { cat:'View', label:'Fit view', keys:['F'], note:'Fits the selection if there is one' },
+  { cat:'View', label:'Zoom to 100%', keys:['Ctrl','0'] },
+  { cat:'View', label:'Pan board', keys:['Alt','Arrows'], note:'Shift pans further' },
   { cat:'View', label:'Toggle minimap', keys:['M'] },
   { cat:'View', label:'Pack all', keys:['P'] },
-  { cat:'View', label:'Pan board', keys:['Space','drag'] },
-  { cat:'View', label:'Reset zoom', keys:['Ctrl','0'] },
-  { cat:'View', label:'Always on top', keys:['Ctrl','T'] },
-  { cat:'View', label:'Always on top of…', keys:['Ctrl','Alt','Shift','A'] },
   { cat:'View', label:'Shortcuts help', keys:['?'] },
-  { cat:'Compare', label:'Wipe', keys:['W'] },
-  { cat:'Compare', label:'Onion skin', keys:['O'] },
-  { cat:'Compare', label:'Difference', keys:['D'] },
-  { cat:'Compare', label:'Swap A and B', keys:['X'] },
-  { cat:'Compare', label:'Nudge B (Shift = 10 px)', keys:['Arrows'] },
-  { cat:'Compare', label:'Fit', keys:['F'] },
-  { cat:'Compare', label:'100%', keys:['Ctrl','0'] },
-  { cat:'Compare', label:'Close', keys:['Esc'] },
+  { cat:'Mouse', label:'Zoom at the cursor', keys:['~Wheel'] },
+  { cat:'Mouse', label:'Pan board', keys:['Space','~drag'], alt:[['Alt','~drag'],['~Middle or right drag']] },
+  { cat:'Mouse', label:'Rotate from a corner', keys:['~Drag outside a corner'], note:'Shift snaps to 90°' },
+  { cat:'Mouse', label:'Crop an image', keys:['~Double-click'], note:'Drag the edges; Esc finishes' },
+  { cat:'Mouse', label:'Skip snapping while dragging', keys:['Ctrl','~drag'] },
+  { cat:'Mouse', label:'Lock an arrow’s angle', keys:['Shift','~drag'] },
+  { cat:'Mouse', label:'Drag images out to another app', keys:['~Drag the selection-bar grip'] },
   { cat:'Files', label:'Save board', keys:['Ctrl','S'] },
   { cat:'Files', label:'Save board as', keys:['Ctrl','Shift','S'] },
   { cat:'Files', label:'Open board', keys:['Ctrl','O'] },
   { cat:'Files', label:'Export — images if selected, otherwise the board', keys:['Ctrl','E'] },
+  { cat:'Window', label:'Always on top', keys:['Ctrl','T'] },
+  { cat:'Window', label:'Always on top of…', keys:['Ctrl','Alt','Shift','A'] },
+  { cat:'Compare', label:'Wipe', keys:['W'] },
+  { cat:'Compare', label:'Onion skin', keys:['O'] },
+  { cat:'Compare', label:'Difference', keys:['D'] },
+  { cat:'Compare', label:'Swap A and B', keys:['X'] },
+  { cat:'Compare', label:'Nudge B', keys:['Arrows'], note:'Shift = 10 px' },
+  { cat:'Compare', label:'Fit', keys:['F'] },
+  { cat:'Compare', label:'100%', keys:['Ctrl','0'] },
+  { cat:'Compare', label:'Pan', keys:['Space','~drag'], alt:[['Alt','~drag'],['~Middle or right drag']] },
+  { cat:'Compare', label:'Close', keys:['Esc'] },
+  { cat:'Remove object', label:'Apply', keys:['Enter'] },
+  { cat:'Remove object', label:'Undo the last fill', keys:['Ctrl','Z'] },
+  { cat:'Remove object', label:'Cancel', keys:['Esc'], note:'While drawing a lasso, drops just the lasso' },
   { cat:'Home', label:'Search your boards', keys:['Ctrl','F'] },
   { cat:'Home', label:'Rename the selected board', keys:['F2'] },
+  { cat:'Home', label:'Open a board', keys:['Ctrl','O'] },
+  { cat:'Home', label:'Clear the search', keys:['Esc'] },
 ];
+// Groups that only work in one place say so beside their heading.
+const SHORTCUT_CONTEXTS = { Compare:'In Compare', 'Remove object':'While removing an object', Home:'On Home' };
+const SHORTCUT_MOUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v3"/></svg>';
+const shortcutCombos = s => [s.keys, ...(s.alt || [])];
+const shortcutCats = () => [...new Set(SHORTCUTS.map(s => s.cat))];
+
+function shortcutKeysHtml(s) {
+  return shortcutCombos(s).map(combo => combo.map(k => k.startsWith('~')
+    ? `<span class="s2-gest">${SHORTCUT_MOUSE_ICON}${snipEscape(k.slice(1))}</span>`
+    : k === 'Arrows' ? '<kbd title="Arrow keys" data-key="arrows">←↑↓→</kbd>'
+    : `<kbd data-key="${snipEscape(k.toLowerCase())}">${snipEscape(k)}</kbd>`).join('')).join('<span class="s2-or">or</span>');
+}
+
+// The keys of each combination, for search and Look up a key: "ctrl y|ctrl shift z".
+function shortcutSearchKeys(s) {
+  return shortcutCombos(s).map(c => c.filter(k => !k.startsWith('~')).map(k => k.toLowerCase()).join(' ')).join('|');
+}
+
 function renderShortcutsList(){
   const pane = document.querySelector('.s2-pane[data-pane="shortcuts"]');
   if (!pane) return;
@@ -20832,18 +20878,60 @@ function renderShortcutsList(){
   if (snipShortcutApi) {
     const block = document.createElement('div');
     block.id = 's2SnipBlock';
+    block.className = 's2-sec';
     pane.appendChild(block);
     renderSnipShortcutBlock();
   }
-  let lastCat = '';
-  for (const s of SHORTCUTS){
-    if (s.cat !== lastCat){ lastCat = s.cat; const h=document.createElement('div'); h.className='s2-cat'; h.textContent=s.cat; pane.appendChild(h); }
-    const row=document.createElement('div'); row.className='s2-row';
-    const l=document.createElement('div'); l.className='s2-label'; l.textContent=s.label;
-    const keys=document.createElement('div'); keys.className='s2-keys';
-    keys.innerHTML = s.keys.map(k=>`<kbd>${k}</kbd>`).join('<span class="s2-plus">+</span>');
-    row.append(l, keys); pane.appendChild(row);
+  const lookup = document.createElement('div');
+  lookup.className = 's2-lookup';
+  lookup.id = 's2Lookup';
+  lookup.hidden = true;
+  const chips = document.createElement('div');
+  chips.className = 's2-chips';
+  chips.innerHTML = shortcutCats().map(c => `<button type="button" data-cat="${snipEscape(c)}">${snipEscape(c)}</button>`).join('');
+  chips.addEventListener('click', e => {
+    const cat = e.target.closest('button[data-cat]')?.dataset.cat;
+    const sec = cat && [...pane.querySelectorAll('.s2-sec[data-cat]')].find(s => s.dataset.cat === cat);
+    const content = pane.closest('.settings2-content');
+    if (!sec || !content) return;
+    content.scrollTop += sec.getBoundingClientRect().top - content.getBoundingClientRect().top - chips.offsetHeight - 4;
+  });
+  pane.append(lookup, chips);
+  for (const cat of shortcutCats()) {
+    const sec = document.createElement('div');
+    sec.className = 's2-sec';
+    sec.dataset.cat = cat;
+    const ctx = SHORTCUT_CONTEXTS[cat];
+    sec.innerHTML = `<div class="s2-cat">${snipEscape(cat)}${ctx ? `<span class="s2-ctx">${snipEscape(ctx)}</span>` : ''}</div>`
+      + SHORTCUTS.filter(s => s.cat === cat).map(s => `<div class="s2-row s2-sc" data-keys="${snipEscape(shortcutSearchKeys(s))}">`
+        + `<div class="s2-text"><div class="s2-label">${snipEscape(s.label)}</div>${s.note ? `<div class="s2-sub">${snipEscape(s.note)}</div>` : ''}</div>`
+        + `<div class="s2-keys">${shortcutKeysHtml(s)}</div></div>`).join('');
+    pane.appendChild(sec);
   }
+  const none = document.createElement('div');
+  none.className = 's2-empty';
+  none.id = 's2LookupNone';
+  none.hidden = true;
+  none.innerHTML = '<b>Nothing uses that combination</b>It is free to use.';
+  pane.appendChild(none);
+  addSettingsPaneTitle(pane);
+  applySettingsSearch();
+}
+
+/* The ? panel lists the same shortcuts, after its Snip row. */
+function renderHelpShortcuts() {
+  const list = document.getElementById('helpShortcuts');
+  if (!list) return;
+  list.querySelectorAll('.help-gen').forEach(el => el.remove());
+  const html = [];
+  for (const cat of shortcutCats()) {
+    const ctx = SHORTCUT_CONTEXTS[cat];
+    html.push(`<div class="help-cat help-gen">${snipEscape(cat)}${ctx ? `<span class="s2-ctx">${snipEscape(ctx)}</span>` : ''}</div>`);
+    for (const s of SHORTCUTS.filter(x => x.cat === cat)) {
+      html.push(`<span class="ks help-gen">${shortcutKeysHtml(s)}</span><span class="d help-gen">${snipEscape(s.label)}${s.note ? ` <small>${snipEscape(s.note)}</small>` : ''}</span>`);
+    }
+  }
+  list.insertAdjacentHTML('beforeend', html.join(''));
 }
 
 /* Snip to board's shortcut, at the top of Settings → Shortcuts. main.js holds
@@ -20859,7 +20947,7 @@ const snipEscape = str => String(str ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const snipCapsHtml = accelerator => window.SnipShortcut.acceleratorCaps(accelerator)
-  .map(k => `<kbd>${snipEscape(k)}</kbd>`).join('<span class="s2-plus">+</span>');
+  .map(k => `<kbd data-key="${snipEscape(k.toLowerCase())}">${snipEscape(k)}</kbd>`).join('');
 
 function snipStatusText(st) {
   if (!st.enabled) return 'Off';
@@ -20890,9 +20978,9 @@ function renderSnipShortcutBlock() {
   const isDefault = st.accelerator === S.DEFAULT_ACCELERATOR;
   block.innerHTML = `
     <div class="s2-cat">Snip to board</div>
-    <div class="s2-row"><div><div class="s2-label">Snip from any app</div><div class="s2-sub" id="setSnipStatus">${snipEscape(snipStatusText(st))}</div></div>
-      <div class="s2-control"><button class="s2-toggle${st.enabled ? ' on' : ''}" id="setSnipEnabled" role="switch" aria-checked="${st.enabled}"></button></div></div>
-    <div class="s2-row"><div><div class="s2-label">Shortcut</div>${subs.join('')}</div>
+    <div class="s2-row"><div class="s2-text"><div class="s2-label">Snip from any app</div><div class="s2-sub" id="setSnipStatus">${snipEscape(snipStatusText(st))}</div></div>
+      <div class="s2-control"><button class="s2-toggle${st.enabled ? ' on' : ''}" id="setSnipEnabled" role="switch" aria-checked="${st.enabled}" aria-label="Snip from any app"></button></div></div>
+    <div class="s2-row" data-keys="${snipEscape(S.acceleratorCaps(st.accelerator).join(' ').toLowerCase())}"><div class="s2-text"><div class="s2-label">Shortcut</div>${subs.join('')}</div>
       <div class="s2-control"><div class="s2-keys" id="setSnipKeys">${keys}</div>
         <button type="button" class="s2-btn subtle" id="setSnipChange">${snipRecording ? 'Cancel' : 'Change'}</button>
         <button type="button" class="s2-btn subtle" id="setSnipReset"${isDefault || snipRecording ? ' hidden' : ''}>Reset</button></div></div>`;
@@ -20908,8 +20996,7 @@ function renderSnipShortcutBlock() {
     void updateSnipShortcut({ accelerator: S.DEFAULT_ACCELERATOR });
   });
   // Keep a settings search applied across re-renders.
-  const q = (document.getElementById('settingsSearch')?.value || '').trim().toLowerCase();
-  if (q) block.querySelectorAll('.s2-row').forEach(r => { r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none'; });
+  applySettingsSearch();
 }
 
 /* Everywhere else the shortcut appears: the ? panel. */
@@ -20917,7 +21004,7 @@ function syncSnipShortcutMentions() {
   const keys = document.getElementById('helpSnipKeys');
   const desc = document.getElementById('helpSnipDesc');
   if (!keys || !window.SnipShortcut) return;
-  keys.innerHTML = snipCapsHtml(snipShortcutState.accelerator).replaceAll('<span class="s2-plus">+</span>', '');
+  keys.innerHTML = snipCapsHtml(snipShortcutState.accelerator);
   if (desc) desc.textContent = snipShortcutState.enabled
     ? 'Snip a part of the screen to the board, from any app (desktop app)'
     : 'Snip to board is off; turn it on in Settings → Shortcuts';
@@ -20965,6 +21052,7 @@ function onSnipRecordKey(e) {
 
 function startSnipRecording() {
   if (snipRecording || !snipShortcutApi) return;
+  stopShortcutLookup();
   // main.js gives up on a recording after 30 s; stop showing one by then too.
   snipRecording = { hint: '', timer: setTimeout(() => stopSnipRecording(), 30000) };
   window.addEventListener('keydown', onSnipRecordKey, true);
@@ -20999,16 +21087,212 @@ function restoreSettingsDefaults() {
   }
   // snapEnabled rides along in appSettings above — no board state to reset.
   try { localStorage.removeItem(CLOSE_CHOICE_KEY); } catch { /* ignore */ }
-  const search = document.getElementById('settingsSearch');
-  if (search) {
-    search.value = '';
-    document.querySelectorAll('.s2-pane .s2-row').forEach(r => { r.style.display = ''; });
-  }
+  clearSettingsSearch();
   syncSettingsUi();
   syncSystemUi();
   stopSnipRecording();
   void updateSnipShortcut({ enabled: true, accelerator: window.SnipShortcut?.DEFAULT_ACCELERATOR || 'Control+Alt+S' });
   if (onLanding) void renderRecentWorks();
+}
+
+/* ---- Settings: panes, search and Look up a key ---- */
+
+function settingsPaneName(id) {
+  const tab = document.querySelector(`.s2-tab[data-pane="${id}"]`);
+  return tab ? [...tab.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join('').trim() : '';
+}
+
+// Heads the pane's results while searching; see .s2-pane-title.
+function addSettingsPaneTitle(pane) {
+  if (pane.querySelector(':scope > .s2-pane-title')) return;
+  const title = document.createElement('div');
+  title.className = 's2-pane-title';
+  title.innerHTML = document.querySelector(`.s2-tab[data-pane="${pane.dataset.pane}"] svg`)?.outerHTML || '';
+  title.append(settingsPaneName(pane.dataset.pane));
+  pane.appendChild(title);
+}
+
+function activeSettingsPane() {
+  return document.querySelector('.s2-tab.active')?.dataset.pane || 'general';
+}
+
+function showSettingsPane(id) {
+  closeSettingsSelectMenus();
+  stopShortcutLookup();
+  clearSettingsSearch();
+  document.querySelectorAll('.s2-tab').forEach(t => t.classList.toggle('active', t.dataset.pane === id));
+  document.querySelectorAll('.s2-pane').forEach(p => { p.hidden = p.dataset.pane !== id; });
+  const content = document.querySelector('.settings2-content');
+  if (content) content.scrollTop = 0;
+  applySettingsSearch();
+}
+
+/* Search covers every pane. A single character or a key name is a key, so
+   "ctrl g" finds Ctrl+G and Ctrl+Shift+G, not every row with a g in it; other
+   words match the start of a word in a row's label or description. */
+const SETTINGS_KEY_WORDS = new Set(['ctrl', 'alt', 'shift', 'esc', 'del', 'enter', 'space', 'backspace', 'f2', 'arrows']);
+const settingsSearchTerms = () => (document.getElementById('settingsSearch')?.value || '').toLowerCase().split(/[\s+]+/).filter(Boolean);
+const isSettingsKeyTerm = t => t.length === 1 || SETTINGS_KEY_WORDS.has(t);
+const settingsRowCombos = row => (row.dataset.keys || '').split('|').filter(Boolean).map(c => c.split(' '));
+
+function settingsRowMatches(row, terms) {
+  const text = [row.querySelector('.s2-label')?.textContent, ...[...row.querySelectorAll('.s2-sub')].map(s => s.textContent), row.dataset.search]
+    .join(' ').toLowerCase();
+  const words = text.split(/[^\p{L}\p{N}']+/u).filter(Boolean);
+  const startsWord = t => words.some(w => w.startsWith(t));
+  if (!terms.filter(t => !isSettingsKeyTerm(t)).every(startsWord)) return false;
+  const keyTerms = terms.filter(isSettingsKeyTerm);
+  if (!keyTerms.length) return true;
+  return settingsRowCombos(row).some(c => keyTerms.every(t => c.includes(t)))
+    || keyTerms.every(t => t.length > 1 && startsWord(t));
+}
+
+// Look up a key: one combination, matched exactly. Arrow keys ignore Shift,
+// which only makes the same shortcut move further.
+function shortcutRowHasCombo(row, combo) {
+  const want = [...combo].sort().join(' ');
+  const noShift = combo.includes('arrows') ? combo.filter(k => k !== 'shift').sort().join(' ') : null;
+  return settingsRowCombos(row).some(c => {
+    const have = [...c].sort().join(' ');
+    return have === want || have === noShift;
+  });
+}
+
+function applySettingsSearch() {
+  const modal = document.getElementById('settingsModal');
+  if (!modal) return;
+  const terms = settingsSearchTerms();
+  const searching = terms.length > 0;
+  const lookup = !searching && shortcutLookup?.combo ? shortcutLookup.combo : null;
+  modal.classList.toggle('s2-searching', searching);
+  modal.classList.toggle('s2-looking', !!shortcutLookup);
+  const clear = document.getElementById('settingsSearchClear');
+  if (clear) clear.hidden = !searching;
+  let total = 0;
+  for (const pane of modal.querySelectorAll('.s2-pane')) {
+    const looking = lookup && pane.dataset.pane === 'shortcuts';
+    let found = 0;
+    for (const row of pane.querySelectorAll('.s2-row')) {
+      const show = searching ? settingsRowMatches(row, terms) : looking ? shortcutRowHasCombo(row, lookup) : true;
+      row.style.display = show ? '' : 'none';
+      row.querySelectorAll('kbd[data-key]').forEach(k => k.classList.toggle('s2-hit', show && (searching ? terms : lookup || []).includes(k.dataset.key)));
+      if (show && !row.hidden) found++;
+    }
+    for (const sec of pane.querySelectorAll('.s2-sec')) {
+      sec.style.display = (searching || looking) && ![...sec.querySelectorAll('.s2-row')].some(r => !r.hidden && r.style.display !== 'none') ? 'none' : '';
+    }
+    const none = pane.querySelector('#s2LookupNone');
+    if (none) none.hidden = !(looking && !found);
+    const tab = modal.querySelector(`.s2-tab[data-pane="${pane.dataset.pane}"]`);
+    const count = tab?.querySelector('.s2-count');
+    if (count) count.textContent = searching && found ? String(found) : '';
+    tab?.classList.toggle('s2-zero', searching && !found);
+    pane.hidden = searching ? !found : pane.dataset.pane !== activeSettingsPane();
+    if (searching) total += found;
+  }
+  const empty = document.getElementById('settingsEmpty');
+  if (empty) empty.hidden = !(searching && !total);
+  const query = (document.getElementById('settingsSearch')?.value || '').trim();
+  const title = document.getElementById('settingsTitle');
+  const desc = document.getElementById('settingsDesc');
+  const lookupBtn = document.getElementById('settingsLookup');
+  if (searching) {
+    if (title) title.textContent = 'Search';
+    if (desc) desc.textContent = `${total} result${total === 1 ? '' : 's'} for “${query}”`;
+    document.getElementById('settingsEmptyTitle').textContent = `No settings or shortcuts match “${query}”`;
+  } else {
+    const id = activeSettingsPane();
+    if (title) title.textContent = settingsPaneName(id);
+    if (desc) desc.textContent = document.querySelector(`.s2-pane[data-pane="${id}"]`)?.dataset.desc || '';
+  }
+  if (lookupBtn) lookupBtn.hidden = searching || activeSettingsPane() !== 'shortcuts';
+}
+
+function clearSettingsSearch() {
+  const search = document.getElementById('settingsSearch');
+  if (!search || !search.value) return;
+  search.value = '';
+  applySettingsSearch();
+}
+
+let shortcutLookup = null; // { recording: true } while listening, then { combo, caps }
+
+function renderShortcutLookupBar() {
+  const bar = document.getElementById('s2Lookup');
+  if (!bar) return;
+  bar.hidden = !shortcutLookup;
+  if (!shortcutLookup) return;
+  if (shortcutLookup.recording) {
+    bar.innerHTML = '<span class="s2-lookup-rec">Press the keys you want to look up…</span><button type="button" class="s2-btn ghost" id="s2LookupClear">Cancel</button>';
+  } else {
+    const n = [...document.querySelectorAll('.s2-pane[data-pane="shortcuts"] .s2-row')].filter(r => r.style.display !== 'none').length;
+    bar.innerHTML = `<span class="s2-keys">${shortcutLookup.caps.map(k => `<kbd>${snipEscape(k)}</kbd>`).join('')}</span>`
+      + `<span>${n ? `does ${n === 1 ? 'one thing' : `${n} things, depending on where you are`}` : 'is not used'}</span>`
+      + '<button type="button" class="s2-btn ghost" id="s2LookupClear">Clear</button>';
+  }
+  bar.querySelector('#s2LookupClear').addEventListener('click', () => stopShortcutLookup());
+}
+
+/* Like the Snip recorder, this takes every key press in the capture phase,
+   and tells main it is recording so main lets go of the global Snip combo and
+   skips its own Ctrl+T: both can be looked up instead of firing. */
+function onShortcutLookupKey(e) {
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (!shortcutLookup?.recording || e.repeat || ['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+  if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+    stopShortcutLookup();
+    return;
+  }
+  const NAMES = { Escape: ['esc', 'Esc'], Delete: ['del', 'Del'], Backspace: ['backspace', 'Backspace'], Enter: ['enter', 'Enter'], ' ': ['space', 'Space'],
+    ArrowUp: ['arrows', '↑'], ArrowDown: ['arrows', '↓'], ArrowLeft: ['arrows', '←'], ArrowRight: ['arrows', '→'] };
+  let key, cap;
+  if (/^Key[A-Z]$/.test(e.code)) [key, cap] = [e.code.slice(3).toLowerCase(), e.code.slice(3)];
+  else if (/^Digit\d$/.test(e.code) && !e.shiftKey) [key, cap] = [e.code.slice(5), e.code.slice(5)];
+  else if (NAMES[e.key]) [key, cap] = NAMES[e.key];
+  else [key, cap] = [e.key.toLowerCase(), e.key.length === 1 ? e.key.toUpperCase() : e.key];
+  // "?" is typed with Shift; the list names the character, not the Shift.
+  const symbol = e.key.length === 1 && !/[\p{L}\p{N}]/u.test(e.key) && !/^(Key|Digit)/.test(e.code);
+  const mods = [[e.ctrlKey || e.metaKey, 'ctrl', 'Ctrl'], [e.altKey, 'alt', 'Alt'], [e.shiftKey && !symbol, 'shift', 'Shift']].filter(m => m[0]);
+  endShortcutLookupRecording();
+  shortcutLookup = { combo: [...mods.map(m => m[1]), key], caps: [...mods.map(m => m[2]), cap] };
+  applySettingsSearch();
+  renderShortcutLookupBar();
+}
+
+function startShortcutLookup() {
+  if (shortcutLookup?.recording) return;
+  stopSnipRecording();
+  clearSettingsSearch();
+  // main.js gives up on a recording after 30 s; stop listening by then too.
+  shortcutLookup = { recording: true, timer: setTimeout(() => stopShortcutLookup(), 30000) };
+  window.addEventListener('keydown', onShortcutLookupKey, true);
+  snipShortcutApi?.setSnipShortcutRecording(true);
+  applySettingsSearch();
+  renderShortcutLookupBar();
+}
+
+function endShortcutLookupRecording() {
+  if (!shortcutLookup?.recording) return;
+  clearTimeout(shortcutLookup.timer);
+  window.removeEventListener('keydown', onShortcutLookupKey, true);
+  snipShortcutApi?.setSnipShortcutRecording(false);
+}
+
+function stopShortcutLookup() {
+  if (!shortcutLookup) return;
+  endShortcutLookupRecording();
+  shortcutLookup = null;
+  applySettingsSearch();
+  renderShortcutLookupBar();
+}
+
+function setAutosaveChoice(change) {
+  Object.assign(appSettings, change);
+  appSettings.autosaveIntervalMin = normalizeAutosaveInterval(appSettings.autosaveIntervalMin);
+  saveAppSettings();
+  applyAppSettings();
+  syncSettingsUi();
 }
 
 function wireSettingsControls() {
@@ -21023,38 +21307,10 @@ function wireSettingsControls() {
   toggle('setLightDrag', 'lightDragPreview');
   toggle('setWarnLarge', 'warnLargeImages');
   toggle('setThumbs', 'generateThumbnails');
-  document.getElementById('setAutosave').addEventListener('click', async () => {
-    if (appSettings.autosave) {
-      appSettings.autosave = false;
-      saveAppSettings();
-      applyAppSettings();
-      syncSettingsUi();
-      return;
-    }
-    const mins = await openAutosaveIntervalModal(appSettings.autosaveIntervalMin);
-    if (mins == null) { syncSettingsUi(); return; }
-    appSettings.autosave = true;
-    appSettings.autosaveIntervalMin = mins;
-    saveAppSettings();
-    applyAppSettings();
-    syncSettingsUi();
+  document.getElementById('setAutosave').addEventListener('click', () => setAutosaveChoice({ autosave: !appSettings.autosave }));
+  document.querySelectorAll('#setAutosaveEvery button').forEach(b => {
+    b.addEventListener('click', () => setAutosaveChoice({ autosaveIntervalMin: parseInt(b.dataset.min, 10) }));
   });
-  document.getElementById('setAutosaveInterval').addEventListener('click', async () => {
-    const mins = await openAutosaveIntervalModal(appSettings.autosaveIntervalMin);
-    if (mins == null) return;
-    appSettings.autosaveIntervalMin = mins;
-    saveAppSettings();
-    applyAppSettings();
-    syncSettingsUi();
-  });
-  document.querySelectorAll('#autosaveIntervalSeg button').forEach(b => {
-    b.addEventListener('click', () => setAutosaveIntervalSegValue(parseInt(b.dataset.min, 10)));
-  });
-  document.getElementById('autosaveIntervalConfirm').addEventListener('click', () => {
-    closeAutosaveIntervalModal(selectedAutosaveIntervalMin());
-  });
-  document.getElementById('autosaveIntervalCancel').addEventListener('click', () => closeAutosaveIntervalModal(null));
-  document.getElementById('autosaveIntervalClose').addEventListener('click', () => closeAutosaveIntervalModal(null));
   document.querySelectorAll('.theme-swatch').forEach(b => b.addEventListener('click', () => applyTheme(b.dataset.theme)));
   const gridStyleSel = document.getElementById('setGridStyle');
   if (gridStyleSel) gridStyleSel.addEventListener('change', e => setGridAppearance(e.target.value));
@@ -21081,18 +21337,38 @@ function wireSettingsControls() {
     }
   });
   $('#settingsWhatsNew').addEventListener('click', () => { void openCurrentWhatsNew(); });
-  document.querySelectorAll('.s2-tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.s2-pane').forEach(addSettingsPaneTitle);
+  document.querySelectorAll('.s2-tab').forEach(t => t.addEventListener('click', () => showSettingsPane(t.dataset.pane)));
+  const search = document.getElementById('settingsSearch');
+  search.addEventListener('input', () => {
+    stopShortcutLookup();
     closeSettingsSelectMenus();
-    document.querySelectorAll('.s2-tab').forEach(x => x.classList.toggle('active', x === t));
-    document.querySelectorAll('.s2-pane').forEach(p => p.hidden = p.dataset.pane !== t.dataset.pane);
-  }));
-  document.getElementById('settingsSearch').addEventListener('input', e => {
-    const q = e.target.value.trim().toLowerCase();
-    const pane = document.querySelector('.s2-pane:not([hidden])');
-    if (!pane) return;
-    pane.querySelectorAll('.s2-row').forEach(r => { r.style.display = (!q || r.textContent.toLowerCase().includes(q)) ? '' : 'none'; });
-  }, { once:false });
-  document.getElementById('settingsRestore').addEventListener('click', () => {
+    const content = document.querySelector('.settings2-content');
+    if (content) content.scrollTop = 0;
+    applySettingsSearch();
+  });
+  // The board's key handler leaves form fields alone, so Esc is handled here:
+  // it clears a search first, then closes Settings.
+  search.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    if (search.value) clearSettingsSearch();
+    else closeSettings();
+  });
+  document.getElementById('settingsSearchClear').addEventListener('click', () => { clearSettingsSearch(); search.focus(); });
+  document.getElementById('settingsEmptyClear').addEventListener('click', () => { clearSettingsSearch(); search.focus(); });
+  document.getElementById('settingsLookup').addEventListener('click', () => startShortcutLookup());
+  const content = document.querySelector('.settings2-content');
+  content?.addEventListener('scroll', () => {
+    document.getElementById('settingsHead')?.classList.toggle('scrolled', content.scrollTop > 2);
+  }, { passive: true });
+  document.getElementById('settingsRestore').addEventListener('click', async () => {
+    const ok = await showConfirm({
+      title: 'Restore default settings?',
+      message: 'Theme, grid, Home layout, left toolbar, autosave, snapping and the performance options go back to how RefBoard shipped. Snip to board goes back to Ctrl+Alt+S, and RefBoard forgets your answer to “Save before closing?”. Nothing else on your boards changes.',
+      confirmLabel: 'Restore defaults',
+    });
+    if (!ok) return;
     restoreSettingsDefaults();
     toast('Settings restored to defaults');
   });
@@ -21102,14 +21378,16 @@ function openSettings() {
   syncSettingsUi();
   syncSystemUi();
   snipShortcutApi?.getSnipShortcut().then(applySnipShortcutState).catch(() => {});
-  const activePane = document.querySelector('.s2-tab.active')?.dataset.pane || 'performance';
-  document.querySelectorAll('.s2-pane').forEach(p => { p.hidden = p.dataset.pane !== activePane; });
+  stopShortcutLookup();
+  clearSettingsSearch();
+  applySettingsSearch();
   settingsModal.classList.add('show');
 }
 
 function closeSettings() {
   closeSettingsSelectMenus();
   stopSnipRecording();
+  stopShortcutLookup();
   settingsModal.classList.remove('show');
 }
 
@@ -21166,14 +21444,12 @@ window.addEventListener('keydown', e => {
 
   if (helpModal.classList.contains('show') || exportModal.classList.contains('show')
       || settingsModal.classList.contains('show')
-      || unsavedModal.classList.contains('show') || autosaveIntervalModal.classList.contains('show')
+      || unsavedModal.classList.contains('show')
       || confirmModal.classList.contains('show') || whatsNewModal.classList.contains('show')
       || noteLinkModal.classList.contains('show')) {
     if (k === 'escape') {
       if (noteLinkModal.classList.contains('show')) {
         closeNoteLinkModal(null);
-      } else if (autosaveIntervalModal.classList.contains('show')) {
-        closeAutosaveIntervalModal(null);
       } else if (unsavedModal.classList.contains('show')) {
         hideUnsavedModal('cancel');
       } else if (confirmModal.classList.contains('show')) {
@@ -21327,7 +21603,6 @@ const toastEl = $('#toast');
 const helpModal = $('#helpModal');
 const exportModal = $('#exportModal');
 const settingsModal = $('#settingsModal');
-const autosaveIntervalModal = $('#autosaveIntervalModal');
 const confirmModal = $('#confirmModal');
 const noteLinkModal = $('#noteLinkModal');
 const unsavedModal = $('#unsavedModal');
@@ -22345,12 +22620,13 @@ $('#whatsNewOpen').addEventListener('click', openWhatsNewModal);
 $('#whatsNewDismiss').addEventListener('click', () => { void dismissWhatsNewNotice(); });
 $('#whatsNewGotIt').addEventListener('click', () => { void closeWhatsNewModal(true); });
 $('#whatsNewModalClose').addEventListener('click', () => { void closeWhatsNewModal(true); });
-for (const m of [helpModal, exportModal, settingsModal, unsavedModal, autosaveIntervalModal, confirmModal, noteLinkModal, whatsNewModal])
+for (const m of [helpModal, exportModal, settingsModal, unsavedModal, confirmModal, noteLinkModal, whatsNewModal])
   m.addEventListener('click', e => {
     if (e.target !== m) return;
     m.classList.remove('show');
+    // Closing Settings also ends a Snip recording or a key lookup in progress.
+    if (m === settingsModal) closeSettings();
     if (m === unsavedModal && unsavedResolve) hideUnsavedModal('cancel');
-    if (m === autosaveIntervalModal && autosaveIntervalResolve) closeAutosaveIntervalModal(null);
     if (m === confirmModal && confirmResolve) hideConfirm(false);
     if (m === noteLinkModal && noteLinkResolve) closeNoteLinkModal(null);
     if (m === whatsNewModal) void closeWhatsNewModal(true);
@@ -22558,6 +22834,7 @@ async function init() {
   wireFocusFlowControls();
   wireLandingSearch();
   renderShortcutsList();
+  renderHelpShortcuts();
   syncSettingsUi();
   syncChromeLayout();
   setupNoteFmtDropdowns();

@@ -389,6 +389,9 @@ try {
   await delay(300);
   await openShortcutSettings(page);
   await click(page, '#settingsRestore');
+  // Restore defaults asks first.
+  await waitFor(() => page.run(`document.getElementById('confirmModal').classList.contains('show')`), 'the restore confirm');
+  await click(page, '#confirmOk');
   await waitFor(async () => (await hook('return T.shortcut();')).enabled, 'defaults to come back');
   assert.deepEqual(await hook('return T.shortcut();'), { enabled: true, accelerator: 'Control+Alt+S', registered: true, error: null });
   assert.equal(await hook("return T.isRegistered('Control+Alt+S');"), true);
