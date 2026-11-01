@@ -749,6 +749,8 @@ function changelogPath() {
   return path.join(__dirname, 'changelog.json');
 }
 
+const RELEASES_PAGE = 'https://github.com/sounak1125/RefBoard/releases';
+
 function parseSemver(v) {
   const m = String(v || '').trim().match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!m) return [0, 0, 0];
@@ -782,6 +784,9 @@ async function saveWhatsNewStore(data) {
 let changelogCache = null;
 
 const WHATS_NEW_SECTION_KEYS = ['new', 'improved', 'fixed'];
+// Where to find a change and its caveat show in the app. An item's `details`
+// stays out: it is the long version, written for the GitHub release.
+const WHATS_NEW_ITEM_EXTRAS = ['where', 'note'];
 
 function normalizeWhatsNewItem(item) {
   if (typeof item === 'string') {
@@ -792,7 +797,12 @@ function normalizeWhatsNewItem(item) {
   const title = String(item.title || '').trim();
   const description = String(item.description || '').trim();
   if (!title && !description) return null;
-  return { title: title || description, description: title ? description : '' };
+  const normalized = { title: title || description, description: title ? description : '' };
+  for (const key of WHATS_NEW_ITEM_EXTRAS) {
+    const value = typeof item[key] === 'string' ? item[key].trim() : '';
+    if (value) normalized[key] = value;
+  }
+  return normalized;
 }
 
 function normalizeChangelogRelease(version, entry) {
@@ -887,6 +897,8 @@ async function buildWhatsNewPayload({ current, lastSeen = null, currentOnly = fa
     sections,
     releaseCount: releases.length,
     totalChanges,
+    // "Full release notes": this release's page, or the list when there are several.
+    notesUrl: multipleReleases ? RELEASES_PAGE : `${RELEASES_PAGE}/tag/v${latest.version}`,
   };
 }
 

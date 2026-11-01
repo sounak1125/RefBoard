@@ -1946,14 +1946,14 @@ body.board-active #recentWorks{ display:none; }
 
 
 /* ---------- what's new (landing) ---------- */
+/* Home's card for an update names the headline and the first few changes, so
+   the gist lands even if the window is never opened. */
 #whatsNewNotice{
   position:fixed; right:24px; bottom:24px; z-index:82;
-  display:flex; align-items:center; gap:4px;
-  min-width:188px;
+  width:340px; max-width:calc(100vw - 48px);
   background:linear-gradient(145deg, color-mix(in srgb, var(--panel) 92%, var(--acc) 8%), color-mix(in srgb, var(--panel) 97%, #000 3%));
   border:1px solid color-mix(in srgb, var(--acc) 26%, var(--line));
-  border-radius:15px;
-  padding:5px;
+  border-radius:16px;
   box-shadow:0 14px 44px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.07) inset, 0 0 30px color-mix(in srgb, var(--acc) 8%, transparent);
   backdrop-filter:blur(24px) saturate(1.12);
   animation:wnIn .5s cubic-bezier(.16,1,.3,1) backwards;
@@ -1965,12 +1965,13 @@ body.board-active #whatsNewNotice{ display:none; }
   to{ opacity:1; transform:translateY(0) scale(1); }
 }
 .wn-notice-main{
-  flex:1; display:flex; align-items:center; gap:10px;
-  border:none; background:transparent; color:var(--txt);
-  padding:6px 9px 6px 5px;
-  border-radius:10px; cursor:pointer; text-align:left;
+  width:100%; display:flex; flex-direction:column; gap:10px;
+  border:none; background:transparent; color:var(--txt); font:inherit;
+  padding:13px 14px 14px 13px;
+  border-radius:15px; cursor:pointer; text-align:left;
 }
-.wn-notice-main:hover{ background:rgba(255,255,255,.055); }
+.wn-notice-main:hover{ background:rgba(255,255,255,.035); }
+.wn-notice-head{ display:flex; align-items:center; gap:10px; min-width:0; padding-right:28px; }
 .wn-sparkle{
   width:30px; height:30px; flex-shrink:0;
   display:flex; align-items:center; justify-content:center;
@@ -1987,16 +1988,56 @@ body.board-active #whatsNewNotice{ display:none; }
   0%,100%{ transform:scale(1) rotate(0deg); opacity:.82; }
   50%{ transform:scale(1.12) rotate(8deg); opacity:1; }
 }
+.wn-sparkle .wn-check{ display:none; }
 .wn-notice-copy{ display:flex; flex-direction:column; gap:1px; min-width:0; }
-.wn-label{ font-size:12.5px; font-weight:650; letter-spacing:.01em; color:var(--txt); }
-.wn-notice-version{ font-size:10.5px; color:var(--mut); white-space:nowrap; }
+.wn-notice-kicker{
+  color:color-mix(in srgb, var(--acc) 84%, #fff 16%);
+  font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+}
+.wn-notice-title{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--txt); font-size:14px; font-weight:650; letter-spacing:-.01em;
+}
+.wn-notice-list{ display:flex; flex-direction:column; gap:4px; margin-left:40px; }
+.wn-notice-line{ display:flex; align-items:baseline; gap:8px; min-width:0; color:var(--mut); font-size:12.5px; line-height:1.35; }
+.wn-notice-line > :last-child{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wn-notice-foot{ display:flex; align-items:center; gap:10px; margin-left:40px; }
+.wn-notice-more{ flex:1; min-width:0; color:var(--dim); font-size:11.5px; }
+.wn-notice-cta{
+  flex:none; display:inline-flex; align-items:center; height:28px; padding:0 12px;
+  border-radius:8px; background:var(--acc); color:#0b1524; font-size:12px; font-weight:600;
+}
+.wn-notice-list[hidden],.wn-notice-foot[hidden],.wn-notice-cta[hidden]{ display:none; }
 .wn-dismiss{
-  width:28px; height:28px; flex-shrink:0;
+  position:absolute; top:9px; right:9px;
+  width:28px; height:28px;
   border:none; border-radius:9px; background:transparent;
   color:var(--dim); font-size:18px; line-height:1;
   cursor:pointer;
 }
 .wn-dismiss:hover{ background:rgba(255,255,255,.08); color:#fff; }
+/* A release of fixes alone: what was fixed, in green, with nothing to open. */
+#whatsNewNotice.wn-notice-fixes{
+  background:linear-gradient(145deg, color-mix(in srgb, var(--panel) 92%, #58c7a7 8%), color-mix(in srgb, var(--panel) 97%, #000 3%));
+  border-color:color-mix(in srgb, #58c7a7 26%, var(--line));
+  box-shadow:0 14px 44px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.07) inset;
+}
+.wn-notice-fixes .wn-sparkle{
+  background:color-mix(in srgb, #58c7a7 14%, transparent);
+  border-color:color-mix(in srgb, #58c7a7 26%, transparent);
+  box-shadow:none;
+}
+.wn-notice-fixes .wn-sparkle .wn-star{ display:none; }
+.wn-notice-fixes .wn-sparkle .wn-check{ display:block; animation:none; }
+.wn-notice-fixes .wn-notice-kicker{ color:color-mix(in srgb, #58c7a7 80%, #fff 20%); }
+/* The section a change belongs to colours its glyph: new, improved, fixed. */
+.wn-tone{ --wn-tone:var(--acc); }
+.wn-tone[data-section="improved"]{ --wn-tone:#9a89f5; }
+.wn-tone[data-section="fixed"]{ --wn-tone:#58c7a7; }
+.wn-notice-glyph,.wn-row-glyph{
+  flex:none; width:12px; text-align:center;
+  color:color-mix(in srgb, var(--wn-tone) 82%, #fff 18%); font-size:12px; font-weight:700;
+}
 
 #whatsNewModal{
   z-index:86;
@@ -2009,7 +2050,7 @@ body.board-active #whatsNewNotice{ display:none; }
   to{ opacity:1; transform:translateY(0) scale(1); filter:blur(0); }
 }
 .card.wn-card{
-  width:660px; max-width:calc(100vw - 40px);
+  width:580px; max-width:calc(100vw - 40px);
   padding:0; position:relative; display:flex; flex-direction:column;
   max-height:min(780px, calc(100vh - var(--titlebar-h) - 40px));
   overflow:hidden; border-radius:24px;
@@ -2026,7 +2067,7 @@ body.board-active #whatsNewNotice{ display:none; }
   opacity:.65;
 }
 .wn-card-head{
-  position:relative; flex:none; padding:30px 34px 24px;
+  position:relative; flex:none; padding:26px 30px 20px;
   border-bottom:1px solid rgba(255,255,255,.07);
   background:linear-gradient(180deg, color-mix(in srgb, var(--acc) 7%, transparent), transparent);
 }
@@ -2045,78 +2086,146 @@ body.board-active #whatsNewNotice{ display:none; }
   background:var(--acc); box-shadow:0 0 10px color-mix(in srgb, var(--acc) 60%, transparent);
 }
 .card.wn-card .wn-headline{
-  max-width:520px; margin:0 0 9px;
-  color:var(--txt); font-size:27px; line-height:1.14; font-weight:650; letter-spacing:-.025em;
+  max-width:470px; margin:0 0 7px;
+  color:var(--txt); font-size:24px; line-height:1.16; font-weight:650; letter-spacing:-.025em;
 }
-.wn-summary{ max-width:540px; color:var(--mut); font-size:13.5px; line-height:1.55; }
-.wn-release-meta{ display:flex; align-items:center; gap:8px; margin-top:16px; }
-.wn-version-pill,.wn-change-count{
-  display:inline-flex; align-items:center; height:25px; padding:0 9px;
-  border-radius:8px; font-size:10.5px; font-weight:600;
-}
-.wn-version-pill{
-  color:#d7eaff; background:color-mix(in srgb, var(--acc) 14%, transparent);
-  border:1px solid color-mix(in srgb, var(--acc) 25%, transparent);
-}
-.wn-change-count{ color:var(--mut); background:rgba(255,255,255,.035); border:1px solid var(--line); }
+.wn-summary{ max-width:500px; margin:0; color:var(--mut); font-size:13px; line-height:1.55; }
 .wn-scroll{
-  padding:24px 28px 12px 34px; overflow-y:auto; flex:1 1 auto; min-height:0;
+  padding:18px 22px 8px 30px; overflow-y:auto; flex:1 1 auto; min-height:0;
   scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.18) transparent;
 }
 .wn-scroll::-webkit-scrollbar{ width:8px; }
 .wn-scroll::-webkit-scrollbar-track{ background:transparent; }
 .wn-scroll::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.14); border-radius:4px; }
 .wn-scroll::-webkit-scrollbar-thumb:hover{ background:rgba(255,255,255,.25); }
-.wn-sections{ display:flex; flex-direction:column; gap:24px; padding-bottom:14px; }
-.wn-section{ --wn-section-color:var(--acc); }
-.wn-section[data-section="improved"]{ --wn-section-color:#9a89f5; }
-.wn-section[data-section="fixed"]{ --wn-section-color:#58c7a7; }
-.wn-section-head{ display:flex; align-items:center; gap:10px; margin:0 2px 10px; }
-.wn-section-icon{
-  width:25px; height:25px; display:grid; place-items:center; flex:none;
-  border-radius:8px; color:color-mix(in srgb, var(--wn-section-color) 82%, #fff 18%);
-  background:color-mix(in srgb, var(--wn-section-color) 12%, transparent);
-  border:1px solid color-mix(in srgb, var(--wn-section-color) 25%, transparent);
-  font-size:13px; font-weight:700;
-}
-.wn-section-title{
-  color:var(--txt); font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
-}
-.wn-section-count{
-  margin-left:auto; color:var(--dim); font-size:10.5px; font-variant-numeric:tabular-nums;
-}
-.wn-items{ display:flex; flex-direction:column; gap:8px; }
-.wn-item{
-  position:relative; padding:14px 15px 14px 17px; overflow:hidden;
-  border-radius:13px; border:1px solid rgba(255,255,255,.075);
-  background:linear-gradient(135deg, rgba(255,255,255,.052), rgba(255,255,255,.022));
-  box-shadow:0 9px 26px rgba(0,0,0,.16), 0 1px 0 rgba(255,255,255,.025) inset;
+.wn-body{ display:flex; flex-direction:column; gap:14px; padding-bottom:12px; }
+.wn-lead,.wn-also,.wn-more{
   animation:wnItemIn .46s cubic-bezier(.16,1,.3,1) both;
-  animation-delay:calc(var(--wn-index, 0) * 45ms + 110ms);
-}
-.wn-item::before{
-  content:''; position:absolute; left:0; top:11px; bottom:11px; width:2px; border-radius:2px;
-  background:var(--wn-section-color); box-shadow:0 0 10px color-mix(in srgb, var(--wn-section-color) 46%, transparent);
+  animation-delay:calc(var(--wn-index, 0) * 60ms + 110ms);
 }
 @keyframes wnItemIn{
   from{ opacity:0; transform:translateY(8px); }
   to{ opacity:1; transform:translateY(0); }
 }
-.wn-item-top{ display:flex; align-items:baseline; gap:10px; }
-.wn-item-title{ color:var(--txt); font-size:13px; font-weight:620; line-height:1.35; }
-.wn-item-version{
-  margin-left:auto; color:var(--dim); font-size:9.5px; font-variant-numeric:tabular-nums; white-space:nowrap;
+/* The change the update leads with. */
+.wn-lead{
+  display:flex; gap:13px; padding:15px 16px 15px 15px; border-radius:15px;
+  border:1px solid color-mix(in srgb, var(--wn-tone) 24%, rgba(255,255,255,.08));
+  background:linear-gradient(135deg, color-mix(in srgb, var(--wn-tone) 10%, transparent), rgba(255,255,255,.02));
 }
-.wn-item-description{ margin-top:4px; color:var(--mut); font-size:12px; line-height:1.5; }
+.wn-lead-icon{
+  width:34px; height:34px; flex:none; display:grid; place-items:center; border-radius:10px;
+  background:color-mix(in srgb, var(--wn-tone) 15%, transparent);
+  border:1px solid color-mix(in srgb, var(--wn-tone) 28%, transparent);
+  box-shadow:0 0 18px color-mix(in srgb, var(--wn-tone) 16%, transparent);
+}
+.wn-lead-icon::before{
+  content:''; width:17px; height:17px;
+  background-color:color-mix(in srgb, var(--wn-tone) 85%, #fff 15%);
+  -webkit-mask-image:var(--wn-star-icon); -webkit-mask-size:100% 100%; -webkit-mask-repeat:no-repeat;
+  mask-image:var(--wn-star-icon); mask-size:100% 100%; mask-repeat:no-repeat;
+  --wn-star-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5l1.4 4.3h4.6l-3.7 2.7 1.4 4.3L12 11.1 8.3 14l1.4-4.3-3.7-2.7h4.6L12 2.5z'/%3E%3Cpath d='M19 14l.7 2.1h2.2l-1.8 1.3.7 2.1L19 18.2l-1.8 1.3.7-2.1-1.8-1.3h2.2L19 14z' opacity='.55'/%3E%3C/svg%3E");
+}
+.wn-lead-copy{ flex:1; min-width:0; }
+.wn-lead-title{ margin:0; color:var(--txt); font-size:15px; line-height:1.3; font-weight:650; letter-spacing:-.01em; }
+.wn-lead-text{ margin:4px 0 0; color:var(--mut); font-size:13px; line-height:1.5; }
+/* The next few new features, two to a row. */
+.wn-group-label{
+  margin:2px 2px 8px; color:var(--dim);
+  font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+}
+.wn-tiles{ display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+.wn-tiles > :only-child{ grid-column:1 / -1; }
+.wn-tile{
+  display:flex; align-items:flex-start; gap:10px; min-width:0; padding:11px 12px;
+  border-radius:12px; border:1px solid rgba(255,255,255,.07); background:rgba(255,255,255,.035);
+}
+.wn-glyph{
+  width:26px; height:26px; flex:none; display:grid; place-items:center; border-radius:8px;
+  color:color-mix(in srgb, var(--wn-tone) 82%, #fff 18%);
+  background:color-mix(in srgb, var(--wn-tone) 12%, transparent);
+  border:1px solid color-mix(in srgb, var(--wn-tone) 25%, transparent);
+  font-size:12.5px; font-weight:700; line-height:1;
+}
+.wn-tile-copy{ flex:1; min-width:0; }
+.wn-tile-title{ margin:0; color:var(--txt); font-size:12.5px; font-weight:620; line-height:1.35; }
+.wn-tile-text{ margin:2px 0 0; color:var(--mut); font-size:11.5px; line-height:1.45; }
+/* Everything else folds into one row until asked for. */
+.wn-more-toggle{
+  width:100%; height:40px; display:flex; align-items:center; gap:10px; padding:0 12px;
+  border:1px solid rgba(255,255,255,.07); border-radius:12px; background:rgba(255,255,255,.02);
+  color:var(--mut); font:inherit; font-size:12.5px; text-align:left; cursor:pointer;
+}
+.wn-more-toggle:hover{ background:rgba(255,255,255,.045); color:var(--txt); }
+.wn-more-glyphs{ display:flex; gap:3px; }
+.wn-more-label{ flex:1; min-width:0; }
+.wn-more-count{
+  min-width:20px; height:20px; padding:0 6px; display:inline-flex; align-items:center; justify-content:center;
+  border-radius:6px; background:rgba(255,255,255,.06); color:var(--txt); font-size:11px; font-variant-numeric:tabular-nums;
+}
+.wn-more-chev{
+  width:12px; height:12px; flex:none; background-color:currentColor;
+  -webkit-mask-image:var(--wn-chev-icon); -webkit-mask-size:100% 100%; -webkit-mask-repeat:no-repeat;
+  mask-image:var(--wn-chev-icon); mask-size:100% 100%; mask-repeat:no-repeat;
+  --wn-chev-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  transition:transform .18s ease;
+}
+.wn-more-toggle[aria-expanded="true"] .wn-more-chev{ transform:rotate(180deg); }
+.wn-more-list{ display:flex; flex-direction:column; gap:2px; margin:0; padding:8px 4px 2px 12px; list-style:none; }
+.wn-more-list[hidden]{ display:none; }
+.wn-row{ display:flex; align-items:baseline; gap:10px; padding:4px 0; }
+.wn-row-copy{ flex:1; min-width:0; }
+.wn-row-text{ margin:0; color:var(--mut); font-size:12.5px; line-height:1.5; }
+.wn-row-title{ color:var(--txt); font-weight:600; }
+.wn-version-tag{
+  margin-left:6px; color:var(--dim); font-size:10px; font-weight:400;
+  font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+/* Where to find a change and its caveat: one short line each, after an icon. */
+.wn-item-where,.wn-item-note{
+  display:flex; align-items:flex-start; gap:6px; margin:6px 0 0;
+  color:var(--dim); font-size:11px; line-height:1.45;
+}
+.wn-item-where + .wn-item-note{ margin-top:3px; }
+.wn-item-where::before,.wn-item-note::before{
+  content:''; flex:none; width:12px; height:12px; margin-top:2px;
+  background-color:currentColor;
+  -webkit-mask-image:var(--wn-line-icon); -webkit-mask-size:100% 100%; -webkit-mask-repeat:no-repeat;
+  mask-image:var(--wn-line-icon); mask-size:100% 100%; mask-repeat:no-repeat;
+}
+.wn-item-where{ --wn-line-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linejoin='round'%3E%3Cpath d='M5.5 3.5 11 19l2.3-6.2 6.2-2.3z'/%3E%3C/svg%3E"); }
+.wn-item-note{ --wn-line-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 11v5.5M12 7.6v.4'/%3E%3C/svg%3E"); }
+/* Where to find a change reads as a chip in the lead, and smaller in a tile. */
+.wn-lead .wn-item-where{
+  display:inline-flex; align-items:center; margin-top:10px; padding:4px 9px 4px 8px;
+  border-radius:8px; border:1px solid rgba(255,255,255,.08); background:rgba(255,255,255,.04);
+  color:color-mix(in srgb, var(--mut) 88%, #fff 12%); font-size:11.5px;
+}
+.wn-lead .wn-item-where::before{ margin-top:0; }
+.wn-lead .wn-item-note{ margin-top:8px; }
+.wn-tile .wn-item-where,.wn-tile .wn-item-note{ margin-top:5px; font-size:10.5px; }
+.wn-row .wn-item-where,.wn-row .wn-item-note{ margin-top:3px; }
 .wn-card-foot{
   flex:none; display:flex; align-items:center; justify-content:space-between; gap:18px;
-  padding:15px 22px 16px 34px;
+  padding:14px 20px 15px 26px;
   border-top:1px solid rgba(255,255,255,.07);
   background:color-mix(in srgb, var(--card) 84%, transparent);
   backdrop-filter:blur(22px);
 }
-.wn-foot-note{ color:var(--dim); font-size:10.5px; }
-.card.wn-card .row-btns{ margin:0; }
+.wn-notes-link{
+  display:inline-flex; align-items:center; gap:6px; margin-left:-6px; padding:6px;
+  border:none; border-radius:7px; background:transparent;
+  color:var(--dim); font:inherit; font-size:12px; cursor:pointer;
+}
+.wn-notes-link:hover{ background:rgba(255,255,255,.05); color:var(--txt); }
+.wn-notes-link::after{
+  content:''; width:11px; height:11px; background-color:currentColor;
+  -webkit-mask-image:var(--wn-out-icon); -webkit-mask-size:100% 100%; -webkit-mask-repeat:no-repeat;
+  mask-image:var(--wn-out-icon); mask-size:100% 100%; mask-repeat:no-repeat;
+  --wn-out-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5'/%3E%3C/svg%3E");
+}
+.wn-notes-link[hidden]{ display:none; }
+.card.wn-card .row-btns{ margin:0 0 0 auto; }
 .card.wn-card .btn.primary{ min-width:104px; box-shadow:0 8px 24px color-mix(in srgb, var(--acc) 20%, transparent); }
 .card.wn-card .modal-x{
   position:absolute; z-index:4; top:18px; right:18px;
@@ -2127,14 +2236,15 @@ body.board-active #whatsNewNotice{ display:none; }
 .card.wn-card .modal-x:hover{ border-color:var(--line); background:rgba(255,255,255,.07); color:#fff; }
 @media (max-width:620px){
   .card.wn-card{ border-radius:20px; }
-  .wn-card-head{ padding:26px 24px 20px; }
-  .wn-scroll{ padding:20px 18px 10px 24px; }
-  .wn-card-foot{ padding:14px 18px 15px 24px; }
-  .card.wn-card .wn-headline{ font-size:23px; }
-  .wn-foot-note{ display:none; }
+  .wn-card-head{ padding:22px 22px 18px; }
+  .wn-scroll{ padding:16px 16px 8px 22px; }
+  .wn-card-foot{ padding:13px 16px 14px 20px; }
+  .card.wn-card .wn-headline{ font-size:21px; }
+  .wn-tiles{ grid-template-columns:minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion:reduce){
-  #whatsNewNotice,.wn-sparkle svg,#whatsNewModal.show .wn-card,.wn-item{ animation:none !important; }
+  #whatsNewNotice,.wn-sparkle svg,#whatsNewModal.show .wn-card,.wn-lead,.wn-also,.wn-more{ animation:none !important; }
+  .wn-more-chev{ transition:none; }
 }
 
 /* ---------- toast ---------- */
@@ -3463,15 +3573,25 @@ try {
 
 <div id="whatsNewNotice" class="hide" role="status" aria-live="polite">
   <button type="button" class="wn-notice-main" id="whatsNewOpen">
-    <span class="wn-sparkle" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M12 2.5l1.4 4.3h4.6l-3.7 2.7 1.4 4.3L12 11.1 8.3 14l1.4-4.3-3.7-2.7h4.6L12 2.5z" fill="var(--acc)" opacity=".95"/>
-        <path d="M19 14l.7 2.1h2.2l-1.8 1.3.7 2.1L19 18.2l-1.8 1.3.7-2.1-1.8-1.3h2.2L19 14z" fill="var(--acc)" opacity=".55"/>
-      </svg>
+    <span class="wn-notice-head">
+      <span class="wn-sparkle" aria-hidden="true">
+        <svg class="wn-star" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2.5l1.4 4.3h4.6l-3.7 2.7 1.4 4.3L12 11.1 8.3 14l1.4-4.3-3.7-2.7h4.6L12 2.5z" fill="var(--acc)" opacity=".95"/>
+          <path d="M19 14l.7 2.1h2.2l-1.8 1.3.7 2.1L19 18.2l-1.8 1.3.7-2.1-1.8-1.3h2.2L19 14z" fill="var(--acc)" opacity=".55"/>
+        </svg>
+        <svg class="wn-check" viewBox="0 0 24 24" fill="none">
+          <path d="m5 12.5 4.5 4.5L19 7.5" stroke="#58c7a7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+      <span class="wn-notice-copy">
+        <span class="wn-notice-kicker" id="whatsNewNoticeKicker"></span>
+        <span class="wn-notice-title" id="whatsNewNoticeTitle"></span>
+      </span>
     </span>
-    <span class="wn-notice-copy">
-      <span class="wn-label">What's New</span>
-      <span class="wn-notice-version" id="whatsNewNoticeVersion"></span>
+    <span class="wn-notice-list" id="whatsNewNoticeList"></span>
+    <span class="wn-notice-foot" id="whatsNewNoticeFoot">
+      <span class="wn-notice-more" id="whatsNewNoticeMore"></span>
+      <span class="wn-notice-cta" id="whatsNewNoticeCta">See what's new</span>
     </span>
   </button>
   <button type="button" class="wn-dismiss" id="whatsNewDismiss" title="Dismiss" aria-label="Dismiss">×</button>
@@ -4049,21 +4169,17 @@ try {
   <div class="card wn-card" role="dialog" aria-modal="true" aria-labelledby="whatsNewHeadline">
     <button type="button" class="modal-x" id="whatsNewModalClose" title="Close" aria-label="Close">×</button>
     <div class="wn-card-head">
-      <div class="wn-kicker">What's new in RefBoard</div>
+      <div class="wn-kicker" id="whatsNewKicker">What's new in RefBoard</div>
       <h3 class="wn-headline" id="whatsNewHeadline"></h3>
       <p class="wn-summary" id="whatsNewSummary"></p>
-      <div class="wn-release-meta">
-        <span class="wn-version-pill" id="whatsNewVersion"></span>
-        <span class="wn-change-count" id="whatsNewChangeCount"></span>
-      </div>
     </div>
-    <div class="wn-scroll">
-      <div class="wn-sections" id="whatsNewSections"></div>
+    <div class="wn-scroll" id="whatsNewScroll">
+      <div class="wn-body" id="whatsNewSections"></div>
     </div>
     <div class="wn-card-foot">
-      <span class="wn-foot-note">RefBoard keeps your work private and local.</span>
+      <button type="button" class="wn-notes-link" id="whatsNewNotesLink" hidden>Full release notes</button>
       <div class="row-btns">
-        <button type="button" class="btn primary" id="whatsNewGotIt">Continue</button>
+        <button type="button" class="btn primary" id="whatsNewGotIt">Got it</button>
       </div>
     </div>
   </div>
@@ -4441,6 +4557,7 @@ import {
   matchesBoardQuery,
   normalizeBoardQuery,
 } from './scripts/landing-search.mjs';
+import { planWhatsNew } from './scripts/whats-new-view.mjs';
 import { createImageResidencyController } from './scripts/image-residency.mjs';
 import { createImageResizePool } from './scripts/image-resize-pool.mjs';
 import { drawGridDots } from './scripts/grid-dots.mjs';
@@ -16861,10 +16978,6 @@ const WHATS_NEW_SECTION_META = {
   fixed: { label: 'Fixed', icon: '✓' },
 };
 
-function formatWhatsNewCount(count) {
-  return `${count} ${count === 1 ? 'change' : 'changes'}`;
-}
-
 function syncWhatsNewNotice() {
   const notice = $('#whatsNewNotice');
   if (!notice) return;
@@ -16877,13 +16990,76 @@ async function refreshWhatsNew() {
   if (!window.RefBoardAPI?.checkWhatsNew) return;
   const res = await window.RefBoardAPI.checkWhatsNew();
   whatsNewPayload = res?.show ? res : null;
-  const noticeVersion = $('#whatsNewNoticeVersion');
-  if (noticeVersion) {
-    noticeVersion.textContent = whatsNewPayload
-      ? `v${whatsNewPayload.version} · ${formatWhatsNewCount(whatsNewPayload.totalChanges)}`
-      : '';
-  }
+  renderWhatsNewNotice(whatsNewPayload);
   syncWhatsNewNotice();
+}
+
+function whatsNewGlyph(key, className) {
+  const glyph = document.createElement('span');
+  glyph.className = `${className} wn-tone`;
+  glyph.dataset.section = key;
+  glyph.setAttribute('aria-hidden', 'true');
+  glyph.textContent = WHATS_NEW_SECTION_META[key].icon;
+  return glyph;
+}
+
+// Where to find a change and its caveat, one short line each.
+function whatsNewItemLines(item) {
+  return ['where', 'note'].filter(kind => item[kind]).map(kind => {
+    const line = document.createElement('p');
+    line.className = `wn-item-${kind}`;
+    line.textContent = item[kind];
+    return line;
+  });
+}
+
+function whatsNewTitle(tagName, className, item, showVersion) {
+  const title = document.createElement(tagName);
+  title.className = className;
+  title.textContent = item.title;
+  if (showVersion && item.version) {
+    const version = document.createElement('span');
+    version.className = 'wn-version-tag';
+    version.textContent = `v${item.version}`;
+    title.appendChild(version);
+  }
+  return title;
+}
+
+function whatsNewText(className, text) {
+  const paragraph = document.createElement('p');
+  paragraph.className = className;
+  paragraph.textContent = text;
+  return paragraph;
+}
+
+function whatsNewGroupLabel(text) {
+  const label = document.createElement('div');
+  label.className = 'wn-group-label';
+  label.textContent = text;
+  return label;
+}
+
+function renderWhatsNewNotice(payload) {
+  const notice = $('#whatsNewNotice');
+  if (!notice || !payload) return;
+  const { fixesOnly, card } = planWhatsNew(payload);
+  notice.classList.toggle('wn-notice-fixes', fixesOnly);
+  $('#whatsNewNoticeKicker').textContent = card.kicker;
+  $('#whatsNewNoticeTitle').textContent = card.title;
+  const list = $('#whatsNewNoticeList');
+  list.replaceChildren(...card.lines.map(({ key, title }) => {
+    const line = document.createElement('span');
+    line.className = 'wn-notice-line';
+    const text = document.createElement('span');
+    text.textContent = title;
+    line.append(whatsNewGlyph(key, 'wn-notice-glyph'), text);
+    return line;
+  }));
+  list.hidden = !card.lines.length;
+  $('#whatsNewNoticeMore').textContent = card.more;
+  $('#whatsNewNoticeCta').hidden = !card.cta;
+  $('#whatsNewNoticeFoot').hidden = !card.more && !card.cta;
 }
 
 async function closeWhatsNewModal(markSeen = true) {
@@ -16906,87 +17082,118 @@ async function dismissWhatsNewNotice() {
   await window.RefBoardAPI?.dismissWhatsNew?.();
 }
 
+function buildWhatsNewLead({ key, item }, showVersions) {
+  const lead = document.createElement('article');
+  lead.className = 'wn-lead wn-tone';
+  lead.dataset.section = key;
+  const icon = document.createElement('span');
+  icon.className = 'wn-lead-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  const copy = document.createElement('div');
+  copy.className = 'wn-lead-copy';
+  copy.appendChild(whatsNewTitle('h4', 'wn-lead-title', item, showVersions));
+  if (item.description) copy.appendChild(whatsNewText('wn-lead-text', item.description));
+  copy.append(...whatsNewItemLines(item));
+  lead.append(icon, copy);
+  return lead;
+}
+
+function buildWhatsNewTile({ key, item }, showVersions) {
+  const tile = document.createElement('article');
+  tile.className = 'wn-tile';
+  const copy = document.createElement('div');
+  copy.className = 'wn-tile-copy';
+  copy.appendChild(whatsNewTitle('h5', 'wn-tile-title', item, showVersions));
+  if (item.description) copy.appendChild(whatsNewText('wn-tile-text', item.description));
+  copy.append(...whatsNewItemLines(item));
+  tile.append(whatsNewGlyph(key, 'wn-glyph'), copy);
+  return tile;
+}
+
+function buildWhatsNewRow({ key, item }, showVersions) {
+  const row = document.createElement('li');
+  row.className = 'wn-row';
+  const copy = document.createElement('div');
+  copy.className = 'wn-row-copy';
+  const text = document.createElement('p');
+  text.className = 'wn-row-text';
+  text.appendChild(whatsNewTitle('span', 'wn-row-title', item, showVersions));
+  if (item.description) text.append(` — ${item.description}`);
+  copy.append(text, ...whatsNewItemLines(item));
+  row.append(whatsNewGlyph(key, 'wn-row-glyph'), copy);
+  return row;
+}
+
+// Everything the lead and tiles leave out, behind one row that opens in place.
+// A release of fixes alone has nothing to lead with, so its list starts open.
+function buildWhatsNewMore(view) {
+  const more = document.createElement('section');
+  more.className = 'wn-more';
+  const list = document.createElement('ul');
+  list.className = 'wn-more-list';
+  list.id = 'whatsNewMoreList';
+  list.append(...view.rest.map(entry => buildWhatsNewRow(entry, view.showVersions)));
+  if (view.restOpen) {
+    more.append(whatsNewGroupLabel(view.restTitle), list);
+    return more;
+  }
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'wn-more-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', list.id);
+  const glyphs = document.createElement('span');
+  glyphs.className = 'wn-more-glyphs';
+  for (const key of new Set(view.rest.map(entry => entry.key))) glyphs.appendChild(whatsNewGlyph(key, 'wn-row-glyph'));
+  const label = document.createElement('span');
+  label.className = 'wn-more-label';
+  label.textContent = view.restTitle;
+  const count = document.createElement('span');
+  count.className = 'wn-more-count';
+  count.textContent = String(view.rest.length);
+  const chevron = document.createElement('span');
+  chevron.className = 'wn-more-chev';
+  chevron.setAttribute('aria-hidden', 'true');
+  toggle.append(glyphs, label, count, chevron);
+  list.hidden = true;
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    list.hidden = !open;
+  });
+  more.append(toggle, list);
+  return more;
+}
+
 function openWhatsNewModal() {
   if (!whatsNewPayload) return;
-  const payload = whatsNewPayload;
-  const headline = $('#whatsNewHeadline');
+  const view = planWhatsNew(whatsNewPayload).window;
+  $('#whatsNewKicker').textContent = view.kicker;
+  $('#whatsNewHeadline').textContent = view.headline;
   const summary = $('#whatsNewSummary');
-  const version = $('#whatsNewVersion');
-  const count = $('#whatsNewChangeCount');
-  const sections = $('#whatsNewSections');
+  summary.textContent = view.summary;
+  summary.hidden = !view.summary;
 
-  if (headline) headline.textContent = payload.headline;
-  if (summary) summary.textContent = payload.summary;
-  if (version) version.textContent = `Version ${payload.version}`;
-  if (count) count.textContent = formatWhatsNewCount(payload.totalChanges);
-
-  if (sections) {
-    sections.innerHTML = '';
-    let itemIndex = 0;
-    for (const [key, meta] of Object.entries(WHATS_NEW_SECTION_META)) {
-      const items = Array.isArray(payload.sections?.[key]) ? payload.sections[key] : [];
-      if (!items.length) continue;
-
-      const section = document.createElement('section');
-      section.className = 'wn-section';
-      section.dataset.section = key;
-
-      const sectionHead = document.createElement('div');
-      sectionHead.className = 'wn-section-head';
-
-      const icon = document.createElement('span');
-      icon.className = 'wn-section-icon';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = meta.icon;
-
-      const sectionTitle = document.createElement('h4');
-      sectionTitle.className = 'wn-section-title';
-      sectionTitle.textContent = meta.label;
-
-      const sectionCount = document.createElement('span');
-      sectionCount.className = 'wn-section-count';
-      sectionCount.textContent = `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
-
-      sectionHead.append(icon, sectionTitle, sectionCount);
-      section.appendChild(sectionHead);
-
-      const itemList = document.createElement('div');
-      itemList.className = 'wn-items';
-      for (const item of items) {
-        const itemCard = document.createElement('article');
-        itemCard.className = 'wn-item';
-        itemCard.style.setProperty('--wn-index', itemIndex++);
-
-        const itemTop = document.createElement('div');
-        itemTop.className = 'wn-item-top';
-
-        const itemTitle = document.createElement('div');
-        itemTitle.className = 'wn-item-title';
-        itemTitle.textContent = item.title;
-        itemTop.appendChild(itemTitle);
-
-        if (payload.releaseCount > 1 && item.version) {
-          const itemVersion = document.createElement('span');
-          itemVersion.className = 'wn-item-version';
-          itemVersion.textContent = `v${item.version}`;
-          itemTop.appendChild(itemVersion);
-        }
-        itemCard.appendChild(itemTop);
-
-        if (item.description) {
-          const description = document.createElement('p');
-          description.className = 'wn-item-description';
-          description.textContent = item.description;
-          itemCard.appendChild(description);
-        }
-        itemList.appendChild(itemCard);
-      }
-      section.appendChild(itemList);
-      sections.appendChild(section);
-    }
+  const blocks = [];
+  if (view.lead) blocks.push(buildWhatsNewLead(view.lead, view.showVersions));
+  if (view.tiles.length) {
+    const also = document.createElement('section');
+    also.className = 'wn-also';
+    const tiles = document.createElement('div');
+    tiles.className = 'wn-tiles';
+    tiles.append(...view.tiles.map(entry => buildWhatsNewTile(entry, view.showVersions)));
+    also.append(whatsNewGroupLabel('Also new'), tiles);
+    blocks.push(also);
   }
+  if (view.rest.length) blocks.push(buildWhatsNewMore(view));
+  blocks.forEach((block, index) => block.style.setProperty('--wn-index', index));
+  $('#whatsNewSections').replaceChildren(...blocks);
+  $('#whatsNewScroll').scrollTop = 0;
+  $('#whatsNewNotesLink').hidden = !(view.notesUrl && window.RefBoardAPI?.openExternal);
+
   $('#whatsNewModal')?.classList.add('show');
   syncWhatsNewNotice();
+  $('#whatsNewGotIt')?.focus({ preventScroll: true });
 }
 
 async function openCurrentWhatsNew() {
@@ -22608,6 +22815,10 @@ $('#whatsNewOpen').addEventListener('click', openWhatsNewModal);
 $('#whatsNewDismiss').addEventListener('click', () => { void dismissWhatsNewNotice(); });
 $('#whatsNewGotIt').addEventListener('click', () => { void closeWhatsNewModal(true); });
 $('#whatsNewModalClose').addEventListener('click', () => { void closeWhatsNewModal(true); });
+$('#whatsNewNotesLink').addEventListener('click', () => {
+  const url = whatsNewPayload?.notesUrl;
+  if (url) void window.RefBoardAPI?.openExternal?.(url);
+});
 for (const m of [helpModal, exportModal, settingsModal, unsavedModal, confirmModal, noteLinkModal, whatsNewModal])
   m.addEventListener('click', e => {
     if (e.target !== m) return;

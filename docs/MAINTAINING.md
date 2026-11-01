@@ -26,7 +26,10 @@ Commands in this guide run from the repository root on Windows. Release builds c
     "new": [
       {
         "title": "Feature name",
-        "description": "What it lets people do."
+        "description": "What it lets people do, in one line.",
+        "where": "Selection bar or right-click menu",
+        "note": "A caveat people need first, such as a download.",
+        "details": "Anything longer. Only the GitHub release shows this."
       }
     ],
     "improved": [
@@ -45,9 +48,23 @@ Commands in this guide run from the repository root on Windows. Release builds c
 }
 ```
 
+   People give What's New a few seconds, so every field shown in the app fits on one line. `npm test` fails when a release breaks these limits:
+
+   | Field | Limit | Where it shows |
+   | --- | --- | --- |
+   | `headline` | 50 characters | App and GitHub |
+   | `summary` | 120 characters | App and GitHub |
+   | `title` | 40 characters | App and GitHub |
+   | `description` | 90 characters | App and GitHub |
+   | `where` (optional) | 40 characters | App, and GitHub as "Find it:" |
+   | `note` (optional) | 90 characters | App, and GitHub as "Note:" |
+   | `details` (optional) | No limit | GitHub only |
+
+   Use `where` to say where a feature lives and `note` for something people must know first, such as a download or a version requirement. Anything longer goes in `details`. The limits live in `scripts/release-notes-rules.mjs` and apply to 2.2.0 and later; older releases keep the notes they shipped with.
+
    Keep unused sections as empty arrays (`[]`). Do not add labels such as `"Bug fixes:"` as list items—the modal creates the New, Improved, and Fixed headings automatically. `npm run dist` / `sync-changelog.mjs` copies this release into `changelog.json` for the in-app What's New screen.
 
-   You can also collect a change from a git commit. The text before `|` becomes the title and the text after it becomes the description:
+   You can also collect a change from a git commit. The text before `|` becomes the title and the text after it becomes the description, held to the same limits:
 
 ```powershell
 git commit -m "[highlight:new] Feature name | What it lets people do."

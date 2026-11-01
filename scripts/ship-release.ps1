@@ -131,6 +131,14 @@ function ConvertTo-ReleaseNoteText {
   return (([string]$Value).Trim() -replace '\r?\n', ' ').Replace([string][char]0x2014, '-')
 }
 
+function Format-ReleaseNoteLabel {
+  param([string]$Label, [object]$Value)
+  $text = ConvertTo-ReleaseNoteText $Value
+  if (-not $text) { return '' }
+  if ($text -notmatch '[.!?]$') { $text += '.' }
+  return "${Label}: $text"
+}
+
 function New-StructuredReleaseNotes {
   param(
     [object]$Entry,
@@ -164,7 +172,15 @@ function New-StructuredReleaseNotes {
         continue
       }
       $title = ConvertTo-ReleaseNoteText $item.title
-      $description = ConvertTo-ReleaseNoteText $item.description
+      # The release page is the long version: the app's one line, then details,
+      # where to find the change and its caveat, all on the change's own line.
+      $description = @(
+        (ConvertTo-ReleaseNoteText $item.description),
+        (ConvertTo-ReleaseNoteText $item.details),
+        (Format-ReleaseNoteLabel 'Find it' $item.where),
+        (Format-ReleaseNoteLabel 'Note' $item.note)
+      ) | Where-Object { $_ }
+      $description = $description -join ' '
       if ($title -and $description) { $lines.Add("- **$title** - $description") }
       elseif ($title) { $lines.Add("- **$title**") }
       elseif ($description) { $lines.Add("- $description") }
