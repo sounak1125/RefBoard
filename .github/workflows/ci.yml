@@ -159,3 +159,5 @@ jobs:
 
       - name: What's New notes smoke
         run: npm run test:whats-new-smoke
+      - name: New badges smoke
+        run: npm run test:new-badges-smoke

@@ -3,6 +3,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, she
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const { replaceBoardFile, recoverBoardFileIfMissing, cleanupBoardBackup } = require('./scripts/board-file-replace');
+const { pendingBadges, storeAfterLaunch, withoutBadge } = require('./scripts/new-badges');
 const { boardRenameFailureText, renameBoardFile } = require('./scripts/board-rename');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -781,6 +782,21 @@ async function saveWhatsNewStore(data) {
   await writeJsonAtomic(whatsNewStorePath(), data);
 }
 
+// What's New and the "New" badges share whats-new.json. Changes queue up so a
+// Got it in one window cannot overwrite another's: each reads the store, keeps
+// every other key, and writes. `change` returns the new store, or null for none.
+let whatsNewStoreQueue = Promise.resolve();
+function updateWhatsNewStore(change) {
+  const run = whatsNewStoreQueue.then(async () => {
+    const store = await loadWhatsNewStore();
+    const next = change(store);
+    if (next) await saveWhatsNewStore(next);
+    return next || store;
+  });
+  whatsNewStoreQueue = run.catch(() => {});
+  return run;
+}
+
 let changelogCache = null;
 
 const WHATS_NEW_SECTION_KEYS = ['new', 'improved', 'fixed'];
@@ -855,7 +871,29 @@ async function loadChangelog() {
 }
 
 async function markWhatsNewSeen(version) {
-  await saveWhatsNewStore({ lastSeenVersion: version });
+  await updateWhatsNewStore(store => ({ ...store, lastSeenVersion: version }));
+}
+
+// The first call in a run settles this launch's badges; later calls share it.
+let newBadgesLaunch = null;
+function newBadgesForLaunch() {
+  newBadgesLaunch ||= loadChangelog()
+    .then(changelog => updateWhatsNewStore(store => storeAfterLaunch(store, changelog, app.getVersion())))
+    .catch(() => null);
+  return newBadgesLaunch;
+}
+
+async function getNewBadges() {
+  await newBadgesForLaunch();
+  return pendingBadges(await loadWhatsNewStore());
+}
+
+async function markNewBadgeSeen(id) {
+  if (typeof id !== 'string' || !id) return;
+  await newBadgesForLaunch();
+  await updateWhatsNewStore(store => withoutBadge(store, id));
+  const call = `window.__newBadgeSeen && window.__newBadgeSeen(${JSON.stringify(id)})`;
+  for (const candidate of windows) executeInPanes(candidate, call);
 }
 
 async function buildWhatsNewPayload({ current, lastSeen = null, currentOnly = false }) {
@@ -2100,6 +2138,12 @@ function setupIpc() {
 
   ipcMain.handle('whats-new-dismiss', async () => {
     await markWhatsNewSeen(app.getVersion());
+    return { ok: true };
+  });
+
+  ipcMain.handle('new-badges-get', () => getNewBadges());
+  ipcMain.handle('new-badges-seen', async (_, { id } = {}) => {
+    await markNewBadgeSeen(id);
     return { ok: true };
   });
 

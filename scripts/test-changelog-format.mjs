@@ -60,6 +60,12 @@ for (const [change, expected] of [
   [release => { release.sections.new[0].note = '   '; }, /\.note must be text/],
   [release => { release.sections.new[0].details = 3; }, /\.details must be text/],
   [release => { release.sections.new[0].detail = 'a misspelt details'; }, /\.detail is not a release-note field/],
+  [release => { release.sections.new[0].badge = 'Remove Object'; }, /\.badge "Remove Object" must be a lowercase id/],
+  [release => { release.sections.new[0].badge = ' '; }, /\.badge must be text/],
+  [release => {
+    release.sections.new[0].badge = 'remove-object';
+    release.sections.improved.push({ title: 'Another', description: 'Same control.', badge: 'remove-object' });
+  }, /\.badge "remove-object" is already used by sections\.new\[0\]/],
 ]) {
   const release = sampleRelease();
   change(release);
@@ -69,6 +75,9 @@ for (const [change, expected] of [
 const longDetails = sampleRelease();
 longDetails.sections.new[0].details = 'x'.repeat(600);
 assert.deepEqual(releaseNoteProblems(longDetails, { short: true }), [], 'details has no limit: it only goes to GitHub');
+const badged = sampleRelease();
+badged.sections.new[0].badge = 'remove-object';
+assert.deepEqual(releaseNoteProblems(badged, { short: true }), [], 'a lowercase badge id passes');
 const olderRelease = sampleRelease();
 olderRelease.sections.new[0].description = 'x'.repeat(300);
 assert.deepEqual(releaseNoteProblems(olderRelease, { short: false }), [], 'releases from before the limits keep their notes');

@@ -1945,6 +1945,76 @@ body.board-active #recentWorks{ display:none; }
 }
 
 
+/* ---------- "New" badges ----------
+   A control a release added carries a dot or a "New" chip until it is used or
+   its callout's Got it is clicked. The callout floats under the selection bar;
+   in Settings and the Labels panel it opens inside the row, below its controls. */
+.nb-dot{
+  position:absolute; top:3px; right:3px; width:8px; height:8px; border-radius:50%;
+  background:var(--acc); box-shadow:0 0 0 2px var(--panel); pointer-events:none;
+}
+#selbar .tb.nb-new{
+  background:color-mix(in srgb, var(--acc) 14%, transparent); color:var(--txt);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--acc) 45%, transparent);
+}
+/* The callout says what the tooltip would, and both sit under the button. */
+#selbar .tb.nb-anchor::after{ display:none; }
+.s2-tab .nb-dot{ position:static; flex:0 0 auto; margin-left:auto; box-shadow:none; }
+.tag-more-head .nb-dot{ position:static; width:7px; height:7px; box-shadow:none; }
+.nb-chip,
+.mi.nb-new > span:first-child::after,
+.s2-row.nb-new .s2-label::after,
+.tag-panel-labels.nb-new > span:first-child::after{
+  display:inline-flex; align-items:center; height:17px; padding:0 6px; border-radius:5px;
+  background:color-mix(in srgb, var(--acc) 18%, transparent);
+  color:color-mix(in srgb, var(--acc) 60%, #fff);
+  font-size:9.5px; font-weight:700; letter-spacing:.08em; line-height:1; text-transform:uppercase;
+  vertical-align:1px;
+}
+/* Drawn by CSS so Settings search never matches the word. */
+.mi.nb-new > span:first-child::after,
+.s2-row.nb-new .s2-label::after,
+.tag-panel-labels.nb-new > span:first-child::after{ content:"New"; margin-left:8px; }
+.mi.nb-new{ background:color-mix(in srgb, var(--acc) 10%, transparent); color:var(--txt); }
+.mi.nb-trail > span:first-child::after{
+  content:""; display:inline-block; width:7px; height:7px; margin-left:8px;
+  border-radius:50%; background:var(--acc); vertical-align:1px;
+}
+.nb-callout{
+  --nb-edge:color-mix(in srgb, var(--acc) 38%, transparent);
+  position:relative; box-sizing:border-box; max-width:420px; margin-top:10px;
+  padding:11px 12px 10px; border-radius:12px;
+  background:var(--card); border:1px solid var(--nb-edge);
+  box-shadow:0 12px 30px rgba(0,0,0,.36);
+  color:var(--txt); font-size:12px; line-height:1.45; text-align:left; white-space:normal;
+  cursor:default; animation:nbCalloutIn .18s ease-out;
+}
+#selbar > .nb-callout{
+  position:absolute; top:calc(100% + 10px); left:0; z-index:1;
+  width:max-content; min-width:220px; max-width:290px; margin:0;
+}
+.nb-callout-arrow{
+  position:absolute; top:-6px; left:calc(var(--nb-arrow-x, 24px) - 5px);
+  width:10px; height:10px; transform:rotate(45deg); background:var(--card);
+  border-left:1px solid var(--nb-edge); border-top:1px solid var(--nb-edge);
+}
+.nb-callout-head{ display:flex; align-items:center; gap:8px; }
+.nb-callout-head b{ font-size:12.5px; font-weight:650; }
+.nb-callout p{ margin:6px 0 0; color:var(--mut); }
+.nb-callout-foot{ display:flex; justify-content:flex-end; margin-top:8px; }
+.nb-got-it{
+  height:26px; padding:0 10px; border-radius:7px; border:1px solid var(--line);
+  background:transparent; color:var(--txt); font:inherit; font-size:11.5px; cursor:pointer;
+}
+.nb-got-it:hover{ background:color-mix(in srgb, var(--acc) 14%, transparent); }
+.nb-got-it:focus-visible{ outline:2px solid var(--acc); outline-offset:2px; }
+/* Inside a row the callout takes a line of its own under the controls. */
+.s2-row.nb-anchor{ flex-wrap:wrap; row-gap:0; }
+.s2-row > .nb-callout{ flex:0 0 100%; }
+.tag-panel-labels > .nb-callout{ align-self:stretch; }
+@keyframes nbCalloutIn{ from{ opacity:0; transform:translateY(-3px); } }
+@media (prefers-reduced-motion:reduce){ .nb-callout{ animation:none; } }
+
 /* ---------- what's new (landing) ---------- */
 /* Home's card for an update names the headline and the first few changes, so
    the gist lands even if the window is never opened. */
@@ -3642,7 +3712,7 @@ try {
   <button class="tb" id="btnSearch" data-tip-title="Search" data-tip-sub="Ctrl+F">
     <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
   </button>
-  <button class="tb" id="btnTags" data-tip-title="Labels" data-tip-sub="Ctrl+Shift+T" aria-label="Labels" aria-expanded="false" aria-controls="tagPanel">
+  <button class="tb" id="btnTags" data-tip-title="Labels" data-tip-sub="Ctrl+Shift+T" aria-label="Labels" aria-expanded="false" aria-controls="tagPanel" data-badge-in="#tagPanel">
     <svg viewBox="0 0 24 24"><path d="M3.5 11.2V5.5a2 2 0 0 1 2-2h5.7a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-5.7 5.7a2 2 0 0 1-2.8 0L4.1 12.6a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.5"/></svg>
   </button>
   <span class="sep"></span>
@@ -3794,10 +3864,10 @@ try {
   <span class="tb sel-images-only" id="sDragOut" role="button" tabindex="0" draggable="true" data-tip="Drag out to another app" aria-label="Drag out to another app">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M15 3h6v6M21 3l-9 9"/></svg>
   </span>
-  <button class="tb sel-taggable-only" id="sTags" data-tip="Labels" aria-label="Edit labels for selected items" aria-expanded="false" aria-controls="tagPanel">
+  <button class="tb sel-taggable-only" id="sTags" data-tip="Labels" aria-label="Edit labels for selected items" aria-expanded="false" aria-controls="tagPanel" data-badge-in="#tagPanel">
     <svg viewBox="0 0 24 24"><path d="M3.5 11.2V5.5a2 2 0 0 1 2-2h5.7a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-5.7 5.7a2 2 0 0 1-2.8 0L4.1 12.6a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.5"/></svg>
   </button>
-  <button class="tb sel-one-image-only" id="sFill" data-tip="Remove object  (content-aware fill)" aria-label="Remove an object with content-aware fill">
+  <button class="tb sel-one-image-only" id="sFill" data-tip="Remove object  (content-aware fill)" aria-label="Remove an object with content-aware fill" data-badge="remove-object">
     <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="13" rx="7" ry="5" stroke-dasharray="2.6 2.4"/><path d="M6.5 17.6 5 21"/><path d="M18.5 2.5v4.5M16.25 4.75h4.5"/></svg>
   </button>
   <button class="tb sel-two-images-only" id="sCompare" data-tip="Compare" aria-label="Compare the two selected images">
@@ -3827,7 +3897,7 @@ try {
     </svg>
   </button>
   <span class="sep sel-multi-only"></span>
-  <button class="tb sel-multi-only" id="sAlignLeft" data-tip="Line up rows: left" aria-label="Line up rows: left">
+  <button class="tb sel-multi-only" id="sAlignLeft" data-tip="Line up rows: left" aria-label="Line up rows: left" data-badge="line-up-rows">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M3.5 3v18" opacity=".55"/>
       <rect x="6" y="5" width="6" height="5" rx="1"/>
@@ -3835,7 +3905,7 @@ try {
       <rect x="6" y="14" width="10" height="5" rx="1"/>
     </svg>
   </button>
-  <button class="tb sel-multi-only" id="sAlignCenter" data-tip="Line up rows: center" aria-label="Line up rows: center">
+  <button class="tb sel-multi-only" id="sAlignCenter" data-tip="Line up rows: center" aria-label="Line up rows: center" data-badge="line-up-rows">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M12 2.5v1.5M12 11v2M12 20v1.5" opacity=".55"/>
       <rect x="4.5" y="5" width="6.5" height="5" rx="1"/>
@@ -3843,7 +3913,7 @@ try {
       <rect x="7" y="14" width="10" height="5" rx="1"/>
     </svg>
   </button>
-  <button class="tb sel-multi-only" id="sAlignRight" data-tip="Line up rows: right" aria-label="Line up rows: right">
+  <button class="tb sel-multi-only" id="sAlignRight" data-tip="Line up rows: right" aria-label="Line up rows: right" data-badge="line-up-rows">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M20.5 3v18" opacity=".55"/>
       <rect x="6" y="5" width="4.5" height="5" rx="1"/>
@@ -3933,7 +4003,7 @@ try {
     </div>
   </details>
   <details class="tag-more" id="tagDisplay">
-    <summary class="tag-more-head"><span class="tag-more-chev" aria-hidden="true">▸</span><span>Display</span></summary>
+    <summary class="tag-more-head" data-badge-in="#tagDisplay"><span class="tag-more-chev" aria-hidden="true">▸</span><span>Display</span></summary>
     <div class="tag-panel-labels">
       <span>Show labels on canvas</span>
       <div class="tag-mode" role="group" aria-label="When to show labels on canvas">
@@ -3942,7 +4012,7 @@ try {
         <button type="button" id="tagLabelsNever" class="tag-mode-btn">Off</button>
       </div>
     </div>
-    <div class="tag-panel-labels">
+    <div class="tag-panel-labels" data-badge="label-align">
       <span>Align labels under items</span>
       <div class="tag-mode" role="group" aria-label="Where labels sit under each item">
         <button type="button" id="tagAlignLeft" class="tag-mode-btn">Left</button>
@@ -16969,6 +17039,175 @@ function setLandingLayout(value) {
   if (onLanding) void renderRecentWorks();
 }
 
+/* ---- "New" badges ----
+   After an update, a control a release added carries a badge until it is used
+   or Got it is clicked (scripts/new-badges.js has the rules, main.js the store).
+   A control opts in with a data-badge attribute holding the id its release
+   note names in `badge`; the callout's line is that note's description. A button, tab or menu
+   item that leads to one gets a dot: data-badge-in names the container it
+   opens, data-badge-trail the ids behind it. The selection bar, each Settings
+   pane and the Labels panel show one callout at a time, on their first badge. */
+const newBadges = new Map();
+const NEW_BADGE_SCOPES = '#selbar, .s2-pane, #tagPanel';
+
+for (const tab of document.querySelectorAll('.s2-tab[data-pane]')) {
+  tab.dataset.badgeIn = `.s2-pane[data-pane="${tab.dataset.pane}"]`;
+}
+
+function newBadgeTrailOn(el) {
+  const ids = (el.dataset.badgeTrail || '').split(/\s+/).filter(Boolean);
+  if (ids.some(id => newBadges.has(id))) return true;
+  const container = el.dataset.badgeIn ? document.querySelector(el.dataset.badgeIn) : null;
+  return !!container && [...container.querySelectorAll('[data-badge]')].some(b => newBadges.has(b.dataset.badge));
+}
+
+function decorateNewBadge(el) {
+  const badge = el.dataset.badge ? newBadges.get(el.dataset.badge) : null;
+  const trail = !badge && newBadges.size > 0 && newBadgeTrailOn(el);
+  el.classList.toggle('nb-new', !!badge);
+  el.classList.toggle('nb-trail', trail);
+  if (badge) el.setAttribute('aria-description', `New: ${badge.description || badge.title}`);
+  else el.removeAttribute('aria-description');
+  if (el.classList.contains('mi')) {
+    if (badge?.description) el.title = badge.description;
+    return;
+  }
+  const wantsDot = trail || (!!badge && el.classList.contains('tb'));
+  const dot = el.querySelector(':scope > .nb-dot');
+  if (wantsDot && !dot) el.insertAdjacentHTML('beforeend', '<span class="nb-dot" aria-hidden="true"></span>');
+  else if (!wantsDot && dot) dot.remove();
+}
+
+// Right-click menu items are built on every open, so their badges live here,
+// by label: badge for the control itself, badgeIn or badgeTrail for a dot.
+const MENU_ITEM_BADGES = {
+  'Remove object…': { badge: 'remove-object' },
+  'Arrange': { badgeTrail: 'line-up-rows' },
+  'Line up rows: left': { badge: 'line-up-rows' },
+  'Line up rows: center': { badge: 'line-up-rows' },
+  'Line up rows: right': { badge: 'line-up-rows' },
+  'Settings': { badgeIn: '#settingsModal' },
+};
+
+function markMenuItemBadge(el, entry) {
+  const marks = MENU_ITEM_BADGES[entry.l];
+  if (!marks) return;
+  if (marks.badge) el.dataset.badge = marks.badge;
+  if (marks.badgeIn) el.dataset.badgeIn = marks.badgeIn;
+  if (marks.badgeTrail) el.dataset.badgeTrail = marks.badgeTrail;
+  decorateNewBadge(el);
+}
+
+function newBadgeCallout(badge) {
+  const box = document.createElement('div');
+  box.className = 'nb-callout';
+  box.dataset.badgeId = badge.id;
+  box.setAttribute('role', 'group');
+  box.setAttribute('aria-label', `New: ${badge.title}`);
+  box.innerHTML = '<span class="nb-callout-arrow" aria-hidden="true"></span>'
+    + '<div class="nb-callout-head"><span class="nb-chip">New</span><b></b></div><p></p>'
+    + '<div class="nb-callout-foot"><button type="button" class="nb-got-it">Got it</button></div>';
+  box.querySelector('b').textContent = badge.title;
+  if (badge.description) box.querySelector('p').textContent = badge.description;
+  else box.querySelector('p').remove();
+  return box;
+}
+
+// Under the bar, the arrow points at the button and the box stays on screen.
+// Measured from where the arrow lands at left 0, so borders and sub-pixel
+// widths need no arithmetic of their own.
+function placeSelBarCallout(anchor, callout) {
+  callout.style.left = '0px';
+  callout.style.setProperty('--nb-arrow-x', '24px');
+  const box = callout.getBoundingClientRect();
+  const arrow = callout.querySelector('.nb-callout-arrow').getBoundingClientRect();
+  const button = anchor.getBoundingClientRect();
+  const want = button.left + button.width / 2 - (arrow.left + arrow.width / 2);
+  const left = Math.max(8 - box.left, Math.min(want, innerWidth - 8 - box.right));
+  callout.style.left = `${left}px`;
+  callout.style.setProperty('--nb-arrow-x', `${24 + want - left}px`);
+}
+
+function syncNewBadgeCallouts() {
+  if (!newBadges.size && !document.querySelector('.nb-callout, .nb-anchor')) return;
+  for (const scope of document.querySelectorAll(NEW_BADGE_SCOPES)) {
+    const inBar = scope.id === 'selbar';
+    let anchor = null;
+    if (newBadges.size && (!inBar || scope.classList.contains('show'))) {
+      for (const el of scope.querySelectorAll('[data-badge]')) {
+        if (!newBadges.has(el.dataset.badge) || el.hidden) continue;
+        if (inBar && getComputedStyle(el).display === 'none') continue;
+        anchor = el;
+        break;
+      }
+    }
+    const host = inBar ? scope : anchor;
+    const shown = scope.querySelector('.nb-callout');
+    if (shown && (shown.parentElement !== host || shown.dataset.badgeId !== anchor?.dataset.badge)) shown.remove();
+    scope.querySelectorAll('.nb-anchor').forEach(el => { if (el !== anchor) el.classList.remove('nb-anchor'); });
+    if (!anchor) continue;
+    anchor.classList.add('nb-anchor');
+    let callout = host.querySelector(':scope > .nb-callout');
+    if (!callout) {
+      callout = newBadgeCallout(newBadges.get(anchor.dataset.badge));
+      host.appendChild(callout);
+    }
+    if (inBar) placeSelBarCallout(anchor, callout);
+  }
+}
+
+function applyNewBadges() {
+  document.querySelectorAll('[data-badge], [data-badge-in], [data-badge-trail]').forEach(decorateNewBadge);
+  syncNewBadgeCallouts();
+}
+
+// A callout that opens below the fold of a scrolling panel scrolls into view,
+// so its line and Got it are seen along with the chip.
+function revealNewBadgeCallout(scroller) {
+  if (!scroller || !newBadges.size) return;
+  const callout = [...scroller.querySelectorAll('.nb-callout')].find(c => c.checkVisibility());
+  if (!callout) return;
+  const box = scroller.getBoundingClientRect();
+  const r = callout.getBoundingClientRect();
+  if (r.bottom > box.bottom - 8) scroller.scrollTop += Math.min(r.bottom - box.bottom + 16, r.top - box.top - 8);
+}
+
+async function loadNewBadges() {
+  const api = window.RefBoardAPI;
+  const list = api?.getNewBadges ? await api.getNewBadges().catch(() => null) : null;
+  newBadges.clear();
+  for (const badge of Array.isArray(list) ? list : []) {
+    if (badge?.id && badge.title) newBadges.set(badge.id, badge);
+  }
+  applyNewBadges();
+}
+
+function seeNewBadge(id) {
+  if (!id || !newBadges.delete(id)) return;
+  applyNewBadges();
+  window.RefBoardAPI?.markNewBadgeSeen?.(id)?.catch?.(() => {});
+}
+
+// Main calls this in every window and pane once a badge is seen anywhere.
+window.__newBadgeSeen = id => {
+  if (newBadges.delete(id)) applyNewBadges();
+};
+
+// Got it, or using the control itself, retires a badge. Capture runs first, so
+// a menu item that closes its menu still counts.
+document.addEventListener('click', e => {
+  if (!newBadges.size || !(e.target instanceof Element)) return;
+  const gotIt = e.target.closest('.nb-got-it');
+  if (gotIt) {
+    e.stopPropagation();
+    seeNewBadge(gotIt.closest('.nb-callout')?.dataset.badgeId);
+    return;
+  }
+  if (e.target.closest('.nb-callout')) return;
+  const control = e.target.closest('[data-badge]');
+  if (control && newBadges.has(control.dataset.badge)) seeNewBadge(control.dataset.badge);
+}, true);
+
 let whatsNewPayload = null;
 let whatsNewPayloadBeforeManualOpen = null;
 let whatsNewOpenedManually = false;
@@ -20568,6 +20807,7 @@ function openCtxSubMenu(anchorEl, x, y, { title, items }) {
     d.className = 'mi';
     d.innerHTML = `<span>${m.l}</span><span class="k">${m.k || ''}</span>`;
     d.addEventListener('click', () => { closeMenu(); m.f(); });
+    markMenuItemBadge(d, m);
     subEl.appendChild(d);
   }
   subEl.classList.add('show');
@@ -20753,6 +20993,7 @@ function showMenu(x, y, hitItem) {
       d.innerHTML = `<span>${en.l}</span><span class="k">${en.k || ''}</span>`;
       d.addEventListener('click', () => { closeMenu(); en.f(); });
     }
+    markMenuItemBadge(d, en);
     menuEl.appendChild(d);
   }
   menuEl.classList.add('show');
@@ -21322,6 +21563,7 @@ function showSettingsPane(id) {
   const content = document.querySelector('.settings2-content');
   if (content) content.scrollTop = 0;
   applySettingsSearch();
+  revealNewBadgeCallout(content);
 }
 
 /* Search covers every pane. A single character or a key name is a key, so
@@ -21581,6 +21823,7 @@ function openSettings() {
   clearSettingsSearch();
   applySettingsSearch();
   settingsModal.classList.add('show');
+  revealNewBadgeCallout(document.querySelector('.settings2-content'));
 }
 
 function closeSettings() {
@@ -22384,6 +22627,8 @@ function updateSelBar() {
       lockBtn.dataset.tip = grp.locked ? 'Unlock group' : 'Lock group';
     }
   }
+  // Last, once the count and buttons have settled the bar's width.
+  syncNewBadgeCallouts();
 }
 
 function selectedAnnotations() {
@@ -23080,6 +23325,7 @@ async function init() {
   } else {
     await refreshWhatsNew();
   }
+  void loadNewBadges();
   try {
     if (new URLSearchParams(location.search).get('recovered') === '1') {
       toast('Recovered after a crash. The last fill was not applied');
@@ -24207,7 +24453,12 @@ function setTagPanelOpen(open) {
   $('#btnTags')?.setAttribute('aria-expanded', String(open));
   $('#sTags')?.setAttribute('aria-expanded', String(open));
   if (open) renderTagPanel();
+  if (open) revealNewBadgeCallout(tagPanelEl);
 }
+
+$('#tagDisplay')?.addEventListener('toggle', e => {
+  if (e.target.open) revealNewBadgeCallout(tagPanelEl);
+});
 
 function toggleTagPanel() {
   if (onLanding) return;
@@ -24514,6 +24765,8 @@ window.RefBoard = {
   /* Drag-out hooks: a harness cannot run a native OS drag, so it drives the
      staging half directly and reads the files that land on disk. */
   updateSelBarForTest: updateSelBar,
+  // Re-reads every badge mark, so a smoke can put one on a Settings row.
+  applyNewBadgesForTest: applyNewBadges,
   /* Tag hooks: the filter's effect is a pass set and a dim alpha, neither of
      which a harness can read off the canvas. */
   searchHitsForTest: query => collectSearchHits(query),

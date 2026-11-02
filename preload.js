@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('RefBoardAPI', {
   checkWhatsNew: () => ipcRenderer.invoke('whats-new-check'),
   getCurrentWhatsNew: () => ipcRenderer.invoke('whats-new-current'),
   dismissWhatsNew: () => ipcRenderer.invoke('whats-new-dismiss'),
+  getNewBadges: () => ipcRenderer.invoke('new-badges-get'),
+  markNewBadgeSeen: (id) => ipcRenderer.invoke('new-badges-seen', { id }),
   getAppIconDataUrl: () => ipcRenderer.invoke('get-app-icon-data-url'),
   openBoardInNewWindow: (filePath = null) => ipcRenderer.invoke('open-board-window', { filePath }),
   getBoardWindowCount: () => ipcRenderer.invoke('get-board-window-count'),
