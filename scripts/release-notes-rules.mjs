@@ -7,6 +7,8 @@
  * which only the GitHub release shows. Older releases keep the notes they
  * shipped with.
  */
+import newBadges from './new-badges.js';
+
 export const SECTION_KEYS = ['new', 'improved', 'fixed'];
 
 export const SHORT_NOTES_SINCE = '2.2.0';
@@ -23,8 +25,9 @@ export const LIMITS = {
 
 // `where` says where to find the change and `note` carries a caveat (a
 // download, a version requirement); the app shows both. `details` is the
-// longer story and only goes to the GitHub release.
-export const OPTIONAL_ITEM_FIELDS = ['where', 'note', 'details'];
+// longer story and only goes to the GitHub release. `badge` names the control
+// that gets a "New" badge (its data-badge in index.html); see new-badges.js.
+export const OPTIONAL_ITEM_FIELDS = ['where', 'note', 'details', 'badge'];
 
 const ITEM_FIELDS = ['title', 'description', ...OPTIONAL_ITEM_FIELDS];
 
@@ -44,7 +47,8 @@ export function isShortNotesRelease(version) {
 
 /**
  * What is wrong with a release beyond its required fields: an unknown or empty
- * optional field always, and with `short` set, any text over its limit.
+ * optional field or a malformed or repeated badge always, and with `short`
+ * set, any text over its limit.
  */
 export function releaseNoteProblems(release, { short = false } = {}) {
   const problems = [];
@@ -53,6 +57,7 @@ export function releaseNoteProblems(release, { short = false } = {}) {
     const length = value.trim().length;
     if (length > limit) problems.push(`${label} is ${length} characters; keep it to ${limit}`);
   };
+  const badges = new Map();
   checkLength('headline', release?.headline, LIMITS.headline);
   checkLength('summary', release?.summary, LIMITS.summary);
   for (const key of SECTION_KEYS) {
@@ -69,6 +74,15 @@ export function releaseNoteProblems(release, { short = false } = {}) {
         }
       }
       for (const field of ['title', 'description', 'where', 'note']) checkLength(`${at}.${field}`, item[field], LIMITS[field]);
+      if (typeof item.badge === 'string' && item.badge.trim()) {
+        if (!newBadges.BADGE_ID.test(item.badge)) {
+          problems.push(`${at}.badge "${item.badge}" must be a lowercase id with dashes, like remove-object`);
+        } else if (badges.has(item.badge)) {
+          problems.push(`${at}.badge "${item.badge}" is already used by ${badges.get(item.badge)}; one control, one note`);
+        } else {
+          badges.set(item.badge, at);
+        }
+      }
     });
   }
   return problems;
