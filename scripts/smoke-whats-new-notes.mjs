@@ -203,6 +203,9 @@ try {
   if (fit.inner >= 760) assert.ok(fit.scroll <= fit.box + 1, `with the rest folded the window fits (${fit.scroll} content in ${fit.box})`);
 
   step = 'open the folded row';
+  // On a short screen the row sits below the fold; scroll to it as a person would.
+  await page.run(`(()=>{const s=document.getElementById('whatsNewScroll'),t=document.querySelector('.wn-more-toggle');
+    const sr=s.getBoundingClientRect(),tr=t.getBoundingClientRect();if(tr.bottom>sr.bottom)s.scrollTop+=tr.bottom-sr.bottom+8;return true;})()`);
   await click(page, '.wn-more-toggle');
   assert.equal(await page.run(`document.querySelector('.wn-more-toggle').getAttribute('aria-expanded')`), 'true');
   assert.equal(await page.run(`[...document.querySelectorAll('#whatsNewMoreList .wn-row')].every(r=>r.getClientRects().length>0)`), true, 'its changes show in place');

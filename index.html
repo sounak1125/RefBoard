@@ -3716,7 +3716,7 @@ try {
     <svg viewBox="0 0 24 24"><path d="M3.5 11.2V5.5a2 2 0 0 1 2-2h5.7a2 2 0 0 1 1.4.6l7.3 7.3a2 2 0 0 1 0 2.8l-5.7 5.7a2 2 0 0 1-2.8 0L4.1 12.6a2 2 0 0 1-.6-1.4z"/><circle cx="8" cy="8" r="1.5"/></svg>
   </button>
   <span class="sep"></span>
-  <button class="tb" id="btnExport" data-tip-title="Export" data-tip-sub="Ctrl+E">
+  <button class="tb" id="btnExport" data-tip-title="Export" data-tip-sub="Ctrl+E" data-badge="export-dialog">
     <svg viewBox="0 0 24 24"><path d="M12 3v11M8 10l4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
   </button>
   <span class="sep"></span>
@@ -3858,7 +3858,7 @@ try {
   <button class="tb" id="sDup" data-tip="Duplicate  (Ctrl+D)">
     <svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 4H6a2 2 0 0 0-2 2v10M14 11v6M11 14h6"/></svg>
   </button>
-  <button class="tb" id="sOrig" data-tip="Export images…  (Ctrl+E)">
+  <button class="tb" id="sOrig" data-tip="Export images…  (Ctrl+E)" data-badge="export-dialog">
     <svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6M12 11v6M9 14.5l3 3 3-3"/></svg>
   </button>
   <span class="tb sel-images-only" id="sDragOut" role="button" tabindex="0" draggable="true" data-tip="Drag out to another app" aria-label="Drag out to another app">
@@ -3870,7 +3870,7 @@ try {
   <button class="tb sel-one-image-only" id="sFill" data-tip="Remove object  (content-aware fill)" aria-label="Remove an object with content-aware fill" data-badge="remove-object">
     <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="13" rx="7" ry="5" stroke-dasharray="2.6 2.4"/><path d="M6.5 17.6 5 21"/><path d="M18.5 2.5v4.5M16.25 4.75h4.5"/></svg>
   </button>
-  <button class="tb sel-two-images-only" id="sCompare" data-tip="Compare" aria-label="Compare the two selected images">
+  <button class="tb sel-two-images-only" id="sCompare" data-tip="Compare" aria-label="Compare the two selected images" data-badge="compare">
     <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 2.5v19"/><path d="m8.5 10-2 2 2 2M15.5 10l2 2-2 2"/></svg>
   </button>
   <span class="sep sel-multi-only"></span>
@@ -17086,6 +17086,7 @@ const MENU_ITEM_BADGES = {
   'Line up rows: left': { badge: 'line-up-rows' },
   'Line up rows: center': { badge: 'line-up-rows' },
   'Line up rows: right': { badge: 'line-up-rows' },
+  'Export board…': { badge: 'export-dialog' },
   'Settings': { badgeIn: '#settingsModal' },
 };
 

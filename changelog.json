@@ -988,5 +988,74 @@
         }
       ]
     }
+  },
+  "2.3.0": {
+    "headline": "Snip, Compare and a new Export",
+    "summary": "Grab part of the screen from any app, compare two images, and export a board as a web page or a PDF.",
+    "sections": {
+      "new": [
+        {
+          "title": "Snip to board",
+          "description": "Press Ctrl+Alt+S in any app and drag a box. The snip lands on your board.",
+          "where": "Ctrl+Alt+S, from any app",
+          "note": "You can change the shortcut or turn it off in Settings › Shortcuts.",
+          "details": "Click instead of dragging to grab a whole display, and press Esc to cancel. Snips taken one after another line up in a row, each named after the window it came from."
+        },
+        {
+          "title": "Compare",
+          "description": "Lay two images over each other with a wipe, onion skin or difference view.",
+          "where": "Selection bar, with two images selected",
+          "details": "Drag B or use the arrow keys to line it up. W, O and D switch views, X swaps the images, and Esc closes.",
+          "badge": "compare"
+        },
+        {
+          "title": "Export to a web page or PDF",
+          "description": "One Export dialog on Ctrl+E. A board can now go out as a viewer page or a PDF.",
+          "where": "Ctrl+E, or Export in the toolbar",
+          "details": "The viewer is one .html file that opens in any browser, on a computer or a phone, with pan, zoom and a label filter. Cropped images are exported as cropped.",
+          "badge": "export-dialog"
+        },
+        {
+          "title": "What's New, shorter",
+          "description": "Updates show a short card on Home, and new buttons wear a New badge until you try them."
+        }
+      ],
+      "improved": [
+        {
+          "title": "Settings",
+          "description": "Search every setting and shortcut, or press a key to see what it does."
+        },
+        {
+          "title": "Smoother zoom",
+          "description": "Zooming into large images no longer stutters."
+        },
+        {
+          "title": "Tidier selection bar",
+          "description": "Its tools sit in groups: Arrange, Line up rows and Match size."
+        },
+        {
+          "title": "Drawing",
+          "description": "Picking Pen or Eraser turns drawing on, so the separate Draw button is gone."
+        },
+        {
+          "title": "Leaner left toolbar",
+          "description": "Paste, Save, Open and Fit view left the toolbar. Their shortcuts still work."
+        },
+        {
+          "title": "Lighter shadows",
+          "description": "Menus and text notes cast softer shadows."
+        }
+      ],
+      "fixed": [
+        {
+          "title": "Locked groups stay put",
+          "description": "Arrange in a row or a column no longer moves a locked group."
+        },
+        {
+          "title": "Smooth pen strokes",
+          "description": "Strokes no longer look beaded, or draw a stray line when the pen comes back in."
+        }
+      ]
+    }
   }
 }
