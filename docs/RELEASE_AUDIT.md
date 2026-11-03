@@ -1,129 +1,133 @@
-# Release audit — RefBoard 2.1.5
+# Release audit — RefBoard 2.1.6
 
-Date: 2026-10-09. Scope: the changes since 2.1.4 (annotations rework and the
-Export images / Settings menu fix), the smoke scripts that cover them, a
-dependency audit, and Windows release packaging. This records tested behavior,
-not a guarantee that every bug has been found. Unlike 2.1.4, this audit was
-written after the release was published (2026-10-09 17:35 UTC); everything under
-"Automated verification" and "Release artifacts" was run before publishing,
-except the two smokes and the dependency audit noted as run afterwards.
+Date: 2026-10-27. Scope: the one change since 2.1.5 (the drag-pan jump fix), the
+tests and smokes that cover it, a dependency audit, and Windows release
+packaging. This records tested behavior, not a guarantee that every bug has been
+found. As with 2.1.5, this audit was written after the release was published
+(2026-10-27 07:16 UTC); everything under "Automated verification" and "Release
+artifacts" was run before publishing, except the dependency audit,
+`release:verify` and the feed checks, which ran afterwards and are noted as such.
 
 ## Changes included
 
-- **Brush and highlighter** (Draw → Annotate). Strokes are a new board item kind,
-  `ink`, drawn above images and notes; image pixels are never touched. The nib
-  tapers at both ends and thins with speed, or follows real pen pressure.
-  Strokes written within 1.4 s and 140 screen px of each other join one item.
-  The highlighter keeps its own colour (default yellow) and blends multiply plus
-  a faint screen pass.
-- **Links between images.** With the arrow tool, a drag from one image or note
-  onto a different one makes a link with `fromId`/`toId`, drawn as a Blender-style
-  cubic curve square to each edge. `syncLinks` re-routes every link from its items
-  before each frame, so moves, resizes, rotation, undo and reopen keep it attached.
-  Ends unplug and re-plug by dragging; deleting an item deletes its links. A drag
-  within one item, or onto empty board, stays a plain arrow.
-- **Arrow restyle.** Tapered shaft, swept head, contrast outline; the selection
-  bar sets colour, width, solid/dotted, heads and outline as one undo step.
-  Annotation tools keep their own screen-relative widths (arrow and brush 3 px,
-  highlighter 16 px) instead of sharing the pen width.
-- **Double-click guard.** A double-click with an annotation tool armed, or on an
-  annotation, no longer refits the view.
-- **Menu fix.** `.ui-select-menu` sits above modals again (z-index 190 → 280); the
-  split-view polish (`c28d4da`, first shipped in 2.1.3) had raised `.modal` to
-  260 and hidden it.
+- **Drag-pan no longer jumps when the zoom changes mid-drag** (PR #71). The pan
+  rebuilt the view from a pointerdown snapshot on every move (`tx = tx0 + dx`).
+  A wheel zoom during the drag shifts `tx` to keep the cursor anchored; the next
+  move restored `tx0` under the new scale, throwing the board by
+  *(board x under cursor) × (scale change)*: about 444 px for one wheel notch at
+  100% with the cursor over board x = 3000, about 8,900 px at 2000%. Each move now
+  adds its own delta to the live view. This covers the hand tool, middle button,
+  Space/Alt + drag and right-button pans; right-drag context-menu suppression
+  still measures distance from the press. Middle-button panning hit this most,
+  because most mice send a wheel tick while the wheel button is held.
 
-Geometry lives in `scripts/annotation-geometry.mjs`, added to `build.files`.
+No file format, IPC, network or dependency change. `index.html` is the only app
+source file touched.
 
 ## Compatibility
 
-- Boards containing brush strokes lose those strokes when opened in RefBoard
-  2.1.4 or earlier: older `normalizeItem` treats the unknown `ink` kind as an
-  image with no source and drops it. The release notes say so.
-- Links open in older versions as straight arrows at their last position. Older
-  versions also clamp arrow width to 1–12 board units, so an arrow drawn while
-  zoomed far out comes out thinner there.
-- Existing arrows render in the new style, with the outline on.
+- Boards are unchanged in format and open in 2.1.5 and earlier exactly as before.
 
 ## Automated verification
 
-- `npm test`: all 69 commands passed as part of `npm run dist` on the release
-  commit, including the new `test-annotation-geometry.mjs` (stroke outlines and
-  taper, link sides, sockets, curves and socket spreading, pressure, halo colour,
-  build wiring) and the updated snap-engine sandbox.
-- Electron smokes on the final annotation source: annotations, image edit
-  isolation, board history, spatial index, board search, minimap, snap drag, and
-  group nudge/resize. Draw/zoom continuity and corner rotate were re-run after
-  publishing on `main` at the release commit; both passed.
-- `smoke-annotations.mjs` (new, `test:annotations-smoke`, added to CI) drives real
-  CDP mouse input: handwriting merge, highlighter colour and width, link create /
-  follow / unplug / re-plug / delete + undo, a plain arrow inside one image,
-  selection-bar restyle + undo, stroke hit tests, a brush double-tap, and
-  save/reopen. The double-tap assertion was confirmed to fail with the guard removed.
-- `smoke-image-edit-isolation.js` changed one assertion: an arrow now carries its
-  own 3 px screen width rather than the pen's 2. Its intent, that an arrow never
-  inherits the eraser width, is unchanged.
-- Draw time on the 2,000-item spatial smoke stayed at 0.29 ms with links
-  re-routed every frame.
-- Not run for this release: the other named smoke scripts that 2.1.4 ran in full
-  (landing layouts, board I/O, legacy conversion, saves, pinning, crop/export,
-  clipboard, sharpness, worker loading, zoom flicker, and others). None of their
-  code paths changed, apart from the shared item model and selection bar.
+- `npm test`: all 70 commands passed as part of `npm run dist` on the release
+  commit, including the new `test-pan-zoom-contract.mjs` (all three pan entry
+  points remember the last pointer position instead of snapshotting the view;
+  pointermove adds its own delta). It fails on the 2.1.5 code.
+- `smoke-pan-zoom.mjs` (new, `test:pan-zoom-smoke`, added to CI) runs the real app
+  at 2000% with board point (3000, 2000) under the cursor, holds the middle button,
+  drags, zooms out one wheel notch and then in two, mid-gesture. After every move
+  the grabbed board point sat 0.000 px from the cursor. On the 2.1.5 code it fails
+  after the first zoom, 12,597 px off. Input is synthetic `PointerEvent` /
+  `WheelEvent` dispatched in the page, not CDP mouse input.
+- Electron smokes on the fix branch (dev source), run one at a time: view
+  persist, minimap, keyboard guards, snap drag, steady-view flicker and
+  annotations. All passed.
+- CI on PR #71 and PR #72: the `test` job and the `smoke` job (the full `ci.yml`
+  smoke list, including the new smoke) passed on both.
+- By hand: the fix was tried in `npm start` with a real mouse before merging and
+  reported working. Not repeated on the packaged build.
 
 ## Security and dependency review
 
-- Fresh `npm audit` reports 10 findings at the root (2 high) and 9 in the
-  bootstrapper (1 high), all in dev dependencies: the `electron-builder` chain
-  (`app-builder-lib`, `@electron/get`, `global-agent`, `roarr`, `sprintf-js`,
-  `http-cache-semantics`) and `sharp` (librsvg, used only for icon generation).
-  `npm audit --omit=dev` reports zero for both. The packaged `app.asar` was
-  listed: it contains only `electron-updater`, `koffi` and their dependencies, and
-  none of the flagged packages. The `electron-builder` fix is a major upgrade to
-  26.5.0 and was not taken in this release.
-- New input paths reviewed: board files and the item clipboard both pass through
-  `normalizeItem`, which coerces ink stroke values and link handles to finite
-  numbers and link ids to strings or null. Colours from a file reach only canvas
-  `fillStyle`/`strokeStyle` and a hex parser. The brush cursor's SVG data URL
-  takes its colour from the picker and the fixed swatch list, never from a file.
-  No confirmed exploitable issue was found.
-- Not bounded: the number of strokes or points in an ink item. A crafted board
-  with very large stroke arrays costs memory and paint time, like any other
-  oversized board payload.
+- Fresh `npm audit`, run after publishing: 5 findings at the root (4 high, 1
+  moderate) and 4 in the bootstrapper (3 high, 1 moderate). Apart from Electron
+  (below), all are in the build chain: `http-cache-semantics` (`electron-builder`
+  → `@electron/get` → `got`), `undici` (`node-gyp` under `@electron/rebuild`, and
+  `@electron/get` under `electron`, used to download the runtime), `fast-uri`, and
+  `sharp` (icon generation only). Dependencies are unchanged from 2.1.5 apart
+  from the version field.
+- `npm audit --omit=dev` reports zero for both, but that excludes Electron, which
+  is a dev dependency in `package.json` and is also the runtime packaged into the
+  app. **2.1.6 ships Electron 44.4.5**, which carries two advisories published
+  after 2.1.5 shipped:
+  - GHSA-jr5w-w6x2-84p9 (high, published 2026-10-23, fixed in 44.9.1): mitigation
+    for compromised eMudhra intermediate certificates. It affects TLS trust for the
+    app's own connections: the auto-update check against GitHub, and the fetch
+    when a web image is dropped onto the board. The setup is not code-signed
+    (`signExecutable: false`), and `electron-updater` checks the downloaded setup
+    only against the sha512 in `latest.yml`, which arrives over that same TLS. In
+    principle, a network attacker holding a certificate from those intermediates
+    could serve a different update. No exploitation is known. This was found after
+    publishing; the next release should move Electron to 44.9.1 or later, which
+    is inside the declared `^44.4.5` range.
+  - GHSA-x562-297c-g43g (medium, published 2026-10-22, fixed in 44.5.0): pointer
+    lock permission requests attributed to the wrong frame. RefBoard never calls
+    `requestPointerLock`.
+- New input paths: none. The change is pointer arithmetic in the pan handler.
 
 ## Release artifacts
 
-App, bootstrapper and both lockfiles are version 2.1.5 (PR #69). Release notes
+App, bootstrapper and both lockfiles are version 2.1.6 (PR #72). Release notes
 are in `release-highlights.json` and synced into `changelog.json`;
 `test-changelog-format` passed. The setup was copied into the bootstrapper
-payload, and its hash matched the built setup before the bootstrapper build.
+payload; its SHA-256 matched the built setup before the bootstrapper build, and
+the copy packed into `dist/bootstrapper/win-unpacked/resources` matched after it.
+`release:ship` checked the payload again before uploading.
 
-`npm run release:verify` on commit `cb85180` reported `sourceDirty: false`,
-`packagedSourcesMatch`, `bootstrapperPayloadMatches` and `updateFeedMatches` all
-true, and wrote `dist/release-2.1.5-manifest.json` and `dist/SHA256SUMS-2.1.5.txt`:
+`npm run release:verify` on commit `c9318aa`, run after publishing, reported
+`sourceDirty: false`, `packagedSourcesMatch`, `bootstrapperPayloadMatches` and
+`updateFeedMatches` all true, and wrote `dist/release-2.1.6-manifest.json` and
+`dist/SHA256SUMS-2.1.6.txt`:
 
 ```
-3704475c1a54f795f6b1b113b0f7212010de4a7b59df0f039f61d02e099f3c76  RefBoard-Setup-2.1.5.exe
-0967056d50e2065f1fd30fbfcf6cb0d168639fe6a7e2d70627429f98eb61ae69  RefBoard-Setup-2.1.5.exe.blockmap
-c7bd8c127d6f164cda39cb3ce0f35d20397365d5c723c44b37fa2b391822391f  latest.yml
-515e23b4a10b52eb65699f56caf3cbecd74efe703b88dcaaaad77d7a12d1b9c3  bootstrapper/RefBoard-Installer-2.1.5.exe
+0b782ff734664b36b5fcfea657c72e19a716f53beec52406334bf2be3f09036b  RefBoard-Setup-2.1.6.exe
+090fd5e2b6367b00aa2a64b11b65b661b3f0467e4861a59c01433225d5053232  RefBoard-Setup-2.1.6.exe.blockmap
+d5df7fdc670675d7fd8e54bb64955caf2355b636620bd1b77d2954963e94ddee  latest.yml
+a31e6dbeb32b2eb872719ad3f0702249d2da7d5e0b903038c48dda5c618dd348  bootstrapper/RefBoard-Installer-2.1.6.exe
 ```
 
-The packaged `dist/win-unpacked/RefBoard.exe` passed the annotations, tags and
-split-view smokes. The draft carried four assets whose sizes matched the local
-builds. After publishing, `releases/latest/download/latest.yml` served
-`version: 2.1.5`, and tag `v2.1.5` points at `cb85180`.
+The packaged `dist/win-unpacked/RefBoard.exe` opened to the Home screen with a
+fresh profile. Its `app.asar` contains the new pan code and not the old line.
+It passed the annotations, tags and split-view smokes. `smoke-pan-zoom.mjs` was
+not run against it: unlike those three, it does not accept
+`REFBOARD_SMOKE_EXECUTABLE`. The draft carried four assets whose sizes and
+SHA-256 digests on GitHub matched the local files. After publishing,
+`releases/latest/download/latest.yml` served `version: 2.1.6`, byte-identical to
+`dist/latest.yml`; the setup's download link answered 200 with a
+`Content-Length` of 104,691,766; GitHub
+lists v2.1.6 as the latest release; and tag `v2.1.6` points at `c9318aa`.
+
+## Known issues not addressed
+
+- Zooming while dragging an *item* makes it drift away from the cursor. The move
+  branch measures the drag from the pointerdown screen position, which a zoom
+  invalidates. Milder than the pan jump; separate code path.
+- Grabbing the board during a fit or search view animation (up to 320 ms) loses
+  the pan input until the animation ends. It no longer jumps.
 
 ## Remaining manual checks
 
-- Install the setup over an existing 2.1.4 installation and let auto-update take
-  an installed 2.1.4 to 2.1.5. Neither was performed; auto-update is now live.
+- Install the setup over an existing 2.1.5 installation, and let auto-update take
+  an installed 2.1.5 to 2.1.6. Neither was performed; auto-update is now live.
 - Launch the bootstrapper installer UI. It was not launched for this release.
-- Pen-tablet pressure and the highlighter on real reference images. Automated
-  input is mouse only; the highlighter blend was chosen from rendered
-  comparisons on gradient test images.
-- Native drag-and-drop into another application, as in 2.1.4.
+- The pan fix on the packaged build with a real mouse, and a trackpad pinch
+  (Ctrl + wheel) or pen during a drag. The by-hand check used the dev build and a
+  mouse only.
+- Native drag-and-drop into another application, as in 2.1.5.
 
 ## Local evidence
 
-- `dist/release-2.1.5-manifest.json` and `dist/SHA256SUMS-2.1.5.txt`.
-- The unit-suite and build log from `npm run dist` was kept in this session's
-  temporary scratch directory and is not retained.
+- `dist/release-2.1.6-manifest.json` and `dist/SHA256SUMS-2.1.6.txt`.
+- The unit-suite, build and bootstrapper logs were kept in this session's
+  temporary scratch directory and are not retained.
