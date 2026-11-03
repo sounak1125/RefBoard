@@ -9322,6 +9322,44 @@ async function applyFill() {
   }
 }
 
+/* What the board draws for the fill tool's working canvas. The work canvas is
+   full resolution, and drawing it into a small item every frame is the GPU cost
+   surfaceOversizedForTarget() describes, so far from full size the board draws
+   a copy made for the item's display target instead. The copy is one drawImage
+   per fill or per target change, never per frame; createImageBitmap with a
+   resize would do the same work synchronously on this thread. Returns null when
+   the item is shown near full size and the work canvas itself should be drawn. */
+function fillPreviewFor(s, it) {
+  const source = Math.max(1, s.w, s.h);
+  const extent = imageTierPixelExtent(imageTargetForItem(it), source);
+  if (!surfaceOversizedForTarget(source, extent)) return null;
+  const cached = s.preview;
+  if (cached && cached.version === s.version && cached.extent === extent) return cached;
+  const scale = extent / source;
+  const w = Math.max(1, Math.round(s.w * scale));
+  const h = Math.max(1, Math.round(s.h * scale));
+  const canvas = cached?.canvas || document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext('2d');
+  g.imageSmoothingEnabled = true;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(s.work, 0, 0, w, h);
+  s.preview = { canvas, w, h, version: s.version, extent };
+  return s.preview;
+}
+
+function releaseFillCanvases(s) {
+  for (const canvas of [s.work, s.preview?.canvas]) {
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  }
+  s.work = null;
+  s.preview = null;
+}
+
 function endFill() {
   const s = fillSession;
   if (!s) return;
@@ -9329,7 +9367,7 @@ function endFill() {
   if (mode?.type === 'fillLasso') mode = null;
   for (const step of s.history) step.before.close();
   s.history = [];
-  s.work = null;
+  releaseFillCanvases(s);
   syncFillBar();
   scheduleInpaintRelease();
   updateCursor(mouse.x, mouse.y);
@@ -18498,6 +18536,35 @@ function clampNoteBoxToHug(it) {
   if (it.h < hug.h) it.h = hug.h;
 }
 
+/* A resident surface is free to keep but not to draw: the GPU resamples every
+   source pixel each frame, and a 24 MP photo squeezed into a fit-zoom tile costs
+   about 20 ms of GPU time on its own. Within this ratio of the item's target the
+   extra sharpness is worth the price; beyond it the right-sized tier is drawn. */
+const IMAGE_OVERSIZED_DRAW_RATIO = 2;
+
+function surfaceOversizedForTarget(surfaceExtent, targetExtent) {
+  return surfaceExtent > Math.max(1, targetExtent) * IMAGE_OVERSIZED_DRAW_RATIO;
+}
+
+/* A full bitmap left resident by an edit (draw, fill, undo) or by the fill tool
+   reading it would otherwise be drawn at every zoom, because nothing replaces
+   it when the target is the proxy, and being drawn keeps it protected from
+   eviction: one edited photo slowed the whole board until it was reopened. It
+   gives way only when the stable proxy already covers the target, so an image
+   whose target is a sharper tier still draws its bitmap rather than popping to
+   the proxy while that tier decodes. During a pixel hand-off the proxy may
+   still hold the old pixels, so the bitmap stays. */
+function fullBitmapOversizedForItem(im, it) {
+  if (!im?.proxy || imagePixelUpdateInProgress(im)) return false;
+  const source = Math.max(1, im.w || 1, im.h || 1);
+  const target = imageTierPixelExtent(imageTargetForItem(it), source);
+  const proxyExtent = Math.max(im.proxyW || im.proxy.width || 1, im.proxyH || im.proxy.height || 1);
+  return proxyExtent >= target && surfaceOversizedForTarget(source, target);
+}
+
+/* Test hook (smokes only): item id -> the surface its last draw used. */
+let imageSurfaceTraceForTest = null;
+
 function protectImageSurface(surface, it) {
   if (!surface) return;
   if (surface.kind === 'lod') {
@@ -18600,10 +18667,20 @@ function drawBoardItem(g, it, opts = {}) {
       im,
     };
   } else if (fillSession?.itemId === it.id && fillSession.work && !opts.pickSurface) {
-    // The content-aware fill preview, until Apply or Cancel.
-    surface = {
+    // The content-aware fill preview, until Apply or Cancel. Exports (noLod)
+    // still read the full working canvas.
+    const preview = opts.noLod ? null : fillPreviewFor(fillSession, it);
+    surface = preview ? {
+      key: `fill-preview:${it.id}:${fillSession.version}:${preview.extent}`,
+      kind: 'fill-preview',
+      bitmap: preview.canvas,
+      sourceScaleX: preview.w / im.w,
+      sourceScaleY: preview.h / im.h,
+      extent: Math.max(preview.w, preview.h),
+      im,
+    } : {
       key: `fill:${it.id}:${fillSession.version}`,
-      kind: 'draw',
+      kind: 'fill',
       bitmap: fillSession.work,
       sourceScaleX: 1,
       sourceScaleY: 1,
@@ -18643,7 +18720,9 @@ function drawBoardItem(g, it, opts = {}) {
   // Pixel budgets bound how much is decoded, never what a frame may draw. A
   // resident bitmap costs nothing extra to draw, and passing it over for the
   // 256px proxy is what made an image pop blurry the moment it lost its slot.
-  if (!surface && im.bitmap) {
+  // The one exception is a bitmap far larger than the item's target when the
+  // proxy already covers that target (fullBitmapOversizedForItem).
+  if (!surface && im.bitmap && (opts.noLod || !fullBitmapOversizedForItem(im, it))) {
     surface = {
       key: `full:${it.imgId}:${ensureImageVersion(im)}`,
       kind: 'full',
@@ -18674,6 +18753,13 @@ function drawBoardItem(g, it, opts = {}) {
     return;
   }
   protectImageSurface(surface, it);
+  if (imageSurfaceTraceForTest) {
+    imageSurfaceTraceForTest.set(it.id, {
+      kind: surface.kind,
+      w: surface.bitmap?.width || 0,
+      h: surface.bitmap?.height || 0,
+    });
+  }
   const filters = [];
   if (state.boardGray || it.gray) filters.push('grayscale(1)');
   if (filters.length) g.filter = filters.join(' ');
@@ -24804,6 +24890,25 @@ window.RefBoard = {
     lasso: fillSession.lasso?.length || 0,
   },
   get inpaintWorkerLoadedForTest() { return !!inpaintWorker; },
+  /* Surface hooks: which surface an image drew is a GPU cost a harness cannot
+     see in a screenshot. Off until a smoke turns it on. */
+  traceImageSurfacesForTest(on = true) {
+    imageSurfaceTraceForTest = on ? new Map() : null;
+  },
+  imageSurfaceForTest: itemId => imageSurfaceTraceForTest?.get(itemId) || null,
+  imageRenderStateForTest(itemId) {
+    const it = byId(itemId);
+    const im = it && images.get(it.imgId);
+    if (!im) return null;
+    return {
+      w: im.w,
+      h: im.h,
+      fullResident: !!im.bitmap,
+      proxy: !!im.proxy,
+      lodTiers: [...(im.lod?.entries?.keys?.() || [])],
+      ...imageRenderDiagnostics(itemId),
+    };
+  },
   /* Geometry hooks: a harness aiming at a resize handle has to use the same
      rect handleAt() does, or it misses. A group's presented rect is padded
      chrome, not its stored one. */

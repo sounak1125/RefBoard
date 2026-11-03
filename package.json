@@ -75,6 +75,7 @@
     "test:arrange-lock-smoke": "node scripts/smoke-arrange-lock.mjs",
     "test:align-rows-smoke": "node scripts/smoke-align-rows.mjs",
     "test:inpaint-smoke": "node scripts/smoke-inpaint-fill.mjs",
+    "test:fill-perf-smoke": "node scripts/smoke-fill-apply-perf.mjs",
     "test:pan-zoom-smoke": "node scripts/smoke-pan-zoom.mjs",
     "test:annotations-smoke": "node scripts/smoke-annotations.mjs",
     "test:spatial-smoke": "node scripts/smoke-spatial-index.mjs",
