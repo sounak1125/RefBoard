@@ -250,7 +250,7 @@ assert(html.includes('const IMAGE_STABLE_PROXY_MAX_DIM = IMAGE_PROXY_TIER;'), 's
 assert(html.includes('await ensureStableImageProxy(im, blob);'), 'image intake builds the stable proxy before completing');
 assert(html.includes('await ensureStableImageProxy(image, blob);'), 'session restore builds stable proxies while opening');
 assert(html.includes('if (!surface && im.proxy)'), 'renderer falls back to a stable proxy');
-const fullFallback = html.indexOf('if (!surface && im.bitmap)');
+const fullFallback = html.indexOf('if (!surface && im.bitmap && (opts.noLod || !fullBitmapOversizedForItem(im, it)))');
 const proxyFallback = html.indexOf('if (!surface && im.proxy)');
 assert(fullFallback >= 0 && proxyFallback > fullFallback, 'full-resolution export/render paths remain ahead of proxy fallback');
 assert(!html.includes('highQualityDemandAllowed'),
@@ -314,6 +314,17 @@ assert(!html.includes("navigatingFrame\n    ? 'low'"), 'wheel frames never force
 assert(!html.includes('imageSurfaceTransitions'), 'resolution swaps stay instant; the flickering focus-blur transition must not return');
 assert(!html.includes('blurPx'), 'board image draws never animate through a canvas blur filter');
 assert(html.includes('protectImageSurface(surface, it);'), 'the drawn surface is still protected from same-frame eviction');
+// A full bitmap left resident by an edit was drawn at every zoom, and drawing it
+// kept it protected: one edited photo held the board at a third of its frame rate.
+assert(html.includes('return proxyExtent >= target && surfaceOversizedForTarget(source, target);'),
+  'a resident full bitmap gives way to the proxy only when the proxy already covers the target');
+assert(html.includes('if (!im?.proxy || imagePixelUpdateInProgress(im)) return false;'),
+  'a pixel hand-off keeps the new bitmap rather than a proxy that may still hold the old pixels');
+assert(html.includes('const IMAGE_OVERSIZED_DRAW_RATIO = 2;'), 'oversized means more than twice the target extent');
+assert(html.includes('const preview = opts.noLod ? null : fillPreviewFor(fillSession, it);'),
+  'the fill tool draws a target-sized preview on the board and the full working canvas for exports');
+assert(!/function fillPreviewFor[\s\S]{0,1200}resizeWidth/.test(html),
+  'the fill preview is never resized through createImageBitmap on the main thread');
 // Full bitmaps get the same grace window as LOD tiers. Without it a decode finishing
 // for one image closed another that was still on screen, which re-requested its
 // decode and closed a third: 900<->512 pops at a fixed view on a dense board.

@@ -162,7 +162,7 @@ assert.match(
 );
 assert.match(
   html,
-  /if \(!surface && im\.bitmap\) \{/,
+  /function fullBitmapOversizedForItem\(im, it\) \{\s*if \(!im\?\.proxy \|\| imagePixelUpdateInProgress\(im\)\) return false;[\s\S]*?if \(!surface && im\.bitmap && \(opts\.noLod \|\| !fullBitmapOversizedForItem\(im, it\)\)\) \{/,
   'pixel publication should display the current full bitmap while derived surfaces are rebuilt',
 );
 assert.match(
