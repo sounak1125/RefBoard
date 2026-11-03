@@ -1,31 +1,68 @@
 {
-  "headline": "Remove objects from images",
-  "summary": "Draw around anything in an image and RefBoard paints it out from what is around it. Plus new alignment options, and updates that reopen the app.",
+  "headline": "Snip, Compare and a new Export",
+  "summary": "Grab part of the screen from any app, compare two images, and export a board as a web page or a PDF.",
   "sections": {
     "new": [
       {
-        "title": "Remove object",
-        "description": "Select an image, choose Remove object in the selection bar or the right-click menu, and draw around what should go. Remove as many things as you like, then press Enter to apply or Esc to cancel. The first use downloads a 208 MB model once, and it needs a graphics card with WebGPU."
+        "title": "Snip to board",
+        "description": "Press Ctrl+Alt+S in any app and drag a box. The snip lands on your board.",
+        "where": "Ctrl+Alt+S, from any app",
+        "note": "You can change the shortcut or turn it off in Settings › Shortcuts.",
+        "details": "Click instead of dragging to grab a whole display, and press Esc to cancel. Snips taken one after another line up in a row, each named after the window it came from."
       },
       {
-        "title": "Align rows left, center or right",
-        "description": "Select rows of items and line up their starts, middles or ends on one vertical line."
+        "title": "Compare",
+        "description": "Lay two images over each other with a wipe, onion skin or difference view.",
+        "where": "Selection bar, with two images selected",
+        "details": "Drag B or use the arrow keys to line it up. W, O and D switch views, X swaps the images, and Esc closes.",
+        "badge": "compare"
       },
       {
-        "title": "Label alignment",
-        "description": "Labels under items can sit on the left, in the center or on the right. Choose it in Labels, under Display."
+        "title": "Export to a web page or PDF",
+        "description": "One Export dialog on Ctrl+E. A board can now go out as a viewer page or a PDF.",
+        "where": "Ctrl+E, or Export in the toolbar",
+        "details": "The viewer is one .html file that opens in any browser, on a computer or a phone, with pan, zoom and a label filter. Cropped images are exported as cropped.",
+        "badge": "export-dialog"
+      },
+      {
+        "title": "What's New, shorter",
+        "description": "Updates show a short card on Home, and new buttons wear a New badge until you try them."
       }
     ],
     "improved": [
       {
-        "title": "Security update",
-        "description": "RefBoard now runs on Electron 44.9.3, which no longer trusts a compromised certificate authority."
+        "title": "Settings",
+        "description": "Search every setting and shortcut, or press a key to see what it does."
+      },
+      {
+        "title": "Smoother zoom",
+        "description": "Zooming into large images no longer stutters."
+      },
+      {
+        "title": "Tidier selection bar",
+        "description": "Its tools sit in groups: Arrange, Line up rows and Match size."
+      },
+      {
+        "title": "Drawing",
+        "description": "Picking Pen or Eraser turns drawing on, so the separate Draw button is gone."
+      },
+      {
+        "title": "Leaner left toolbar",
+        "description": "Paste, Save, Open and Fit view left the toolbar. Their shortcuts still work."
+      },
+      {
+        "title": "Lighter shadows",
+        "description": "Menus and text notes cast softer shadows."
       }
     ],
     "fixed": [
       {
-        "title": "RefBoard reopens after an update",
-        "description": "After Restart to update, the update installs and RefBoard comes back on its own."
+        "title": "Locked groups stay put",
+        "description": "Arrange in a row or a column no longer moves a locked group."
+      },
+      {
+        "title": "Smooth pen strokes",
+        "description": "Strokes no longer look beaded, or draw a stray line when the pen comes back in."
       }
     ]
   }

@@ -156,3 +156,8 @@ jobs:
 
       - name: Settings page smoke
         run: npm run test:settings-smoke
+
+      - name: What's New notes smoke
+        run: npm run test:whats-new-smoke
+      - name: New badges smoke
+        run: npm run test:new-badges-smoke

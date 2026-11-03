@@ -26,7 +26,11 @@ Commands in this guide run from the repository root on Windows. Release builds c
     "new": [
       {
         "title": "Feature name",
-        "description": "What it lets people do."
+        "description": "What it lets people do, in one line.",
+        "where": "Selection bar or right-click menu",
+        "note": "A caveat people need first, such as a download.",
+        "details": "Anything longer. Only the GitHub release shows this.",
+        "badge": "remove-object"
       }
     ],
     "improved": [
@@ -45,9 +49,31 @@ Commands in this guide run from the repository root on Windows. Release builds c
 }
 ```
 
+   People give What's New a few seconds, so every field shown in the app fits on one line. `npm test` fails when a release breaks these limits:
+
+   | Field | Limit | Where it shows |
+   | --- | --- | --- |
+   | `headline` | 50 characters | App and GitHub |
+   | `summary` | 120 characters | App and GitHub |
+   | `title` | 40 characters | App and GitHub |
+   | `description` | 90 characters | App and GitHub |
+   | `where` (optional) | 40 characters | App, and GitHub as "Find it:" |
+   | `note` (optional) | 90 characters | App, and GitHub as "Note:" |
+   | `details` (optional) | No limit | GitHub only |
+   | `badge` (optional) | A lowercase id with dashes | App only, as a "New" badge |
+
+   Use `where` to say where a feature lives and `note` for something people must know first, such as a download or a version requirement. Anything longer goes in `details`. The limits live in `scripts/release-notes-rules.mjs` and apply to 2.2.0 and later; older releases keep the notes they shipped with.
+
+   `badge` puts a "New" badge on the feature's own control, so people find it even if they skip What's New. Its callout shows the change's title and `description`, with a Got it button, and the badge goes once they click Got it or use the control. Give the control the same id in `index.html`:
+
+   - a button or a row (selection bar, Settings, Labels panel): add `data-badge="<id>"` to it;
+   - a right-click menu item: add its label and id to `MENU_ITEM_BADGES`.
+
+   Use one id per control, and only on changes people should go and try. `npm test` fails if a note names an id that no control has. Who sees which badges is decided in `scripts/new-badges.js`: people who update see the badges of every release since the version they ran before, a fresh install sees none, and a later update that brings no badges keeps the ones still waiting until the next minor version.
+
    Keep unused sections as empty arrays (`[]`). Do not add labels such as `"Bug fixes:"` as list items—the modal creates the New, Improved, and Fixed headings automatically. `npm run dist` / `sync-changelog.mjs` copies this release into `changelog.json` for the in-app What's New screen.
 
-   You can also collect a change from a git commit. The text before `|` becomes the title and the text after it becomes the description:
+   You can also collect a change from a git commit. The text before `|` becomes the title and the text after it becomes the description, held to the same limits:
 
 ```powershell
 git commit -m "[highlight:new] Feature name | What it lets people do."

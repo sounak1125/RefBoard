@@ -3,6 +3,7 @@ const { app, BrowserWindow, Menu, ipcMain, dialog, clipboard, ClipboardItem, she
 const { autoUpdater } = require('electron-updater');
 const { scanBoardHandle, readBoardImageBytes, readBoardImageBytesFromHandle, readBoardPreview, rewriteBoardFilePreview } = require('./scripts/board-open-stream');
 const { replaceBoardFile, recoverBoardFileIfMissing, cleanupBoardBackup } = require('./scripts/board-file-replace');
+const { pendingBadges, storeAfterLaunch, withoutBadge } = require('./scripts/new-badges');
 const { boardRenameFailureText, renameBoardFile } = require('./scripts/board-rename');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -749,6 +750,8 @@ function changelogPath() {
   return path.join(__dirname, 'changelog.json');
 }
 
+const RELEASES_PAGE = 'https://github.com/sounak1125/RefBoard/releases';
+
 function parseSemver(v) {
   const m = String(v || '').trim().match(/^(\d+)\.(\d+)\.(\d+)/);
   if (!m) return [0, 0, 0];
@@ -779,9 +782,27 @@ async function saveWhatsNewStore(data) {
   await writeJsonAtomic(whatsNewStorePath(), data);
 }
 
+// What's New and the "New" badges share whats-new.json. Changes queue up so a
+// Got it in one window cannot overwrite another's: each reads the store, keeps
+// every other key, and writes. `change` returns the new store, or null for none.
+let whatsNewStoreQueue = Promise.resolve();
+function updateWhatsNewStore(change) {
+  const run = whatsNewStoreQueue.then(async () => {
+    const store = await loadWhatsNewStore();
+    const next = change(store);
+    if (next) await saveWhatsNewStore(next);
+    return next || store;
+  });
+  whatsNewStoreQueue = run.catch(() => {});
+  return run;
+}
+
 let changelogCache = null;
 
 const WHATS_NEW_SECTION_KEYS = ['new', 'improved', 'fixed'];
+// Where to find a change and its caveat show in the app. An item's `details`
+// stays out: it is the long version, written for the GitHub release.
+const WHATS_NEW_ITEM_EXTRAS = ['where', 'note'];
 
 function normalizeWhatsNewItem(item) {
   if (typeof item === 'string') {
@@ -792,7 +813,12 @@ function normalizeWhatsNewItem(item) {
   const title = String(item.title || '').trim();
   const description = String(item.description || '').trim();
   if (!title && !description) return null;
-  return { title: title || description, description: title ? description : '' };
+  const normalized = { title: title || description, description: title ? description : '' };
+  for (const key of WHATS_NEW_ITEM_EXTRAS) {
+    const value = typeof item[key] === 'string' ? item[key].trim() : '';
+    if (value) normalized[key] = value;
+  }
+  return normalized;
 }
 
 function normalizeChangelogRelease(version, entry) {
@@ -845,7 +871,29 @@ async function loadChangelog() {
 }
 
 async function markWhatsNewSeen(version) {
-  await saveWhatsNewStore({ lastSeenVersion: version });
+  await updateWhatsNewStore(store => ({ ...store, lastSeenVersion: version }));
+}
+
+// The first call in a run settles this launch's badges; later calls share it.
+let newBadgesLaunch = null;
+function newBadgesForLaunch() {
+  newBadgesLaunch ||= loadChangelog()
+    .then(changelog => updateWhatsNewStore(store => storeAfterLaunch(store, changelog, app.getVersion())))
+    .catch(() => null);
+  return newBadgesLaunch;
+}
+
+async function getNewBadges() {
+  await newBadgesForLaunch();
+  return pendingBadges(await loadWhatsNewStore());
+}
+
+async function markNewBadgeSeen(id) {
+  if (typeof id !== 'string' || !id) return;
+  await newBadgesForLaunch();
+  await updateWhatsNewStore(store => withoutBadge(store, id));
+  const call = `window.__newBadgeSeen && window.__newBadgeSeen(${JSON.stringify(id)})`;
+  for (const candidate of windows) executeInPanes(candidate, call);
 }
 
 async function buildWhatsNewPayload({ current, lastSeen = null, currentOnly = false }) {
@@ -887,6 +935,8 @@ async function buildWhatsNewPayload({ current, lastSeen = null, currentOnly = fa
     sections,
     releaseCount: releases.length,
     totalChanges,
+    // "Full release notes": this release's page, or the list when there are several.
+    notesUrl: multipleReleases ? RELEASES_PAGE : `${RELEASES_PAGE}/tag/v${latest.version}`,
   };
 }
 
@@ -2088,6 +2138,12 @@ function setupIpc() {
 
   ipcMain.handle('whats-new-dismiss', async () => {
     await markWhatsNewSeen(app.getVersion());
+    return { ok: true };
+  });
+
+  ipcMain.handle('new-badges-get', () => getNewBadges());
+  ipcMain.handle('new-badges-seen', async (_, { id } = {}) => {
+    await markNewBadgeSeen(id);
     return { ok: true };
   });
 
