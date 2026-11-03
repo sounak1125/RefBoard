@@ -1057,5 +1057,24 @@
         }
       ]
     }
+  },
+  "2.3.1": {
+    "headline": "Smooth boards after Remove object",
+    "summary": "The board no longer slows down after you remove an object, draw on a photo, or zoom into a big one.",
+    "sections": {
+      "new": [],
+      "improved": [],
+      "fixed": [
+        {
+          "title": "No lag after Remove object",
+          "description": "Panning and zooming stay smooth while the tool is open and after Apply.",
+          "details": "Before, the edited photo was drawn at full size every frame, so the board stayed slow until you reopened it."
+        },
+        {
+          "title": "No lag after drawing or zooming in",
+          "description": "Drawing on a big photo, or zooming into one and back out, no longer slows the board."
+        }
+      ]
+    }
   }
 }
