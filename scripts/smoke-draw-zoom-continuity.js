@@ -55,10 +55,17 @@ function dispatchZeroWheel(win, point) {
 
 async function run() {
   const rendererErrors = [];
+  // A window that is never shown gets about one animation frame a second, so
+  // the board would not redraw inside the publication window and every sample
+  // would read the last stroke frame. Show it off-screen and transparent, as
+  // the zoom smokes do.
   const win = new BrowserWindow({
+    x: -32000,
+    y: -32000,
     width: 1440,
     height: 900,
     show: false,
+    opacity: 0,
     skipTaskbar: true,
     backgroundColor: '#101116',
     webPreferences: {
@@ -74,6 +81,7 @@ async function run() {
     }
   });
 
+  win.showInactive();
   await win.loadFile(path.join(__dirname, '..', 'index.html'));
   await waitFor(win, 'window.RefBoard && document.querySelector("#rwNewBoard")', 'renderer API');
   await delay(750);
@@ -119,7 +127,6 @@ async function run() {
     board.hasPointerCapture = pointerId => capturedPointers.has(pointerId);
     board.releasePointerCapture = pointerId => capturedPointers.delete(pointerId);
 
-    const nativeCreateImageBitmap = window.createImageBitmap.bind(window);
     window.__drawZoomContinuitySmoke = {
       itemId: item.id,
       imgId: item.imgId,
@@ -178,21 +185,25 @@ async function run() {
       },
     };
 
-    window.createImageBitmap = async function(sourceValue, ...args) {
-      const options = args.length === 1 && args[0] && typeof args[0] === 'object'
-        ? args[0]
-        : null;
+    // Stable proxies are resized in the image resize pool's workers, so the
+    // delay sits on the job hand-off: holding the 256 px proxy job back keeps
+    // replaceStableImageProxy() pending, exactly as a slow resize would.
+    const nativeWorkerPostMessage = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function(message, ...rest) {
       const smoke = window.__drawZoomContinuitySmoke;
       const delayMs = Number(smoke?.delayNextProxyMs) || 0;
       if (delayMs > 0
-          && sourceValue instanceof Blob
-          && Number(options?.resizeWidth) === 256) {
+          && message?.blob instanceof Blob
+          && Number(message?.options?.resizeWidth) === 256) {
         smoke.delayNextProxyMs = 0;
         smoke.proxyDelayStarted = true;
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        smoke.proxyDelayFinished = true;
+        setTimeout(() => {
+          smoke.proxyDelayFinished = true;
+          nativeWorkerPostMessage.call(this, message, ...rest);
+        }, delayMs);
+        return;
       }
-      return nativeCreateImageBitmap(sourceValue, ...args);
+      return nativeWorkerPostMessage.call(this, message, ...rest);
     };
 
     await waitFrame();
@@ -325,8 +336,14 @@ async function run() {
   const invisibleSamples = continuitySamples.filter(
     sample => !sample.board || sample.board.darkest >= 180,
   );
+  // Without samples taken while the delayed proxy was still pending, the
+  // continuity check above never exercised the publication window.
+  const pendingProxySamples = continuitySamples.filter(
+    sample => sample.publishing && !sample.proxyDelayFinished,
+  );
 
   if (invisibleSamples.length
+      || !pendingProxySamples.length
       || !settled.board
       || settled.board.darkest >= 180
       || !settled.lod
@@ -350,6 +367,7 @@ async function run() {
       max: Math.max(...continuitySamples.map(sample => sample.board.darkest)),
     },
     publicationSamples: continuitySamples.filter(sample => sample.publishing).length,
+    pendingProxySamples: pendingProxySamples.length,
     settled,
   };
 }
